@@ -148,6 +148,7 @@ export async function POST(request: NextRequest) {
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
   const rol = session.user.rol as Rol
   if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
+  if (!session.user.id) return NextResponse.json({ error: "Sesión inválida: id de usuario no encontrado" }, { status: 401 })
 
   try {
     const body = await request.json()
@@ -192,6 +193,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(viaje, { status: 201 })
   } catch (error) {
     console.error("[POST /api/viajes]", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
   }
 }
