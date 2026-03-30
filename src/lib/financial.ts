@@ -75,7 +75,7 @@ export function diasHabilesDesde(fecha: Date, hoy = new Date()): number {
 
   if (inicio.getTime() >= fin.getTime()) return 0
 
-  let cursor = new Date(inicio)
+  const cursor = new Date(inicio)
   let diasHabiles = 0
 
   while (cursor.getTime() < fin.getTime()) {

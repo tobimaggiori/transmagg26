@@ -278,7 +278,7 @@ function ChequesEmitidosModal() {
   )
 }
 
-function PendienteModal({ url, titulo }: { url: string; titulo: string }) {
+function PendienteModal({ url }: { url: string; titulo: string }) {
   const [data, setData] = useState<GrupoPendiente[] | null>(null)
   useEffect(() => {
     fetch(url).then(r => r.json()).then(setData)
