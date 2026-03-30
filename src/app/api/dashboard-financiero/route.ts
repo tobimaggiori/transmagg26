@@ -57,22 +57,16 @@ export async function GET() {
     })
     const deudaFleteros = (liquidacionesAgg._sum.total ?? 0) - (pagosFleterosAgg._sum.monto ?? 0)
 
-    // Pendiente de facturar: viajes PENDIENTE sin factura
+    // Pendiente de facturar: viajes con estadoFactura PENDIENTE_FACTURAR
     const viajesPendienteFacturar = await prisma.viaje.findMany({
-      where: {
-        estado: "PENDIENTE",
-        enFacturas: { none: {} },
-      },
+      where: { estadoFactura: "PENDIENTE_FACTURAR" },
       select: { tarifaBase: true },
     })
     const pendienteFacturar = viajesPendienteFacturar.reduce((acc, v) => acc + (v.tarifaBase ?? 0), 0)
 
-    // Pendiente de liquidar: viajes PENDIENTE sin liquidación
+    // Pendiente de liquidar: viajes con estadoLiquidacion PENDIENTE_LIQUIDAR
     const viajesPendienteLiquidar = await prisma.viaje.findMany({
-      where: {
-        estado: "PENDIENTE",
-        enLiquidaciones: { none: {} },
-      },
+      where: { estadoLiquidacion: "PENDIENTE_LIQUIDAR" },
       select: { tarifaBase: true },
     })
     const pendienteLiquidar = viajesPendienteLiquidar.reduce((acc, v) => acc + (v.tarifaBase ?? 0), 0)

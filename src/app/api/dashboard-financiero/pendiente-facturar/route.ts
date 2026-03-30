@@ -25,10 +25,7 @@ export async function GET() {
 
   try {
     const viajes = await prisma.viaje.findMany({
-      where: {
-        estado: "PENDIENTE",
-        enFacturas: { none: {} },
-      },
+      where: { estadoFactura: "PENDIENTE_FACTURAR" },
       include: {
         empresa: { select: { id: true, razonSocial: true } },
       },
