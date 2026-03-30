@@ -338,7 +338,7 @@ export function FinancialDashboardClient() {
   useEffect(() => {
     fetch("/api/dashboard-financiero")
       .then((r) => r.json())
-      .then((d) => { setData(d); setLoading(false) })
+      .then((d) => { setData(d?.alertasFci !== undefined ? d : null); setLoading(false) })
       .catch(() => setLoading(false))
   }, [])
 
@@ -370,10 +370,10 @@ export function FinancialDashboardClient() {
       </div>
 
       {/* Alertas FCI */}
-      {data.alertasFci.length > 0 && (
+      {(data.alertasFci?.length ?? 0) > 0 && (
         <div className="flex flex-wrap gap-2">
           <span className="text-sm font-medium text-muted-foreground self-center">Alertas FCI:</span>
-          {data.alertasFci.map((alerta) => (
+          {(data.alertasFci ?? []).map((alerta) => (
             <button
               key={alerta.fciId}
               onClick={() => router.push(`/cuentas?cuenta=${alerta.cuentaId}&tab=fci`)}
@@ -444,19 +444,19 @@ export function FinancialDashboardClient() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Cheques en Cartera</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{formatearMoneda(data.chequesEnCartera.total)}</p>
+            <p className="text-2xl font-bold">{formatearMoneda(data.chequesEnCartera?.total ?? 0)}</p>
             <div className="flex gap-2 mt-1">
               <button
                 onClick={() => setModalAbierto("cheques-cartera-al-dia")}
                 className="text-xs text-green-700 bg-green-50 hover:bg-green-100 px-2 py-0.5 rounded transition-colors"
               >
-                Al día: {formatearMoneda(data.chequesEnCartera.alDia)}
+                Al día: {formatearMoneda(data.chequesEnCartera?.alDia ?? 0)}
               </button>
               <button
                 onClick={() => setModalAbierto("cheques-cartera-no-al-dia")}
                 className="text-xs text-orange-700 bg-orange-50 hover:bg-orange-100 px-2 py-0.5 rounded transition-colors"
               >
-                Vencidos: {formatearMoneda(data.chequesEnCartera.noAlDia)}
+                Vencidos: {formatearMoneda(data.chequesEnCartera?.noAlDia ?? 0)}
               </button>
             </div>
           </CardContent>
@@ -477,11 +477,11 @@ export function FinancialDashboardClient() {
       </div>
 
       {/* Sección cuentas */}
-      {data.cuentas.length > 0 && (
+      {(data.cuentas?.length ?? 0) > 0 && (
         <div className="space-y-3">
           <h3 className="text-lg font-semibold">Cuentas Activas</h3>
           <div className="grid gap-4 md:grid-cols-2">
-            {data.cuentas.map((cuenta) => (
+            {(data.cuentas ?? []).map((cuenta) => (
               <Card key={cuenta.id} className="cursor-pointer hover:border-primary transition-colors" onClick={() => router.push(`/cuentas?cuenta=${cuenta.id}`)}>
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
