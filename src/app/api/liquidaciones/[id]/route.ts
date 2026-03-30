@@ -64,41 +64,49 @@ export async function GET(
 
   const rol = session.user.rol as Rol
 
-  const liquidacion = await prisma.liquidacion.findUnique({
-    where: { id: params.id },
-    include: {
-      fletero: { select: { razonSocial: true, cuit: true } },
-      operador: { select: { nombre: true, apellido: true } },
-      viajes: true,
-      pagos: true,
-    },
-  })
-
-  if (!liquidacion) return NextResponse.json({ error: "Liquidación no encontrada" }, { status: 404 })
-
-  if (rol === "FLETERO") {
-    const fleteroPropio = await prisma.fletero.findFirst({
-      where: { id: liquidacion.fleteroId, usuario: { email: session.user.email } },
+  try {
+    const liquidacion = await prisma.liquidacion.findUnique({
+      where: { id: params.id },
+      include: {
+        fletero: { select: { razonSocial: true, cuit: true } },
+        operador: { select: { nombre: true, apellido: true } },
+        viajes: true,
+        pagos: true,
+      },
     })
-    if (!fleteroPropio) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
-  } else if (!esRolInterno(rol)) {
-    return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
-  }
 
-  // Ocultar tarifaFletero si no tiene permiso
-  if (!puedeVerTarifaFletero(rol)) {
-    const liqSinTarifas = {
-      ...liquidacion,
-      viajes: liquidacion.viajes.map((v) => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { tarifaFletero, subtotal, ...resto } = v
-        return resto
-      }),
+    if (!liquidacion) return NextResponse.json({ error: "Liquidación no encontrada" }, { status: 404 })
+
+    if (rol === "FLETERO") {
+      const fleteroPropio = await prisma.fletero.findFirst({
+        where: { id: liquidacion.fleteroId, usuario: { email: session.user.email } },
+      })
+      if (!fleteroPropio) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
+    } else if (!esRolInterno(rol)) {
+      return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
     }
-    return NextResponse.json(liqSinTarifas)
-  }
 
-  return NextResponse.json(liquidacion)
+    // Ocultar tarifaFletero si no tiene permiso
+    if (!puedeVerTarifaFletero(rol)) {
+      const liqSinTarifas = {
+        ...liquidacion,
+        viajes: liquidacion.viajes.map((v) => {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { tarifaFletero, subtotal, ...resto } = v
+          return resto
+        }),
+      }
+      return NextResponse.json(liqSinTarifas)
+    }
+
+    return NextResponse.json(liquidacion)
+  } catch (error) {
+    console.error("[GET /api/liquidaciones/[id]]", error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
+  }
 }
 
 /**
@@ -198,6 +206,9 @@ export async function PATCH(
     return NextResponse.json(actualizada)
   } catch (error) {
     console.error("[PATCH /api/liquidaciones/[id]]", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
   }
 }

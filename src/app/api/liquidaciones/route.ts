@@ -114,62 +114,70 @@ export async function GET(request: NextRequest) {
   const whereLiquidaciones: Record<string, unknown> = {}
   if (fleteroIdReal) whereLiquidaciones.fleteroId = fleteroIdReal
 
-  const [viajesRaw, liquidaciones, fleteroData, nroProximoComprobante] = await Promise.all([
-    prisma.viaje.findMany({
-      where: whereViajes,
-      select: {
-        id: true,
-        fechaViaje: true,
-        fleteroId: true,
-        empresaId: true,
-        empresa: { select: { razonSocial: true } },
-        camionId: true,
-        camion: { select: { patenteChasis: true } },
-        choferId: true,
-        chofer: { select: { nombre: true, apellido: true } },
-        remito: true,
-        cupo: true,
-        mercaderia: true,
-        procedencia: true,
-        provinciaOrigen: true,
-        destino: true,
-        provinciaDestino: true,
-        kilos: true,
-        tarifaOperativaInicial: true,
-        estadoLiquidacion: true,
-        estadoFactura: true,
-      },
-      orderBy: { fechaViaje: "desc" },
-      take: 200,
-    }),
-    prisma.liquidacion.findMany({
-      where: whereLiquidaciones,
-      include: {
-        fletero: { select: { razonSocial: true } },
-        viajes: true,
-        pagos: { select: { monto: true } },
-      },
-      orderBy: { grabadaEn: "desc" },
-      take: 100,
-    }),
-    fleteroIdReal
-      ? prisma.fletero.findUnique({
-          where: { id: fleteroIdReal },
-          select: { id: true, razonSocial: true, cuit: true, condicionIva: true, direccion: true },
-        })
-      : Promise.resolve(null),
-    calcularProximoNroComprobante(prisma),
-  ])
+  try {
+    const [viajesRaw, liquidaciones, fleteroData, nroProximoComprobante] = await Promise.all([
+      prisma.viaje.findMany({
+        where: whereViajes,
+        select: {
+          id: true,
+          fechaViaje: true,
+          fleteroId: true,
+          empresaId: true,
+          empresa: { select: { razonSocial: true } },
+          camionId: true,
+          camion: { select: { patenteChasis: true } },
+          choferId: true,
+          chofer: { select: { nombre: true, apellido: true } },
+          remito: true,
+          cupo: true,
+          mercaderia: true,
+          procedencia: true,
+          provinciaOrigen: true,
+          destino: true,
+          provinciaDestino: true,
+          kilos: true,
+          tarifaOperativaInicial: true,
+          estadoLiquidacion: true,
+          estadoFactura: true,
+        },
+        orderBy: { fechaViaje: "desc" },
+        take: 200,
+      }),
+      prisma.liquidacion.findMany({
+        where: whereLiquidaciones,
+        include: {
+          fletero: { select: { razonSocial: true } },
+          viajes: true,
+          pagos: { select: { monto: true } },
+        },
+        orderBy: { grabadaEn: "desc" },
+        take: 100,
+      }),
+      fleteroIdReal
+        ? prisma.fletero.findUnique({
+            where: { id: fleteroIdReal },
+            select: { id: true, razonSocial: true, cuit: true, condicionIva: true, direccion: true },
+          })
+        : Promise.resolve(null),
+      calcularProximoNroComprobante(prisma),
+    ])
 
-  // Calcular toneladas y total en los viajes pendientes
-  const viajesPendientes = viajesRaw.map((v) => ({
-    ...v,
-    tarifaOperativaInicial: obtenerTarifaOperativaInicial(v.tarifaOperativaInicial),
-    toneladas: v.kilos != null ? calcularToneladas(v.kilos) : null,
-    total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaOperativaInicial) : null,
-  }))
+    // Calcular toneladas y total en los viajes pendientes
+    const viajesPendientes = viajesRaw.map((v) => ({
+      ...v,
+      tarifaOperativaInicial: obtenerTarifaOperativaInicial(v.tarifaOperativaInicial),
+      toneladas: v.kilos != null ? calcularToneladas(v.kilos) : null,
+      total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaOperativaInicial) : null,
+    }))
 
-  return NextResponse.json({ viajesPendientes, liquidaciones, fletero: fleteroData, nroProximoComprobante })
+    return NextResponse.json({ viajesPendientes, liquidaciones, fletero: fleteroData, nroProximoComprobante })
+  } catch (error) {
+    console.error("[GET /api/liquidaciones]", error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
+  }
 }
 
 /**
@@ -342,7 +350,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/liquidaciones]", error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error interno del servidor" },
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
       { status: 500 }
     )
   }

@@ -69,7 +69,10 @@ export async function PATCH(
     return NextResponse.json(actualizado)
   } catch (error) {
     console.error("[PATCH /api/camiones/[id]]", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
   }
 }
 
@@ -107,6 +110,9 @@ export async function DELETE(
     return NextResponse.json({ message: "Camión desactivado correctamente" })
   } catch (error) {
     console.error("[DELETE /api/camiones/[id]]", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
   }
 }

@@ -41,27 +41,35 @@ export async function GET() {
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
   if (!esAdmin(session.user.rol as Rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
 
-  const usuarios = await prisma.usuario.findMany({
-    orderBy: [{ activo: "desc" }, { apellido: "asc" }],
-    select: {
-      id: true,
-      nombre: true,
-      apellido: true,
-      email: true,
-      telefono: true,
-      rol: true,
-      activo: true,
-      creadoEn: true,
-      empresaUsuarios: {
-        select: {
-          empresa: { select: { razonSocial: true } },
-          nivelAcceso: true,
+  try {
+    const usuarios = await prisma.usuario.findMany({
+      orderBy: [{ activo: "desc" }, { apellido: "asc" }],
+      select: {
+        id: true,
+        nombre: true,
+        apellido: true,
+        email: true,
+        telefono: true,
+        rol: true,
+        activo: true,
+        creadoEn: true,
+        empresaUsuarios: {
+          select: {
+            empresa: { select: { razonSocial: true } },
+            nivelAcceso: true,
+          },
         },
       },
-    },
-  })
+    })
 
-  return NextResponse.json(usuarios)
+    return NextResponse.json(usuarios)
+  } catch (error) {
+    console.error("[GET /api/usuarios]", error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
+  }
 }
 
 /**
@@ -119,6 +127,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(usuario, { status: 201 })
   } catch (error) {
     console.error("[POST /api/usuarios]", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
   }
 }

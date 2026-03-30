@@ -103,29 +103,37 @@ export async function GET(request: NextRequest) {
     whereClause.fechaViaje = fechaWhere
   }
 
-  const viajes = await prisma.viaje.findMany({
-    where: whereClause,
-    include: {
-      fletero: { select: { razonSocial: true } },
-      camion: { select: { patenteChasis: true, tipoCamion: true } },
-      chofer: { select: { nombre: true, apellido: true } },
-      empresa: { select: { razonSocial: true } },
-      operador: { select: { nombre: true, apellido: true } },
-    },
-    orderBy: { fechaViaje: "desc" },
-    take: 200,
-  })
+  try {
+    const viajes = await prisma.viaje.findMany({
+      where: whereClause,
+      include: {
+        fletero: { select: { razonSocial: true } },
+        camion: { select: { patenteChasis: true, tipoCamion: true } },
+        chofer: { select: { nombre: true, apellido: true } },
+        empresa: { select: { razonSocial: true } },
+        operador: { select: { nombre: true, apellido: true } },
+      },
+      orderBy: { fechaViaje: "desc" },
+      take: 200,
+    })
 
-  const viajesConCalculo = viajes.map((v) => enriquecerViajeOperativo(v))
+    const viajesConCalculo = viajes.map((v) => enriquecerViajeOperativo(v))
 
-  // No exponer tarifaOperativaInicial a roles externos
-  if (!esRolInterno(rol)) {
+    // No exponer tarifaOperativaInicial a roles externos
+    if (!esRolInterno(rol)) {
+      return NextResponse.json(
+        viajesConCalculo.map((v) => ocultarTarifaOperativa(v))
+      )
+    }
+
+    return NextResponse.json(viajesConCalculo)
+  } catch (error) {
+    console.error("[GET /api/viajes]", error)
     return NextResponse.json(
-      viajesConCalculo.map((v) => ocultarTarifaOperativa(v))
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
     )
   }
-
-  return NextResponse.json(viajesConCalculo)
 }
 
 /**

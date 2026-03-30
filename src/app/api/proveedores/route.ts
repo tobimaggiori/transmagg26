@@ -39,11 +39,19 @@ export async function GET() {
   const rol = session.user.rol as Rol
   if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
 
-  const proveedores = await prisma.proveedor.findMany({
-    where: { activo: true },
-    orderBy: { razonSocial: "asc" },
-  })
-  return NextResponse.json(proveedores)
+  try {
+    const proveedores = await prisma.proveedor.findMany({
+      where: { activo: true },
+      orderBy: { razonSocial: "asc" },
+    })
+    return NextResponse.json(proveedores)
+  } catch (error) {
+    console.error("[GET /api/proveedores]", error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
+  }
 }
 
 /**
@@ -83,6 +91,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(proveedor, { status: 201 })
   } catch (error) {
     console.error("[POST /api/proveedores]", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
   }
 }

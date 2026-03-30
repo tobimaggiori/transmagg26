@@ -51,26 +51,34 @@ export async function GET(
   const rol = session.user.rol as Rol
   if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
 
-  const viaje = await prisma.viaje.findUnique({
-    where: { id: params.id },
-    include: {
-      fletero: { select: { razonSocial: true, cuit: true } },
-      camion: { select: { patenteChasis: true, patenteAcoplado: true, tipoCamion: true } },
-      chofer: { select: { nombre: true, apellido: true, email: true } },
-      empresa: { select: { razonSocial: true, cuit: true } },
-      operador: { select: { nombre: true, apellido: true } },
-      enLiquidaciones: {
-        include: { liquidacion: { select: { id: true, estado: true, grabadaEn: true } } },
+  try {
+    const viaje = await prisma.viaje.findUnique({
+      where: { id: params.id },
+      include: {
+        fletero: { select: { razonSocial: true, cuit: true } },
+        camion: { select: { patenteChasis: true, patenteAcoplado: true, tipoCamion: true } },
+        chofer: { select: { nombre: true, apellido: true, email: true } },
+        empresa: { select: { razonSocial: true, cuit: true } },
+        operador: { select: { nombre: true, apellido: true } },
+        enLiquidaciones: {
+          include: { liquidacion: { select: { id: true, estado: true, grabadaEn: true } } },
+        },
+        enFacturas: {
+          include: { factura: { select: { id: true, estado: true, nroComprobante: true } } },
+        },
       },
-      enFacturas: {
-        include: { factura: { select: { id: true, estado: true, nroComprobante: true } } },
-      },
-    },
-  })
+    })
 
-  if (!viaje) return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 })
+    if (!viaje) return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 })
 
-  return NextResponse.json(enriquecerViajeOperativo(viaje))
+    return NextResponse.json(enriquecerViajeOperativo(viaje))
+  } catch (error) {
+    console.error("[GET /api/viajes/[id]]", error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
+  }
 }
 
 /**
@@ -130,7 +138,10 @@ export async function PATCH(
     })
   } catch (error) {
     console.error("[PATCH /api/viajes/[id]]", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
   }
 }
 
@@ -157,21 +168,29 @@ export async function DELETE(
   const rol = session.user.rol as Rol
   if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
 
-  const viaje = await prisma.viaje.findUnique({
-    where: { id: params.id },
-    include: {
-      _count: { select: { enLiquidaciones: true, enFacturas: true } },
-    },
-  })
-  if (!viaje) return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 })
+  try {
+    const viaje = await prisma.viaje.findUnique({
+      where: { id: params.id },
+      include: {
+        _count: { select: { enLiquidaciones: true, enFacturas: true } },
+      },
+    })
+    if (!viaje) return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 })
 
-  if (viaje._count.enLiquidaciones > 0 || viaje._count.enFacturas > 0) {
+    if (viaje._count.enLiquidaciones > 0 || viaje._count.enFacturas > 0) {
+      return NextResponse.json(
+        { error: "No se puede eliminar un viaje que ya tiene liquidaciones o facturas asociadas" },
+        { status: 422 }
+      )
+    }
+
+    await prisma.viaje.delete({ where: { id: params.id } })
+    return new NextResponse(null, { status: 204 })
+  } catch (error) {
+    console.error("[DELETE /api/viajes/[id]]", error)
     return NextResponse.json(
-      { error: "No se puede eliminar un viaje que ya tiene liquidaciones o facturas asociadas" },
-      { status: 422 }
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
     )
   }
-
-  await prisma.viaje.delete({ where: { id: params.id } })
-  return new NextResponse(null, { status: 204 })
 }

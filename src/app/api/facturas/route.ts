@@ -89,58 +89,66 @@ export async function GET(request: NextRequest) {
   const whereFacturas: Record<string, unknown> = {}
   if (empresaIdReal) whereFacturas.empresaId = empresaIdReal
 
-  const [viajesRaw, facturas] = await Promise.all([
-    prisma.viaje.findMany({
-      where: whereViajes,
-      select: {
-        id: true,
-        fechaViaje: true,
-        fleteroId: true,
-        empresaId: true,
-        empresa: { select: { razonSocial: true } },
-        fletero: { select: { razonSocial: true } },
-        camionId: true,
-        camion: { select: { patenteChasis: true } },
-        choferId: true,
-        chofer: { select: { nombre: true, apellido: true } },
-        remito: true,
-        cupo: true,
-        mercaderia: true,
-        procedencia: true,
-        provinciaOrigen: true,
-        destino: true,
-        provinciaDestino: true,
-        kilos: true,
-        tarifaOperativaInicial: true,
-        estadoLiquidacion: true,
-        estadoFactura: true,
-      },
-      orderBy: { fechaViaje: "desc" },
-      take: 200,
-    }),
-    prisma.facturaEmitida.findMany({
-      where: whereFacturas,
-      include: {
-        empresa: { select: { razonSocial: true } },
-        viajes: true,
-        pagos: { select: { monto: true } },
-      },
-      orderBy: { emitidaEn: "desc" },
-      take: 100,
-    }),
-  ])
+  try {
+    const [viajesRaw, facturas] = await Promise.all([
+      prisma.viaje.findMany({
+        where: whereViajes,
+        select: {
+          id: true,
+          fechaViaje: true,
+          fleteroId: true,
+          empresaId: true,
+          empresa: { select: { razonSocial: true } },
+          fletero: { select: { razonSocial: true } },
+          camionId: true,
+          camion: { select: { patenteChasis: true } },
+          choferId: true,
+          chofer: { select: { nombre: true, apellido: true } },
+          remito: true,
+          cupo: true,
+          mercaderia: true,
+          procedencia: true,
+          provinciaOrigen: true,
+          destino: true,
+          provinciaDestino: true,
+          kilos: true,
+          tarifaOperativaInicial: true,
+          estadoLiquidacion: true,
+          estadoFactura: true,
+        },
+        orderBy: { fechaViaje: "desc" },
+        take: 200,
+      }),
+      prisma.facturaEmitida.findMany({
+        where: whereFacturas,
+        include: {
+          empresa: { select: { razonSocial: true } },
+          viajes: true,
+          pagos: { select: { monto: true } },
+        },
+        orderBy: { emitidaEn: "desc" },
+        take: 100,
+      }),
+    ])
 
-  // Calcular toneladas y total en los viajes pendientes
-  const viajesPendientes = viajesRaw.map((v) => ({
-    ...v,
-    tarifaOperativaInicial: obtenerTarifaOperativaInicial(v.tarifaOperativaInicial),
-    toneladas: v.kilos != null ? calcularToneladas(v.kilos) : null,
-    total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaOperativaInicial) : null,
-    // No incluir tarifaOperativaInicial a roles empresa
-    ...(esRolEmpresa(rol) ? { tarifaOperativaInicial: undefined } : {}),
-  }))
+    // Calcular toneladas y total en los viajes pendientes
+    const viajesPendientes = viajesRaw.map((v) => ({
+      ...v,
+      tarifaOperativaInicial: obtenerTarifaOperativaInicial(v.tarifaOperativaInicial),
+      toneladas: v.kilos != null ? calcularToneladas(v.kilos) : null,
+      total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaOperativaInicial) : null,
+      // No incluir tarifaOperativaInicial a roles empresa
+      ...(esRolEmpresa(rol) ? { tarifaOperativaInicial: undefined } : {}),
+    }))
 
-  return NextResponse.json({ viajesPendientes, facturas })
+    return NextResponse.json({ viajesPendientes, facturas })
+  } catch (error) {
+    console.error("[GET /api/facturas]", error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
+  }
 }
 
 /**
@@ -314,7 +322,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[POST /api/facturas]", error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error interno del servidor" },
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
       { status: 500 }
     )
   }

@@ -65,41 +65,49 @@ export async function GET(
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
   const rol = session.user.rol as Rol
 
-  const factura = await prisma.facturaEmitida.findUnique({
-    where: { id: params.id },
-    include: {
-      empresa: { select: { razonSocial: true, cuit: true } },
-      operador: { select: { nombre: true, apellido: true } },
-      viajes: true,
-      pagos: true,
-    },
-  })
-
-  if (!factura) return NextResponse.json({ error: "Factura no encontrada" }, { status: 404 })
-
-  if (esRolEmpresa(rol)) {
-    const empUsr = await prisma.empresaUsuario.findFirst({
-      where: { usuario: { email: session.user.email }, empresaId: factura.empresaId },
+  try {
+    const factura = await prisma.facturaEmitida.findUnique({
+      where: { id: params.id },
+      include: {
+        empresa: { select: { razonSocial: true, cuit: true } },
+        operador: { select: { nombre: true, apellido: true } },
+        viajes: true,
+        pagos: true,
+      },
     })
-    if (!empUsr) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
-  } else if (!esRolInterno(rol)) {
-    return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
-  }
 
-  // Ocultar tarifaEmpresa si no tiene permiso
-  if (!puedeVerTarifaEmpresa(rol)) {
-    const factSinTarifas = {
-      ...factura,
-      viajes: factura.viajes.map((v) => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { tarifaEmpresa, ...resto } = v
-        return resto
-      }),
+    if (!factura) return NextResponse.json({ error: "Factura no encontrada" }, { status: 404 })
+
+    if (esRolEmpresa(rol)) {
+      const empUsr = await prisma.empresaUsuario.findFirst({
+        where: { usuario: { email: session.user.email }, empresaId: factura.empresaId },
+      })
+      if (!empUsr) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
+    } else if (!esRolInterno(rol)) {
+      return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
     }
-    return NextResponse.json(factSinTarifas)
-  }
 
-  return NextResponse.json(factura)
+    // Ocultar tarifaEmpresa si no tiene permiso
+    if (!puedeVerTarifaEmpresa(rol)) {
+      const factSinTarifas = {
+        ...factura,
+        viajes: factura.viajes.map((v) => {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { tarifaEmpresa, ...resto } = v
+          return resto
+        }),
+      }
+      return NextResponse.json(factSinTarifas)
+    }
+
+    return NextResponse.json(factura)
+  } catch (error) {
+    console.error("[GET /api/facturas/[id]]", error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
+  }
 }
 
 /**
@@ -202,6 +210,9 @@ export async function PATCH(
     return NextResponse.json(actualizada)
   } catch (error) {
     console.error("[PATCH /api/facturas/[id]]", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
   }
 }

@@ -52,12 +52,20 @@ export async function GET() {
     return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
   }
 
-  const camiones = await prisma.camion.findMany({
-    where: { ...whereClause, activo: true },
-    include: { fletero: { select: { razonSocial: true } } },
-    orderBy: { patenteChasis: "asc" },
-  })
-  return NextResponse.json(camiones)
+  try {
+    const camiones = await prisma.camion.findMany({
+      where: { ...whereClause, activo: true },
+      include: { fletero: { select: { razonSocial: true } } },
+      orderBy: { patenteChasis: "asc" },
+    })
+    return NextResponse.json(camiones)
+  } catch (error) {
+    console.error("[GET /api/camiones]", error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
+  }
 }
 
 /**
@@ -113,6 +121,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(camion, { status: 201 })
   } catch (error) {
     console.error("[POST /api/camiones]", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error desconocido", detail: String(error) },
+      { status: 500 }
+    )
   }
 }
