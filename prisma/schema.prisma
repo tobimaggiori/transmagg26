@@ -128,6 +128,7 @@ model Fletero {
   razonSocial     String  @map("razon_social")
   cuit            String  @unique
   condicionIva    String  @map("condicion_iva")
+  direccion       String? @map("direccion")
   comisionDefault Float   @map("comision_default")
   activo          Boolean @default(true)
 
@@ -273,9 +274,17 @@ model Liquidacion {
   neto          Float
   ivaMonto      Float    @map("iva_monto")
   total         Float
-  estado        String   @default("BORRADOR")
-  pdfS3Key      String?  @map("pdf_s3_key")
-  grabadaEn     DateTime @default(now()) @map("grabada_en")
+  estado             String   @default("BORRADOR")
+  nroComprobante     Int?     @map("nro_comprobante")
+  ptoVenta           Int?     @default(1)   @map("pto_venta")
+  tipoCbte           Int?     @default(186) @map("tipo_cbte")
+  cae                String?  @map("cae")
+  caeVto             DateTime? @map("cae_vto")
+  qrData             String?  @map("qr_data")
+  arcaEstado         String?  @default("PENDIENTE") @map("arca_estado")
+  arcaObservaciones  String?  @map("arca_observaciones")
+  pdfS3Key           String?  @map("pdf_s3_key")
+  grabadaEn          DateTime @default(now()) @map("grabada_en")
 
   fletero            Fletero              @relation(fields: [fleteroId], references: [id])
   operador           Usuario              @relation("OperadorLiquidacion", fields: [operadorId], references: [id])

@@ -14,22 +14,66 @@ import type { Rol } from "@/types"
 const actualizarSchema = z.object({
   razonSocial: z.string().min(1).optional(),
   condicionIva: z.string().min(1).optional(),
+  direccion: z.string().nullable().optional(),
   comisionDefault: z.number().min(0).max(100).optional(),
   telefono: z.string().optional(),
   activo: z.boolean().optional(),
 })
 
 /**
+ * GET: NextRequest { params: { id } } -> Promise<NextResponse>
+ *
+ * Dado el id del fletero, devuelve todos los datos del fletero incluyendo dirección
+ * y los datos de su usuario asociado.
+ * Existe para obtener el detalle completo de un fletero específico en formularios
+ * de edición y en el panel de liquidaciones.
+ *
+ * Ejemplos:
+ * GET /api/fleteros/f1 (sesión ADMIN_TRANSMAGG)
+ * // => 200 { id: "f1", razonSocial: "...", cuit: "...", direccion: "...", usuario: {...} }
+ * GET /api/fleteros/noexiste (sesión ADMIN_TRANSMAGG)
+ * // => 404 { error: "Fletero no encontrado" }
+ * GET /api/fleteros/f1 (sesión FLETERO)
+ * // => 403 { error: "Acceso denegado" }
+ */
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const session = await auth()
+  if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+  const rol = session.user.rol as Rol
+  if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
+
+  const fletero = await prisma.fletero.findUnique({
+    where: { id: params.id },
+    select: {
+      id: true,
+      razonSocial: true,
+      cuit: true,
+      condicionIva: true,
+      direccion: true,
+      comisionDefault: true,
+      activo: true,
+      usuario: { select: { nombre: true, apellido: true, email: true, telefono: true } },
+    },
+  })
+
+  if (!fletero) return NextResponse.json({ error: "Fletero no encontrado" }, { status: 404 })
+  return NextResponse.json(fletero)
+}
+
+/**
  * PATCH: NextRequest { params: { id } } -> Promise<NextResponse>
  *
- * Dado el id del fletero y campos opcionales { razonSocial, condicionIva, comisionDefault, telefono, activo },
+ * Dado el id del fletero y campos opcionales { razonSocial, condicionIva, direccion, comisionDefault, telefono, activo },
  * actualiza los datos del fletero y su usuario en paralelo si incluye teléfono.
  * Existe para permitir que el panel interno modifique datos de un fletero
  * sin necesidad de recrearlo, actualizando fletero y usuario atómicamente.
  *
  * Ejemplos:
- * PATCH /api/fleteros/f1 { comisionDefault: 12 }
- * // => 200 { id: "f1", comisionDefault: 12, usuario: {...} }
+ * PATCH /api/fleteros/f1 { comisionDefault: 12, direccion: "Av. Mitre 123" }
+ * // => 200 { id: "f1", comisionDefault: 12, direccion: "Av. Mitre 123", usuario: {...} }
  * PATCH /api/fleteros/noexiste { comisionDefault: 12 }
  * // => 404 { error: "Fletero no encontrado" }
  * PATCH /api/fleteros/f1 { comisionDefault: -5 }
@@ -69,7 +113,16 @@ export async function PATCH(
     await Promise.all(updates)
     const actualizado = await prisma.fletero.findUnique({
       where: { id: params.id },
-      include: { usuario: { select: { nombre: true, apellido: true, email: true, telefono: true } } },
+      select: {
+        id: true,
+        razonSocial: true,
+        cuit: true,
+        condicionIva: true,
+        direccion: true,
+        comisionDefault: true,
+        activo: true,
+        usuario: { select: { nombre: true, apellido: true, email: true, telefono: true } },
+      },
     })
 
     return NextResponse.json(actualizado)

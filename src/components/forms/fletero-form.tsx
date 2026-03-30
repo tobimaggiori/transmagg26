@@ -26,6 +26,7 @@ interface FormState {
   razonSocial: string
   cuit: string
   condicionIva: string
+  direccion: string
   comisionDefault: string
 }
 
@@ -37,6 +38,7 @@ const INITIAL: FormState = {
   razonSocial: "",
   cuit: "",
   condicionIva: "RESPONSABLE_INSCRIPTO",
+  direccion: "",
   comisionDefault: "10",
 }
 
@@ -165,6 +167,11 @@ export function FleteroForm({ onSuccess }: FleteroFormProps) {
             <option key={key} value={key}>{label}</option>
           ))}
         </Select>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="direccion">Dirección</Label>
+        <Input id="direccion" name="direccion" value={form.direccion} onChange={handleChange} disabled={loading} placeholder="Ej: Av. San Martín 1234, Buenos Aires" />
       </div>
 
       <FormError message={error} />

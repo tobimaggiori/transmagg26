@@ -19,6 +19,7 @@ const crearFleteroSchema = z.object({
   razonSocial: z.string().min(1),
   cuit: z.string().regex(/^\d{11}$/, "CUIT debe tener 11 dígitos"),
   condicionIva: z.string().min(1),
+  direccion: z.string().optional(),
   comisionDefault: z.number().min(0).max(100),
 })
 
@@ -26,13 +27,13 @@ const crearFleteroSchema = z.object({
  * GET: () -> Promise<NextResponse>
  *
  * Devuelve el listado de fleteros activos con datos de su usuario asociado,
- * ordenados por razón social ascendente.
+ * incluyendo dirección, ordenados por razón social ascendente.
  * Existe para que el panel interno pueda listar y seleccionar fleteros
  * en formularios de liquidaciones y camiones.
  *
  * Ejemplos:
  * GET /api/fleteros (sesión ADMIN_TRANSMAGG)
- * // => 200 [{ id, razonSocial, cuit, usuario: { nombre, apellido, email } }]
+ * // => 200 [{ id, razonSocial, cuit, direccion, usuario: { nombre, apellido, email } }]
  * GET /api/fleteros (sesión FLETERO)
  * // => 403 { error: "Acceso denegado" }
  * GET /api/fleteros (sin sesión)
@@ -46,7 +47,16 @@ export async function GET() {
 
   const fleteros = await prisma.fletero.findMany({
     where: { activo: true },
-    include: { usuario: { select: { nombre: true, apellido: true, email: true } } },
+    select: {
+      id: true,
+      razonSocial: true,
+      cuit: true,
+      condicionIva: true,
+      direccion: true,
+      comisionDefault: true,
+      activo: true,
+      usuario: { select: { nombre: true, apellido: true, email: true } },
+    },
     orderBy: { razonSocial: "asc" },
   })
   return NextResponse.json(fleteros)
@@ -81,7 +91,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { nombre, apellido, email, telefono, razonSocial, cuit, condicionIva, comisionDefault } = parsed.data
+    const { nombre, apellido, email, telefono, razonSocial, cuit, condicionIva, direccion, comisionDefault } = parsed.data
 
     // Verificar que el CUIT y email no estén en uso
     const [cuitExiste, emailExiste] = await Promise.all([
@@ -98,7 +108,7 @@ export async function POST(request: NextRequest) {
         data: { nombre, apellido, email, telefono, rol: "FLETERO" },
       })
       const fletero = await tx.fletero.create({
-        data: { usuarioId: usuario.id, razonSocial, cuit, condicionIva, comisionDefault },
+        data: { usuarioId: usuario.id, razonSocial, cuit, condicionIva, direccion, comisionDefault },
       })
       return { usuario, fletero }
     })
