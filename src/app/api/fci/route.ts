@@ -20,12 +20,16 @@ import { crearFciSchema } from "@/lib/financial-schemas"
  * GET() === NextResponse.json([{ id, diasHabilesAlerta, activo }])
  * GET() === NextResponse.json([])
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   const access = await requireFinancialAccess()
   if (!access.ok) return access.response
 
   try {
+    const { searchParams } = new URL(request.url)
+    const cuentaId = searchParams.get("cuentaId")
+
     const fondos = await prisma.fci.findMany({
+      where: cuentaId ? { cuentaId } : undefined,
       include: {
         cuenta: { select: { id: true, nombre: true, tipo: true, moneda: true } },
         saldos: { orderBy: { fechaActualizacion: "desc" }, take: 1 },

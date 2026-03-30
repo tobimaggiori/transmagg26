@@ -19,12 +19,16 @@ import { crearTarjetaPrepagaSchema } from "@/lib/financial-schemas"
  * GET() === NextResponse.json([{ id, limiteMensual, gastos }])
  * GET() === NextResponse.json([])
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   const access = await requireFinancialAccess()
   if (!access.ok) return access.response
 
   try {
+    const { searchParams } = new URL(request.url)
+    const cuentaId = searchParams.get("cuentaId")
+
     const tarjetas = await prisma.tarjetaPrepaga.findMany({
+      where: cuentaId ? { cuentaId } : undefined,
       include: {
         chofer: { select: { id: true, nombre: true, apellido: true, email: true } },
         cuenta: { select: { id: true, nombre: true } },

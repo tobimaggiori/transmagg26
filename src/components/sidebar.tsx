@@ -21,6 +21,8 @@ import {
   LogOut,
   Route,
   CreditCard,
+  Building2,
+  ArrowLeftRight,
 } from "lucide-react"
 
 /**
@@ -83,6 +85,18 @@ const NAV_ITEMS: NavItemDef[] = [
     label: "Cuentas Corrientes",
     icon: CreditCard,
     seccion: "cuentas_corrientes",
+  },
+  {
+    href: "/cuentas",
+    label: "Cuentas",
+    icon: Building2,
+    seccion: "cuentas",
+  },
+  {
+    href: "/pagos",
+    label: "Pagos",
+    icon: ArrowLeftRight,
+    seccion: "pagos",
   },
   {
     href: "/abm",

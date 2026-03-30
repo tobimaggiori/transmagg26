@@ -4,7 +4,7 @@
  * Solo accesible para ADMIN_TRANSMAGG y OPERADOR_TRANSMAGG.
  */
 
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
@@ -73,4 +73,71 @@ export async function GET() {
   }).sort((a, b) => b.saldoAPagar - a.saldoAPagar)
 
   return NextResponse.json(resultado)
+}
+
+/**
+ * POST: NextRequest -> Promise<NextResponse>
+ *
+ * Dado [un body con fleteroId, monto, tipo, referencia y fecha], registra un pago a fletero
+ * distribuyendo el monto contra las liquidaciones impagas más antiguas.
+ * Existe para registrar pagos desde /pagos y /cuentas-corrientes.
+ *
+ * Ejemplos:
+ * POST({ fleteroId, monto: 80000, tipo: "TRANSFERENCIA" }) === 201 [{ id, liquidacionId, monto }]
+ * POST({ fleteroId: "invalido", monto: 80000 }) === 404 { error: "Fletero no encontrado" }
+ * POST({ monto: -1 }) === 400 { error: "Datos inválidos" }
+ */
+export async function POST(request: NextRequest) {
+  const session = await auth()
+  if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+  const rol = session.user.rol as Rol
+  if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
+
+  try {
+    const body = await request.json()
+    const { fleteroId, monto, tipo, referencia, fecha } = body
+
+    if (!fleteroId || !monto || !tipo || !fecha) {
+      return NextResponse.json({ error: "Datos inválidos" }, { status: 400 })
+    }
+
+    const fletero = await prisma.fletero.findUnique({ where: { id: fleteroId } })
+    if (!fletero) return NextResponse.json({ error: "Fletero no encontrado" }, { status: 404 })
+
+    // Distribuir pago contra liquidaciones impagas (FIFO)
+    const liquidaciones = await prisma.liquidacion.findMany({
+      where: { fleteroId, estado: { not: "ANULADA" } },
+      include: { pagos: { select: { monto: true } } },
+      orderBy: { grabadaEn: "asc" },
+    })
+
+    let montoRestante = parseFloat(String(monto))
+    const pagosCreados = []
+
+    for (const l of liquidaciones) {
+      if (montoRestante <= 0) break
+      const pagado = l.pagos.reduce((acc, p) => acc + p.monto, 0)
+      const saldo = l.total - pagado
+      if (saldo <= 0) continue
+
+      const montoAplicar = Math.min(montoRestante, saldo)
+      const pago = await prisma.pagoAFletero.create({
+        data: {
+          fleteroId,
+          liquidacionId: l.id,
+          tipoPago: tipo,
+          monto: montoAplicar,
+          referencia: referencia ?? null,
+          fechaPago: new Date(fecha),
+        },
+      })
+      pagosCreados.push(pago)
+      montoRestante -= montoAplicar
+    }
+
+    return NextResponse.json(pagosCreados, { status: 201 })
+  } catch (error) {
+    console.error("[POST /api/cuentas-corrientes/fleteros]", error)
+    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+  }
 }

@@ -20,12 +20,16 @@ import { crearPlanillaGaliciaSchema } from "@/lib/financial-schemas"
  * GET() === NextResponse.json([{ id, estado, totalMonto, chequesEmitidos }])
  * GET() === NextResponse.json([])
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   const access = await requireFinancialAccess()
   if (!access.ok) return access.response
 
   try {
+    const { searchParams } = new URL(request.url)
+    const cuentaId = searchParams.get("cuentaId")
+
     const planillas = await prisma.planillaGalicia.findMany({
+      where: cuentaId ? { cuentaId } : undefined,
       include: {
         cuenta: { select: { id: true, nombre: true } },
         operador: { select: { id: true, nombre: true, apellido: true } },
