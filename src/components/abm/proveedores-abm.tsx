@@ -1,0 +1,258 @@
+"use client"
+
+/**
+ * Componente ABM para gestión de proveedores.
+ * Incluye búsqueda, creación, edición y desactivación.
+ */
+
+import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select } from "@/components/ui/select"
+import { FormError } from "@/components/ui/form-error"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
+import { formatearCuit } from "@/lib/utils"
+import { CondicionIva } from "@/types"
+import { Plus, Pencil, Trash2, Search } from "lucide-react"
+
+export interface ProveedorAbm {
+  id: string
+  razonSocial: string
+  cuit: string
+  condicionIva: string
+  rubro: string | null
+  activo: boolean
+}
+
+interface ProveedoresAbmProps {
+  proveedores: ProveedorAbm[]
+}
+
+/**
+ * calcularFiltroProveedor: ProveedorAbm string -> boolean
+ *
+ * Dado un proveedor y un texto de búsqueda, devuelve true si la razón social
+ * o el CUIT contienen el texto (insensible a mayúsculas).
+ * Existe para filtrar la lista de proveedores en el ABM sin roundtrips al servidor.
+ *
+ * Ejemplos:
+ * calcularFiltroProveedor({ razonSocial: "Gas SA", cuit: "30111222333" }, "gas") === true
+ * calcularFiltroProveedor({ razonSocial: "Gas SA", cuit: "30111222333" }, "301") === true
+ * calcularFiltroProveedor({ razonSocial: "Gas SA", cuit: "30111222333" }, "xyz") === false
+ */
+export function calcularFiltroProveedor(proveedor: ProveedorAbm, busqueda: string): boolean {
+  const q = busqueda.toLowerCase()
+  return proveedor.razonSocial.toLowerCase().includes(q) || proveedor.cuit.includes(q)
+}
+
+function ProveedorFormModal({ proveedor, onSuccess }: { proveedor?: ProveedorAbm; onSuccess: () => void }) {
+  const router = useRouter()
+  const [form, setForm] = useState({
+    razonSocial: proveedor?.razonSocial ?? "",
+    cuit: proveedor?.cuit ?? "",
+    condicionIva: proveedor?.condicionIva ?? "RESPONSABLE_INSCRIPTO",
+    rubro: proveedor?.rubro ?? "",
+  })
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const isEdit = !!proveedor
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    try {
+      const url = isEdit ? `/api/proveedores/${proveedor.id}` : "/api/proveedores"
+      const body = isEdit
+        ? { razonSocial: form.razonSocial, condicionIva: form.condicionIva, rubro: form.rubro || undefined }
+        : { ...form, rubro: form.rubro || undefined }
+      const res = await fetch(url, {
+        method: isEdit ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error ?? "Error al guardar"); return }
+      router.refresh()
+      onSuccess()
+    } catch {
+      setError("Error de conexión.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <div className="space-y-1">
+        <Label htmlFor="razonSocial">Razón social *</Label>
+        <Input id="razonSocial" name="razonSocial" value={form.razonSocial} onChange={handleChange} required disabled={loading} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label htmlFor="cuit">CUIT (11 dígitos) *</Label>
+          <Input id="cuit" name="cuit" value={form.cuit} onChange={handleChange} required disabled={loading || isEdit} maxLength={11} pattern="\d{11}" placeholder="30123456789" />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="condicionIva">Condición IVA *</Label>
+          <Select id="condicionIva" name="condicionIva" value={form.condicionIva} onChange={handleChange} disabled={loading}>
+            {Object.entries(CondicionIva).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </Select>
+        </div>
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="rubro">Rubro</Label>
+        <Input id="rubro" name="rubro" value={form.rubro} onChange={handleChange} disabled={loading} placeholder="Combustible, Peajes, etc." />
+      </div>
+      <FormError message={error} />
+      <div className="flex justify-end gap-2 pt-2">
+        <Button type="button" variant="outline" onClick={onSuccess} disabled={loading}>Cancelar</Button>
+        <Button type="submit" disabled={loading}>{loading ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear proveedor"}</Button>
+      </div>
+    </form>
+  )
+}
+
+/**
+ * ProveedoresAbm: ProveedoresAbmProps -> JSX.Element
+ *
+ * Dado el listado de proveedores, renderiza la tabla ABM con buscador,
+ * botones Editar/Desactivar y dialog de nuevo proveedor.
+ * Existe para gestionar el alta, baja y modificación de proveedores
+ * en la sección ABM, separada de la operatoria de facturas.
+ *
+ * Ejemplos:
+ * <ProveedoresAbm proveedores={[{ id:"p1", razonSocial:"Gas SA", cuit:"30111222333" }]} />
+ * // => lista filtrable con "Gas SA" + botones editar/desactivar
+ * <ProveedoresAbm proveedores={[]} />
+ * // => mensaje "No hay proveedores" + botón "Nuevo proveedor"
+ */
+export function ProveedoresAbm({ proveedores }: ProveedoresAbmProps) {
+  const router = useRouter()
+  const [busqueda, setBusqueda] = useState("")
+  const [dialogCrear, setDialogCrear] = useState(false)
+  const [dialogEditar, setDialogEditar] = useState<ProveedorAbm | null>(null)
+  const [dialogEliminar, setDialogEliminar] = useState<ProveedorAbm | null>(null)
+  const [loadingElim, setLoadingElim] = useState(false)
+  const [errorElim, setErrorElim] = useState<string | null>(null)
+
+  const filtrados = busqueda
+    ? proveedores.filter((p) => calcularFiltroProveedor(p, busqueda))
+    : proveedores
+
+  async function handleEliminar() {
+    if (!dialogEliminar) return
+    setLoadingElim(true)
+    setErrorElim(null)
+    try {
+      const res = await fetch(`/api/proveedores/${dialogEliminar.id}`, { method: "DELETE" })
+      const data = await res.json()
+      if (!res.ok) { setErrorElim(data.error ?? "Error al desactivar"); return }
+      router.refresh()
+      setDialogEliminar(null)
+    } catch {
+      setErrorElim("Error de conexión.")
+    } finally {
+      setLoadingElim(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por razón social o CUIT..."
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Button onClick={() => setDialogCrear(true)}>
+          <Plus className="h-4 w-4 mr-1" /> Nuevo proveedor
+        </Button>
+      </div>
+
+      {filtrados.length === 0 ? (
+        <p className="text-center py-8 text-muted-foreground">
+          {busqueda ? "Sin resultados para la búsqueda." : "No hay proveedores registrados."}
+        </p>
+      ) : (
+        <div className="border rounded-lg divide-y">
+          {filtrados.map((p) => (
+            <div key={p.id} className="flex items-center justify-between px-4 py-3">
+              <div>
+                <p className="font-medium">{p.razonSocial}</p>
+                <p className="text-sm text-muted-foreground">
+                  CUIT: {formatearCuit(p.cuit)}
+                  {p.rubro ? ` · ${p.rubro}` : ""}
+                  {" · "}{p.condicionIva.replace(/_/g, " ")}
+                  {!p.activo && <span className="ml-2 text-destructive">(inactivo)</span>}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setDialogEditar(p)}>
+                  <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
+                </Button>
+                <Button variant="destructive" size="sm" onClick={() => setDialogEliminar(p)} disabled={!p.activo}>
+                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Desactivar
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={dialogCrear} onOpenChange={setDialogCrear}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nuevo proveedor</DialogTitle>
+            <DialogDescription>Registrá un nuevo proveedor de servicios.</DialogDescription>
+          </DialogHeader>
+          <ProveedorFormModal onSuccess={() => setDialogCrear(false)} />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!dialogEditar} onOpenChange={(o) => { if (!o) setDialogEditar(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar proveedor</DialogTitle>
+            <DialogDescription>Modificá los datos del proveedor.</DialogDescription>
+          </DialogHeader>
+          {dialogEditar && <ProveedorFormModal proveedor={dialogEditar} onSuccess={() => setDialogEditar(null)} />}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!dialogEliminar} onOpenChange={(o) => { if (!o) { setDialogEliminar(null); setErrorElim(null) } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Desactivar proveedor</DialogTitle>
+            <DialogDescription>
+              ¿Desactivar <strong>{dialogEliminar?.razonSocial}</strong>? No se eliminarán las facturas históricas.
+            </DialogDescription>
+          </DialogHeader>
+          <FormError message={errorElim} />
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setDialogEliminar(null)} disabled={loadingElim}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleEliminar} disabled={loadingElim}>
+              {loadingElim ? "Desactivando..." : "Desactivar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
