@@ -2,19 +2,28 @@
 
 /**
  * Propósito: Componente cliente de la página de liquidaciones.
- * Selector de fletero → viajes pendientes (editables inline) + preview y confirmación.
+ * Selector de fletero → viajes pendientes (editables vía modal) + preview fullscreen y confirmación.
  * También muestra liquidaciones emitidas con detalle y cambio de estado.
  */
 
-import { Fragment, useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
+import { labelCondicionIva, formatearNroComprobante } from "@/lib/liquidacion-utils"
 import { WorkflowNote } from "@/components/workflow/workflow-note"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 type Fletero = { id: string; razonSocial: string; comisionDefault?: number }
+
+type FleteroInfo = {
+  razonSocial: string
+  cuit: string
+  condicionIva: string
+  direccion?: string | null
+  nroProximoComprobante: number
+}
 type Camion = { id: string; patenteChasis: string; fleteroId: string }
 type Chofer = { id: string; nombre: string; apellido: string }
 
@@ -228,13 +237,444 @@ function ModalDetalleLiquidacion({
   )
 }
 
+// ─── Modal editar viaje ───────────────────────────────────────────────────────
+
+function ModalEditarViaje({
+  viaje,
+  camiones,
+  choferes,
+  fleteroId,
+  onGuardar,
+  onCerrar,
+}: {
+  viaje: ViajeParaLiquidar
+  camiones: Camion[]
+  choferes: Chofer[]
+  fleteroId: string
+  onGuardar: (v: ViajeParaLiquidar) => void
+  onCerrar: () => void
+}) {
+  const [form, setForm] = useState<ViajeParaLiquidar>({ ...viaje })
+  const camionesDelFletero = camiones.filter((c) => c.fleteroId === fleteroId)
+
+  function set(campo: keyof ViajeParaLiquidar, valor: unknown) {
+    setForm((prev) => ({ ...prev, [campo]: valor }))
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-background rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Editar viaje</h2>
+          <button onClick={onCerrar} className="text-muted-foreground hover:text-foreground text-xl leading-none">&times;</button>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Fecha viaje</label>
+            <input
+              type="date"
+              value={form.fechaEdit ?? form.fechaViaje.slice(0, 10)}
+              onChange={(e) => set("fechaEdit", e.target.value)}
+              className="h-9 w-full rounded border bg-background px-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Remito</label>
+            <input
+              type="text"
+              value={form.remitoEdit ?? ""}
+              onChange={(e) => set("remitoEdit", e.target.value)}
+              className="h-9 w-full rounded border bg-background px-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Cupo</label>
+            <input
+              type="text"
+              value={form.cupoEdit ?? ""}
+              onChange={(e) => set("cupoEdit", e.target.value)}
+              className="h-9 w-full rounded border bg-background px-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Mercadería</label>
+            <input
+              type="text"
+              value={form.mercaderiaEdit ?? ""}
+              onChange={(e) => set("mercaderiaEdit", e.target.value)}
+              className="h-9 w-full rounded border bg-background px-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Procedencia</label>
+            <input
+              type="text"
+              value={form.procedenciaEdit ?? ""}
+              onChange={(e) => set("procedenciaEdit", e.target.value)}
+              className="h-9 w-full rounded border bg-background px-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Prov. Origen</label>
+            <input
+              type="text"
+              value={form.origenEdit ?? ""}
+              onChange={(e) => set("origenEdit", e.target.value)}
+              className="h-9 w-full rounded border bg-background px-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Destino</label>
+            <input
+              type="text"
+              value={form.destinoEdit ?? ""}
+              onChange={(e) => set("destinoEdit", e.target.value)}
+              className="h-9 w-full rounded border bg-background px-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Prov. Destino</label>
+            <input
+              type="text"
+              value={form.provinciaDestinoEdit ?? ""}
+              onChange={(e) => set("provinciaDestinoEdit", e.target.value)}
+              className="h-9 w-full rounded border bg-background px-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Kilos</label>
+            <input
+              type="number"
+              value={form.kilosEdit ?? form.kilos ?? ""}
+              onChange={(e) => set("kilosEdit", parseFloat(e.target.value) || undefined)}
+              min="0"
+              step="1"
+              className="h-9 w-full rounded border bg-background px-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Tarifa al fletero / ton</label>
+            <input
+              type="number"
+              value={form.tarifaEdit ?? form.tarifaOperativaInicial}
+              onChange={(e) => set("tarifaEdit", parseFloat(e.target.value) || form.tarifaOperativaInicial)}
+              min="0"
+              step="0.01"
+              className="h-9 w-full rounded border bg-background px-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Camión</label>
+            <select
+              value={form.camionIdEdit ?? form.camionId}
+              onChange={(e) => set("camionIdEdit", e.target.value)}
+              className="h-9 w-full rounded border bg-background px-2 text-sm"
+            >
+              {camionesDelFletero.map((c) => (
+                <option key={c.id} value={c.id}>{c.patenteChasis}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Chofer</label>
+            <select
+              value={form.choferIdEdit ?? form.choferId}
+              onChange={(e) => set("choferIdEdit", e.target.value)}
+              className="h-9 w-full rounded border bg-background px-2 text-sm"
+            >
+              {choferes.map((c) => (
+                <option key={c.id} value={c.id}>{c.apellido}, {c.nombre}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-6">
+          <button onClick={onCerrar} className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent">
+            Cancelar
+          </button>
+          <button
+            onClick={() => { onGuardar(form); onCerrar() }}
+            className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
+          >
+            Guardar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Modal preview liquidación (fullscreen) ───────────────────────────────────
+
+function ModalPreviewLiquidacion({
+  fletero,
+  viajesIniciales,
+  comisionPctInicial,
+  ivaPctInicial,
+  generando,
+  error,
+  onCancelar,
+  onConfirmar,
+}: {
+  fletero: FleteroInfo
+  viajesIniciales: ViajeParaLiquidar[]
+  comisionPctInicial: number
+  ivaPctInicial: number
+  generando: boolean
+  error: string | null
+  onCancelar: () => void
+  onConfirmar: (viajes: ViajeParaLiquidar[], comisionPct: number, ivaPct: number) => void
+}) {
+  const [viajes, setViajes] = useState<ViajeParaLiquidar[]>(viajesIniciales)
+  const [comisionPct, setComisionPct] = useState(comisionPctInicial)
+  const [ivaPct, setIvaPct] = useState(ivaPctInicial)
+
+  function actualizarCelda(id: string, campo: keyof ViajeParaLiquidar, valor: unknown) {
+    setViajes((prev) => prev.map((v) => v.id === id ? { ...v, [campo]: valor } : v))
+  }
+
+  const viajesParaCalc = viajes.map((v) => ({
+    kilos: v.kilosEdit ?? v.kilos ?? 0,
+    tarifaFletero: v.tarifaEdit ?? v.tarifaOperativaInicial,
+  }))
+  const preview = calcularLiquidacion(viajesParaCalc, comisionPct, ivaPct)
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
+        <h2 className="text-lg font-semibold">Liquidar {viajes.length} viaje(s) seleccionado(s)</h2>
+        <button onClick={onCancelar} className="text-muted-foreground hover:text-foreground text-xl leading-none">&times;</button>
+      </div>
+
+      {/* Tabla editable tipo excel */}
+      <div className="flex-1 overflow-auto px-6 py-4">
+        {/* Cabecera: datos del fletero */}
+        <div className="mb-4 rounded-md border bg-muted/40 px-5 py-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+            Liquidación a
+          </p>
+          <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+            <div>
+              <span className="text-muted-foreground">Razón Social: </span>
+              <span className="font-medium">{fletero.razonSocial}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">CUIT: </span>
+              <span className="font-medium">{fletero.cuit}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Condición IVA: </span>
+              <span className="font-medium">{labelCondicionIva(fletero.condicionIva)}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Dirección: </span>
+              <span className="font-medium">{fletero.direccion ?? "—"}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Nº Líquido Producto: </span>
+              <span className="font-mono font-bold text-base">{formatearNroComprobante(fletero.nroProximoComprobante)}</span>
+            </div>
+          </div>
+        </div>
+
+        {error && <div className="mb-3 p-3 bg-red-50 text-red-700 rounded text-sm">{error}</div>}
+        <div className="overflow-x-auto rounded border">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 sticky top-0">
+              <tr>
+                <th className="px-2 py-2 text-left whitespace-nowrap">Fecha</th>
+                <th className="px-2 py-2 text-left whitespace-nowrap">Remito</th>
+                <th className="px-2 py-2 text-left whitespace-nowrap">Cupo</th>
+                <th className="px-2 py-2 text-left whitespace-nowrap">Mercadería</th>
+                <th className="px-2 py-2 text-left whitespace-nowrap">Procedencia</th>
+                <th className="px-2 py-2 text-left whitespace-nowrap">Prov. Origen</th>
+                <th className="px-2 py-2 text-left whitespace-nowrap">Destino</th>
+                <th className="px-2 py-2 text-left whitespace-nowrap">Prov. Destino</th>
+                <th className="px-2 py-2 text-right whitespace-nowrap">Kilos</th>
+                <th className="px-2 py-2 text-right whitespace-nowrap">Tarifa</th>
+                <th className="px-2 py-2 text-right whitespace-nowrap">Ton</th>
+                <th className="px-2 py-2 text-right whitespace-nowrap">Importe</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {viajes.map((v) => {
+                const kilos = v.kilosEdit ?? v.kilos ?? 0
+                const tarifa = v.tarifaEdit ?? v.tarifaOperativaInicial
+                const ton = kilos > 0 ? calcularToneladas(kilos) : null
+                const importe = kilos > 0 ? calcularTotalViaje(kilos, tarifa) : null
+                return (
+                  <tr key={v.id} className="hover:bg-muted/20">
+                    <td className="px-1 py-1">
+                      <input
+                        type="date"
+                        value={v.fechaEdit ?? v.fechaViaje.slice(0, 10)}
+                        onChange={(e) => actualizarCelda(v.id, "fechaEdit", e.target.value)}
+                        className="h-7 w-28 rounded border bg-background px-1 text-xs"
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="text"
+                        value={v.remitoEdit ?? ""}
+                        onChange={(e) => actualizarCelda(v.id, "remitoEdit", e.target.value)}
+                        className="h-7 w-24 rounded border bg-background px-1 text-xs"
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="text"
+                        value={v.cupoEdit ?? ""}
+                        onChange={(e) => actualizarCelda(v.id, "cupoEdit", e.target.value)}
+                        className="h-7 w-20 rounded border bg-background px-1 text-xs"
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="text"
+                        value={v.mercaderiaEdit ?? ""}
+                        onChange={(e) => actualizarCelda(v.id, "mercaderiaEdit", e.target.value)}
+                        className="h-7 w-28 rounded border bg-background px-1 text-xs"
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="text"
+                        value={v.procedenciaEdit ?? ""}
+                        onChange={(e) => actualizarCelda(v.id, "procedenciaEdit", e.target.value)}
+                        className="h-7 w-28 rounded border bg-background px-1 text-xs"
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="text"
+                        value={v.origenEdit ?? ""}
+                        onChange={(e) => actualizarCelda(v.id, "origenEdit", e.target.value)}
+                        className="h-7 w-28 rounded border bg-background px-1 text-xs"
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="text"
+                        value={v.destinoEdit ?? ""}
+                        onChange={(e) => actualizarCelda(v.id, "destinoEdit", e.target.value)}
+                        className="h-7 w-28 rounded border bg-background px-1 text-xs"
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="text"
+                        value={v.provinciaDestinoEdit ?? ""}
+                        onChange={(e) => actualizarCelda(v.id, "provinciaDestinoEdit", e.target.value)}
+                        className="h-7 w-28 rounded border bg-background px-1 text-xs"
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="number"
+                        value={v.kilosEdit ?? v.kilos ?? ""}
+                        onChange={(e) => actualizarCelda(v.id, "kilosEdit", parseFloat(e.target.value) || undefined)}
+                        min="0"
+                        step="1"
+                        className="h-7 w-24 text-right rounded border bg-background px-1 text-xs"
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="number"
+                        value={v.tarifaEdit ?? v.tarifaOperativaInicial}
+                        onChange={(e) => actualizarCelda(v.id, "tarifaEdit", parseFloat(e.target.value) || v.tarifaOperativaInicial)}
+                        min="0"
+                        step="0.01"
+                        className="h-7 w-28 text-right rounded border bg-background px-1 text-xs"
+                      />
+                    </td>
+                    <td className="px-2 py-1 text-right text-muted-foreground text-xs">
+                      {ton?.toLocaleString("es-AR") ?? "-"}
+                    </td>
+                    <td className="px-2 py-1 text-right font-medium text-xs">
+                      {importe != null ? formatearMoneda(importe) : "-"}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="border-t px-6 py-4 shrink-0 bg-background">
+        <div className="flex flex-wrap items-end gap-6">
+          <div className="flex gap-4">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Comisión %</label>
+              <input
+                type="number"
+                value={comisionPct}
+                onChange={(e) => setComisionPct(parseFloat(e.target.value) || 0)}
+                min="0" max="100" step="0.01"
+                className="h-8 w-24 rounded border bg-background px-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">IVA %</label>
+              <input
+                type="number"
+                value={ivaPct}
+                onChange={(e) => setIvaPct(parseFloat(e.target.value) || 0)}
+                min="0" max="100" step="0.01"
+                className="h-8 w-24 rounded border bg-background px-2 text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex-1 text-sm space-y-0.5">
+            <div className="flex justify-end gap-8">
+              <span className="text-muted-foreground">Bruto ({viajes.length} viajes):</span>
+              <span className="w-36 text-right">{formatearMoneda(preview.subtotalBruto)}</span>
+            </div>
+            <div className="flex justify-end gap-8">
+              <span className="text-muted-foreground">Comisión ({comisionPct}%):</span>
+              <span className="w-36 text-right">- {formatearMoneda(preview.comisionMonto)}</span>
+            </div>
+            <div className="flex justify-end gap-8 font-medium">
+              <span>Neto:</span>
+              <span className="w-36 text-right">{formatearMoneda(preview.neto)}</span>
+            </div>
+            <div className="flex justify-end gap-8">
+              <span className="text-muted-foreground">IVA ({ivaPct}%):</span>
+              <span className="w-36 text-right">+ {formatearMoneda(preview.ivaMonto)}</span>
+            </div>
+            <div className="flex justify-end gap-8 font-bold text-base border-t pt-1">
+              <span>TOTAL FINAL:</span>
+              <span className="w-36 text-right">{formatearMoneda(preview.totalFinal)}</span>
+            </div>
+          </div>
+          <div className="flex gap-2 items-end">
+            <button onClick={onCancelar} className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent">
+              Cancelar
+            </button>
+            <button
+              onClick={() => onConfirmar(viajes, comisionPct, ivaPct)}
+              disabled={generando}
+              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+            >
+              {generando ? "Generando..." : "Confirmar y generar liquidación"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 /**
  * LiquidacionesClient: LiquidacionesClientProps -> JSX.Element
  *
  * Dado los datos de configuración del servidor, renderiza la UI completa de liquidaciones:
- * selector de fletero, tabla editable de viajes pendientes, preview de liquidación,
+ * selector de fletero, tabla de viajes pendientes, modales de edición y preview,
  * y sección de liquidaciones emitidas con modales de detalle.
  * Existe para gestionar el proceso de liquidación ARCA desde el panel.
  *
@@ -256,12 +696,28 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [enPreview, setEnPreview] = useState(false)
   const [comisionPct, setComisionPct] = useState<number>(10)
-  const [ivaPct, setIvaPct] = useState<number>(21)
+  const [ivaPct] = useState<number>(21)
   const [generando, setGenerando] = useState(false)
   const [errorGen, setErrorGen] = useState<string | null>(null)
   const [liquidacionDetalle, setLiquidacionDetalle] = useState<Liquidacion | null>(null)
   const [cambioEstadoCargando, setCambioEstadoCargando] = useState(false)
+  const [viajeEditando, setViajeEditando] = useState<ViajeParaLiquidar | null>(null)
+  const [fleteroInfo, setFleteroInfo] = useState<FleteroInfo | null>(null)
 
+  /**
+   * cargarDatos: () -> Promise<void>
+   *
+   * Sin parámetros (usa el estado fleteroId del closure), carga los viajes pendientes,
+   * liquidaciones, datos del fletero y el próximo número de comprobante desde la API.
+   * Esta función existe para sincronizar el estado local del panel con la base de datos
+   * cada vez que se selecciona un fletero o se confirma una liquidación.
+   *
+   * Ejemplos:
+   * // Con fleteroId vacío → no hace nada
+   * cargarDatos() // no ejecuta fetch
+   * // Con fleteroId válido → actualiza viajesPendientes, liquidaciones, fleteroInfo
+   * cargarDatos() // setViajesPendientes([...]), setLiquidaciones([...]), setFleteroInfo({...})
+   */
   const cargarDatos = useCallback(async () => {
     if (!fleteroId) return
     setCargando(true)
@@ -269,7 +725,6 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
       const res = await fetch(`/api/liquidaciones?fleteroId=${fleteroId}`)
       if (res.ok) {
         const data = await res.json()
-        // Inicializar edits locales con los valores del viaje
         const viajesConEdit = (data.viajesPendientes ?? []).map((v: ViajeParaLiquidar) => ({
           ...v,
           kilosEdit: v.kilos ?? undefined,
@@ -287,10 +742,16 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
         }))
         setViajesPendientes(viajesConEdit)
         setLiquidaciones(data.liquidaciones ?? [])
-        // Setear comision default del fletero si aplica
-        if (esInterno) {
-          const fletero = fleteros.find((f) => f.id === fleteroId)
-          if (fletero?.comisionDefault != null) setComisionPct(fletero.comisionDefault)
+        const fleteroEncontrado = fleteros.find((f) => f.id === fleteroId)
+        if (fleteroEncontrado) {
+          if (esInterno && fleteroEncontrado.comisionDefault != null) setComisionPct(fleteroEncontrado.comisionDefault)
+          setFleteroInfo({
+            razonSocial: fleteroEncontrado.razonSocial,
+            cuit: data.fletero?.cuit ?? "",
+            condicionIva: data.fletero?.condicionIva ?? "",
+            direccion: data.fletero?.direccion ?? null,
+            nroProximoComprobante: data.nroProximoComprobante ?? 1,
+          })
         }
       }
     } finally {
@@ -319,33 +780,22 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
     }
   }
 
-  function actualizarViaje(id: string, campo: keyof ViajeParaLiquidar, valor: unknown) {
-    setViajesPendientes((prev) =>
-      prev.map((v) => v.id === id ? { ...v, [campo]: valor } : v)
-    )
+  function guardarViajeEditado(v: ViajeParaLiquidar) {
+    setViajesPendientes((prev) => prev.map((vp) => vp.id === v.id ? v : vp))
   }
 
   const viajesSeleccionados = viajesPendientes.filter((v) => seleccionados.has(v.id))
 
-  // Calcular preview
-  const viajesParaCalc = viajesSeleccionados.map((v) => ({
-    kilos: v.kilosEdit ?? v.kilos ?? 0,
-    tarifaFletero: v.tarifaEdit ?? v.tarifaOperativaInicial,
-  }))
-  const preview = viajesParaCalc.length > 0
-    ? calcularLiquidacion(viajesParaCalc, comisionPct, ivaPct)
-    : null
-
-  async function confirmarLiquidacion() {
-    if (!fleteroId || viajesSeleccionados.length === 0) return
+  async function confirmarLiquidacion(viajesEditados: ViajeParaLiquidar[], comision: number, iva: number) {
+    if (!fleteroId || viajesEditados.length === 0) return
     setGenerando(true)
     setErrorGen(null)
     try {
       const body = {
         fleteroId,
-        comisionPct,
-        ivaPct,
-        viajes: viajesSeleccionados.map((v) => ({
+        comisionPct: comision,
+        ivaPct: iva,
+        viajes: viajesEditados.map((v) => ({
           viajeId: v.id,
           camionId: v.camionIdEdit ?? v.camionId,
           choferId: v.choferIdEdit ?? v.choferId,
@@ -454,12 +904,12 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
                   {viajesPendientes.length}
                 </span>
               </div>
-              {seleccionados.size > 0 && !enPreview && (
+              {seleccionados.size > 0 && (
                 <button
                   onClick={() => setEnPreview(true)}
                   className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
                 >
-                  Generar liquidación con {seleccionados.size} seleccionado(s)
+                  Liquidar seleccionados ({seleccionados.size})
                 </button>
               )}
             </div>
@@ -488,8 +938,9 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
                       <th className="px-3 py-2 text-left">Destino</th>
                       <th className="px-3 py-2 text-right">Kilos</th>
                       <th className="px-3 py-2 text-right">Ton</th>
-                      <th className="px-3 py-2 text-right">Tarifa al fletero / ton</th>
-                      <th className="px-3 py-2 text-right">Importe guardado</th>
+                      <th className="px-3 py-2 text-right">Tarifa / ton</th>
+                      <th className="px-3 py-2 text-right">Importe</th>
+                      <th className="px-3 py-2" />
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -498,153 +949,30 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
                       const tarifa = v.tarifaEdit ?? v.tarifaOperativaInicial
                       const ton = kilos > 0 ? calcularToneladas(kilos) : null
                       const total = kilos > 0 ? calcularTotalViaje(kilos, tarifa) : null
-                      const camionesDelFletero = camiones.filter((camion) => camion.fleteroId === fleteroId)
                       return (
-                        <Fragment key={v.id}>
-                        <tr className={seleccionados.has(v.id) ? "bg-blue-50" : "hover:bg-muted/30"}>
+                        <tr key={v.id} className={seleccionados.has(v.id) ? "bg-blue-50" : "hover:bg-muted/30"}>
                           <td className="px-3 py-2 text-center">
                             <input type="checkbox" checked={seleccionados.has(v.id)} onChange={() => toggleSeleccion(v.id)} />
                           </td>
                           <td className="px-3 py-2">{formatearFecha(v.fechaEdit ?? new Date(v.fechaViaje))}</td>
-                          <td className="px-3 py-2">{v.remitoEdit ?? v.remito ?? "-"}</td>
-                          <td className="px-3 py-2">{v.cupoEdit ?? v.cupo ?? "-"}</td>
-                          <td className="px-3 py-2">{v.mercaderiaEdit ?? v.mercaderia ?? "-"}</td>
-                          <td className="px-3 py-2">{v.origenEdit ?? v.provinciaOrigen ?? v.procedencia ?? "-"}</td>
-                          <td className="px-3 py-2">{v.provinciaDestinoEdit ?? v.destinoEdit ?? v.provinciaDestino ?? v.destino ?? "-"}</td>
-                          <td className="px-3 py-2 text-right">
-                            <input
-                              type="number"
-                              value={v.kilosEdit ?? v.kilos ?? ""}
-                              onChange={(e) => actualizarViaje(v.id, "kilosEdit", parseFloat(e.target.value) || undefined)}
-                              className="w-24 h-7 text-right rounded border bg-background px-2 text-xs"
-                              min="0"
-                              step="1"
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-right text-muted-foreground">
-                            {ton?.toLocaleString("es-AR") ?? "-"}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <input
-                              type="number"
-                              value={v.tarifaEdit ?? v.tarifaOperativaInicial}
-                              onChange={(e) => actualizarViaje(v.id, "tarifaEdit", parseFloat(e.target.value) || v.tarifaOperativaInicial)}
-                              className="w-28 h-7 text-right rounded border bg-background px-2 text-xs"
-                              min="0"
-                              step="0.01"
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-right font-medium">
-                            {total != null ? formatearMoneda(total) : "-"}
+                          <td className="px-3 py-2">{v.remitoEdit || v.remito || "-"}</td>
+                          <td className="px-3 py-2">{v.cupoEdit || v.cupo || "-"}</td>
+                          <td className="px-3 py-2">{v.mercaderiaEdit || v.mercaderia || "-"}</td>
+                          <td className="px-3 py-2">{v.origenEdit || v.provinciaOrigen || v.procedencia || "-"}</td>
+                          <td className="px-3 py-2">{v.provinciaDestinoEdit || v.destinoEdit || v.provinciaDestino || v.destino || "-"}</td>
+                          <td className="px-3 py-2 text-right">{kilos > 0 ? kilos.toLocaleString("es-AR") : "-"}</td>
+                          <td className="px-3 py-2 text-right text-muted-foreground">{ton?.toLocaleString("es-AR") ?? "-"}</td>
+                          <td className="px-3 py-2 text-right">{formatearMoneda(tarifa)}</td>
+                          <td className="px-3 py-2 text-right font-medium">{total != null ? formatearMoneda(total) : "-"}</td>
+                          <td className="px-3 py-2">
+                            <button
+                              onClick={() => setViajeEditando(v)}
+                              className="h-7 px-2 rounded border text-xs font-medium hover:bg-accent"
+                            >
+                              Editar
+                            </button>
                           </td>
                         </tr>
-                        <tr className={seleccionados.has(v.id) ? "bg-blue-50/50" : "bg-muted/20"}>
-                          <td />
-                          <td colSpan={10} className="px-3 pb-3">
-                            <div className="grid gap-3 md:grid-cols-4">
-                              <div>
-                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Fecha viaje</label>
-                                <input
-                                  type="date"
-                                  value={v.fechaEdit ?? v.fechaViaje.slice(0, 10)}
-                                  onChange={(e) => actualizarViaje(v.id, "fechaEdit", e.target.value)}
-                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
-                                />
-                              </div>
-                              <div>
-                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Camión</label>
-                                <select
-                                  value={v.camionIdEdit ?? v.camionId}
-                                  onChange={(e) => actualizarViaje(v.id, "camionIdEdit", e.target.value)}
-                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
-                                >
-                                  {camionesDelFletero.map((camion) => (
-                                    <option key={camion.id} value={camion.id}>{camion.patenteChasis}</option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div>
-                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Chofer</label>
-                                <select
-                                  value={v.choferIdEdit ?? v.choferId}
-                                  onChange={(e) => actualizarViaje(v.id, "choferIdEdit", e.target.value)}
-                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
-                                >
-                                  {choferes.map((chofer) => (
-                                    <option key={chofer.id} value={chofer.id}>{chofer.apellido}, {chofer.nombre}</option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div>
-                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Procedencia</label>
-                                <input
-                                  type="text"
-                                  value={v.procedenciaEdit ?? ""}
-                                  onChange={(e) => actualizarViaje(v.id, "procedenciaEdit", e.target.value)}
-                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
-                                />
-                              </div>
-                              <div>
-                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Provincia origen</label>
-                                <input
-                                  type="text"
-                                  value={v.origenEdit ?? ""}
-                                  onChange={(e) => actualizarViaje(v.id, "origenEdit", e.target.value)}
-                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
-                                />
-                              </div>
-                              <div>
-                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Destino</label>
-                                <input
-                                  type="text"
-                                  value={v.destinoEdit ?? ""}
-                                  onChange={(e) => actualizarViaje(v.id, "destinoEdit", e.target.value)}
-                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
-                                />
-                              </div>
-                              <div>
-                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Provincia destino</label>
-                                <input
-                                  type="text"
-                                  value={v.provinciaDestinoEdit ?? ""}
-                                  onChange={(e) => actualizarViaje(v.id, "provinciaDestinoEdit", e.target.value)}
-                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
-                                />
-                              </div>
-                              <div>
-                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Mercadería</label>
-                                <input
-                                  type="text"
-                                  value={v.mercaderiaEdit ?? ""}
-                                  onChange={(e) => actualizarViaje(v.id, "mercaderiaEdit", e.target.value)}
-                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
-                                />
-                              </div>
-                              <div>
-                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Remito</label>
-                                <input
-                                  type="text"
-                                  value={v.remitoEdit ?? ""}
-                                  onChange={(e) => actualizarViaje(v.id, "remitoEdit", e.target.value)}
-                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
-                                />
-                              </div>
-                              <div>
-                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Cupo</label>
-                                <input
-                                  type="text"
-                                  value={v.cupoEdit ?? ""}
-                                  onChange={(e) => actualizarViaje(v.id, "cupoEdit", e.target.value)}
-                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
-                                />
-                              </div>
-                              <div className="md:col-span-2 rounded border bg-background px-3 py-2 text-xs text-muted-foreground">
-                                Camión actual: {v.camion.patenteChasis} · Chofer actual: {v.chofer.apellido}, {v.chofer.nombre}
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                        </Fragment>
                       )
                     })}
                   </tbody>
@@ -652,62 +980,6 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
               </div>
             )}
           </div>
-
-          {/* PREVIEW de liquidación */}
-          {enPreview && preview && (
-            <div className="p-4 bg-muted/40 rounded-lg border space-y-3">
-              <h3 className="font-semibold">Preview de liquidación</h3>
-              <p className="text-sm text-muted-foreground">
-                Estos valores son los que van a quedar guardados dentro de la liquidación.
-              </p>
-              {errorGen && <div className="p-3 bg-red-50 text-red-700 rounded text-sm">{errorGen}</div>}
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Comisión %</label>
-                  <input
-                    type="number"
-                    value={comisionPct}
-                    onChange={(e) => setComisionPct(parseFloat(e.target.value) || 0)}
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    className="h-8 w-28 rounded border bg-background px-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">IVA %</label>
-                  <input
-                    type="number"
-                    value={ivaPct}
-                    onChange={(e) => setIvaPct(parseFloat(e.target.value) || 0)}
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    className="h-8 w-28 rounded border bg-background px-2 text-sm"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between"><span>Total viajes a guardar ({viajesSeleccionados.length}):</span><span>{formatearMoneda(preview.subtotalBruto)}</span></div>
-                <div className="flex justify-between"><span>Comisión ({comisionPct}%):</span><span>- {formatearMoneda(preview.comisionMonto)}</span></div>
-                <div className="flex justify-between font-medium"><span>Subtotal neto:</span><span>{formatearMoneda(preview.neto)}</span></div>
-                <div className="flex justify-between"><span>IVA ({ivaPct}%):</span><span>+ {formatearMoneda(preview.ivaMonto)}</span></div>
-                <div className="flex justify-between font-bold text-base border-t pt-2"><span>TOTAL FINAL:</span><span>{formatearMoneda(preview.totalFinal)}</span></div>
-              </div>
-              <div className="flex justify-end gap-2">
-                <button onClick={() => setEnPreview(false)} className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent">
-                  Volver
-                </button>
-                <button
-                  onClick={confirmarLiquidacion}
-                  disabled={generando}
-                  className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {generando ? "Generando..." : "Confirmar y generar"}
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* SECCIÓN B: Liquidaciones emitidas */}
           <div className="space-y-3">
@@ -747,13 +1019,39 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
         </>
       )}
 
-      {/* Modal detalle */}
+      {/* Modal detalle liquidación emitida */}
       {liquidacionDetalle && (
         <ModalDetalleLiquidacion
           liq={liquidacionDetalle}
           onCambiarEstado={(estado) => cambiarEstadoLiquidacion(liquidacionDetalle.id, estado)}
           onCerrar={() => setLiquidacionDetalle(null)}
           cargando={cambioEstadoCargando}
+        />
+      )}
+
+      {/* Modal editar viaje */}
+      {viajeEditando && (
+        <ModalEditarViaje
+          viaje={viajeEditando}
+          camiones={camiones}
+          choferes={choferes}
+          fleteroId={fleteroId}
+          onGuardar={guardarViajeEditado}
+          onCerrar={() => setViajeEditando(null)}
+        />
+      )}
+
+      {/* Modal preview / confirmar liquidación */}
+      {enPreview && (
+        <ModalPreviewLiquidacion
+          fletero={fleteroInfo ?? { razonSocial: "", cuit: "", condicionIva: "", nroProximoComprobante: 1 }}
+          viajesIniciales={viajesSeleccionados}
+          comisionPctInicial={comisionPct}
+          ivaPctInicial={ivaPct}
+          generando={generando}
+          error={errorGen}
+          onCancelar={() => { setEnPreview(false); setErrorGen(null) }}
+          onConfirmar={confirmarLiquidacion}
         />
       )}
     </div>

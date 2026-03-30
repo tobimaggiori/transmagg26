@@ -42,18 +42,43 @@ const crearLiquidacionSchema = z.object({
 })
 
 /**
+ * calcularProximoNroComprobante: PrismaClient -> Promise<number>
+ *
+ * Dado el cliente de Prisma, devuelve el próximo número de comprobante disponible,
+ * calculado como el máximo nroComprobante registrado en la tabla liquidaciones más 1,
+ * o 1 si no existe ninguna liquidación aún.
+ * Esta función existe para asignar numeración correlativa a los líquidos producto
+ * antes de enviarlos a ARCA, siguiendo la regla de numeración global por punto de venta.
+ *
+ * Ejemplos:
+ * // Sin liquidaciones en BD:
+ * calcularProximoNroComprobante(prisma) === Promise<1>
+ * // Con última liquidación nroComprobante = 5:
+ * calcularProximoNroComprobante(prisma) === Promise<6>
+ */
+async function calcularProximoNroComprobante(db: typeof prisma): Promise<number> {
+  const ultima = await db.liquidacion.findFirst({
+    orderBy: { nroComprobante: "desc" },
+    select: { nroComprobante: true },
+  })
+  return (ultima?.nroComprobante ?? 0) + 1
+}
+
+/**
  * GET: NextRequest -> Promise<NextResponse>
  *
- * Devuelve viajes pendientes de liquidar (estadoLiquidacion="PENDIENTE_LIQUIDAR")
- * y las liquidaciones existentes del fletero especificado.
+ * Dado un fleteroId opcional por query param, devuelve los viajes pendientes de liquidar
+ * (estadoLiquidacion="PENDIENTE_LIQUIDAR"), las liquidaciones existentes del fletero,
+ * los datos del fletero (con dirección) y el próximo número de comprobante disponible.
  * Roles internos pueden filtrar por fleteroId; FLETERO solo ve los suyos.
- * Existe para el panel de liquidaciones mostrando qué liquidar y qué ya está liquidado.
+ * Existe para el panel de liquidaciones mostrando qué liquidar y qué ya está liquidado,
+ * y para precalcular el nroComprobante que se mostrará en el preview antes de confirmar.
  *
  * Ejemplos:
  * GET /api/liquidaciones?fleteroId=f1 (sesión ADMIN_TRANSMAGG)
- * // => 200 { viajesPendientes: [...], liquidaciones: [...] }
+ * // => 200 { viajesPendientes: [...], liquidaciones: [...], fletero: {...}, nroProximoComprobante: 3 }
  * GET /api/liquidaciones (sesión FLETERO)
- * // => 200 { viajesPendientes: [...], liquidaciones: [...] } (solo los suyos)
+ * // => 200 { viajesPendientes: [...], liquidaciones: [...], fletero: null, nroProximoComprobante: 3 }
  * GET /api/liquidaciones (sesión ADMIN_EMPRESA)
  * // => 403 { error: "Acceso denegado" }
  */
@@ -89,7 +114,7 @@ export async function GET(request: NextRequest) {
   const whereLiquidaciones: Record<string, unknown> = {}
   if (fleteroIdReal) whereLiquidaciones.fleteroId = fleteroIdReal
 
-  const [viajesRaw, liquidaciones] = await Promise.all([
+  const [viajesRaw, liquidaciones, fleteroData, nroProximoComprobante] = await Promise.all([
     prisma.viaje.findMany({
       where: whereViajes,
       select: {
@@ -127,6 +152,13 @@ export async function GET(request: NextRequest) {
       orderBy: { grabadaEn: "desc" },
       take: 100,
     }),
+    fleteroIdReal
+      ? prisma.fletero.findUnique({
+          where: { id: fleteroIdReal },
+          select: { id: true, razonSocial: true, cuit: true, condicionIva: true, direccion: true },
+        })
+      : Promise.resolve(null),
+    calcularProximoNroComprobante(prisma),
   ])
 
   // Calcular toneladas y total en los viajes pendientes
@@ -137,7 +169,7 @@ export async function GET(request: NextRequest) {
     total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaOperativaInicial) : null,
   }))
 
-  return NextResponse.json({ viajesPendientes, liquidaciones })
+  return NextResponse.json({ viajesPendientes, liquidaciones, fletero: fleteroData, nroProximoComprobante })
 }
 
 /**
@@ -174,6 +206,8 @@ export async function POST(request: NextRequest) {
     const fletero = await prisma.fletero.findFirst({ where: { id: fleteroId, activo: true } })
     if (!fletero) return NextResponse.json({ error: "Fletero no encontrado" }, { status: 404 })
 
+    const nroComprobante = await calcularProximoNroComprobante(prisma)
+
     // Verificar que todos los viajes existen, pertenecen al fletero y están pendientes de liquidar
     const viajeIds = viajes.map((v) => v.viajeId)
     const viajesExistentes = await prisma.viaje.findMany({
@@ -208,6 +242,10 @@ export async function POST(request: NextRequest) {
           ivaMonto,
           total: totalFinal,
           estado: EstadoLiquidacionDocumento.BORRADOR,
+          nroComprobante,
+          ptoVenta: 1,
+          tipoCbte: 186,
+          arcaEstado: "PENDIENTE",
         },
       })
 
