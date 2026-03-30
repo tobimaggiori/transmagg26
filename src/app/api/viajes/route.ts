@@ -1,11 +1,11 @@
 /**
  * API Routes para gestión de viajes.
- * GET  /api/viajes - Lista viajes (filtrado por rol)
+ * GET  /api/viajes - Lista viajes (filtrado por rol y params)
  * POST /api/viajes - Crea viaje standalone (ADMIN/OPERADOR_TRANSMAGG)
  *
- * Los viajes se crean independientemente y luego se asocian a liquidaciones/facturas.
+ * Los viajes tienen estados independientes para liquidación y factura.
  * SEGURIDAD:
- * - tarifaBase nunca se expone a roles de empresa ni de fletero directamente
+ * - tarifaBase nunca se expone a roles de empresa ni de fletero
  * - Fletero solo ve sus propios viajes
  * - Empresa solo ve sus propios viajes
  */
@@ -15,6 +15,7 @@ import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno, esRolEmpresa } from "@/lib/permissions"
+import { calcularToneladas, calcularTotalViaje } from "@/lib/viajes"
 import type { Rol } from "@/types"
 
 const crearViajeSchema = z.object({
@@ -32,23 +33,25 @@ const crearViajeSchema = z.object({
   provinciaDestino: z.string().optional(),
   kilos: z.number().positive().optional(),
   tarifaBase: z.number().positive("La tarifa debe ser mayor a 0"),
+  estadoLiquidacion: z.string().default("PENDIENTE_LIQUIDAR"),
+  estadoFactura: z.string().default("PENDIENTE_FACTURAR"),
 })
 
 /**
  * GET: NextRequest -> Promise<NextResponse>
  *
- * Devuelve hasta 100 viajes filtrados por rol y estado opcional (?estado=PENDIENTE).
- * Roles externos reciben el viaje sin tarifaBase; FLETERO/CHOFER/empresa
- * solo ven sus propios viajes. Roles internos ven todos con tarifaBase.
- * Existe para el listado de viajes en el panel con filtros por rol.
+ * Devuelve hasta 200 viajes filtrados por rol y parámetros opcionales.
+ * Incluye empresa.razonSocial, fletero.razonSocial, estadoLiquidacion, estadoFactura, kilos, tarifaBase.
+ * Roles externos no reciben tarifaBase; roles internos reciben todo.
+ * Existe para el listado de viajes con cálculos de toneladas y totales.
  *
  * Ejemplos:
  * GET /api/viajes (sesión ADMIN_TRANSMAGG)
- * // => 200 [{ id, tarifaBase, fletero, empresa, ... }]
- * GET /api/viajes?estado=PENDIENTE (sesión FLETERO)
- * // => 200 [{ id, estado: "PENDIENTE", ... }] (sin tarifaBase, solo sus viajes)
- * GET /api/viajes (sesión CHOFER sin viajes)
- * // => 200 []
+ * // => 200 [{ id, tarifaBase, estadoLiquidacion, estadoFactura, toneladas, total, empresa, fletero }]
+ * GET /api/viajes?fleteroId=f1 (sesión OPERADOR_TRANSMAGG)
+ * // => 200 viajes filtrados por fletero
+ * GET /api/viajes (sesión FLETERO)
+ * // => 200 viajes propios sin tarifaBase
  */
 export async function GET(request: NextRequest) {
   const session = await auth()
@@ -56,31 +59,48 @@ export async function GET(request: NextRequest) {
 
   const rol = session.user.rol as Rol
   const { searchParams } = new URL(request.url)
-  const estado = searchParams.get("estado")
+  const fleteroId = searchParams.get("fleteroId")
+  const empresaId = searchParams.get("empresaId")
+  const estadoLiquidacion = searchParams.get("estadoLiquidacion")
+  const estadoFactura = searchParams.get("estadoFactura")
+  const desde = searchParams.get("desde")
+  const hasta = searchParams.get("hasta")
 
   let whereClause: Record<string, unknown> = {}
 
-  if (estado) whereClause.estado = estado
-
   if (rol === "FLETERO") {
-    whereClause = {
-      ...whereClause,
-      fletero: { usuario: { email: session.user.email } },
-    }
+    whereClause = { fletero: { usuario: { email: session.user.email } } }
   } else if (rol === "CHOFER") {
-    whereClause = {
-      ...whereClause,
-      chofer: { email: session.user.email },
-    }
+    whereClause = { chofer: { email: session.user.email } }
   } else if (esRolEmpresa(rol)) {
     const empUsr = await prisma.empresaUsuario.findFirst({
       where: { usuario: { email: session.user.email } },
       select: { empresaId: true },
     })
     if (!empUsr) return NextResponse.json([])
-    whereClause = { ...whereClause, empresaId: empUsr.empresaId }
+    whereClause = { empresaId: empUsr.empresaId }
   } else if (!esRolInterno(rol)) {
     return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
+  }
+
+  // Filtros adicionales para roles internos
+  if (esRolInterno(rol)) {
+    if (fleteroId) whereClause.fleteroId = fleteroId
+    if (empresaId) whereClause.empresaId = empresaId
+  }
+
+  if (estadoLiquidacion) whereClause.estadoLiquidacion = estadoLiquidacion
+  if (estadoFactura) whereClause.estadoFactura = estadoFactura
+
+  if (desde || hasta) {
+    const fechaWhere: Record<string, Date> = {}
+    if (desde) fechaWhere.gte = new Date(desde)
+    if (hasta) {
+      const h = new Date(hasta)
+      h.setHours(23, 59, 59, 999)
+      fechaWhere.lte = h
+    }
+    whereClause.fechaViaje = fechaWhere
   }
 
   const viajes = await prisma.viaje.findMany({
@@ -93,34 +113,40 @@ export async function GET(request: NextRequest) {
       operador: { select: { nombre: true, apellido: true } },
     },
     orderBy: { fechaViaje: "desc" },
-    take: 100,
+    take: 200,
   })
+
+  // Agregar toneladas y total calculados
+  const viajesConCalculo = viajes.map((v) => ({
+    ...v,
+    toneladas: v.kilos != null ? calcularToneladas(v.kilos) : null,
+    total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaBase) : null,
+  }))
 
   // No exponer tarifaBase a roles externos
   if (!esRolInterno(rol)) {
     return NextResponse.json(
-      viajes.map((v) => {
+      viajesConCalculo.map((v) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { tarifaBase, ...resto } = v
+        const { tarifaBase, total, ...resto } = v
         return resto
       })
     )
   }
 
-  return NextResponse.json(viajes)
+  return NextResponse.json(viajesConCalculo)
 }
 
 /**
  * POST: NextRequest -> Promise<NextResponse>
  *
- * Dado el body con fleteroId, camionId, choferId, empresaId, fechaViaje y tarifaBase,
- * crea un viaje en estado PENDIENTE verificando que todas las entidades existan y estén activas.
- * Existe para que operadores internos carguen viajes standalone que luego
- * se asociarán a liquidaciones y facturas independientemente.
+ * Dado el body con los campos del viaje, crea un viaje con estados
+ * estadoLiquidacion="PENDIENTE_LIQUIDAR" y estadoFactura="PENDIENTE_FACTURAR".
+ * Existe para que operadores internos carguen viajes standalone.
  *
  * Ejemplos:
  * POST /api/viajes { fleteroId, camionId, choferId, empresaId, fechaViaje: "2026-03-15", tarifaBase: 50000 }
- * // => 201 { id, estado: "PENDIENTE", tarifaBase: 50000 }
+ * // => 201 { id, estadoLiquidacion: "PENDIENTE_LIQUIDAR", estadoFactura: "PENDIENTE_FACTURAR" }
  * POST /api/viajes { ...datos, fleteroId: "noexiste" }
  * // => 404 { error: "Fletero no encontrado" }
  * POST /api/viajes (sesión FLETERO)
@@ -139,7 +165,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { fleteroId, camionId, choferId, empresaId, fechaViaje, tarifaBase, ...resto } = parsed.data
+    const { fleteroId, camionId, choferId, empresaId, fechaViaje, tarifaBase, estadoLiquidacion, estadoFactura, ...resto } = parsed.data
 
     const [fletero, camion, chofer, empresa] = await Promise.all([
       prisma.fletero.findUnique({ where: { id: fleteroId, activo: true } }),
@@ -162,8 +188,13 @@ export async function POST(request: NextRequest) {
         operadorId: session.user.id,
         fechaViaje: new Date(fechaViaje),
         tarifaBase,
-        estado: "PENDIENTE",
+        estadoLiquidacion,
+        estadoFactura,
         ...resto,
+      },
+      include: {
+        fletero: { select: { razonSocial: true } },
+        empresa: { select: { razonSocial: true } },
       },
     })
 

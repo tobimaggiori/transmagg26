@@ -550,7 +550,8 @@ async function main() {
       provinciaDestino: "Córdoba",
       kilos: 18000,
       tarifaBase: 160000,
-      estado: "EN_LIQUIDACION",
+      estadoLiquidacion: "LIQUIDADO",
+      estadoFactura: "PENDIENTE_FACTURAR",
     },
   })
 
@@ -568,7 +569,8 @@ async function main() {
       provinciaDestino: "Mendoza",
       kilos: 22000,
       tarifaBase: 195000,
-      estado: "PENDIENTE",
+      estadoLiquidacion: "PENDIENTE_LIQUIDAR",
+      estadoFactura: "PENDIENTE_FACTURAR",
     },
   })
 
@@ -586,7 +588,8 @@ async function main() {
       provinciaDestino: "Buenos Aires",
       kilos: 15000,
       tarifaBase: 145000,
-      estado: "EN_FACTURA",
+      estadoLiquidacion: "PENDIENTE_LIQUIDAR",
+      estadoFactura: "FACTURADO",
     },
   })
 
@@ -608,6 +611,7 @@ async function main() {
     data: {
       viajeId: viaje1.id,
       liquidacionId: liquidacion.id,
+      fechaViaje: viaje1.fechaViaje,
       tarifaFletero: 150000,
       subtotal: 150000,
     },
@@ -631,6 +635,7 @@ async function main() {
     data: {
       viajeId: viaje3.id,
       facturaId: factura.id,
+      fechaViaje: viaje3.fechaViaje,
       tarifaEmpresa: 200000,
       subtotal: 200000,
     },

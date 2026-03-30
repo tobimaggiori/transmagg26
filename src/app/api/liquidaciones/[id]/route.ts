@@ -1,9 +1,10 @@
 /**
  * API Routes para liquidación individual.
  * GET   /api/liquidaciones/[id] - Detalle de liquidación con viajes
- * PATCH /api/liquidaciones/[id] - Cambia estado (BORRADOR→EMITIDA→PAGADA / ANULADA)
+ * PATCH /api/liquidaciones/[id] - Cambia estado (BORRADOR→EMITIDA / ANULADA)
  *
- * Cuando se ANULA una liquidación, sus viajes vuelven a estado PENDIENTE.
+ * Cuando se ANULA una liquidación, sus viajes vuelven a estadoLiquidacion="PENDIENTE_LIQUIDAR".
+ * Al pasar a EMITIDA el operador confirma que está cargada en ARCA.
  */
 
 import { NextRequest, NextResponse } from "next/server"
@@ -27,16 +28,16 @@ const actualizarSchema = z.object({
 /**
  * GET: NextRequest { params: { id } } -> Promise<NextResponse>
  *
- * Dado el id de la liquidación, devuelve el detalle completo con viajes, pagos y
- * datos del fletero. FLETERO solo accede a las suyas; tarifaFletero oculta si no tiene permiso.
+ * Dado el id de la liquidación, devuelve el detalle completo con viajes copiados,
+ * pagos y datos del fletero. FLETERO solo accede a las suyas; tarifaFletero oculta si no tiene permiso.
  * Existe para la vista de detalle de una liquidación con toda la información
  * necesaria para verificar y aprobar el pago al fletero.
  *
  * Ejemplos:
  * GET /api/liquidaciones/liq1 (sesión ADMIN_TRANSMAGG)
- * // => 200 { id: "liq1", total, viajes: [{ tarifaFletero, viaje: {...} }], pagos: [...] }
+ * // => 200 { id: "liq1", total, viajes: [{ tarifaFletero, subtotal, kilos, ... }], pagos: [...] }
  * GET /api/liquidaciones/liq1 (sesión FLETERO dueño)
- * // => 200 { id: "liq1", viajes: [{ tarifaFletero, viaje: {...} }] }
+ * // => 200 { id: "liq1", viajes: [{ tarifaFletero, subtotal, kilos, ... }] }
  * GET /api/liquidaciones/liq1 (sesión ADMIN_EMPRESA)
  * // => 403 { error: "Acceso denegado" }
  */
@@ -54,17 +55,7 @@ export async function GET(
     include: {
       fletero: { select: { razonSocial: true, cuit: true } },
       operador: { select: { nombre: true, apellido: true } },
-      viajes: {
-        include: {
-          viaje: {
-            include: {
-              camion: { select: { patenteChasis: true, tipoCamion: true } },
-              chofer: { select: { nombre: true, apellido: true } },
-              empresa: { select: { razonSocial: true } },
-            },
-          },
-        },
-      },
+      viajes: true,
       pagos: true,
     },
   })
@@ -101,15 +92,14 @@ export async function GET(
  *
  * Dado el id de la liquidación y { estado }, avanza el estado según
  * las transiciones válidas: BORRADOR→EMITIDA/ANULADA, EMITIDA→PAGADA/ANULADA.
- * Al anular, devuelve todos los viajes asociados a estado PENDIENTE.
- * Existe para gestionar el ciclo de vida de una liquidación y permitir
- * correcciones mediante anulación.
+ * Al anular, devuelve todos los viajes asociados a estadoLiquidacion="PENDIENTE_LIQUIDAR".
+ * Existe para gestionar el ciclo de vida de una liquidación y permitir correcciones.
  *
  * Ejemplos:
  * PATCH /api/liquidaciones/liq1 { estado: "EMITIDA" } (liq en BORRADOR)
  * // => 200 { id: "liq1", estado: "EMITIDA" }
  * PATCH /api/liquidaciones/liq1 { estado: "ANULADA" } (liq en EMITIDA)
- * // => 200 { id: "liq1", estado: "ANULADA" } (viajes vuelven a PENDIENTE)
+ * // => 200 { id: "liq1", estado: "ANULADA" } (viajes vuelven a PENDIENTE_LIQUIDAR)
  * PATCH /api/liquidaciones/liq1 { estado: "BORRADOR" } (transición inválida)
  * // => 422 { error: "No se puede cambiar de EMITIDA a BORRADOR" }
  */
@@ -149,13 +139,13 @@ export async function PATCH(
         data: { estado: parsed.data.estado },
       })
 
-      // Si se anula, liberar viajes
+      // Si se anula, liberar viajes (solo estadoLiquidacion, NO tocar estadoFactura)
       if (parsed.data.estado === "ANULADA") {
         const viajeIds = liquidacion.viajes.map((v) => v.viajeId)
         if (viajeIds.length > 0) {
           await tx.viaje.updateMany({
             where: { id: { in: viajeIds } },
-            data: { estado: "PENDIENTE" },
+            data: { estadoLiquidacion: "PENDIENTE_LIQUIDAR" },
           })
         }
       }

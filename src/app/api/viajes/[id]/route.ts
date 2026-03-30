@@ -1,8 +1,8 @@
 /**
  * API Routes para viaje individual.
  * GET   /api/viajes/[id] - Detalle de viaje
- * PATCH /api/viajes/[id] - Actualiza datos o estado del viaje
- * DELETE /api/viajes/[id] - Elimina viaje PENDIENTE
+ * PATCH /api/viajes/[id] - Actualiza datos del viaje (libre, sin restricción de estado)
+ * DELETE /api/viajes/[id] - Elimina viaje que no tenga liquidaciones ni facturas
  */
 
 import { NextRequest, NextResponse } from "next/server"
@@ -10,18 +10,19 @@ import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
+import { calcularToneladas, calcularTotalViaje } from "@/lib/viajes"
 import type { Rol } from "@/types"
 
 const actualizarViajeSchema = z.object({
   fechaViaje: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  remito: z.string().optional(),
-  cupo: z.string().optional(),
-  mercaderia: z.string().optional(),
-  procedencia: z.string().optional(),
-  provinciaOrigen: z.string().optional(),
-  destino: z.string().optional(),
-  provinciaDestino: z.string().optional(),
-  kilos: z.number().positive().optional(),
+  remito: z.string().nullable().optional(),
+  cupo: z.string().nullable().optional(),
+  mercaderia: z.string().nullable().optional(),
+  procedencia: z.string().nullable().optional(),
+  provinciaOrigen: z.string().nullable().optional(),
+  destino: z.string().nullable().optional(),
+  provinciaDestino: z.string().nullable().optional(),
+  kilos: z.number().positive().nullable().optional(),
   tarifaBase: z.number().positive().optional(),
 })
 
@@ -29,13 +30,12 @@ const actualizarViajeSchema = z.object({
  * GET: NextRequest { params: { id } } -> Promise<NextResponse>
  *
  * Dado el id del viaje, devuelve el detalle completo incluyendo fletero, camión,
- * chofer, empresa, operador y sus liquidaciones/facturas asociadas.
- * Solo accesible por roles internos. Existe para la vista de detalle
- * de un viaje desde el panel de gestión.
+ * chofer, empresa, operador, enLiquidaciones y enFacturas.
+ * Solo accesible por roles internos. Existe para la vista de detalle del viaje.
  *
  * Ejemplos:
  * GET /api/viajes/v1 (sesión ADMIN_TRANSMAGG)
- * // => 200 { id: "v1", tarifaBase, enLiquidaciones: [...], enFacturas: [...] }
+ * // => 200 { id: "v1", estadoLiquidacion, estadoFactura, toneladas, total, ... }
  * GET /api/viajes/noexiste (sesión ADMIN_TRANSMAGG)
  * // => 404 { error: "Viaje no encontrado" }
  * GET /api/viajes/v1 (sesión FLETERO)
@@ -69,24 +69,29 @@ export async function GET(
 
   if (!viaje) return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 })
 
-  return NextResponse.json(viaje)
+  return NextResponse.json({
+    ...viaje,
+    toneladas: viaje.kilos != null ? calcularToneladas(viaje.kilos) : null,
+    total: viaje.kilos != null ? calcularTotalViaje(viaje.kilos, viaje.tarifaBase) : null,
+  })
 }
 
 /**
  * PATCH: NextRequest { params: { id } } -> Promise<NextResponse>
  *
- * Dado el id del viaje y campos opcionales de actualización, modifica el viaje
- * solo si está en estado PENDIENTE.
- * Existe para corregir datos de un viaje antes de que sea incorporado
- * a una liquidación o factura, momento en que queda bloqueado.
+ * Dado el id del viaje y campos opcionales de actualización, modifica el viaje.
+ * La edición es libre — NO restringe por estado. Si el viaje está liquidado o facturado,
+ * se avisa al cliente pero se permite igual (para correcciones).
+ * NUNCA modifica liquidaciones ni facturas existentes.
+ * Existe para corregir datos de un viaje en cualquier momento del ciclo de vida.
  *
  * Ejemplos:
- * PATCH /api/viajes/v1 { mercaderia: "Granos" } (viaje PENDIENTE)
- * // => 200 { id: "v1", mercaderia: "Granos", estado: "PENDIENTE" }
- * PATCH /api/viajes/v1 { mercaderia: "Granos" } (viaje EN_LIQUIDACION)
- * // => 422 { error: "Solo se pueden editar viajes en estado PENDIENTE" }
+ * PATCH /api/viajes/v1 { mercaderia: "Granos" }
+ * // => 200 { id: "v1", mercaderia: "Granos", estadoLiquidacion, estadoFactura }
  * PATCH /api/viajes/noexiste { mercaderia: "Granos" }
  * // => 404 { error: "Viaje no encontrado" }
+ * PATCH /api/viajes/v1 (sesión FLETERO)
+ * // => 403 { error: "Acceso denegado" }
  */
 export async function PATCH(
   request: NextRequest,
@@ -107,10 +112,6 @@ export async function PATCH(
     const viaje = await prisma.viaje.findUnique({ where: { id: params.id } })
     if (!viaje) return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 })
 
-    if (viaje.estado !== "PENDIENTE") {
-      return NextResponse.json({ error: "Solo se pueden editar viajes en estado PENDIENTE" }, { status: 422 })
-    }
-
     const { fechaViaje, ...resto } = parsed.data
     const actualizado = await prisma.viaje.update({
       where: { id: params.id },
@@ -118,9 +119,26 @@ export async function PATCH(
         ...resto,
         ...(fechaViaje ? { fechaViaje: new Date(fechaViaje) } : {}),
       },
+      include: {
+        fletero: { select: { razonSocial: true } },
+        empresa: { select: { razonSocial: true } },
+      },
     })
 
-    return NextResponse.json(actualizado)
+    const avisos: string[] = []
+    if (viaje.estadoLiquidacion === "LIQUIDADO") {
+      avisos.push("Este viaje ya está incluido en una liquidación. Los datos de la liquidación no se modificaron.")
+    }
+    if (viaje.estadoFactura === "FACTURADO") {
+      avisos.push("Este viaje ya está incluido en una factura. Los datos de la factura no se modificaron.")
+    }
+
+    return NextResponse.json({
+      ...actualizado,
+      toneladas: actualizado.kilos != null ? calcularToneladas(actualizado.kilos) : null,
+      total: actualizado.kilos != null ? calcularTotalViaje(actualizado.kilos, actualizado.tarifaBase) : null,
+      _avisos: avisos.length > 0 ? avisos : undefined,
+    })
   } catch (error) {
     console.error("[PATCH /api/viajes/[id]]", error)
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
@@ -130,15 +148,14 @@ export async function PATCH(
 /**
  * DELETE: NextRequest { params: { id } } -> Promise<NextResponse>
  *
- * Dado el id del viaje, lo elimina permanentemente solo si está en PENDIENTE.
- * Existe para deshacer viajes cargados por error antes de que sean
- * incluidos en una liquidación o factura.
+ * Dado el id del viaje, lo elimina si no tiene liquidaciones ni facturas asociadas.
+ * Existe para deshacer viajes cargados por error.
  *
  * Ejemplos:
- * DELETE /api/viajes/v1 (viaje PENDIENTE)
+ * DELETE /api/viajes/v1 (viaje sin liquidaciones ni facturas)
  * // => 204 (sin cuerpo)
- * DELETE /api/viajes/v2 (viaje EN_LIQUIDACION)
- * // => 422 { error: "Solo se pueden eliminar viajes en estado PENDIENTE" }
+ * DELETE /api/viajes/v2 (viaje con liquidacion asociada)
+ * // => 422 { error: "No se puede eliminar un viaje que ya tiene liquidaciones o facturas" }
  * DELETE /api/viajes/noexiste
  * // => 404 { error: "Viaje no encontrado" }
  */
@@ -151,12 +168,17 @@ export async function DELETE(
   const rol = session.user.rol as Rol
   if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
 
-  const viaje = await prisma.viaje.findUnique({ where: { id: params.id } })
+  const viaje = await prisma.viaje.findUnique({
+    where: { id: params.id },
+    include: {
+      _count: { select: { enLiquidaciones: true, enFacturas: true } },
+    },
+  })
   if (!viaje) return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 })
 
-  if (viaje.estado !== "PENDIENTE") {
+  if (viaje._count.enLiquidaciones > 0 || viaje._count.enFacturas > 0) {
     return NextResponse.json(
-      { error: "Solo se pueden eliminar viajes en estado PENDIENTE" },
+      { error: "No se puede eliminar un viaje que ya tiene liquidaciones o facturas asociadas" },
       { status: 422 }
     )
   }

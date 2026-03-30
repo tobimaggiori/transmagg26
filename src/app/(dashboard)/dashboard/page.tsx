@@ -63,7 +63,7 @@ async function obtenerEstadisticas(rol: Rol) {
   }
 
   if (puedeAcceder(rol, "viajes")) {
-    stats.viajesPendientes = await prisma.viaje.count({ where: { estado: "PENDIENTE" } })
+    stats.viajesPendientes = await prisma.viaje.count({ where: { estadoLiquidacion: "PENDIENTE_LIQUIDAR" } })
   }
 
   return stats
