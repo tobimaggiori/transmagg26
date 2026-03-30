@@ -12,17 +12,31 @@ import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno, puedeVerTarifaFletero } from "@/lib/permissions"
+import {
+  EstadoLiquidacionDocumento,
+  resolverEstadoLiquidacionViaje,
+} from "@/lib/viaje-workflow"
 import type { Rol } from "@/types"
 
 const TRANSICIONES_VALIDAS: Record<string, string[]> = {
-  BORRADOR: ["EMITIDA", "ANULADA"],
-  EMITIDA: ["PAGADA", "ANULADA"],
-  PAGADA: [],
-  ANULADA: [],
+  [EstadoLiquidacionDocumento.BORRADOR]: [
+    EstadoLiquidacionDocumento.EMITIDA,
+    EstadoLiquidacionDocumento.ANULADA,
+  ],
+  [EstadoLiquidacionDocumento.EMITIDA]: [
+    EstadoLiquidacionDocumento.PAGADA,
+    EstadoLiquidacionDocumento.ANULADA,
+  ],
+  [EstadoLiquidacionDocumento.PAGADA]: [],
+  [EstadoLiquidacionDocumento.ANULADA]: [],
 }
 
 const actualizarSchema = z.object({
-  estado: z.enum(["EMITIDA", "PAGADA", "ANULADA"]),
+  estado: z.enum([
+    EstadoLiquidacionDocumento.EMITIDA,
+    EstadoLiquidacionDocumento.PAGADA,
+    EstadoLiquidacionDocumento.ANULADA,
+  ]),
 })
 
 /**
@@ -140,13 +154,41 @@ export async function PATCH(
       })
 
       // Si se anula, liberar viajes (solo estadoLiquidacion, NO tocar estadoFactura)
-      if (parsed.data.estado === "ANULADA") {
+      if (parsed.data.estado === EstadoLiquidacionDocumento.ANULADA) {
         const viajeIds = liquidacion.viajes.map((v) => v.viajeId)
         if (viajeIds.length > 0) {
-          await tx.viaje.updateMany({
-            where: { id: { in: viajeIds } },
-            data: { estadoLiquidacion: "PENDIENTE_LIQUIDAR" },
+          const liquidacionesActivasRestantes = await tx.viajeEnLiquidacion.findMany({
+            where: {
+              viajeId: { in: viajeIds },
+              liquidacionId: { not: params.id },
+              liquidacion: {
+                estado: { not: EstadoLiquidacionDocumento.ANULADA },
+              },
+            },
+            select: { viajeId: true, liquidacion: { select: { estado: true } } },
           })
+
+          const estadosPorViaje = new Map<string, Array<typeof EstadoLiquidacionDocumento[keyof typeof EstadoLiquidacionDocumento]>>()
+          for (const viajeId of viajeIds) {
+            estadosPorViaje.set(viajeId, [])
+          }
+
+          for (const liquidacionRelacionada of liquidacionesActivasRestantes) {
+            const estados = estadosPorViaje.get(liquidacionRelacionada.viajeId) ?? []
+            estados.push(liquidacionRelacionada.liquidacion.estado as typeof EstadoLiquidacionDocumento[keyof typeof EstadoLiquidacionDocumento])
+            estadosPorViaje.set(liquidacionRelacionada.viajeId, estados)
+          }
+
+          for (const viajeId of viajeIds) {
+            await tx.viaje.update({
+              where: { id: viajeId },
+              data: {
+                estadoLiquidacion: resolverEstadoLiquidacionViaje(
+                  estadosPorViaje.get(viajeId) ?? []
+                ),
+              },
+            })
+          }
         }
       }
 

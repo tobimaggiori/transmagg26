@@ -1,5 +1,12 @@
 // ─── Roles ────────────────────────────────────────────────────────────────────
 
+import {
+  EstadoFacturaDocumento,
+  EstadoFacturaViaje,
+  EstadoLiquidacionDocumento,
+  EstadoLiquidacionViaje,
+} from "@/lib/viaje-workflow"
+
 export const Roles = {
   ADMIN_TRANSMAGG: "ADMIN_TRANSMAGG",
   OPERADOR_TRANSMAGG: "OPERADOR_TRANSMAGG",
@@ -16,19 +23,9 @@ export const ROLES_EXTERNOS: Rol[] = ["FLETERO", "CHOFER", "ADMIN_EMPRESA", "OPE
 
 // ─── Enums de negocio ─────────────────────────────────────────────────────────
 
-export const EstadoLiquidacion = {
-  BORRADOR: "BORRADOR",
-  EMITIDA: "EMITIDA",
-  PAGADA: "PAGADA",
-  ANULADA: "ANULADA",
-} as const
-
-export const EstadoFactura = {
-  PENDIENTE: "PENDIENTE",
-  EMITIDA: "EMITIDA",
-  COBRADA: "COBRADA",
-  ANULADA: "ANULADA",
-} as const
+export { EstadoLiquidacionDocumento as EstadoLiquidacion }
+export { EstadoFacturaDocumento as EstadoFactura }
+export { EstadoLiquidacionViaje, EstadoFacturaViaje }
 
 export const EstadoArca = {
   PENDIENTE: "PENDIENTE",
@@ -70,10 +67,10 @@ export const TipoCbte = {
 } as const
 
 export const EstadoViaje = {
-  PENDIENTE: "PENDIENTE",
-  EN_LIQUIDACION: "EN_LIQUIDACION",
-  EN_FACTURA: "EN_FACTURA",
-  COMPLETO: "COMPLETO",
+  PENDIENTE_LIQUIDAR: "PENDIENTE_LIQUIDAR",
+  LIQUIDADO: "LIQUIDADO",
+  PENDIENTE_FACTURAR: "PENDIENTE_FACTURAR",
+  FACTURADO: "FACTURADO",
 } as const
 
 export type EstadoViajeType = keyof typeof EstadoViaje

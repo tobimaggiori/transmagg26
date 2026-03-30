@@ -36,6 +36,8 @@ export default async function FacturasPage() {
 
   let empresas: { id: string; razonSocial: string }[] = []
   let empresaIdPropia: string | null = null
+  let camiones: { id: string; patenteChasis: string; fleteroId: string }[] = []
+  let choferes: { id: string; nombre: string; apellido: string }[] = []
 
   if (esRolEmpresa(rol)) {
     const empUsr = await prisma.empresaUsuario.findFirst({
@@ -44,17 +46,32 @@ export default async function FacturasPage() {
     })
     if (empUsr) empresaIdPropia = empUsr.empresaId
   } else if (esRolInterno(rol)) {
-    empresas = await prisma.empresa.findMany({
-      where: { activa: true },
-      select: { id: true, razonSocial: true },
-      orderBy: { razonSocial: "asc" },
-    })
+    const data = await Promise.all([
+      prisma.empresa.findMany({
+        where: { activa: true },
+        select: { id: true, razonSocial: true },
+        orderBy: { razonSocial: "asc" },
+      }),
+      prisma.camion.findMany({
+        where: { activo: true },
+        select: { id: true, patenteChasis: true, fleteroId: true },
+        orderBy: { patenteChasis: "asc" },
+      }),
+      prisma.usuario.findMany({
+        where: { rol: "CHOFER", activo: true },
+        select: { id: true, nombre: true, apellido: true },
+        orderBy: { apellido: "asc" },
+      }),
+    ])
+    ;[empresas, camiones, choferes] = data
   }
 
   return (
     <FacturasClient
       rol={rol}
       empresas={empresas}
+      camiones={camiones}
+      choferes={choferes}
       empresaIdPropia={empresaIdPropia}
     />
   )

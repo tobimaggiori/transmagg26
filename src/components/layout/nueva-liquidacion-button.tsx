@@ -21,7 +21,7 @@ interface ViajeDisponible {
   provinciaOrigen?: string | null
   provinciaDestino?: string | null
   kilos?: number | null
-  tarifaBase: number
+  tarifaOperativaInicial: number
   empresa: { razonSocial: string }
   camion: { patenteChasis: string }
   chofer: { nombre: string; apellido: string }

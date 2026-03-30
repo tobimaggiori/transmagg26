@@ -43,7 +43,7 @@ export async function GET() {
         fechaViaje: string
         procedencia: string | null
         destino: string | null
-        tarifaBase: number
+        tarifaOperativaInicial: number
       }>
     }>()
 
@@ -59,15 +59,15 @@ export async function GET() {
         })
       }
       const entry = porEmpresa.get(key)!
-      const tarifaBase = v.tarifaBase ?? 0
-      entry.totalTarifaBase += tarifaBase
+      const tarifaOperativaInicial = v.tarifaOperativaInicial ?? 0
+      entry.totalTarifaBase += tarifaOperativaInicial
       entry.cantidadViajes += 1
       entry.viajes.push({
         id: v.id,
         fechaViaje: v.fechaViaje.toISOString(),
         procedencia: v.procedencia,
         destino: v.destino,
-        tarifaBase,
+        tarifaOperativaInicial,
       })
     }
 

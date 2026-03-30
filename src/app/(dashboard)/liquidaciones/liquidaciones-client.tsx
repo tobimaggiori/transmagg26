@@ -6,20 +6,27 @@
  * También muestra liquidaciones emitidas con detalle y cambio de estado.
  */
 
-import { useState, useCallback, useEffect } from "react"
+import { Fragment, useState, useCallback, useEffect } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
+import { WorkflowNote } from "@/components/workflow/workflow-note"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 type Fletero = { id: string; razonSocial: string; comisionDefault?: number }
+type Camion = { id: string; patenteChasis: string; fleteroId: string }
+type Chofer = { id: string; nombre: string; apellido: string }
 
 type ViajeParaLiquidar = {
   id: string
   fechaViaje: string
   empresaId: string
   empresa: { razonSocial: string }
+  camionId: string
+  camion: { patenteChasis: string }
+  choferId: string
+  chofer: { nombre: string; apellido: string }
   remito: string | null
   cupo: string | null
   mercaderia: string | null
@@ -28,7 +35,7 @@ type ViajeParaLiquidar = {
   destino: string | null
   provinciaDestino: string | null
   kilos: number | null
-  tarifaBase: number
+  tarifaOperativaInicial: number
   estadoFactura: string
   // editados localmente
   kilosEdit?: number
@@ -41,6 +48,8 @@ type ViajeParaLiquidar = {
   origenEdit?: string
   destinoEdit?: string
   provinciaDestinoEdit?: string
+  camionIdEdit?: string
+  choferIdEdit?: string
 }
 
 type ViajeEnLiquidacion = {
@@ -79,6 +88,8 @@ type Liquidacion = {
 type LiquidacionesClientProps = {
   rol: Rol
   fleteros: Fletero[]
+  camiones: Camion[]
+  choferes: Chofer[]
   fleteroIdPropio: string | null
 }
 
@@ -143,8 +154,8 @@ function ModalDetalleLiquidacion({
                 <th className="px-3 py-2 text-left">Destino</th>
                 <th className="px-3 py-2 text-right">Kilos</th>
                 <th className="px-3 py-2 text-right">Ton</th>
-                <th className="px-3 py-2 text-right">Tarifa/ton</th>
-                <th className="px-3 py-2 text-right">Subtotal</th>
+                <th className="px-3 py-2 text-right">Tarifa al fletero / ton</th>
+                <th className="px-3 py-2 text-right">Importe guardado</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -235,7 +246,7 @@ function ModalDetalleLiquidacion({
  * // Con fletero seleccionado → tabla de viajes + lista de liquidaciones
  * <LiquidacionesClient rol="ADMIN_TRANSMAGG" fleteros={[...]} fleteroIdPropio={null} />
  */
-export function LiquidacionesClient({ rol, fleteros, fleteroIdPropio }: LiquidacionesClientProps) {
+export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fleteroIdPropio }: LiquidacionesClientProps) {
   const esInterno = rol === "ADMIN_TRANSMAGG" || rol === "OPERADOR_TRANSMAGG"
 
   const [fleteroId, setFleteroId] = useState<string>(fleteroIdPropio ?? "")
@@ -262,7 +273,7 @@ export function LiquidacionesClient({ rol, fleteros, fleteroIdPropio }: Liquidac
         const viajesConEdit = (data.viajesPendientes ?? []).map((v: ViajeParaLiquidar) => ({
           ...v,
           kilosEdit: v.kilos ?? undefined,
-          tarifaEdit: v.tarifaBase,
+          tarifaEdit: v.tarifaOperativaInicial,
           fechaEdit: v.fechaViaje.slice(0, 10),
           remitoEdit: v.remito ?? "",
           cupoEdit: v.cupo ?? "",
@@ -271,6 +282,8 @@ export function LiquidacionesClient({ rol, fleteros, fleteroIdPropio }: Liquidac
           origenEdit: v.provinciaOrigen ?? "",
           destinoEdit: v.destino ?? "",
           provinciaDestinoEdit: v.provinciaDestino ?? "",
+          camionIdEdit: v.camionId,
+          choferIdEdit: v.choferId,
         }))
         setViajesPendientes(viajesConEdit)
         setLiquidaciones(data.liquidaciones ?? [])
@@ -317,7 +330,7 @@ export function LiquidacionesClient({ rol, fleteros, fleteroIdPropio }: Liquidac
   // Calcular preview
   const viajesParaCalc = viajesSeleccionados.map((v) => ({
     kilos: v.kilosEdit ?? v.kilos ?? 0,
-    tarifaFletero: v.tarifaEdit ?? v.tarifaBase,
+    tarifaFletero: v.tarifaEdit ?? v.tarifaOperativaInicial,
   }))
   const preview = viajesParaCalc.length > 0
     ? calcularLiquidacion(viajesParaCalc, comisionPct, ivaPct)
@@ -334,6 +347,8 @@ export function LiquidacionesClient({ rol, fleteros, fleteroIdPropio }: Liquidac
         ivaPct,
         viajes: viajesSeleccionados.map((v) => ({
           viajeId: v.id,
+          camionId: v.camionIdEdit ?? v.camionId,
+          choferId: v.choferIdEdit ?? v.choferId,
           fechaViaje: v.fechaEdit ?? v.fechaViaje.slice(0, 10),
           remito: v.remitoEdit || null,
           cupo: v.cupoEdit || null,
@@ -343,7 +358,7 @@ export function LiquidacionesClient({ rol, fleteros, fleteroIdPropio }: Liquidac
           destino: v.destinoEdit || null,
           provinciaDestino: v.provinciaDestinoEdit || null,
           kilos: v.kilosEdit ?? v.kilos ?? 0,
-          tarifaFletero: v.tarifaEdit ?? v.tarifaBase,
+          tarifaFletero: v.tarifaEdit ?? v.tarifaOperativaInicial,
         })),
       }
       const res = await fetch("/api/liquidaciones", {
@@ -386,8 +401,23 @@ export function LiquidacionesClient({ rol, fleteros, fleteroIdPropio }: Liquidac
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Liquidaciones</h2>
         <p className="text-muted-foreground">
-          {rol === "FLETERO" ? "Tus liquidaciones de viajes" : "Líquido Producto ARCA"}
+          {rol === "FLETERO" ? "Tus liquidaciones de viajes" : "Circuito de liquidación al fletero"}
         </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <WorkflowNote
+          titulo="Datos guardados"
+          descripcion="La liquidación guarda los datos del viaje y la tarifa al fletero tal como están en ese momento."
+        />
+        <WorkflowNote
+          titulo="Edición previa"
+          descripcion="Antes de generar el líquido producto podés ajustar kilos, fecha y tarifa específica del fletero."
+        />
+        <WorkflowNote
+          titulo="Independencia"
+          descripcion="Un viaje puede estar liquidado al fletero y seguir pendiente de facturar a la empresa."
+        />
       </div>
 
       {/* Selector de Fletero */}
@@ -441,7 +471,7 @@ export function LiquidacionesClient({ rol, fleteros, fleteroIdPropio }: Liquidac
             ) : (
               <div className="overflow-x-auto rounded-lg border">
                 <table className="w-full text-sm">
-                  <thead className="bg-muted/50">
+                  <thead className="bg-slate-50">
                     <tr>
                       <th className="px-3 py-2">
                         <input
@@ -458,27 +488,29 @@ export function LiquidacionesClient({ rol, fleteros, fleteroIdPropio }: Liquidac
                       <th className="px-3 py-2 text-left">Destino</th>
                       <th className="px-3 py-2 text-right">Kilos</th>
                       <th className="px-3 py-2 text-right">Ton</th>
-                      <th className="px-3 py-2 text-right">Tarifa/ton</th>
-                      <th className="px-3 py-2 text-right">Total</th>
+                      <th className="px-3 py-2 text-right">Tarifa al fletero / ton</th>
+                      <th className="px-3 py-2 text-right">Importe guardado</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {viajesPendientes.map((v) => {
                       const kilos = v.kilosEdit ?? v.kilos ?? 0
-                      const tarifa = v.tarifaEdit ?? v.tarifaBase
+                      const tarifa = v.tarifaEdit ?? v.tarifaOperativaInicial
                       const ton = kilos > 0 ? calcularToneladas(kilos) : null
                       const total = kilos > 0 ? calcularTotalViaje(kilos, tarifa) : null
+                      const camionesDelFletero = camiones.filter((camion) => camion.fleteroId === fleteroId)
                       return (
-                        <tr key={v.id} className={seleccionados.has(v.id) ? "bg-blue-50" : "hover:bg-muted/30"}>
+                        <Fragment key={v.id}>
+                        <tr className={seleccionados.has(v.id) ? "bg-blue-50" : "hover:bg-muted/30"}>
                           <td className="px-3 py-2 text-center">
                             <input type="checkbox" checked={seleccionados.has(v.id)} onChange={() => toggleSeleccion(v.id)} />
                           </td>
-                          <td className="px-3 py-2">{formatearFecha(new Date(v.fechaViaje))}</td>
-                          <td className="px-3 py-2">{v.remito ?? "-"}</td>
-                          <td className="px-3 py-2">{v.cupo ?? "-"}</td>
-                          <td className="px-3 py-2">{v.mercaderia ?? "-"}</td>
-                          <td className="px-3 py-2">{v.provinciaOrigen ?? v.procedencia ?? "-"}</td>
-                          <td className="px-3 py-2">{v.provinciaDestino ?? v.destino ?? "-"}</td>
+                          <td className="px-3 py-2">{formatearFecha(v.fechaEdit ?? new Date(v.fechaViaje))}</td>
+                          <td className="px-3 py-2">{v.remitoEdit ?? v.remito ?? "-"}</td>
+                          <td className="px-3 py-2">{v.cupoEdit ?? v.cupo ?? "-"}</td>
+                          <td className="px-3 py-2">{v.mercaderiaEdit ?? v.mercaderia ?? "-"}</td>
+                          <td className="px-3 py-2">{v.origenEdit ?? v.provinciaOrigen ?? v.procedencia ?? "-"}</td>
+                          <td className="px-3 py-2">{v.provinciaDestinoEdit ?? v.destinoEdit ?? v.provinciaDestino ?? v.destino ?? "-"}</td>
                           <td className="px-3 py-2 text-right">
                             <input
                               type="number"
@@ -495,8 +527,8 @@ export function LiquidacionesClient({ rol, fleteros, fleteroIdPropio }: Liquidac
                           <td className="px-3 py-2 text-right">
                             <input
                               type="number"
-                              value={v.tarifaEdit ?? v.tarifaBase}
-                              onChange={(e) => actualizarViaje(v.id, "tarifaEdit", parseFloat(e.target.value) || v.tarifaBase)}
+                              value={v.tarifaEdit ?? v.tarifaOperativaInicial}
+                              onChange={(e) => actualizarViaje(v.id, "tarifaEdit", parseFloat(e.target.value) || v.tarifaOperativaInicial)}
                               className="w-28 h-7 text-right rounded border bg-background px-2 text-xs"
                               min="0"
                               step="0.01"
@@ -506,6 +538,113 @@ export function LiquidacionesClient({ rol, fleteros, fleteroIdPropio }: Liquidac
                             {total != null ? formatearMoneda(total) : "-"}
                           </td>
                         </tr>
+                        <tr className={seleccionados.has(v.id) ? "bg-blue-50/50" : "bg-muted/20"}>
+                          <td />
+                          <td colSpan={10} className="px-3 pb-3">
+                            <div className="grid gap-3 md:grid-cols-4">
+                              <div>
+                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Fecha viaje</label>
+                                <input
+                                  type="date"
+                                  value={v.fechaEdit ?? v.fechaViaje.slice(0, 10)}
+                                  onChange={(e) => actualizarViaje(v.id, "fechaEdit", e.target.value)}
+                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Camión</label>
+                                <select
+                                  value={v.camionIdEdit ?? v.camionId}
+                                  onChange={(e) => actualizarViaje(v.id, "camionIdEdit", e.target.value)}
+                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
+                                >
+                                  {camionesDelFletero.map((camion) => (
+                                    <option key={camion.id} value={camion.id}>{camion.patenteChasis}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Chofer</label>
+                                <select
+                                  value={v.choferIdEdit ?? v.choferId}
+                                  onChange={(e) => actualizarViaje(v.id, "choferIdEdit", e.target.value)}
+                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
+                                >
+                                  {choferes.map((chofer) => (
+                                    <option key={chofer.id} value={chofer.id}>{chofer.apellido}, {chofer.nombre}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Procedencia</label>
+                                <input
+                                  type="text"
+                                  value={v.procedenciaEdit ?? ""}
+                                  onChange={(e) => actualizarViaje(v.id, "procedenciaEdit", e.target.value)}
+                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Provincia origen</label>
+                                <input
+                                  type="text"
+                                  value={v.origenEdit ?? ""}
+                                  onChange={(e) => actualizarViaje(v.id, "origenEdit", e.target.value)}
+                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Destino</label>
+                                <input
+                                  type="text"
+                                  value={v.destinoEdit ?? ""}
+                                  onChange={(e) => actualizarViaje(v.id, "destinoEdit", e.target.value)}
+                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Provincia destino</label>
+                                <input
+                                  type="text"
+                                  value={v.provinciaDestinoEdit ?? ""}
+                                  onChange={(e) => actualizarViaje(v.id, "provinciaDestinoEdit", e.target.value)}
+                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Mercadería</label>
+                                <input
+                                  type="text"
+                                  value={v.mercaderiaEdit ?? ""}
+                                  onChange={(e) => actualizarViaje(v.id, "mercaderiaEdit", e.target.value)}
+                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Remito</label>
+                                <input
+                                  type="text"
+                                  value={v.remitoEdit ?? ""}
+                                  onChange={(e) => actualizarViaje(v.id, "remitoEdit", e.target.value)}
+                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Cupo</label>
+                                <input
+                                  type="text"
+                                  value={v.cupoEdit ?? ""}
+                                  onChange={(e) => actualizarViaje(v.id, "cupoEdit", e.target.value)}
+                                  className="h-8 w-full rounded border bg-background px-2 text-xs"
+                                />
+                              </div>
+                              <div className="md:col-span-2 rounded border bg-background px-3 py-2 text-xs text-muted-foreground">
+                                Camión actual: {v.camion.patenteChasis} · Chofer actual: {v.chofer.apellido}, {v.chofer.nombre}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                        </Fragment>
                       )
                     })}
                   </tbody>
@@ -518,6 +657,9 @@ export function LiquidacionesClient({ rol, fleteros, fleteroIdPropio }: Liquidac
           {enPreview && preview && (
             <div className="p-4 bg-muted/40 rounded-lg border space-y-3">
               <h3 className="font-semibold">Preview de liquidación</h3>
+              <p className="text-sm text-muted-foreground">
+                Estos valores son los que van a quedar guardados dentro de la liquidación.
+              </p>
               {errorGen && <div className="p-3 bg-red-50 text-red-700 rounded text-sm">{errorGen}</div>}
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
@@ -546,7 +688,7 @@ export function LiquidacionesClient({ rol, fleteros, fleteroIdPropio }: Liquidac
                 </div>
               </div>
               <div className="space-y-1 text-sm">
-                <div className="flex justify-between"><span>Total viajes ({viajesSeleccionados.length}):</span><span>{formatearMoneda(preview.subtotalBruto)}</span></div>
+                <div className="flex justify-between"><span>Total viajes a guardar ({viajesSeleccionados.length}):</span><span>{formatearMoneda(preview.subtotalBruto)}</span></div>
                 <div className="flex justify-between"><span>Comisión ({comisionPct}%):</span><span>- {formatearMoneda(preview.comisionMonto)}</span></div>
                 <div className="flex justify-between font-medium"><span>Subtotal neto:</span><span>{formatearMoneda(preview.neto)}</span></div>
                 <div className="flex justify-between"><span>IVA ({ivaPct}%):</span><span>+ {formatearMoneda(preview.ivaMonto)}</span></div>

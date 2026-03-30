@@ -10,7 +10,8 @@ import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
-import { calcularToneladas, calcularTotalViaje } from "@/lib/viajes"
+import { enriquecerViajeOperativo } from "@/lib/viaje-serialization"
+import { construirAvisosEdicionViaje } from "@/lib/viaje-workflow"
 import type { Rol } from "@/types"
 
 const actualizarViajeSchema = z.object({
@@ -23,7 +24,7 @@ const actualizarViajeSchema = z.object({
   destino: z.string().nullable().optional(),
   provinciaDestino: z.string().nullable().optional(),
   kilos: z.number().positive().nullable().optional(),
-  tarifaBase: z.number().positive().optional(),
+  tarifaOperativaInicial: z.number().positive().optional(),
 })
 
 /**
@@ -69,11 +70,7 @@ export async function GET(
 
   if (!viaje) return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 })
 
-  return NextResponse.json({
-    ...viaje,
-    toneladas: viaje.kilos != null ? calcularToneladas(viaje.kilos) : null,
-    total: viaje.kilos != null ? calcularTotalViaje(viaje.kilos, viaje.tarifaBase) : null,
-  })
+  return NextResponse.json(enriquecerViajeOperativo(viaje))
 }
 
 /**
@@ -125,18 +122,10 @@ export async function PATCH(
       },
     })
 
-    const avisos: string[] = []
-    if (viaje.estadoLiquidacion === "LIQUIDADO") {
-      avisos.push("Este viaje ya está incluido en una liquidación. Los datos de la liquidación no se modificaron.")
-    }
-    if (viaje.estadoFactura === "FACTURADO") {
-      avisos.push("Este viaje ya está incluido en una factura. Los datos de la factura no se modificaron.")
-    }
+    const avisos = construirAvisosEdicionViaje(viaje.estadoLiquidacion, viaje.estadoFactura)
 
     return NextResponse.json({
-      ...actualizado,
-      toneladas: actualizado.kilos != null ? calcularToneladas(actualizado.kilos) : null,
-      total: actualizado.kilos != null ? calcularTotalViaje(actualizado.kilos, actualizado.tarifaBase) : null,
+      ...enriquecerViajeOperativo(actualizado),
       _avisos: avisos.length > 0 ? avisos : undefined,
     })
   } catch (error) {

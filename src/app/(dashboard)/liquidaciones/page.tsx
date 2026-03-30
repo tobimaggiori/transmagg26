@@ -33,13 +33,25 @@ export default async function LiquidacionesPage() {
 
   const esInterno = esRolInterno(rol)
 
-  const fleteros = esInterno
-    ? await prisma.fletero.findMany({
-        where: { activo: true },
-        select: { id: true, razonSocial: true, comisionDefault: true },
-        orderBy: { razonSocial: "asc" },
-      })
-    : []
+  const [fleteros, camiones, choferes] = esInterno
+    ? await Promise.all([
+        prisma.fletero.findMany({
+          where: { activo: true },
+          select: { id: true, razonSocial: true, comisionDefault: true },
+          orderBy: { razonSocial: "asc" },
+        }),
+        prisma.camion.findMany({
+          where: { activo: true },
+          select: { id: true, patenteChasis: true, fleteroId: true },
+          orderBy: { patenteChasis: "asc" },
+        }),
+        prisma.usuario.findMany({
+          where: { rol: "CHOFER", activo: true },
+          select: { id: true, nombre: true, apellido: true },
+          orderBy: { apellido: "asc" },
+        }),
+      ])
+    : [[], [], []]
 
   // Para FLETERO: obtener su propio fleteroId
   let fleteroIdPropio: string | null = null
@@ -55,6 +67,8 @@ export default async function LiquidacionesPage() {
     <LiquidacionesClient
       rol={rol}
       fleteros={fleteros}
+      camiones={camiones}
+      choferes={choferes}
       fleteroIdPropio={fleteroIdPropio}
     />
   )

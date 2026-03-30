@@ -14,10 +14,14 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno, esRolEmpresa } from "@/lib/permissions"
 import { calcularToneladas, calcularTotalViaje, calcularFactura } from "@/lib/viajes"
+import { obtenerTarifaOperativaInicial } from "@/lib/viaje-serialization"
+import { EstadoFacturaDocumento, EstadoFacturaViaje } from "@/lib/viaje-workflow"
 import type { Rol } from "@/types"
 
 const viajeEnFactSchema = z.object({
   viajeId: z.string().uuid(),
+  camionId: z.string().uuid().optional(),
+  choferId: z.string().uuid().optional(),
   fechaViaje: z.string(),
   remito: z.string().nullable().optional(),
   cupo: z.string().nullable().optional(),
@@ -78,7 +82,7 @@ export async function GET(request: NextRequest) {
   }
 
   const whereViajes: Record<string, unknown> = {
-    estadoFactura: "PENDIENTE_FACTURAR",
+    estadoFactura: EstadoFacturaViaje.PENDIENTE_FACTURAR,
   }
   if (empresaIdReal) whereViajes.empresaId = empresaIdReal
 
@@ -95,6 +99,10 @@ export async function GET(request: NextRequest) {
         empresaId: true,
         empresa: { select: { razonSocial: true } },
         fletero: { select: { razonSocial: true } },
+        camionId: true,
+        camion: { select: { patenteChasis: true } },
+        choferId: true,
+        chofer: { select: { nombre: true, apellido: true } },
         remito: true,
         cupo: true,
         mercaderia: true,
@@ -103,7 +111,7 @@ export async function GET(request: NextRequest) {
         destino: true,
         provinciaDestino: true,
         kilos: true,
-        tarifaBase: true,
+        tarifaOperativaInicial: true,
         estadoLiquidacion: true,
         estadoFactura: true,
       },
@@ -125,10 +133,11 @@ export async function GET(request: NextRequest) {
   // Calcular toneladas y total en los viajes pendientes
   const viajesPendientes = viajesRaw.map((v) => ({
     ...v,
+    tarifaOperativaInicial: obtenerTarifaOperativaInicial(v.tarifaOperativaInicial),
     toneladas: v.kilos != null ? calcularToneladas(v.kilos) : null,
-    total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaBase) : null,
-    // No incluir tarifaBase a roles empresa
-    ...(esRolEmpresa(rol) ? { tarifaBase: undefined } : {}),
+    total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaOperativaInicial) : null,
+    // No incluir tarifaOperativaInicial a roles empresa
+    ...(esRolEmpresa(rol) ? { tarifaOperativaInicial: undefined } : {}),
   }))
 
   return NextResponse.json({ viajesPendientes, facturas })
@@ -165,13 +174,13 @@ export async function POST(request: NextRequest) {
 
     const { empresaId, tipoCbte, ivaPct, viajes } = parsed.data
 
-    const empresa = await prisma.empresa.findUnique({ where: { id: empresaId, activa: true } })
+    const empresa = await prisma.empresa.findFirst({ where: { id: empresaId, activa: true } })
     if (!empresa) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 })
 
     // Verificar que todos los viajes existen, pertenecen a la empresa y están pendientes de facturar
     const viajeIds = viajes.map((v) => v.viajeId)
     const viajesExistentes = await prisma.viaje.findMany({
-      where: { id: { in: viajeIds }, empresaId, estadoFactura: "PENDIENTE_FACTURAR" },
+      where: { id: { in: viajeIds }, empresaId, estadoFactura: EstadoFacturaViaje.PENDIENTE_FACTURAR },
     })
 
     if (viajesExistentes.length !== viajes.length) {
@@ -198,7 +207,7 @@ export async function POST(request: NextRequest) {
           ivaMonto,
           total,
           estadoArca: "PENDIENTE",
-          estado: "BORRADOR",
+          estado: EstadoFacturaDocumento.BORRADOR,
         },
       })
 
@@ -217,6 +226,48 @@ export async function POST(request: NextRequest) {
       for (const viaje of viajes) {
         const subtotalViaje = calcularTotalViaje(viaje.kilos, viaje.tarifaEmpresa)
         const viajeData = viajesExistentes.find((v) => v.id === viaje.viajeId)!
+
+        if (viaje.camionId || viaje.choferId) {
+          const [camion, chofer] = await Promise.all([
+            viaje.camionId
+              ? tx.camion.findFirst({
+                  where: { id: viaje.camionId, fleteroId: viajeData.fleteroId, activo: true },
+                  select: { id: true },
+                })
+              : Promise.resolve({ id: viajeData.camionId }),
+            viaje.choferId
+              ? tx.usuario.findFirst({
+                  where: { id: viaje.choferId, rol: "CHOFER", activo: true },
+                  select: { id: true },
+                })
+              : Promise.resolve({ id: viajeData.choferId }),
+          ])
+
+          if (!camion) {
+            throw new Error(`Camión inválido para el viaje ${viaje.viajeId}`)
+          }
+
+          if (!chofer) {
+            throw new Error(`Chofer inválido para el viaje ${viaje.viajeId}`)
+          }
+        }
+
+        await tx.viaje.update({
+          where: { id: viaje.viajeId },
+          data: {
+            camionId: viaje.camionId ?? viajeData.camionId,
+            choferId: viaje.choferId ?? viajeData.choferId,
+            fechaViaje: new Date(viaje.fechaViaje),
+            remito: viaje.remito ?? null,
+            cupo: viaje.cupo ?? null,
+            mercaderia: viaje.mercaderia ?? null,
+            procedencia: viaje.procedencia ?? null,
+            provinciaOrigen: viaje.provinciaOrigen ?? null,
+            destino: viaje.destino ?? null,
+            provinciaDestino: viaje.provinciaDestino ?? null,
+            kilos: viaje.kilos,
+          },
+        })
 
         const enFact = await tx.viajeEnFactura.create({
           data: {
@@ -253,7 +304,7 @@ export async function POST(request: NextRequest) {
       // Marcar viajes como FACTURADO (sin tocar estadoLiquidacion)
       await tx.viaje.updateMany({
         where: { id: { in: viajeIds } },
-        data: { estadoFactura: "FACTURADO" },
+        data: { estadoFactura: EstadoFacturaViaje.FACTURADO },
       })
 
       return fact
@@ -262,6 +313,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(factura, { status: 201 })
   } catch (error) {
     console.error("[POST /api/facturas]", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error interno del servidor" },
+      { status: 500 }
+    )
   }
 }

@@ -20,7 +20,7 @@ interface ViajeDisponible {
   provinciaOrigen?: string | null
   provinciaDestino?: string | null
   kilos?: number | null
-  tarifaBase: number
+  tarifaOperativaInicial: number
   empresaId: string
   fletero: { razonSocial: string }
   camion: { patenteChasis: string }

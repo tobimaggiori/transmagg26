@@ -3,12 +3,16 @@
 /**
  * Propósito: Componente cliente de la página de viajes.
  * Maneja selección de fletero/empresa, carga de viajes via API, tabs y modales de ABM.
- * SEGURIDAD: tarifaBase nunca se muestra a roles externos.
+ * SEGURIDAD: tarifaOperativaInicial nunca se muestra a roles externos.
  */
 
 import { useState, useCallback, useEffect } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje } from "@/lib/viajes"
+import { describirCircuitoViaje, resumirWorkflowViajes } from "@/lib/viaje-ui"
+import { WorkflowSummaryCard } from "@/components/workflow/workflow-summary-card"
+import { CircuitBadge } from "@/components/workflow/circuit-badge"
+import { WorkflowNote } from "@/components/workflow/workflow-note"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -31,7 +35,7 @@ type ViajeAPI = {
   destino: string | null
   provinciaDestino: string | null
   kilos: number | null
-  tarifaBase?: number
+  tarifaOperativaInicial?: number | null
   estadoLiquidacion: string
   estadoFactura: string
   toneladas?: number | null
@@ -53,14 +57,6 @@ const VISTAS: { id: Vista; label: string }[] = [
   { id: "pend_ambos", label: "Pend. ambos" },
 ]
 
-const BADGE_LIQ: Record<string, string> = {
-  PENDIENTE_LIQUIDAR: "bg-yellow-100 text-yellow-800",
-  LIQUIDADO: "bg-blue-100 text-blue-800",
-}
-const BADGE_FACT: Record<string, string> = {
-  PENDIENTE_FACTURAR: "bg-yellow-100 text-yellow-800",
-  FACTURADO: "bg-green-100 text-green-800",
-}
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -88,7 +84,7 @@ type ViajesClientProps = {
  * Ejemplos:
  * <ModalViaje modo="nuevo" onGuardar={fn} onCerrar={fn} fleteros={[]} ... />
  * <ModalViaje modo="editar" viaje={v} onGuardar={fn} onCerrar={fn} ... />
- * // Al ingresar kilos y tarifaBase → muestra toneladas y total en tiempo real
+ * // Al ingresar kilos y tarifaOperativaInicial → muestra toneladas y total en tiempo real
  */
 function ModalViaje({
   modo,
@@ -128,12 +124,12 @@ function ModalViaje({
   const [destino, setDestino] = useState(viaje?.destino ?? "")
   const [provinciaDestino, setProvinciaDestino] = useState(viaje?.provinciaDestino ?? "")
   const [kilos, setKilos] = useState(viaje?.kilos?.toString() ?? "")
-  const [tarifaBase, setTarifaBase] = useState(viaje?.tarifaBase?.toString() ?? "")
+  const [tarifaOperativaInicial, setTarifaBase] = useState(viaje?.tarifaOperativaInicial?.toString() ?? "")
 
   const camionesDelFletero = camiones.filter((c) => c.fleteroId === fleteroId)
 
   const kilosNum = parseFloat(kilos) || 0
-  const tarifaNum = parseFloat(tarifaBase) || 0
+  const tarifaNum = parseFloat(tarifaOperativaInicial) || 0
   const toneladas = kilosNum > 0 ? calcularToneladas(kilosNum) : null
   const totalCalc = kilosNum > 0 && tarifaNum > 0 ? calcularTotalViaje(kilosNum, tarifaNum) : null
 
@@ -153,7 +149,7 @@ function ModalViaje({
       destino: destino || undefined,
       provinciaDestino: provinciaDestino || undefined,
       kilos: kilosNum > 0 ? kilosNum : undefined,
-      tarifaBase: tarifaNum > 0 ? tarifaNum : undefined,
+      tarifaOperativaInicial: tarifaNum > 0 ? tarifaNum : undefined,
     })
   }
 
@@ -304,10 +300,10 @@ function ModalViaje({
               )}
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Tarifa/ton *</label>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Tarifa operativa inicial / ton *</label>
               <input
                 type="number"
-                value={tarifaBase}
+                value={tarifaOperativaInicial}
                 onChange={(e) => setTarifaBase(e.target.value)}
                 min="0"
                 step="0.01"
@@ -315,8 +311,13 @@ function ModalViaje({
                 className="w-full h-9 rounded-md border bg-background px-2 text-sm"
               />
               {totalCalc != null && (
-                <p className="text-xs text-muted-foreground mt-1">Total: {formatearMoneda(totalCalc)}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Referencia inicial del viaje: {formatearMoneda(totalCalc)}
+                </p>
               )}
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Esta tarifa es editable y sirve como base operativa antes de definir la tarifa al fletero o a la empresa.
+              </p>
             </div>
           </div>
 
@@ -419,6 +420,7 @@ export function ViajesClient({
     if (vista === "pend_ambos") return v.estadoLiquidacion === "PENDIENTE_LIQUIDAR" && v.estadoFactura === "PENDIENTE_FACTURAR"
     return true
   })
+  const resumen = resumirWorkflowViajes(viajesFiltrados)
 
   async function handleGuardarViaje(data: Record<string, unknown>) {
     setGuardando(true)
@@ -451,7 +453,7 @@ export function ViajesClient({
           <h2 className="text-2xl font-bold tracking-tight">Viajes</h2>
           <p className="text-muted-foreground">
             {esInterno
-              ? "Asocialos a liquidaciones y facturas de forma independiente."
+              ? "El viaje base se puede corregir antes de liquidar al fletero y antes de facturar a la empresa."
               : "Tus viajes registrados en el sistema."}
           </p>
         </div>
@@ -467,7 +469,22 @@ export function ViajesClient({
 
       {/* Selectores de Fletero y Empresa (solo internos) */}
       {esInterno && (
-        <div className="flex flex-wrap gap-4 p-4 bg-muted/40 rounded-lg border">
+        <div className="rounded-2xl border bg-slate-50 p-4">
+          <div className="mb-4 grid gap-3 md:grid-cols-3">
+            <WorkflowNote
+              titulo="Lado Fletero"
+              descripcion="El viaje aparece pendiente hasta que el operador arma el líquido producto."
+            />
+            <WorkflowNote
+              titulo="Lado Empresa"
+              descripcion="El mismo viaje puede seguir pendiente de facturar aunque ya haya sido liquidado."
+            />
+            <WorkflowNote
+              titulo="Tarifa Base"
+              descripcion="Se usa como referencia operativa inicial. La tarifa final al fletero y a la empresa se define al generar cada comprobante."
+            />
+          </div>
+          <div className="flex flex-wrap gap-4">
           <div className="flex flex-col gap-1 min-w-[200px]">
             <label className="text-xs font-medium text-muted-foreground">Fletero</label>
             <select
@@ -504,6 +521,7 @@ export function ViajesClient({
             </button>
           </div>
         </div>
+        </div>
       )}
 
       {/* Sin selección — instrucción */}
@@ -517,6 +535,13 @@ export function ViajesClient({
       {/* Tabs */}
       {(tieneSeleccion || !esInterno) && (
         <>
+          <div className="grid gap-3 md:grid-cols-4">
+            <WorkflowSummaryCard titulo="Viajes visibles" valor={resumen.total} />
+            <WorkflowSummaryCard titulo="Pendientes de liquidar" valor={resumen.pendientesLiquidar} tono="warning" />
+            <WorkflowSummaryCard titulo="Pendientes de facturar" valor={resumen.pendientesFacturar} tono="warning" />
+            <WorkflowSummaryCard titulo="Cerrados en ambos circuitos" valor={resumen.cerradosAmbos} tono="success" />
+          </div>
+
           <div className="border-b">
             <nav className="flex gap-0 -mb-px">
               {VISTAS.map((v) => (
@@ -544,56 +569,65 @@ export function ViajesClient({
           ) : (
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">{viajesFiltrados.length} viaje(s)</p>
-              <div className="overflow-x-auto rounded-lg border">
+              <div className="overflow-x-auto rounded-2xl border">
                 <table className="w-full text-sm">
-                  <thead className="bg-muted/50">
+                  <thead className="bg-slate-50">
                     <tr>
                       <th className="px-3 py-2 text-left font-medium">Fecha</th>
-                      <th className="px-3 py-2 text-left font-medium">Empresa</th>
-                      <th className="px-3 py-2 text-left font-medium">Fletero</th>
-                      <th className="px-3 py-2 text-left font-medium">Remito</th>
-                      <th className="px-3 py-2 text-left font-medium">Cupo</th>
-                      <th className="px-3 py-2 text-left font-medium">Mercadería</th>
-                      <th className="px-3 py-2 text-left font-medium">Origen</th>
-                      <th className="px-3 py-2 text-left font-medium">Destino</th>
+                      <th className="px-3 py-2 text-left font-medium">Carga</th>
+                      <th className="px-3 py-2 text-left font-medium">Recorrido</th>
                       <th className="px-3 py-2 text-right font-medium">Kilos</th>
                       <th className="px-3 py-2 text-right font-medium">Ton</th>
-                      {esInterno && <th className="px-3 py-2 text-right font-medium">Tarifa/ton</th>}
-                      {esInterno && <th className="px-3 py-2 text-right font-medium">Total</th>}
-                      <th className="px-3 py-2 text-center font-medium">Liq.</th>
-                      <th className="px-3 py-2 text-center font-medium">Fact.</th>
+                      {esInterno && <th className="px-3 py-2 text-right font-medium">Tarifa operativa inicial</th>}
+                      {esInterno && <th className="px-3 py-2 text-right font-medium">Referencia</th>}
+                      <th className="px-3 py-2 text-left font-medium">Workflow</th>
                       {esInterno && <th className="px-3 py-2 text-center font-medium">Acc.</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {viajesFiltrados.map((v) => {
                       const toneladas = v.kilos != null ? calcularToneladas(v.kilos) : null
-                      const total = v.kilos != null && v.tarifaBase != null
-                        ? calcularTotalViaje(v.kilos, v.tarifaBase)
+                      const tarifaOperativa = v.tarifaOperativaInicial ?? null
+                      const total = v.kilos != null && tarifaOperativa != null
+                        ? calcularTotalViaje(v.kilos, tarifaOperativa)
                         : null
                       return (
                         <tr key={v.id} className="hover:bg-muted/30">
                           <td className="px-3 py-2 whitespace-nowrap">{formatearFecha(new Date(v.fechaViaje))}</td>
-                          <td className="px-3 py-2">{v.empresa.razonSocial}</td>
-                          <td className="px-3 py-2">{v.fletero.razonSocial}</td>
-                          <td className="px-3 py-2">{v.remito ?? "-"}</td>
-                          <td className="px-3 py-2">{v.cupo ?? "-"}</td>
-                          <td className="px-3 py-2">{v.mercaderia ?? "-"}</td>
-                          <td className="px-3 py-2">{v.provinciaOrigen ?? v.procedencia ?? "-"}</td>
-                          <td className="px-3 py-2">{v.provinciaDestino ?? v.destino ?? "-"}</td>
+                          <td className="px-3 py-2">
+                            <div className="space-y-0.5">
+                              <p className="font-medium">{v.empresa.razonSocial}</p>
+                              <p className="text-xs text-muted-foreground">{v.fletero.razonSocial}</p>
+                              <p className="text-xs text-muted-foreground">
+                                Remito {v.remito ?? "-"} · Cupo {v.cupo ?? "-"}
+                              </p>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="space-y-0.5">
+                              <p>{v.mercaderia ?? "Sin mercadería cargada"}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {v.provinciaOrigen ?? v.procedencia ?? "-"} → {v.provinciaDestino ?? v.destino ?? "-"}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                Camión {v.camion.patenteChasis} · {v.chofer.apellido}, {v.chofer.nombre}
+                              </p>
+                            </div>
+                          </td>
                           <td className="px-3 py-2 text-right">{v.kilos?.toLocaleString("es-AR") ?? "-"}</td>
                           <td className="px-3 py-2 text-right">{toneladas?.toLocaleString("es-AR") ?? "-"}</td>
-                          {esInterno && <td className="px-3 py-2 text-right">{v.tarifaBase != null ? formatearMoneda(v.tarifaBase) : "-"}</td>}
+                          {esInterno && <td className="px-3 py-2 text-right">{tarifaOperativa != null ? formatearMoneda(tarifaOperativa) : "-"}</td>}
                           {esInterno && <td className="px-3 py-2 text-right font-medium">{total != null ? formatearMoneda(total) : "-"}</td>}
-                          <td className="px-3 py-2 text-center">
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${BADGE_LIQ[v.estadoLiquidacion] ?? "bg-gray-100 text-gray-700"}`}>
-                              {v.estadoLiquidacion === "PENDIENTE_LIQUIDAR" ? "Pend." : "Liq."}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${BADGE_FACT[v.estadoFactura] ?? "bg-gray-100 text-gray-700"}`}>
-                              {v.estadoFactura === "PENDIENTE_FACTURAR" ? "Pend." : "Fact."}
-                            </span>
+                          <td className="px-3 py-2">
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap gap-1.5">
+                                <CircuitBadge etiqueta="Fletero" estado={v.estadoLiquidacion} />
+                                <CircuitBadge etiqueta="Empresa" estado={v.estadoFactura} />
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {describirCircuitoViaje(v.estadoLiquidacion, v.estadoFactura)}
+                              </p>
+                            </div>
                           </td>
                           {esInterno && (
                             <td className="px-3 py-2 text-center">

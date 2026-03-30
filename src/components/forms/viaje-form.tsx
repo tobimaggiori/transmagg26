@@ -66,7 +66,7 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
   const [destino, setDestino] = useState("")
   const [provinciaDestino, setProvinciaDestino] = useState("")
   const [kilos, setKilos] = useState("")
-  const [tarifaBase, setTarifaBase] = useState("")
+  const [tarifaOperativaInicial, setTarifaBase] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -100,7 +100,7 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
           destino: destino || undefined,
           provinciaDestino: provinciaDestino || undefined,
           kilos: kilos ? parseFloat(kilos) : undefined,
-          tarifaBase: parseFloat(tarifaBase),
+          tarifaOperativaInicial: parseFloat(tarifaOperativaInicial),
         }),
       })
 
@@ -220,13 +220,13 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
           <Input id="destino" value={destino} onChange={(e) => setDestino(e.target.value)} />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="tarifaBase" className="text-primary font-medium">Tarifa base ($) *</Label>
+          <Label htmlFor="tarifaOperativaInicial" className="text-primary font-medium">Tarifa base ($) *</Label>
           <Input
-            id="tarifaBase"
+            id="tarifaOperativaInicial"
             type="number"
             min="0"
             step="0.01"
-            value={tarifaBase}
+            value={tarifaOperativaInicial}
             onChange={(e) => setTarifaBase(e.target.value)}
             required
             className="border-primary/40 focus:border-primary"
@@ -242,7 +242,7 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
         </Button>
         <Button
           type="submit"
-          disabled={loading || !fleteroId || !camionId || !choferId || !empresaId || !tarifaBase}
+          disabled={loading || !fleteroId || !camionId || !choferId || !empresaId || !tarifaOperativaInicial}
         >
           {loading ? "Guardando..." : "Crear viaje"}
         </Button>

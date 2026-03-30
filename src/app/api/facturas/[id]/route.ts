@@ -12,17 +12,31 @@ import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno, esRolEmpresa, puedeVerTarifaEmpresa } from "@/lib/permissions"
+import {
+  EstadoFacturaDocumento,
+  resolverEstadoFacturaViaje,
+} from "@/lib/viaje-workflow"
 import type { Rol } from "@/types"
 
 const TRANSICIONES_VALIDAS: Record<string, string[]> = {
-  BORRADOR: ["EMITIDA", "ANULADA"],
-  EMITIDA: ["COBRADA", "ANULADA"],
-  COBRADA: [],
-  ANULADA: [],
+  [EstadoFacturaDocumento.BORRADOR]: [
+    EstadoFacturaDocumento.EMITIDA,
+    EstadoFacturaDocumento.ANULADA,
+  ],
+  [EstadoFacturaDocumento.EMITIDA]: [
+    EstadoFacturaDocumento.COBRADA,
+    EstadoFacturaDocumento.ANULADA,
+  ],
+  [EstadoFacturaDocumento.COBRADA]: [],
+  [EstadoFacturaDocumento.ANULADA]: [],
 }
 
 const actualizarSchema = z.object({
-  estado: z.enum(["EMITIDA", "COBRADA", "ANULADA"]),
+  estado: z.enum([
+    EstadoFacturaDocumento.EMITIDA,
+    EstadoFacturaDocumento.COBRADA,
+    EstadoFacturaDocumento.ANULADA,
+  ]),
   nroComprobante: z.string().optional(),
   estadoArca: z.enum(["PENDIENTE", "ACEPTADA", "RECHAZADA"]).optional(),
 })
@@ -146,13 +160,39 @@ export async function PATCH(
       })
 
       // Al anular, liberar viajes (solo estadoFactura, NO tocar estadoLiquidacion)
-      if (parsed.data.estado === "ANULADA") {
+      if (parsed.data.estado === EstadoFacturaDocumento.ANULADA) {
         const viajeIds = factura.viajes.map((v) => v.viajeId)
         if (viajeIds.length > 0) {
-          await tx.viaje.updateMany({
-            where: { id: { in: viajeIds } },
-            data: { estadoFactura: "PENDIENTE_FACTURAR" },
+          const facturasActivasRestantes = await tx.viajeEnFactura.findMany({
+            where: {
+              viajeId: { in: viajeIds },
+              facturaId: { not: params.id },
+              factura: {
+                estado: { not: EstadoFacturaDocumento.ANULADA },
+              },
+            },
+            select: { viajeId: true, factura: { select: { estado: true } } },
           })
+
+          const estadosPorViaje = new Map<string, Array<typeof EstadoFacturaDocumento[keyof typeof EstadoFacturaDocumento]>>()
+          for (const viajeId of viajeIds) {
+            estadosPorViaje.set(viajeId, [])
+          }
+
+          for (const facturaRelacionada of facturasActivasRestantes) {
+            const estados = estadosPorViaje.get(facturaRelacionada.viajeId) ?? []
+            estados.push(facturaRelacionada.factura.estado as typeof EstadoFacturaDocumento[keyof typeof EstadoFacturaDocumento])
+            estadosPorViaje.set(facturaRelacionada.viajeId, estados)
+          }
+
+          for (const viajeId of viajeIds) {
+            await tx.viaje.update({
+              where: { id: viajeId },
+              data: {
+                estadoFactura: resolverEstadoFacturaViaje(estadosPorViaje.get(viajeId) ?? []),
+              },
+            })
+          }
         }
       }
 

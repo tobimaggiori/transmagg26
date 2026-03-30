@@ -5,7 +5,7 @@
  *
  * Los viajes tienen estados independientes para liquidación y factura.
  * SEGURIDAD:
- * - tarifaBase nunca se expone a roles de empresa ni de fletero
+ * - tarifaOperativaInicial nunca se expone a roles de empresa ni de fletero
  * - Fletero solo ve sus propios viajes
  * - Empresa solo ve sus propios viajes
  */
@@ -15,7 +15,7 @@ import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno, esRolEmpresa } from "@/lib/permissions"
-import { calcularToneladas, calcularTotalViaje } from "@/lib/viajes"
+import { enriquecerViajeOperativo, ocultarTarifaOperativa } from "@/lib/viaje-serialization"
 import type { Rol } from "@/types"
 
 const crearViajeSchema = z.object({
@@ -32,7 +32,7 @@ const crearViajeSchema = z.object({
   destino: z.string().optional(),
   provinciaDestino: z.string().optional(),
   kilos: z.number().positive().optional(),
-  tarifaBase: z.number().positive("La tarifa debe ser mayor a 0"),
+  tarifaOperativaInicial: z.number().positive("La tarifa debe ser mayor a 0"),
   estadoLiquidacion: z.string().default("PENDIENTE_LIQUIDAR"),
   estadoFactura: z.string().default("PENDIENTE_FACTURAR"),
 })
@@ -41,17 +41,17 @@ const crearViajeSchema = z.object({
  * GET: NextRequest -> Promise<NextResponse>
  *
  * Devuelve hasta 200 viajes filtrados por rol y parámetros opcionales.
- * Incluye empresa.razonSocial, fletero.razonSocial, estadoLiquidacion, estadoFactura, kilos, tarifaBase.
- * Roles externos no reciben tarifaBase; roles internos reciben todo.
+ * Incluye empresa.razonSocial, fletero.razonSocial, estadoLiquidacion, estadoFactura, kilos, tarifaOperativaInicial.
+ * Roles externos no reciben tarifaOperativaInicial; roles internos reciben todo.
  * Existe para el listado de viajes con cálculos de toneladas y totales.
  *
  * Ejemplos:
  * GET /api/viajes (sesión ADMIN_TRANSMAGG)
- * // => 200 [{ id, tarifaBase, estadoLiquidacion, estadoFactura, toneladas, total, empresa, fletero }]
+ * // => 200 [{ id, tarifaOperativaInicial, estadoLiquidacion, estadoFactura, toneladas, total, empresa, fletero }]
  * GET /api/viajes?fleteroId=f1 (sesión OPERADOR_TRANSMAGG)
  * // => 200 viajes filtrados por fletero
  * GET /api/viajes (sesión FLETERO)
- * // => 200 viajes propios sin tarifaBase
+ * // => 200 viajes propios sin tarifaOperativaInicial
  */
 export async function GET(request: NextRequest) {
   const session = await auth()
@@ -116,21 +116,12 @@ export async function GET(request: NextRequest) {
     take: 200,
   })
 
-  // Agregar toneladas y total calculados
-  const viajesConCalculo = viajes.map((v) => ({
-    ...v,
-    toneladas: v.kilos != null ? calcularToneladas(v.kilos) : null,
-    total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaBase) : null,
-  }))
+  const viajesConCalculo = viajes.map((v) => enriquecerViajeOperativo(v))
 
-  // No exponer tarifaBase a roles externos
+  // No exponer tarifaOperativaInicial a roles externos
   if (!esRolInterno(rol)) {
     return NextResponse.json(
-      viajesConCalculo.map((v) => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { tarifaBase, total, ...resto } = v
-        return resto
-      })
+      viajesConCalculo.map((v) => ocultarTarifaOperativa(v))
     )
   }
 
@@ -145,7 +136,7 @@ export async function GET(request: NextRequest) {
  * Existe para que operadores internos carguen viajes standalone.
  *
  * Ejemplos:
- * POST /api/viajes { fleteroId, camionId, choferId, empresaId, fechaViaje: "2026-03-15", tarifaBase: 50000 }
+ * POST /api/viajes { fleteroId, camionId, choferId, empresaId, fechaViaje: "2026-03-15", tarifaOperativaInicial: 50000 }
  * // => 201 { id, estadoLiquidacion: "PENDIENTE_LIQUIDAR", estadoFactura: "PENDIENTE_FACTURAR" }
  * POST /api/viajes { ...datos, fleteroId: "noexiste" }
  * // => 404 { error: "Fletero no encontrado" }
@@ -165,7 +156,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { fleteroId, camionId, choferId, empresaId, fechaViaje, tarifaBase, estadoLiquidacion, estadoFactura, ...resto } = parsed.data
+    const { fleteroId, camionId, choferId, empresaId, fechaViaje, tarifaOperativaInicial, estadoLiquidacion, estadoFactura, ...resto } = parsed.data
 
     const [fletero, camion, chofer, empresa] = await Promise.all([
       prisma.fletero.findUnique({ where: { id: fleteroId, activo: true } }),
@@ -187,7 +178,7 @@ export async function POST(request: NextRequest) {
         empresaId,
         operadorId: session.user.id,
         fechaViaje: new Date(fechaViaje),
-        tarifaBase,
+        tarifaOperativaInicial,
         estadoLiquidacion,
         estadoFactura,
         ...resto,

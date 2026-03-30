@@ -191,7 +191,7 @@ model Viaje {
   destino             String?
   provinciaDestino    String?  @map("provincia_destino")
   kilos               Float?
-  tarifaBase          Float    @map("tarifa_base")
+  tarifaOperativaInicial Float    @map("tarifa_operativa_inicial")
   estadoLiquidacion   String   @default("PENDIENTE_LIQUIDAR") @map("estado_liquidacion")
   estadoFactura       String   @default("PENDIENTE_FACTURAR") @map("estado_factura")
   creadoEn            DateTime @default(now()) @map("creado_en")
