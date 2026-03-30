@@ -20,12 +20,16 @@ import { crearChequeEmitidoSchema } from "@/lib/financial-schemas"
  * GET() === NextResponse.json([{ id, fletero, proveedor, planillaGalicia }])
  * GET() === NextResponse.json([])
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   const access = await requireFinancialAccess()
   if (!access.ok) return access.response
 
   try {
+    const { searchParams } = new URL(request.url)
+    const cuentaId = searchParams.get("cuentaId")
+
     const cheques = await prisma.chequeEmitido.findMany({
+      where: cuentaId ? { cuentaId } : undefined,
       include: {
         fletero: { select: { id: true, razonSocial: true } },
         proveedor: { select: { id: true, razonSocial: true } },

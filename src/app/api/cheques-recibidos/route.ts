@@ -20,12 +20,16 @@ import { crearChequeRecibidoSchema } from "@/lib/financial-schemas"
  * GET() === NextResponse.json([{ id, cuentaDeposito, endosadoAFletero }])
  * GET() === NextResponse.json([])
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   const access = await requireFinancialAccess()
   if (!access.ok) return access.response
 
   try {
+    const { searchParams } = new URL(request.url)
+    const cuentaId = searchParams.get("cuentaId")
+
     const cheques = await prisma.chequeRecibido.findMany({
+      where: cuentaId ? { cuentaDepositoId: cuentaId } : undefined,
       include: {
         empresa: { select: { id: true, razonSocial: true } },
         factura: { select: { id: true, nroComprobante: true } },

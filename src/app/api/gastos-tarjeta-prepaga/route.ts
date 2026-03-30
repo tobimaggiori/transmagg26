@@ -19,12 +19,16 @@ import { crearGastoTarjetaPrepagaSchema } from "@/lib/financial-schemas"
  * GET() === NextResponse.json([{ id, fecha, operador }])
  * GET() === NextResponse.json([])
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   const access = await requireFinancialAccess()
   if (!access.ok) return access.response
 
   try {
+    const { searchParams } = new URL(request.url)
+    const tarjetaId = searchParams.get("tarjetaId")
+
     const gastos = await prisma.gastoTarjetaPrepaga.findMany({
+      where: tarjetaId ? { tarjetaId } : undefined,
       include: {
         tarjeta: {
           include: {

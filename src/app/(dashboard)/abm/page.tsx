@@ -1,7 +1,7 @@
 /**
  * Propósito: Página ABM (Alta, Baja, Modificación) de Transmagg.
  * Exclusiva para ADMIN_TRANSMAGG. Permite gestionar Empresas, Fleteros,
- * Choferes, Usuarios y Proveedores mediante tabs con URL params.
+ * Choferes, Usuarios, Proveedores, Cuentas, FCI, Brokers y Empleados.
  * Es la única sección donde se pueden crear, modificar y eliminar entidades.
  */
 
@@ -14,9 +14,13 @@ import { FleterosAbm } from "@/components/abm/fleteros-abm"
 import { ChoforesAbm } from "@/components/abm/choferes-abm"
 import { UsuariosAbm } from "@/components/abm/usuarios-abm"
 import { ProveedoresAbm } from "@/components/abm/proveedores-abm"
+import { CuentasAbm } from "@/components/abm/cuentas-abm"
+import { FciAbm } from "@/components/abm/fci-abm"
+import { BrokersAbm } from "@/components/abm/brokers-abm"
+import { EmpleadosAbm } from "@/components/abm/empleados-abm"
 import type { Rol } from "@/types"
 
-type Tab = "empresas" | "fleteros" | "choferes" | "usuarios" | "proveedores"
+type Tab = "empresas" | "fleteros" | "choferes" | "usuarios" | "proveedores" | "cuentas" | "fci" | "brokers" | "empleados"
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "empresas", label: "Empresas" },
@@ -24,6 +28,10 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "choferes", label: "Choferes" },
   { id: "usuarios", label: "Usuarios" },
   { id: "proveedores", label: "Proveedores" },
+  { id: "cuentas", label: "Cuentas" },
+  { id: "fci", label: "FCI" },
+  { id: "brokers", label: "Brokers" },
+  { id: "empleados", label: "Empleados" },
 ]
 
 /**
@@ -37,8 +45,8 @@ const TABS: { id: Tab; label: string }[] = [
  * Ejemplos:
  * // GET /abm (sesión ADMIN_TRANSMAGG) → tab "empresas" por defecto
  * <AbmPage searchParams={{}} />
- * // GET /abm?tab=fleteros → muestra gestión de fleteros con subsección camiones
- * <AbmPage searchParams={{ tab: "fleteros" }} />
+ * // GET /abm?tab=cuentas → muestra gestión de cuentas bancarias
+ * <AbmPage searchParams={{ tab: "cuentas" }} />
  * // GET /abm (sesión OPERADOR_TRANSMAGG) → redirect /dashboard
  * <AbmPage searchParams={{}} />
  */
@@ -57,7 +65,7 @@ export default async function AbmPage({
   const tabValido = TABS.some((t) => t.id === tab) ? tab : "empresas"
 
   // Fetch data según tab activo para no cargar todo innecesariamente
-  const [empresas, fleteros, choferes, usuarios, proveedores] = await Promise.all([
+  const [empresas, fleteros, choferes, usuarios, proveedores, cuentas, fcis, brokers, empleados] = await Promise.all([
     tabValido === "empresas"
       ? prisma.empresa.findMany({
           select: { id: true, razonSocial: true, cuit: true, condicionIva: true, direccion: true },
@@ -100,6 +108,30 @@ export default async function AbmPage({
           select: { id: true, razonSocial: true, cuit: true, condicionIva: true, rubro: true, activo: true },
         })
       : [],
+    (tabValido === "cuentas" || tabValido === "fci" || tabValido === "brokers")
+      ? prisma.cuenta.findMany({
+          orderBy: { nombre: "asc" },
+          select: { id: true, nombre: true, tipo: true, bancoOEntidad: true, moneda: true, activa: true, tieneChequera: true, tienePlanillaEmisionMasiva: true, tieneCuentaRemunerada: true, tieneTarjetasPrepagasChoferes: true, tieneImpuestoDebcred: true, alicuotaImpuesto: true },
+        })
+      : [],
+    tabValido === "fci"
+      ? prisma.fci.findMany({
+          orderBy: { nombre: "asc" },
+          include: { cuenta: { select: { nombre: true } } },
+        })
+      : [],
+    tabValido === "brokers"
+      ? prisma.broker.findMany({
+          orderBy: { nombre: "asc" },
+          include: { cuenta: { select: { nombre: true } } },
+        })
+      : [],
+    tabValido === "empleados"
+      ? prisma.empleado.findMany({
+          orderBy: [{ activo: "desc" }, { apellido: "asc" }],
+          select: { id: true, nombre: true, apellido: true, cuit: true, cargo: true, fechaIngreso: true, activo: true },
+        })
+      : [],
   ])
 
   // Para el tab usuarios necesitamos la lista de empresas para asignar
@@ -121,13 +153,13 @@ export default async function AbmPage({
       </div>
 
       {/* Tabs */}
-      <div className="border-b">
+      <div className="border-b overflow-x-auto">
         <nav className="flex gap-0 -mb-px">
           {TABS.map((t) => (
             <a
               key={t.id}
               href={`/abm?tab=${t.id}`}
-              className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 tabValido === t.id
                   ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300"
@@ -146,6 +178,10 @@ export default async function AbmPage({
         {tabValido === "choferes" && <ChoforesAbm choferes={choferes} />}
         {tabValido === "usuarios" && <UsuariosAbm usuarios={usuarios} empresas={empresasParaUsuarios} />}
         {tabValido === "proveedores" && <ProveedoresAbm proveedores={proveedores} />}
+        {tabValido === "cuentas" && <CuentasAbm cuentas={cuentas} />}
+        {tabValido === "fci" && <FciAbm fcis={fcis} cuentas={cuentas.map(c => ({ id: c.id, nombre: c.nombre }))} />}
+        {tabValido === "brokers" && <BrokersAbm brokers={brokers} cuentas={cuentas.map(c => ({ id: c.id, nombre: c.nombre }))} />}
+        {tabValido === "empleados" && <EmpleadosAbm empleados={empleados.map(e => ({ ...e, fechaIngreso: e.fechaIngreso.toISOString() }))} />}
       </div>
     </div>
   )
