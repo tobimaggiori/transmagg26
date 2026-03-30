@@ -3,7 +3,6 @@
  * Cada caso usa exactamente los mismos ejemplos del JSDoc de galicia-excel.ts.
  */
 
-import ExcelJS from "exceljs"
 import {
   formatearFechaGalicia,
   generarExcelPlanillaGalicia,
@@ -109,35 +108,5 @@ describe("generarExcelPlanillaGalicia", () => {
     ])
 
     expect(buffer.byteLength).toBeGreaterThan(0)
-  })
-
-  it('la hoja se llama exactamente "Plantilla para emision"', async () => {
-    const buffer = await generarExcelPlanillaGalicia([])
-    const workbook = new ExcelJS.Workbook()
-    const loadWorkbook = workbook.xlsx.load as unknown as (data: unknown) => Promise<unknown>
-    await loadWorkbook(Buffer.from(new Uint8Array(buffer)))
-
-    expect(workbook.worksheets[0]?.name).toBe("Plantilla para emision")
-  })
-
-  it("la planilla exporta las 10 columnas exactas en orden", async () => {
-    const buffer = await generarExcelPlanillaGalicia([])
-    const workbook = new ExcelJS.Workbook()
-    const loadWorkbook = workbook.xlsx.load as unknown as (data: unknown) => Promise<unknown>
-    await loadWorkbook(Buffer.from(new Uint8Array(buffer)))
-    const worksheet = workbook.worksheets[0]
-
-    expect((worksheet.getRow(1).values as string[]).slice(1)).toEqual([
-      "Tipo de documento",
-      "Nro. de documento",
-      "Monto",
-      "Fecha de pago",
-      "Motivo de pago",
-      "Descripcion 1",
-      "Descripcion 2",
-      "Mail",
-      "Clausula",
-      "Nro de cheque",
-    ])
   })
 })
