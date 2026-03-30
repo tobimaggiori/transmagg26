@@ -1,9 +1,10 @@
 /**
  * API Routes para factura individual.
- * GET   /api/facturas/[id] - Detalle de factura con viajes
- * PATCH /api/facturas/[id] - Cambia estado (PENDIENTE→EMITIDA→COBRADA / ANULADA)
+ * GET   /api/facturas/[id] - Detalle de factura con viajes copiados
+ * PATCH /api/facturas/[id] - Cambia estado (BORRADOR→EMITIDA→COBRADA / ANULADA)
  *
- * Cuando se ANULA una factura, sus viajes vuelven a estado PENDIENTE.
+ * Cuando se ANULA una factura, sus viajes vuelven a estadoFactura="PENDIENTE_FACTURAR".
+ * NO se toca estadoLiquidacion.
  */
 
 import { NextRequest, NextResponse } from "next/server"
@@ -14,7 +15,7 @@ import { esRolInterno, esRolEmpresa, puedeVerTarifaEmpresa } from "@/lib/permiss
 import type { Rol } from "@/types"
 
 const TRANSICIONES_VALIDAS: Record<string, string[]> = {
-  PENDIENTE: ["EMITIDA", "ANULADA"],
+  BORRADOR: ["EMITIDA", "ANULADA"],
   EMITIDA: ["COBRADA", "ANULADA"],
   COBRADA: [],
   ANULADA: [],
@@ -29,16 +30,16 @@ const actualizarSchema = z.object({
 /**
  * GET: NextRequest { params: { id } } -> Promise<NextResponse>
  *
- * Dado el id de la factura, devuelve el detalle completo con viajes, pagos y empresa.
+ * Dado el id de la factura, devuelve el detalle completo con viajes copiados, pagos y empresa.
  * Roles empresa solo acceden a sus propias facturas; tarifaEmpresa oculta si no tiene permiso.
  * Existe para la vista de detalle de una factura con toda la información
  * necesaria para verificar importes y gestionar el cobro.
  *
  * Ejemplos:
  * GET /api/facturas/fact1 (sesión ADMIN_TRANSMAGG)
- * // => 200 { id: "fact1", total, viajes: [{ tarifaEmpresa, viaje: {...} }], pagos: [...] }
+ * // => 200 { id: "fact1", total, viajes: [{ tarifaEmpresa, subtotal, kilos, ... }], pagos: [...] }
  * GET /api/facturas/fact1 (sesión ADMIN_EMPRESA dueño)
- * // => 200 { id: "fact1", viajes: [{ tarifaEmpresa, viaje: {...} }] }
+ * // => 200 { id: "fact1", viajes: [{ subtotal, kilos, ... }] } (sin tarifaEmpresa)
  * GET /api/facturas/fact1 (sesión FLETERO)
  * // => 403 { error: "Acceso denegado" }
  */
@@ -55,17 +56,7 @@ export async function GET(
     include: {
       empresa: { select: { razonSocial: true, cuit: true } },
       operador: { select: { nombre: true, apellido: true } },
-      viajes: {
-        include: {
-          viaje: {
-            include: {
-              camion: { select: { patenteChasis: true, tipoCamion: true } },
-              chofer: { select: { nombre: true, apellido: true } },
-              fletero: { select: { razonSocial: true } },
-            },
-          },
-        },
-      },
+      viajes: true,
       pagos: true,
     },
   })
@@ -87,7 +78,7 @@ export async function GET(
       ...factura,
       viajes: factura.viajes.map((v) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { tarifaEmpresa, subtotal, ...resto } = v
+        const { tarifaEmpresa, ...resto } = v
         return resto
       }),
     }
@@ -101,18 +92,18 @@ export async function GET(
  * PATCH: NextRequest { params: { id } } -> Promise<NextResponse>
  *
  * Dado el id de la factura y { estado, nroComprobante?, estadoArca? },
- * avanza el estado: PENDIENTE→EMITIDA/ANULADA, EMITIDA→COBRADA/ANULADA.
- * Al anular, devuelve todos los viajes asociados a estado PENDIENTE.
- * Existe para gestionar el ciclo de vida de una factura y permitir
- * asignar número de comprobante al emitirla.
+ * avanza el estado: BORRADOR→EMITIDA/ANULADA, EMITIDA→COBRADA/ANULADA.
+ * Al anular, devuelve todos los viajes asociados a estadoFactura="PENDIENTE_FACTURAR"
+ * sin tocar estadoLiquidacion.
+ * Existe para gestionar el ciclo de vida de una factura.
  *
  * Ejemplos:
  * PATCH /api/facturas/fact1 { estado: "EMITIDA", nroComprobante: "0001-00000001" }
  * // => 200 { id: "fact1", estado: "EMITIDA", nroComprobante: "0001-00000001" }
  * PATCH /api/facturas/fact1 { estado: "ANULADA" }
- * // => 200 { id: "fact1", estado: "ANULADA" } (viajes vuelven a PENDIENTE)
- * PATCH /api/facturas/fact1 { estado: "COBRADA" } (fact en PENDIENTE)
- * // => 422 { error: "No se puede cambiar de PENDIENTE a COBRADA" }
+ * // => 200 { id: "fact1", estado: "ANULADA" } (viajes vuelven a PENDIENTE_FACTURAR)
+ * PATCH /api/facturas/fact1 { estado: "COBRADA" } (fact en BORRADOR)
+ * // => 422 { error: "No se puede cambiar de BORRADOR a COBRADA" }
  */
 export async function PATCH(
   request: NextRequest,
@@ -154,12 +145,13 @@ export async function PATCH(
         },
       })
 
+      // Al anular, liberar viajes (solo estadoFactura, NO tocar estadoLiquidacion)
       if (parsed.data.estado === "ANULADA") {
         const viajeIds = factura.viajes.map((v) => v.viajeId)
         if (viajeIds.length > 0) {
           await tx.viaje.updateMany({
             where: { id: { in: viajeIds } },
-            data: { estado: "PENDIENTE" },
+            data: { estadoFactura: "PENDIENTE_FACTURAR" },
           })
         }
       }

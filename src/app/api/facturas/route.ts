@@ -1,10 +1,11 @@
 /**
  * API Routes para gestión de facturas emitidas.
- * GET  /api/facturas - Lista facturas (filtrado por rol)
- * POST /api/facturas - Crea factura asociando viajes existentes + asientos IVA
+ * GET  /api/facturas?empresaId=XXX - Viajes pendientes + facturas
+ * POST /api/facturas - Crea factura asociando viajes existentes + asientos IVA/IIBB
  *
  * SEGURIDAD: tarifaEmpresa en ViajeEnFactura es NUNCA visible para fleteros/choferes.
- * Los viajes ya deben existir en estado PENDIENTE. El POST los marca como EN_FACTURA.
+ * Los viajes se filtran por estadoFactura="PENDIENTE_FACTURAR".
+ * El POST los marca como estadoFactura="FACTURADO" (NO toca estadoLiquidacion).
  */
 
 import { NextRequest, NextResponse } from "next/server"
@@ -12,81 +13,140 @@ import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno, esRolEmpresa } from "@/lib/permissions"
+import { calcularToneladas, calcularTotalViaje, calcularFactura } from "@/lib/viajes"
 import type { Rol } from "@/types"
 
 const viajeEnFactSchema = z.object({
   viajeId: z.string().uuid(),
+  fechaViaje: z.string(),
+  remito: z.string().nullable().optional(),
+  cupo: z.string().nullable().optional(),
+  mercaderia: z.string().nullable().optional(),
+  procedencia: z.string().nullable().optional(),
+  provinciaOrigen: z.string().nullable().optional(),
+  destino: z.string().nullable().optional(),
+  provinciaDestino: z.string().nullable().optional(),
+  kilos: z.number().positive("Kilos debe ser mayor a 0"),
   tarifaEmpresa: z.number().positive("La tarifa de empresa debe ser mayor a 0"),
 })
 
 const crearFacturaSchema = z.object({
   empresaId: z.string().uuid(),
   tipoCbte: z.enum(["A", "B", "C", "M", "X"]),
-  alicuotaIva: z.number().positive().default(21),
+  ivaPct: z.number().min(0).max(100).default(21),
   viajes: z.array(viajeEnFactSchema).min(1, "Debe incluir al menos un viaje"),
 })
 
 /**
- * GET: () -> Promise<NextResponse>
+ * GET: NextRequest -> Promise<NextResponse>
  *
- * Devuelve hasta 50 facturas ordenadas por fecha desc.
- * Roles empresa solo ven sus facturas; roles internos ven todas. Fletero/Chofer: 403.
- * Existe para el listado de facturas en el panel, donde cada empresa
- * accede solo a las facturas emitidas a su nombre.
+ * Devuelve viajes pendientes de facturar (estadoFactura="PENDIENTE_FACTURAR")
+ * y las facturas existentes de la empresa especificada.
+ * Roles empresa solo ven los suyos; roles internos pueden filtrar por empresaId.
+ * Existe para el panel de facturas mostrando qué facturar y qué ya está facturado.
  *
  * Ejemplos:
- * GET /api/facturas (sesión ADMIN_TRANSMAGG)
- * // => 200 [{ id, estado, total, empresa: { razonSocial }, _count: { viajes } }]
+ * GET /api/facturas?empresaId=e1 (sesión ADMIN_TRANSMAGG)
+ * // => 200 { viajesPendientes: [...], facturas: [...] }
  * GET /api/facturas (sesión ADMIN_EMPRESA)
- * // => 200 [{ id, estado, total, ... }] (solo las de su empresa)
+ * // => 200 { viajesPendientes: [...], facturas: [...] } (solo los suyos)
  * GET /api/facturas (sesión FLETERO)
  * // => 403 { error: "Acceso denegado" }
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await auth()
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
 
   const rol = session.user.rol as Rol
-  let whereClause: Record<string, unknown> = {}
+  const { searchParams } = new URL(request.url)
+  const empresaId = searchParams.get("empresaId")
 
-  if (esRolEmpresa(rol)) {
-    const empUsr = await prisma.empresaUsuario.findFirst({
-      where: { usuario: { email: session.user.email } },
-      select: { empresaId: true },
-    })
-    if (!empUsr) return NextResponse.json([])
-    whereClause = { empresaId: empUsr.empresaId }
-  } else if (!esRolInterno(rol)) {
+  if (!esRolEmpresa(rol) && !esRolInterno(rol)) {
     return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
   }
 
-  const facturas = await prisma.facturaEmitida.findMany({
-    where: whereClause,
-    include: {
-      empresa: { select: { razonSocial: true } },
-      _count: { select: { viajes: true } },
-    },
-    orderBy: { emitidaEn: "desc" },
-    take: 50,
-  })
+  // Determinar el empresaId real según el rol
+  let empresaIdReal: string | null = empresaId
 
-  return NextResponse.json(facturas)
+  if (esRolEmpresa(rol)) {
+    const empUsr = await prisma.empresaUsuario.findFirst({
+      where: { usuario: { email: session.user.email ?? "" } },
+      select: { empresaId: true },
+    })
+    if (!empUsr) return NextResponse.json({ viajesPendientes: [], facturas: [] })
+    empresaIdReal = empUsr.empresaId
+  }
+
+  const whereViajes: Record<string, unknown> = {
+    estadoFactura: "PENDIENTE_FACTURAR",
+  }
+  if (empresaIdReal) whereViajes.empresaId = empresaIdReal
+
+  const whereFacturas: Record<string, unknown> = {}
+  if (empresaIdReal) whereFacturas.empresaId = empresaIdReal
+
+  const [viajesRaw, facturas] = await Promise.all([
+    prisma.viaje.findMany({
+      where: whereViajes,
+      select: {
+        id: true,
+        fechaViaje: true,
+        fleteroId: true,
+        empresaId: true,
+        empresa: { select: { razonSocial: true } },
+        fletero: { select: { razonSocial: true } },
+        remito: true,
+        cupo: true,
+        mercaderia: true,
+        procedencia: true,
+        provinciaOrigen: true,
+        destino: true,
+        provinciaDestino: true,
+        kilos: true,
+        tarifaBase: true,
+        estadoLiquidacion: true,
+        estadoFactura: true,
+      },
+      orderBy: { fechaViaje: "desc" },
+      take: 200,
+    }),
+    prisma.facturaEmitida.findMany({
+      where: whereFacturas,
+      include: {
+        empresa: { select: { razonSocial: true } },
+        viajes: true,
+        pagos: { select: { monto: true } },
+      },
+      orderBy: { emitidaEn: "desc" },
+      take: 100,
+    }),
+  ])
+
+  // Calcular toneladas y total en los viajes pendientes
+  const viajesPendientes = viajesRaw.map((v) => ({
+    ...v,
+    toneladas: v.kilos != null ? calcularToneladas(v.kilos) : null,
+    total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaBase) : null,
+    // No incluir tarifaBase a roles empresa
+    ...(esRolEmpresa(rol) ? { tarifaBase: undefined } : {}),
+  }))
+
+  return NextResponse.json({ viajesPendientes, facturas })
 }
 
 /**
  * POST: NextRequest -> Promise<NextResponse>
  *
- * Dado el body { empresaId, tipoCbte, alicuotaIva, viajes: [{ viajeId, tarifaEmpresa }] },
- * crea una factura, genera el asiento de IVA, crea ViajeEnFactura con tarifaEmpresa,
- * genera asientos IIBB por provincia y marca los viajes como EN_FACTURA.
- * Existe para facturar los viajes pendientes de una empresa, calculando
- * automáticamente neto, IVA y total.
+ * Dado el body { empresaId, tipoCbte, ivaPct, viajes: [{ viajeId, fechaViaje, kilos, tarifaEmpresa, ...campos }] },
+ * crea una factura en BORRADOR con los datos copiados del viaje al momento de facturar.
+ * Actualiza estadoFactura="FACTURADO" en cada viaje (NO toca estadoLiquidacion).
+ * Existe para facturar viajes pendientes de una empresa, calculando neto, IVA y total.
  *
  * Ejemplos:
- * POST /api/facturas { empresaId: "e1", tipoCbte: "A", alicuotaIva: 21, viajes: [{ viajeId: "v2", tarifaEmpresa: 60000 }] }
- * // => 201 { id, estado: "PENDIENTE", total, neto, ivaMonto }
- * POST /api/facturas { empresaId: "e1", tipoCbte: "A", alicuotaIva: 21, viajes: [{ viajeId: "v3", tarifaEmpresa: 60000 }] } (v3 EN_FACTURA)
- * // => 400 { error: "Uno o más viajes no existen, no pertenecen a la empresa, o no están en estado PENDIENTE" }
+ * POST /api/facturas { empresaId: "e1", tipoCbte: "A", ivaPct: 21, viajes: [{ viajeId: "v2", kilos: 25000, tarifaEmpresa: 60, ... }] }
+ * // => 201 { id, estado: "BORRADOR", total, neto, ivaMonto }
+ * POST /api/facturas { empresaId: "e1", tipoCbte: "A", viajes: [{ viajeId: "v3", ... }] } (v3 ya FACTURADO)
+ * // => 400 { error: "Uno o más viajes no existen, no pertenecen a la empresa o ya están facturados" }
  * POST /api/facturas (sesión FLETERO)
  * // => 403 { error: "Acceso denegado" }
  */
@@ -103,28 +163,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { empresaId, tipoCbte, alicuotaIva, viajes } = parsed.data
+    const { empresaId, tipoCbte, ivaPct, viajes } = parsed.data
 
     const empresa = await prisma.empresa.findUnique({ where: { id: empresaId, activa: true } })
     if (!empresa) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 })
 
-    // Verificar que todos los viajes existen y están PENDIENTES para esta empresa
+    // Verificar que todos los viajes existen, pertenecen a la empresa y están pendientes de facturar
     const viajeIds = viajes.map((v) => v.viajeId)
     const viajesExistentes = await prisma.viaje.findMany({
-      where: { id: { in: viajeIds }, empresaId, estado: "PENDIENTE" },
+      where: { id: { in: viajeIds }, empresaId, estadoFactura: "PENDIENTE_FACTURAR" },
     })
 
     if (viajesExistentes.length !== viajes.length) {
       return NextResponse.json(
-        { error: "Uno o más viajes no existen, no pertenecen a la empresa, o no están en estado PENDIENTE" },
+        { error: "Uno o más viajes no existen, no pertenecen a la empresa o ya están facturados" },
         { status: 400 }
       )
     }
 
-    const neto = viajes.reduce((acc, v) => acc + v.tarifaEmpresa, 0)
-    const ivaMonto = neto * (alicuotaIva / 100)
-    const total = neto + ivaMonto
-    const periodo = viajesExistentes[0].fechaViaje.toISOString().slice(0, 7)
+    // Calcular totales usando calcularFactura
+    const viajesParaCalc = viajes.map((v) => ({ kilos: v.kilos, tarifaEmpresa: v.tarifaEmpresa }))
+    const { neto, ivaMonto, total } = calcularFactura(viajesParaCalc, ivaPct)
+
+    const periodo = new Date(viajes[0].fechaViaje).toISOString().slice(0, 7)
 
     const factura = await prisma.$transaction(async (tx) => {
       const fact = await tx.facturaEmitida.create({
@@ -132,11 +193,12 @@ export async function POST(request: NextRequest) {
           empresaId,
           operadorId: session.user.id,
           tipoCbte,
+          ivaPct,
           neto,
           ivaMonto,
           total,
           estadoArca: "PENDIENTE",
-          estado: "PENDIENTE",
+          estado: "BORRADOR",
         },
       })
 
@@ -146,40 +208,52 @@ export async function POST(request: NextRequest) {
           tipoReferencia: "FACTURA_EMITIDA",
           tipo: "VENTA",
           baseImponible: neto,
-          alicuota: alicuotaIva,
+          alicuota: ivaPct,
           montoIva: ivaMonto,
           periodo,
         },
       })
 
       for (const viaje of viajes) {
+        const subtotalViaje = calcularTotalViaje(viaje.kilos, viaje.tarifaEmpresa)
         const viajeData = viajesExistentes.find((v) => v.id === viaje.viajeId)!
 
         const enFact = await tx.viajeEnFactura.create({
           data: {
             viajeId: viaje.viajeId,
             facturaId: fact.id,
+            fechaViaje: new Date(viaje.fechaViaje),
+            remito: viaje.remito ?? null,
+            cupo: viaje.cupo ?? null,
+            mercaderia: viaje.mercaderia ?? null,
+            procedencia: viaje.procedencia ?? null,
+            provinciaOrigen: viaje.provinciaOrigen ?? null,
+            destino: viaje.destino ?? null,
+            provinciaDestino: viaje.provinciaDestino ?? null,
+            kilos: viaje.kilos,
             tarifaEmpresa: viaje.tarifaEmpresa,
-            subtotal: viaje.tarifaEmpresa,
+            subtotal: subtotalViaje,
           },
         })
 
-        if (viajeData.provinciaOrigen) {
+        const provincia = viaje.provinciaOrigen ?? viajeData.provinciaOrigen
+        if (provincia) {
           await tx.asientoIibb.create({
             data: {
               viajeEnFactId: enFact.id,
               tablaOrigen: "viajes_en_factura",
-              provincia: viajeData.provinciaOrigen,
-              montoIngreso: viaje.tarifaEmpresa,
-              periodo: viajeData.fechaViaje.toISOString().slice(0, 7),
+              provincia,
+              montoIngreso: subtotalViaje,
+              periodo: new Date(viaje.fechaViaje).toISOString().slice(0, 7),
             },
           })
         }
       }
 
+      // Marcar viajes como FACTURADO (sin tocar estadoLiquidacion)
       await tx.viaje.updateMany({
         where: { id: { in: viajeIds } },
-        data: { estado: "EN_FACTURA" },
+        data: { estadoFactura: "FACTURADO" },
       })
 
       return fact

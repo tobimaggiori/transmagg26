@@ -1,10 +1,11 @@
 /**
  * API Routes para gestión de liquidaciones.
- * GET  /api/liquidaciones - Lista liquidaciones (filtrado por rol)
- * POST /api/liquidaciones - Crea liquidación asociando viajes existentes (ADMIN/OPERADOR_TRANSMAGG)
+ * GET  /api/liquidaciones?fleteroId=XXX - Viajes pendientes + liquidaciones
+ * POST /api/liquidaciones - Crea liquidación asociando viajes existentes
  *
  * SEGURIDAD: tarifaFletero en ViajeEnLiquidacion es NUNCA visible para empresas/choferes.
- * Los viajes ya deben existir en estado PENDIENTE. El POST los marca como EN_LIQUIDACION.
+ * Los viajes se filtran por estadoLiquidacion="PENDIENTE_LIQUIDAR".
+ * El POST los marca como estadoLiquidacion="LIQUIDADO" (NO toca estadoFactura).
  */
 
 import { NextRequest, NextResponse } from "next/server"
@@ -12,81 +13,139 @@ import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
+import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
 import type { Rol } from "@/types"
 
 const viajeEnLiqSchema = z.object({
   viajeId: z.string().uuid(),
+  fechaViaje: z.string(),
+  remito: z.string().nullable().optional(),
+  cupo: z.string().nullable().optional(),
+  mercaderia: z.string().nullable().optional(),
+  procedencia: z.string().nullable().optional(),
+  provinciaOrigen: z.string().nullable().optional(),
+  destino: z.string().nullable().optional(),
+  provinciaDestino: z.string().nullable().optional(),
+  kilos: z.number().positive("Kilos debe ser mayor a 0"),
   tarifaFletero: z.number().positive("La tarifa del fletero debe ser mayor a 0"),
 })
 
 const crearLiquidacionSchema = z.object({
   fleteroId: z.string().uuid(),
   comisionPct: z.number().min(0).max(100),
+  ivaPct: z.number().min(0).max(100).default(21),
   viajes: z.array(viajeEnLiqSchema).min(1, "Debe incluir al menos un viaje"),
 })
 
 /**
- * GET: () -> Promise<NextResponse>
+ * GET: NextRequest -> Promise<NextResponse>
  *
- * Devuelve hasta 50 liquidaciones ordenadas por fecha desc.
- * Roles internos ven todas; FLETERO solo ve las suyas. Otros roles: 403.
- * Existe para el listado de liquidaciones en el panel, donde cada
- * fletero accede solo a sus propias liquidaciones.
+ * Devuelve viajes pendientes de liquidar (estadoLiquidacion="PENDIENTE_LIQUIDAR")
+ * y las liquidaciones existentes del fletero especificado.
+ * Roles internos pueden filtrar por fleteroId; FLETERO solo ve los suyos.
+ * Existe para el panel de liquidaciones mostrando qué liquidar y qué ya está liquidado.
  *
  * Ejemplos:
- * GET /api/liquidaciones (sesión ADMIN_TRANSMAGG)
- * // => 200 [{ id, estado, total, fletero: { razonSocial }, _count: { viajes } }]
+ * GET /api/liquidaciones?fleteroId=f1 (sesión ADMIN_TRANSMAGG)
+ * // => 200 { viajesPendientes: [...], liquidaciones: [...] }
  * GET /api/liquidaciones (sesión FLETERO)
- * // => 200 [{ id, estado, total, ... }] (solo las suyas)
+ * // => 200 { viajesPendientes: [...], liquidaciones: [...] } (solo los suyos)
  * GET /api/liquidaciones (sesión ADMIN_EMPRESA)
  * // => 403 { error: "Acceso denegado" }
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await auth()
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
 
   const rol = session.user.rol as Rol
+  const { searchParams } = new URL(request.url)
+  const fleteroId = searchParams.get("fleteroId")
 
-  const whereClause =
-    rol === "FLETERO"
-      ? { fletero: { usuario: { email: session.user.email } } }
-      : esRolInterno(rol)
-        ? {}
-        : null
-
-  if (whereClause === null) {
+  if (rol !== "FLETERO" && !esRolInterno(rol)) {
     return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
   }
 
-  const liquidaciones = await prisma.liquidacion.findMany({
-    where: whereClause,
-    include: {
-      fletero: { select: { razonSocial: true } },
-      _count: { select: { viajes: true } },
-    },
-    orderBy: { grabadaEn: "desc" },
-    take: 50,
-  })
+  // Determinar el fleteroId real según el rol
+  let fleteroIdReal: string | null = fleteroId
 
-  return NextResponse.json(liquidaciones)
+  if (rol === "FLETERO") {
+    const fletero = await prisma.fletero.findFirst({
+      where: { usuario: { email: session.user.email ?? "" } },
+      select: { id: true },
+    })
+    if (!fletero) return NextResponse.json({ viajesPendientes: [], liquidaciones: [] })
+    fleteroIdReal = fletero.id
+  }
+
+  const whereViajes: Record<string, unknown> = {
+    estadoLiquidacion: "PENDIENTE_LIQUIDAR",
+  }
+  if (fleteroIdReal) whereViajes.fleteroId = fleteroIdReal
+
+  const whereLiquidaciones: Record<string, unknown> = {}
+  if (fleteroIdReal) whereLiquidaciones.fleteroId = fleteroIdReal
+
+  const [viajesRaw, liquidaciones] = await Promise.all([
+    prisma.viaje.findMany({
+      where: whereViajes,
+      select: {
+        id: true,
+        fechaViaje: true,
+        fleteroId: true,
+        empresaId: true,
+        empresa: { select: { razonSocial: true } },
+        remito: true,
+        cupo: true,
+        mercaderia: true,
+        procedencia: true,
+        provinciaOrigen: true,
+        destino: true,
+        provinciaDestino: true,
+        kilos: true,
+        tarifaBase: true,
+        estadoLiquidacion: true,
+        estadoFactura: true,
+      },
+      orderBy: { fechaViaje: "desc" },
+      take: 200,
+    }),
+    prisma.liquidacion.findMany({
+      where: whereLiquidaciones,
+      include: {
+        fletero: { select: { razonSocial: true } },
+        viajes: true,
+        pagos: { select: { monto: true } },
+      },
+      orderBy: { grabadaEn: "desc" },
+      take: 100,
+    }),
+  ])
+
+  // Calcular toneladas y total en los viajes pendientes
+  const viajesPendientes = viajesRaw.map((v) => ({
+    ...v,
+    toneladas: v.kilos != null ? calcularToneladas(v.kilos) : null,
+    total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaBase) : null,
+  }))
+
+  return NextResponse.json({ viajesPendientes, liquidaciones })
 }
 
 /**
  * POST: NextRequest -> Promise<NextResponse>
  *
- * Dado el body { fleteroId, comisionPct, viajes: [{ viajeId, tarifaFletero }] },
- * crea una liquidación en BORRADOR, crea los ViajeEnLiquidacion con tarifaFletero,
- * genera asientos IIBB por provincia y marca los viajes como EN_LIQUIDACION.
- * Existe para liquidar los viajes pendientes de un fletero, calculando
- * automáticamente subtotales, comisión, IVA y neto.
+ * Dado el body { fleteroId, comisionPct, ivaPct, viajes: [{ viajeId, fechaViaje, kilos, tarifaFletero, ...campos }] },
+ * crea una liquidación en BORRADOR con los datos copiados del viaje al momento de liquidar.
+ * Actualiza estadoLiquidacion="LIQUIDADO" en cada viaje (NO toca estadoFactura).
+ * Existe para liquidar viajes pendientes de un fletero, calculando subtotales, comisión, IVA y neto.
  *
  * Ejemplos:
- * POST /api/liquidaciones { fleteroId: "f1", comisionPct: 10, viajes: [{ viajeId: "v2", tarifaFletero: 45000 }] }
+ * POST /api/liquidaciones { fleteroId: "f1", comisionPct: 10, ivaPct: 21, viajes: [{ viajeId: "v2", kilos: 25000, tarifaFletero: 50, ... }] }
  * // => 201 { id, estado: "BORRADOR", total, subtotalBruto, neto }
- * POST /api/liquidaciones { fleteroId: "f1", comisionPct: 10, viajes: [{ viajeId: "v1", tarifaFletero: 50000 }] } (v1 EN_LIQUIDACION)
- * // => 400 { error: "Uno o más viajes no existen, no pertenecen al fletero, o no están en estado PENDIENTE" }
- * POST /api/liquidaciones { comisionPct: 10, viajes: [] }
- * // => 400 { error: "Datos inválidos", detalles: {...} }
+ * POST /api/liquidaciones { fleteroId: "f1", comisionPct: 10, ivaPct: 21, viajes: [{ viajeId: "v1", ... }] } (v1 ya LIQUIDADO)
+ * // => 400 { error: "Uno o más viajes no existen, no pertenecen al fletero o ya están liquidados" }
+ * POST /api/liquidaciones (sesión FLETERO)
+ * // => 403 { error: "Acceso denegado" }
  */
 export async function POST(request: NextRequest) {
   const session = await auth()
@@ -101,30 +160,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { fleteroId, comisionPct, viajes } = parsed.data
+    const { fleteroId, comisionPct, ivaPct, viajes } = parsed.data
 
     const fletero = await prisma.fletero.findUnique({ where: { id: fleteroId, activo: true } })
     if (!fletero) return NextResponse.json({ error: "Fletero no encontrado" }, { status: 404 })
 
-    // Verificar que todos los viajes existen y están PENDIENTES
+    // Verificar que todos los viajes existen, pertenecen al fletero y están pendientes de liquidar
     const viajeIds = viajes.map((v) => v.viajeId)
     const viajesExistentes = await prisma.viaje.findMany({
-      where: { id: { in: viajeIds }, fleteroId, estado: "PENDIENTE" },
+      where: { id: { in: viajeIds }, fleteroId, estadoLiquidacion: "PENDIENTE_LIQUIDAR" },
     })
 
     if (viajesExistentes.length !== viajes.length) {
       return NextResponse.json(
-        { error: "Uno o más viajes no existen, no pertenecen al fletero, o no están en estado PENDIENTE" },
+        { error: "Uno o más viajes no existen, no pertenecen al fletero o ya están liquidados" },
         { status: 400 }
       )
     }
 
-    // Calcular totales
-    const subtotalBruto = viajes.reduce((acc, v) => acc + v.tarifaFletero, 0)
-    const comisionMonto = subtotalBruto * (comisionPct / 100)
-    const neto = subtotalBruto - comisionMonto
-    const ivaMonto = comisionMonto * 0.21
-    const total = neto + ivaMonto
+    // Calcular totales usando calcularLiquidacion
+    const viajesParaCalc = viajes.map((v) => ({ kilos: v.kilos, tarifaFletero: v.tarifaFletero }))
+    const { subtotalBruto, comisionMonto, neto, ivaMonto, totalFinal } = calcularLiquidacion(
+      viajesParaCalc,
+      comisionPct,
+      ivaPct
+    )
 
     const liquidacion = await prisma.$transaction(async (tx) => {
       const liq = await tx.liquidacion.create({
@@ -132,46 +192,58 @@ export async function POST(request: NextRequest) {
           fleteroId,
           operadorId: session.user.id,
           comisionPct,
+          ivaPct,
           subtotalBruto,
           comisionMonto,
           neto,
           ivaMonto,
-          total,
+          total: totalFinal,
           estado: "BORRADOR",
         },
       })
 
       for (const viaje of viajes) {
+        const subtotalViaje = calcularTotalViaje(viaje.kilos, viaje.tarifaFletero)
         const viajeData = viajesExistentes.find((v) => v.id === viaje.viajeId)!
 
         const enLiq = await tx.viajeEnLiquidacion.create({
           data: {
             viajeId: viaje.viajeId,
             liquidacionId: liq.id,
+            fechaViaje: new Date(viaje.fechaViaje),
+            remito: viaje.remito ?? null,
+            cupo: viaje.cupo ?? null,
+            mercaderia: viaje.mercaderia ?? null,
+            procedencia: viaje.procedencia ?? null,
+            provinciaOrigen: viaje.provinciaOrigen ?? null,
+            destino: viaje.destino ?? null,
+            provinciaDestino: viaje.provinciaDestino ?? null,
+            kilos: viaje.kilos,
             tarifaFletero: viaje.tarifaFletero,
-            subtotal: viaje.tarifaFletero,
+            subtotal: subtotalViaje,
           },
         })
 
         // Asiento IIBB por provincia de origen
-        if (viajeData.provinciaOrigen) {
-          const periodo = viajeData.fechaViaje.toISOString().slice(0, 7)
+        const provincia = viaje.provinciaOrigen ?? viajeData.provinciaOrigen
+        if (provincia) {
+          const periodo = new Date(viaje.fechaViaje).toISOString().slice(0, 7)
           await tx.asientoIibb.create({
             data: {
               viajeEnLiqId: enLiq.id,
               tablaOrigen: "viajes_en_liquidacion",
-              provincia: viajeData.provinciaOrigen,
-              montoIngreso: viaje.tarifaFletero,
+              provincia,
+              montoIngreso: subtotalViaje,
               periodo,
             },
           })
         }
       }
 
-      // Marcar viajes como EN_LIQUIDACION
+      // Marcar viajes como LIQUIDADO (sin tocar estadoFactura)
       await tx.viaje.updateMany({
         where: { id: { in: viajeIds } },
-        data: { estado: "EN_LIQUIDACION" },
+        data: { estadoLiquidacion: "LIQUIDADO" },
       })
 
       return liq

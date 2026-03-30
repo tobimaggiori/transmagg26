@@ -176,24 +176,25 @@ model CamionChofer {
 // ─── VIAJES (entidad base) ─────────────────────────────────────────────────────
 
 model Viaje {
-  id               String   @id @default(uuid())
-  fleteroId        String   @map("fletero_id")
-  camionId         String   @map("camion_id")
-  choferId         String   @map("chofer_id")
-  empresaId        String   @map("empresa_id")
-  operadorId       String   @map("operador_id")
-  fechaViaje       DateTime @map("fecha_viaje")
-  remito           String?
-  cupo             String?
-  mercaderia       String?
-  procedencia      String?
-  provinciaOrigen  String?  @map("provincia_origen")
-  destino          String?
-  provinciaDestino String?  @map("provincia_destino")
-  kilos            Float?
-  tarifaBase       Float    @map("tarifa_base")
-  estado           String   @default("PENDIENTE")
-  creadoEn         DateTime @default(now()) @map("creado_en")
+  id                  String   @id @default(uuid())
+  fleteroId           String   @map("fletero_id")
+  camionId            String   @map("camion_id")
+  choferId            String   @map("chofer_id")
+  empresaId           String   @map("empresa_id")
+  operadorId          String   @map("operador_id")
+  fechaViaje          DateTime @map("fecha_viaje")
+  remito              String?
+  cupo                String?
+  mercaderia          String?
+  procedencia         String?
+  provinciaOrigen     String?  @map("provincia_origen")
+  destino             String?
+  provinciaDestino    String?  @map("provincia_destino")
+  kilos               Float?
+  tarifaBase          Float    @map("tarifa_base")
+  estadoLiquidacion   String   @default("PENDIENTE_LIQUIDAR") @map("estado_liquidacion")
+  estadoFactura       String   @default("PENDIENTE_FACTURAR") @map("estado_factura")
+  creadoEn            DateTime @default(now()) @map("creado_en")
 
   fletero  Fletero @relation("FleteroViajes", fields: [fleteroId], references: [id])
   camion   Camion  @relation(fields: [camionId], references: [id])
@@ -210,11 +211,20 @@ model Viaje {
 // ─── VÍNCULO VIAJE ↔ LIQUIDACIÓN ──────────────────────────────────────────────
 
 model ViajeEnLiquidacion {
-  id            String @id @default(uuid())
-  viajeId       String @map("viaje_id")
-  liquidacionId String @map("liquidacion_id")
-  tarifaFletero Float  @map("tarifa_fletero")
-  subtotal      Float
+  id               String   @id @default(uuid())
+  viajeId          String   @map("viaje_id")
+  liquidacionId    String   @map("liquidacion_id")
+  fechaViaje       DateTime @map("fecha_viaje")
+  remito           String?
+  cupo             String?
+  mercaderia       String?
+  procedencia      String?
+  provinciaOrigen  String?  @map("provincia_origen")
+  destino          String?
+  provinciaDestino String?  @map("provincia_destino")
+  kilos            Float?
+  tarifaFletero    Float    @map("tarifa_fletero")
+  subtotal         Float
 
   viaje        Viaje         @relation(fields: [viajeId], references: [id])
   liquidacion  Liquidacion   @relation(fields: [liquidacionId], references: [id], onDelete: Cascade)
@@ -227,11 +237,20 @@ model ViajeEnLiquidacion {
 // ─── VÍNCULO VIAJE ↔ FACTURA ──────────────────────────────────────────────────
 
 model ViajeEnFactura {
-  id            String @id @default(uuid())
-  viajeId       String @map("viaje_id")
-  facturaId     String @map("factura_id")
-  tarifaEmpresa Float  @map("tarifa_empresa")
-  subtotal      Float
+  id               String   @id @default(uuid())
+  viajeId          String   @map("viaje_id")
+  facturaId        String   @map("factura_id")
+  fechaViaje       DateTime @map("fecha_viaje")
+  remito           String?
+  cupo             String?
+  mercaderia       String?
+  procedencia      String?
+  provinciaOrigen  String?  @map("provincia_origen")
+  destino          String?
+  provinciaDestino String?  @map("provincia_destino")
+  kilos            Float?
+  tarifaEmpresa    Float    @map("tarifa_empresa")
+  subtotal         Float
 
   viaje        Viaje          @relation(fields: [viajeId], references: [id])
   factura      FacturaEmitida @relation(fields: [facturaId], references: [id], onDelete: Cascade)
@@ -248,6 +267,7 @@ model Liquidacion {
   fleteroId     String   @map("fletero_id")
   operadorId    String   @map("operador_id")
   comisionPct   Float    @map("comision_pct")
+  ivaPct        Float    @default(21) @map("iva_pct")
   subtotalBruto Float    @map("subtotal_bruto")
   comisionMonto Float    @map("comision_monto")
   neto          Float
@@ -275,11 +295,12 @@ model FacturaEmitida {
   operadorId     String   @map("operador_id")
   nroComprobante String?  @map("nro_comprobante")
   tipoCbte       String   @map("tipo_cbte")
+  ivaPct         Float    @default(21) @map("iva_pct")
   neto           Float
   ivaMonto       Float    @map("iva_monto")
   total          Float
   estadoArca     String   @default("PENDIENTE") @map("estado_arca")
-  estado         String   @default("PENDIENTE")
+  estado         String   @default("BORRADOR")
   pdfS3Key       String?  @map("pdf_s3_key")
   emitidaEn      DateTime @default(now()) @map("emitida_en")
 
