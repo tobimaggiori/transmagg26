@@ -14,14 +14,18 @@ import type { Rol } from "@/types"
  * GET: () -> Promise<NextResponse>
  *
  * Devuelve todos los fleteros con saldo a pagar calculado como
- * suma(liquidaciones.total) - suma(pagos.monto), ordenados por saldo desc.
- * Para cada fletero incluye el detalle de liquidaciones impagas (estado != PAGADA).
+ * suma(liquidaciones.total) - suma(pagos.monto) + ajuste por NC_RECIBIDA:
+ *   - NC_RECIBIDA/ANULACION_LIQUIDACION reduce lo que Transmagg debe al fletero
+ *     (la liquidación anulada ya no cuenta como deuda).
+ * Solo se incluyen NC/ND con estado distinto de ANULADA.
+ * Ordenados por saldo desc.
  * Existe para el módulo de cuentas corrientes donde el operador
- * monitorea qué fleteros tienen cobros pendientes de Transmagg.
+ * monitorea qué fleteros tienen cobros pendientes de Transmagg,
+ * reflejando el impacto de NC recibidas que anulan liquidaciones.
  *
  * Ejemplos:
  * GET /api/cuentas-corrientes/fleteros (sesión ADMIN_TRANSMAGG)
- * // => 200 [{ fletero: { id, razonSocial }, saldoAPagar: 80000, liquidacionesImpagas: [...] }]
+ * // => 200 [{ fletero: { id, razonSocial }, saldoAPagar: 80000, liquidacionesImpagas: [...], ajusteNotasCD: -5000 }]
  * GET /api/cuentas-corrientes/fleteros (sesión FLETERO)
  * // => 403 { error: "Acceso denegado" }
  * GET /api/cuentas-corrientes/fleteros (sin sesión)
@@ -33,19 +37,41 @@ export async function GET() {
   const rol = session.user.rol as Rol
   if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
 
-  const fleteros = await prisma.fletero.findMany({
-    where: { activo: true },
-    include: {
-      liquidaciones: {
-        where: { estado: { in: ["EMITIDA", "BORRADOR"] } },
-        include: {
-          pagos: { select: { monto: true } },
+  const [fleteros, notasCD] = await Promise.all([
+    prisma.fletero.findMany({
+      where: { activo: true },
+      include: {
+        liquidaciones: {
+          where: { estado: { in: ["EMITIDA", "BORRADOR"] } },
+          include: {
+            pagos: { select: { monto: true } },
+          },
+          orderBy: { grabadaEn: "desc" },
         },
-        orderBy: { grabadaEn: "desc" },
       },
-    },
-    orderBy: { razonSocial: "asc" },
-  })
+      orderBy: { razonSocial: "asc" },
+    }),
+    prisma.notaCreditoDebito.findMany({
+      where: {
+        estado: { not: "ANULADA" },
+        tipo: "NC_RECIBIDA",
+        liquidacionId: { not: null },
+      },
+      include: {
+        liquidacion: { select: { fleteroId: true } },
+      },
+    }),
+  ])
+
+  // Agrupar ajustes NC_RECIBIDA por fletero
+  const ajustesPorFletero = new Map<string, number>()
+  for (const nota of notasCD) {
+    const fleteroId = nota.liquidacion?.fleteroId
+    if (!fleteroId) continue
+    const actual = ajustesPorFletero.get(fleteroId) ?? 0
+    // NC_RECIBIDA reduce lo que Transmagg le debe al fletero
+    ajustesPorFletero.set(fleteroId, actual - nota.montoTotal)
+  }
 
   const resultado = fleteros.map((flet) => {
     const liquidacionesConSaldo = flet.liquidaciones.map((liq) => {
@@ -62,12 +88,15 @@ export async function GET() {
     })
 
     const liquidacionesImpagas = liquidacionesConSaldo.filter((l) => l.saldo > 0)
-    const saldoAPagar = liquidacionesImpagas.reduce((acc, l) => acc + l.saldo, 0)
+    const saldoBaseLiquidaciones = liquidacionesImpagas.reduce((acc, l) => acc + l.saldo, 0)
+    const ajusteNotasCD = ajustesPorFletero.get(flet.id) ?? 0
+    const saldoAPagar = Math.max(0, saldoBaseLiquidaciones + ajusteNotasCD)
 
     return {
       fletero: { id: flet.id, razonSocial: flet.razonSocial, cuit: flet.cuit },
       saldoAPagar,
       liquidacionesImpagas,
+      ajusteNotasCD,
       totalLiquidado: flet.liquidaciones.reduce((acc, l) => acc + l.total, 0),
     }
   }).sort((a, b) => b.saldoAPagar - a.saldoAPagar)

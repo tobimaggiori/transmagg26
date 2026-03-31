@@ -14,14 +14,19 @@ import type { Rol } from "@/types"
  * GET: () -> Promise<NextResponse>
  *
  * Devuelve todas las empresas con saldo deudor calculado como
- * suma(facturas.total) - suma(pagos.monto), ordenadas por saldo desc.
- * Para cada empresa incluye el detalle de facturas impagas (estado != COBRADA).
+ * suma(facturas.total) - suma(pagos.monto) + ajuste por NC/ND emitidas:
+ *   - NC_EMITIDA reduce la deuda (crédito a favor de la empresa)
+ *   - ND_EMITIDA aumenta la deuda (cargo adicional a la empresa)
+ *   - ND_RECIBIDA aumenta la deuda (revertir pago rechazado — cheque rechazado)
+ * Solo se incluyen NC/ND con estado distinto de ANULADA.
+ * Ordenadas por saldo desc.
  * Existe para el módulo de cuentas corrientes donde el operador
- * monitorea qué empresas tienen deuda pendiente con Transmagg.
+ * monitorea qué empresas tienen deuda pendiente con Transmagg,
+ * reflejando el impacto real de las NC/ND emitidas y recibidas.
  *
  * Ejemplos:
  * GET /api/cuentas-corrientes/empresas (sesión ADMIN_TRANSMAGG)
- * // => 200 [{ empresa: { id, razonSocial }, saldoDeudor: 150000, facturasImpagas: [...] }]
+ * // => 200 [{ empresa: { id, razonSocial }, saldoDeudor: 150000, facturasImpagas: [...], ajusteNotasCD: -5000 }]
  * GET /api/cuentas-corrientes/empresas (sesión FLETERO)
  * // => 403 { error: "Acceso denegado" }
  * GET /api/cuentas-corrientes/empresas (sin sesión)
@@ -33,19 +38,46 @@ export async function GET() {
   const rol = session.user.rol as Rol
   if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
 
-  const empresas = await prisma.empresa.findMany({
-    where: { activa: true },
-    include: {
-      facturasEmitidas: {
-        where: { estado: { not: "ANULADA" } },
-        include: {
-          pagos: { select: { monto: true } },
+  const [empresas, notasCD] = await Promise.all([
+    prisma.empresa.findMany({
+      where: { activa: true },
+      include: {
+        facturasEmitidas: {
+          where: { estado: { not: "ANULADA" } },
+          include: {
+            pagos: { select: { monto: true } },
+          },
+          orderBy: { emitidaEn: "desc" },
         },
-        orderBy: { emitidaEn: "desc" },
       },
-    },
-    orderBy: { razonSocial: "asc" },
-  })
+      orderBy: { razonSocial: "asc" },
+    }),
+    prisma.notaCreditoDebito.findMany({
+      where: {
+        estado: { not: "ANULADA" },
+        tipo: { in: ["NC_EMITIDA", "ND_EMITIDA", "ND_RECIBIDA"] },
+        facturaId: { not: null },
+      },
+      include: {
+        factura: { select: { empresaId: true } },
+      },
+    }),
+  ])
+
+  // Agrupar ajustes NC/ND por empresa
+  const ajustesPorEmpresa = new Map<string, number>()
+  for (const nota of notasCD) {
+    const empresaId = nota.factura?.empresaId
+    if (!empresaId) continue
+    const actual = ajustesPorEmpresa.get(empresaId) ?? 0
+    if (nota.tipo === "NC_EMITIDA") {
+      // NC reduce deuda (empresa debe menos)
+      ajustesPorEmpresa.set(empresaId, actual - nota.montoTotal)
+    } else if (nota.tipo === "ND_EMITIDA" || nota.tipo === "ND_RECIBIDA") {
+      // ND aumenta deuda (empresa debe más)
+      ajustesPorEmpresa.set(empresaId, actual + nota.montoTotal)
+    }
+  }
 
   const resultado = empresas.map((emp) => {
     const facturasConSaldo = emp.facturasEmitidas.map((f) => {
@@ -64,12 +96,15 @@ export async function GET() {
     })
 
     const facturasImpagas = facturasConSaldo.filter((f) => f.saldo > 0)
-    const saldoDeudor = facturasImpagas.reduce((acc, f) => acc + f.saldo, 0)
+    const saldoBaseFacturas = facturasImpagas.reduce((acc, f) => acc + f.saldo, 0)
+    const ajusteNotasCD = ajustesPorEmpresa.get(emp.id) ?? 0
+    const saldoDeudor = Math.max(0, saldoBaseFacturas + ajusteNotasCD)
 
     return {
       empresa: { id: emp.id, razonSocial: emp.razonSocial, cuit: emp.cuit },
       saldoDeudor,
       facturasImpagas,
+      ajusteNotasCD,
       totalFacturado: emp.facturasEmitidas.reduce((acc, f) => acc + f.total, 0),
     }
   }).sort((a, b) => b.saldoDeudor - a.saldoDeudor)
