@@ -97,3 +97,18 @@ ARCA_MODO=          # "homologacion" o "produccion"
 - [ ] Agregar botón "Autorizar en ARCA" en el modal de detalle de liquidación (visible solo si arcaEstado === "PENDIENTE")
 - [ ] Mostrar CAE + fecha de vencimiento en el PDF de la liquidación
 - [ ] Agregar QR al PDF (RG 4291)
+
+## NC/ND — Tipos de comprobante ARCA
+
+| Código | Descripción | Cuándo usar |
+|--------|-------------|-------------|
+| 2 | Nota de Débito "A" | Emisor RI → Receptor RI o Monotributo |
+| 3 | Nota de Crédito "A" | Emisor RI → Receptor RI o Monotributo |
+| 7 | Nota de Débito "B" | Emisor RI → Receptor Exento o Consumidor Final |
+| 8 | Nota de Crédito "B" | Emisor RI → Receptor Exento o Consumidor Final |
+
+## Checklist ARCA para NC/ND (pendiente)
+- [ ] Implementar `FECAESolicitar` para NC/ND en `src/lib/arca-wsfev1.ts`
+- [ ] Crear endpoint `POST /api/notas-credito-debito/[id]/autorizar-arca`
+- [ ] Agregar botón "Autorizar en ARCA" (actualmente deshabilitado, pendiente certificado)
+- [ ] NC/ND siempre deben asociarse a la factura o liquidación original en ARCA (campo CmpAsoc)
