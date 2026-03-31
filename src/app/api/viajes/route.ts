@@ -170,7 +170,7 @@ export async function POST(request: NextRequest) {
     const [fletero, camion, chofer, empresa] = await Promise.all([
       prisma.fletero.findUnique({ where: { id: fleteroId, activo: true } }),
       prisma.camion.findUnique({ where: { id: camionId, activo: true } }),
-      prisma.usuario.findUnique({ where: { id: choferId } }),
+      prisma.usuario.findUnique({ where: { id: choferId, activo: true } }),
       prisma.empresa.findUnique({ where: { id: empresaId, activa: true } }),
     ])
 

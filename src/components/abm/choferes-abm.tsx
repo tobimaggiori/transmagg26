@@ -156,7 +156,11 @@ export function ChoforesAbm({ choferes }: ChoforesAbmProps) {
     setLoadingElim(true)
     setErrorElim(null)
     try {
-      const res = await fetch(`/api/usuarios/${dialogEliminar.id}`, { method: "DELETE" })
+      const res = await fetch(`/api/usuarios/${dialogEliminar.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ activo: false }),
+      })
       const data = await res.json()
       if (!res.ok) { setErrorElim(data.error ?? "Error al desactivar"); return }
       router.refresh()

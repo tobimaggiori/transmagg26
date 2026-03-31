@@ -80,6 +80,8 @@ export async function PATCH(
  * DELETE: NextRequest { params: { id } } -> Promise<NextResponse>
  *
  * Dado el id del camión, lo desactiva (soft delete) sin eliminar el registro.
+ * Además cierra la asignación activa en CamionChofer (pone hasta = now) para
+ * que el camión desactivado no siga apareciendo como "tiene chofer asignado".
  * Solo roles internos pueden desactivar camiones.
  * Existe para retirar un camión del sistema conservando su historial
  * en viajes y liquidaciones anteriores.
@@ -105,7 +107,16 @@ export async function DELETE(
     const existe = await prisma.camion.findUnique({ where: { id: params.id } })
     if (!existe) return NextResponse.json({ error: "Camión no encontrado" }, { status: 404 })
 
-    await prisma.camion.update({ where: { id: params.id }, data: { activo: false } })
+    const ahora = new Date()
+    await prisma.$transaction([
+      // Cerrar asignación activa en CamionChofer
+      prisma.camionChofer.updateMany({
+        where: { camionId: params.id, hasta: null },
+        data: { hasta: ahora },
+      }),
+      // Desactivar el camión
+      prisma.camion.update({ where: { id: params.id }, data: { activo: false } }),
+    ])
 
     return NextResponse.json({ message: "Camión desactivado correctamente" })
   } catch (error) {

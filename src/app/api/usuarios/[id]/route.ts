@@ -84,6 +84,18 @@ export async function PATCH(
       return NextResponse.json(usuario)
     }
 
+    // Si se desactiva un CHOFER, cerrar su asignación activa en CamionChofer
+    if (datosUsuario.activo === false && existe.rol === "CHOFER") {
+      const usuario = await prisma.$transaction(async (tx) => {
+        await tx.camionChofer.updateMany({
+          where: { choferId: params.id, hasta: null },
+          data: { hasta: new Date() },
+        })
+        return tx.usuario.update({ where: { id: params.id }, data: datosUsuario })
+      })
+      return NextResponse.json(usuario)
+    }
+
     const usuario = await prisma.usuario.update({
       where: { id: params.id },
       data: datosUsuario,

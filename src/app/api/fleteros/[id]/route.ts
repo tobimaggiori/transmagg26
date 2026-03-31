@@ -146,8 +146,9 @@ export async function PATCH(
 /**
  * DELETE: NextRequest { params: { id } } -> Promise<NextResponse>
  *
- * Dado el id del fletero, desactiva el fletero y su usuario (soft delete)
- * en paralelo, sin eliminar registros de la DB.
+ * Dado el id del fletero, desactiva el fletero y su usuario (soft delete),
+ * cierra las asignaciones activas en CamionChofer de todos sus camiones
+ * y desactiva los choferes del fletero.
  * Existe para conservar el historial de liquidaciones y camiones asociados
  * al fletero mientras se impide su acceso al sistema.
  *
@@ -169,13 +170,27 @@ export async function DELETE(
   if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
 
   try {
-    const fletero = await prisma.fletero.findUnique({ where: { id: params.id } })
+    const fletero = await prisma.fletero.findUnique({
+      where: { id: params.id },
+      include: { camiones: { where: { activo: true }, select: { id: true } } },
+    })
     if (!fletero) return NextResponse.json({ error: "Fletero no encontrado" }, { status: 404 })
 
-    await Promise.all([
-      prisma.fletero.update({ where: { id: params.id }, data: { activo: false } }),
-      prisma.usuario.update({ where: { id: fletero.usuarioId }, data: { activo: false } }),
-    ])
+    const ahora = new Date()
+    const camionIds = fletero.camiones.map((c) => c.id)
+
+    await prisma.$transaction(async (tx) => {
+      // Cerrar asignaciones activas en CamionChofer para todos los camiones del fletero
+      if (camionIds.length > 0) {
+        await tx.camionChofer.updateMany({
+          where: { camionId: { in: camionIds }, hasta: null },
+          data: { hasta: ahora },
+        })
+      }
+      // Desactivar el fletero y su usuario
+      await tx.fletero.update({ where: { id: params.id }, data: { activo: false } })
+      await tx.usuario.update({ where: { id: fletero.usuarioId }, data: { activo: false } })
+    })
 
     return NextResponse.json({ message: "Fletero desactivado correctamente" })
   } catch (error) {
