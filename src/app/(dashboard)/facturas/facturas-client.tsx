@@ -9,6 +9,7 @@
 import { Fragment, useState, useCallback, useEffect } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje, calcularFactura } from "@/lib/viajes"
+import { calcularTotalesNotaCD, labelTipoNotaCD, labelSubtipoNotaCD } from "@/lib/nota-cd-utils"
 import { WorkflowNote } from "@/components/workflow/workflow-note"
 import type { Rol } from "@/types"
 
@@ -95,6 +96,15 @@ type FacturasClientProps = {
   empresaIdPropia: string | null
 }
 
+type NotaCDResumen = {
+  id: string
+  tipo: string
+  subtipo: string | null
+  montoTotal: number
+  estado: string
+  creadoEn: string
+}
+
 // ─── Estado badge ─────────────────────────────────────────────────────────────
 
 function EstadoBadge({ estado }: { estado: string }) {
@@ -108,6 +118,350 @@ function EstadoBadge({ estado }: { estado: string }) {
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilos[estado] ?? "bg-gray-100 text-gray-800"}`}>
       {estado}
     </span>
+  )
+}
+
+// ─── Modal Emitir NC ──────────────────────────────────────────────────────────
+
+/**
+ * ModalEmitirNC: props -> JSX.Element
+ *
+ * Dado el id de la factura, sus viajes y una función de cierre/recarga,
+ * renderiza un formulario para emitir una Nota de Crédito (NC_EMITIDA).
+ * Permite seleccionar subtipo: ANULACION_TOTAL (monto automático desde factura),
+ * ANULACION_PARCIAL (con selección de viajes mediante checkboxes) y
+ * CORRECCION_IMPORTE (con input manual de montoNeto).
+ * Para todos los subtipos muestra el preview de totales (neto, IVA, total).
+ * Al confirmar envía POST /api/notas-credito-debito y llama onExito.
+ * Existe para que el operador emita NC sin abandonar la vista de la factura.
+ *
+ * Ejemplos:
+ * <ModalEmitirNC facturaId="f1" totalFactura={1210} viajes={[...]} onExito={fn} onClose={fn} />
+ * // => formulario de NC con subtipo ANULACION_TOTAL por defecto
+ */
+function ModalEmitirNC({
+  facturaId,
+  totalFactura,
+  netoFactura,
+  viajes,
+  onExito,
+  onClose,
+}: {
+  facturaId: string
+  totalFactura: number
+  netoFactura: number
+  viajes: ViajeEnFactura[]
+  onExito: () => void
+  onClose: () => void
+}) {
+  const [subtipo, setSubtipo] = useState("ANULACION_TOTAL")
+  const [montoNeto, setMontoNeto] = useState(netoFactura)
+  const [ivaPct, setIvaPct] = useState(21)
+  const [descripcion, setDescripcion] = useState("")
+  const [motivoDetalle, setMotivoDetalle] = useState("")
+  const [viajesSeleccionados, setViajesSeleccionados] = useState<Set<string>>(new Set())
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const montoNetoReal = subtipo === "ANULACION_TOTAL" ? netoFactura : montoNeto
+  const totales = calcularTotalesNotaCD(montoNetoReal, ivaPct)
+
+  function toggleViaje(id: string) {
+    setViajesSeleccionados((prev) => {
+      const s = new Set(prev)
+      if (s.has(id)) s.delete(id)
+      else s.add(id)
+      return s
+    })
+  }
+
+  async function emitir() {
+    if (!descripcion.trim()) { setError("La descripción es obligatoria"); return }
+    if (subtipo === "ANULACION_PARCIAL" && viajesSeleccionados.size === 0) {
+      setError("Seleccioná al menos un viaje para anulación parcial"); return
+    }
+    setEnviando(true)
+    setError(null)
+    try {
+      const body: Record<string, unknown> = {
+        tipo: "NC_EMITIDA",
+        subtipo,
+        facturaId,
+        montoNeto: montoNetoReal,
+        ivaPct,
+        descripcion,
+        motivoDetalle: motivoDetalle || undefined,
+        viajesIds: subtipo === "ANULACION_PARCIAL" ? Array.from(viajesSeleccionados) : undefined,
+      }
+      const res = await fetch("/api/notas-credito-debito", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        setError(err.error ?? "Error al emitir NC")
+        return
+      }
+      onExito()
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+      <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b px-6 py-4">
+          <h2 className="text-lg font-semibold text-blue-700">Emitir Nota de Crédito</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-800 text-xl font-bold">×</button>
+        </div>
+        <div className="px-6 py-4 space-y-4">
+          {error && <div className="p-3 bg-red-50 text-red-700 rounded text-sm">{error}</div>}
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Subtipo *</label>
+            <select value={subtipo} onChange={(e) => setSubtipo(e.target.value)} className="w-full h-9 rounded border bg-white px-2 text-sm">
+              <option value="ANULACION_TOTAL">Anulación total</option>
+              <option value="ANULACION_PARCIAL">Anulación parcial</option>
+              <option value="CORRECCION_IMPORTE">Corrección de importe</option>
+            </select>
+          </div>
+
+          {subtipo === "ANULACION_PARCIAL" && viajes.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">Viajes a anular *</label>
+              <div className="border rounded divide-y max-h-40 overflow-y-auto">
+                {viajes.map((v) => (
+                  <label key={v.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked={viajesSeleccionados.has(v.id)}
+                      onChange={() => toggleViaje(v.id)}
+                    />
+                    <span>{formatearFecha(new Date(v.fechaViaje))} — {v.mercaderia ?? "viaje"} — {formatearMoneda(v.subtotal)}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {subtipo === "CORRECCION_IMPORTE" && (
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">Monto neto *</label>
+              <input
+                type="number"
+                value={montoNeto}
+                onChange={(e) => setMontoNeto(parseFloat(e.target.value) || 0)}
+                min="0.01"
+                step="0.01"
+                className="w-full h-9 rounded border bg-white px-2 text-sm"
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">IVA %</label>
+            <input
+              type="number"
+              value={ivaPct}
+              onChange={(e) => setIvaPct(parseFloat(e.target.value) || 0)}
+              min="0"
+              max="100"
+              className="w-24 h-9 rounded border bg-white px-2 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Descripción *</label>
+            <input
+              type="text"
+              value={descripcion}
+              onChange={(e) => setDescripcion(e.target.value)}
+              className="w-full h-9 rounded border bg-white px-2 text-sm"
+              placeholder="Descripción de la NC"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Motivo / detalle (opcional)</label>
+            <textarea
+              value={motivoDetalle}
+              onChange={(e) => setMotivoDetalle(e.target.value)}
+              rows={2}
+              className="w-full rounded border bg-white px-2 py-1.5 text-sm"
+              placeholder="Detalle adicional..."
+            />
+          </div>
+
+          {/* Preview totales */}
+          <div className="bg-blue-50 rounded-md p-3 text-sm space-y-1">
+            <div className="flex justify-between"><span className="text-gray-600">Neto:</span><span>{formatearMoneda(totales.montoNeto)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-600">IVA ({ivaPct}%):</span><span>{formatearMoneda(totales.montoIva)}</span></div>
+            <div className="flex justify-between font-semibold border-t pt-1"><span>Total NC:</span><span>{formatearMoneda(totales.montoTotal)}</span></div>
+            <p className="text-xs text-gray-500">Factura original: {formatearMoneda(totalFactura)}</p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 border-t px-6 py-4">
+          <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-gray-50">Cancelar</button>
+          <button
+            onClick={emitir}
+            disabled={enviando}
+            className="rounded-md bg-blue-600 text-white px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+          >
+            {enviando ? "Emitiendo..." : "Emitir Nota de Crédito"}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Modal Emitir ND ──────────────────────────────────────────────────────────
+
+/**
+ * ModalEmitirND: props -> JSX.Element
+ *
+ * Dado el id de la factura y una función de cierre/recarga, renderiza un formulario
+ * para emitir una Nota de Débito (ND_EMITIDA) con selector de subtipo, inputs de
+ * montoNeto e ivaPct, descripción obligatoria, motivoDetalle opcional y preview de totales.
+ * Al confirmar envía POST /api/notas-credito-debito y llama onExito.
+ * Existe para que el operador emita ND (diferencias, costos adicionales, ajustes, etc.)
+ * sin abandonar la vista de la factura.
+ *
+ * Ejemplos:
+ * <ModalEmitirND facturaId="f1" onExito={fn} onClose={fn} />
+ * // => formulario de ND con subtipo DIFERENCIA_TARIFA por defecto
+ */
+function ModalEmitirND({
+  facturaId,
+  onExito,
+  onClose,
+}: {
+  facturaId: string
+  onExito: () => void
+  onClose: () => void
+}) {
+  const [subtipo, setSubtipo] = useState("DIFERENCIA_TARIFA")
+  const [montoNeto, setMontoNeto] = useState(0)
+  const [ivaPct, setIvaPct] = useState(21)
+  const [descripcion, setDescripcion] = useState("")
+  const [motivoDetalle, setMotivoDetalle] = useState("")
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const totales = calcularTotalesNotaCD(montoNeto, ivaPct)
+
+  async function emitir() {
+    if (!descripcion.trim()) { setError("La descripción es obligatoria"); return }
+    if (montoNeto <= 0) { setError("El monto neto debe ser mayor a 0"); return }
+    setEnviando(true)
+    setError(null)
+    try {
+      const body = {
+        tipo: "ND_EMITIDA",
+        subtipo,
+        facturaId,
+        montoNeto,
+        ivaPct,
+        descripcion,
+        motivoDetalle: motivoDetalle || undefined,
+      }
+      const res = await fetch("/api/notas-credito-debito", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        setError(err.error ?? "Error al emitir ND")
+        return
+      }
+      onExito()
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+      <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b px-6 py-4">
+          <h2 className="text-lg font-semibold text-orange-700">Emitir Nota de Débito</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-800 text-xl font-bold">×</button>
+        </div>
+        <div className="px-6 py-4 space-y-4">
+          {error && <div className="p-3 bg-red-50 text-red-700 rounded text-sm">{error}</div>}
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Subtipo *</label>
+            <select value={subtipo} onChange={(e) => setSubtipo(e.target.value)} className="w-full h-9 rounded border bg-white px-2 text-sm">
+              <option value="DIFERENCIA_TARIFA">Diferencia de tarifa</option>
+              <option value="COSTO_ADICIONAL">Costo adicional</option>
+              <option value="AJUSTE">Ajuste</option>
+              <option value="PENALIDAD">Penalidad</option>
+              <option value="CORRECCION_ADMINISTRATIVA">Corrección administrativa</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Monto neto *</label>
+            <input
+              type="number"
+              value={montoNeto}
+              onChange={(e) => setMontoNeto(parseFloat(e.target.value) || 0)}
+              min="0.01"
+              step="0.01"
+              className="w-full h-9 rounded border bg-white px-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">IVA %</label>
+            <input
+              type="number"
+              value={ivaPct}
+              onChange={(e) => setIvaPct(parseFloat(e.target.value) || 0)}
+              min="0"
+              max="100"
+              className="w-24 h-9 rounded border bg-white px-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Descripción *</label>
+            <input
+              type="text"
+              value={descripcion}
+              onChange={(e) => setDescripcion(e.target.value)}
+              className="w-full h-9 rounded border bg-white px-2 text-sm"
+              placeholder="Descripción de la ND"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Motivo / detalle (opcional)</label>
+            <textarea
+              value={motivoDetalle}
+              onChange={(e) => setMotivoDetalle(e.target.value)}
+              rows={2}
+              className="w-full rounded border bg-white px-2 py-1.5 text-sm"
+              placeholder="Detalle adicional..."
+            />
+          </div>
+          {/* Preview totales */}
+          <div className="bg-orange-50 rounded-md p-3 text-sm space-y-1">
+            <div className="flex justify-between"><span className="text-gray-600">Neto:</span><span>{formatearMoneda(totales.montoNeto)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-600">IVA ({ivaPct}%):</span><span>{formatearMoneda(totales.montoIva)}</span></div>
+            <div className="flex justify-between font-semibold border-t pt-1"><span>Total ND:</span><span>{formatearMoneda(totales.montoTotal)}</span></div>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 border-t px-6 py-4">
+          <button onClick={onClose} className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-gray-50">Cancelar</button>
+          <button
+            onClick={emitir}
+            disabled={enviando}
+            className="rounded-md bg-orange-600 text-white px-4 py-2 text-sm font-medium hover:bg-orange-700 disabled:opacity-50"
+          >
+            {enviando ? "Emitiendo..." : "Emitir Nota de Débito"}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -134,7 +488,30 @@ function ModalDetalleFactura({
   cargando: boolean
 }) {
   const [nroComprobante, setNroComprobante] = useState(factura.nroComprobante ?? "")
+  const [notasCD, setNotasCD] = useState<NotaCDResumen[]>([])
+  const [mostrarModalNC, setMostrarModalNC] = useState(false)
+  const [mostrarModalND, setMostrarModalND] = useState(false)
   const pagado = factura.pagos.reduce((acc, p) => acc + p.monto, 0)
+
+  useEffect(() => {
+    async function cargarNotasCD() {
+      try {
+        const res = await fetch(`/api/notas-credito-debito?facturaId=${factura.id}`)
+        if (res.ok) setNotasCD(await res.json())
+      } catch { /* silencioso */ }
+    }
+    cargarNotasCD()
+  }, [factura.id])
+
+  function handleExitoNota() {
+    setMostrarModalNC(false)
+    setMostrarModalND(false)
+    // Recargar notas
+    fetch(`/api/notas-credito-debito?facturaId=${factura.id}`)
+      .then((r) => r.json())
+      .then(setNotasCD)
+      .catch(() => {})
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -208,8 +585,62 @@ function ModalDetalleFactura({
           </div>
         )}
 
+        {/* Sección NC/ND */}
+        <div className="mt-4 border-t pt-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold text-gray-700">Notas de Crédito / Débito</h3>
+            {factura.estado !== "ANULADA" && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setMostrarModalNC(true)}
+                  className="h-7 px-3 rounded-md bg-blue-100 text-blue-700 text-xs font-medium hover:bg-blue-200"
+                >
+                  Emitir NC
+                </button>
+                <button
+                  onClick={() => setMostrarModalND(true)}
+                  className="h-7 px-3 rounded-md bg-orange-100 text-orange-700 text-xs font-medium hover:bg-orange-200"
+                >
+                  Emitir ND
+                </button>
+              </div>
+            )}
+          </div>
+          {notasCD.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No hay NC/ND para esta factura.</p>
+          ) : (
+            <div className="overflow-x-auto rounded border text-xs">
+              <table className="w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-gray-600">Tipo</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-600">Fecha</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-600">Monto</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-600">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {notasCD.map((n) => (
+                    <tr key={n.id} className="border-t">
+                      <td className="px-3 py-1.5">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${n.tipo === "NC_EMITIDA" ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"}`}>
+                          {labelTipoNotaCD(n.tipo)}
+                        </span>
+                        {n.subtipo && <span className="ml-1 text-gray-500">{labelSubtipoNotaCD(n.subtipo)}</span>}
+                      </td>
+                      <td className="px-3 py-1.5 text-gray-600">{formatearFecha(n.creadoEn)}</td>
+                      <td className="px-3 py-1.5 text-right font-medium">{formatearMoneda(n.montoTotal)}</td>
+                      <td className="px-3 py-1.5 text-gray-600">{n.estado}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
         {/* Acciones */}
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center mt-4">
           <button
             onClick={() => window.print()}
             className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent"
@@ -247,6 +678,25 @@ function ModalDetalleFactura({
           </div>
         </div>
       </div>
+
+      {/* Modales NC/ND (dentro del ModalDetalleFactura) */}
+      {mostrarModalNC && (
+        <ModalEmitirNC
+          facturaId={factura.id}
+          totalFactura={factura.total}
+          netoFactura={factura.neto}
+          viajes={factura.viajes}
+          onExito={handleExitoNota}
+          onClose={() => setMostrarModalNC(false)}
+        />
+      )}
+      {mostrarModalND && (
+        <ModalEmitirND
+          facturaId={factura.id}
+          onExito={handleExitoNota}
+          onClose={() => setMostrarModalND(false)}
+        />
+      )}
     </div>
   )
 }
