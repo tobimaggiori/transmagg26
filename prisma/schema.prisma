@@ -69,6 +69,7 @@ model Usuario {
   gastosTarjetaPrepagaOpera  GastoTarjetaPrepaga[]   @relation("OperadorGastoTarjetaPrepaga")
   empleado                   Empleado?               @relation("EmpleadoUsuario")
   adelantosFleterosOpera     AdelantoFletero[]       @relation("OperadorAdelantoFletero")
+  notasCreditoDebitoOpera    NotaCreditoDebito[]     @relation("OperadorNotaCreditoDebito")
 
   @@map("usuarios")
 }
@@ -205,6 +206,7 @@ model Viaje {
 
   enLiquidaciones ViajeEnLiquidacion[]
   enFacturas      ViajeEnFactura[]
+  viajesEnNotasCD ViajeEnNotaCD[]
 
   @@map("viajes")
 }
@@ -286,12 +288,13 @@ model Liquidacion {
   pdfS3Key           String?  @map("pdf_s3_key")
   grabadaEn          DateTime @default(now()) @map("grabada_en")
 
-  fletero            Fletero              @relation(fields: [fleteroId], references: [id])
-  operador           Usuario              @relation("OperadorLiquidacion", fields: [operadorId], references: [id])
-  viajes             ViajeEnLiquidacion[]
-  pagos              PagoAFletero[]
-  chequesEmitidos    ChequeEmitido[]
-  adelantoDescuentos AdelantoDescuento[]
+  fletero              Fletero              @relation(fields: [fleteroId], references: [id])
+  operador             Usuario              @relation("OperadorLiquidacion", fields: [operadorId], references: [id])
+  viajes               ViajeEnLiquidacion[]
+  pagos                PagoAFletero[]
+  chequesEmitidos      ChequeEmitido[]
+  adelantoDescuentos   AdelantoDescuento[]
+  notasCreditoDebito   NotaCreditoDebito[]
 
   @@map("liquidaciones")
 }
@@ -313,12 +316,13 @@ model FacturaEmitida {
   pdfS3Key       String?  @map("pdf_s3_key")
   emitidaEn      DateTime @default(now()) @map("emitida_en")
 
-  empresa          Empresa           @relation(fields: [empresaId], references: [id])
-  operador         Usuario           @relation("OperadorFactura", fields: [operadorId], references: [id])
-  viajes           ViajeEnFactura[]
-  pagos            PagoDeEmpresa[]
-  asientosIva      AsientoIva[]
-  chequesRecibidos ChequeRecibido[]
+  empresa              Empresa             @relation(fields: [empresaId], references: [id])
+  operador             Usuario             @relation("OperadorFactura", fields: [operadorId], references: [id])
+  viajes               ViajeEnFactura[]
+  pagos                PagoDeEmpresa[]
+  asientosIva          AsientoIva[]
+  chequesRecibidos     ChequeRecibido[]
+  notasCreditoDebito   NotaCreditoDebito[]
 
   @@map("facturas_emitidas")
 }
@@ -478,16 +482,17 @@ model ChequeRecibido {
   operadorId          String          @map("operador_id")
   creadoEn            DateTime        @default(now()) @map("creado_en")
 
-  empresa             Empresa         @relation(fields: [empresaId], references: [id])
-  factura             FacturaEmitida? @relation(fields: [facturaId], references: [id], onDelete: SetNull)
-  cuentaDeposito      Cuenta?         @relation("CuentaDepositaChequeRecibido", fields: [cuentaDepositoId], references: [id], onDelete: SetNull)
-  endosadoAFletero    Fletero?        @relation("FleteroEndosoChequeRecibido", fields: [endosadoAFleteroId], references: [id], onDelete: SetNull)
-  endosadoAProveedor  Proveedor?      @relation("ProveedorEndosoChequeRecibido", fields: [endosadoAProveedorId], references: [id], onDelete: SetNull)
-  endosadoABroker     Cuenta?         @relation("CuentaBrokerChequeRecibido", fields: [endosadoABrokerId], references: [id], onDelete: SetNull)
-  operador            Usuario         @relation("OperadorChequeRecibido", fields: [operadorId], references: [id])
-  pagosEmpresa        PagoDeEmpresa[]
-  pagosFletero        PagoAFletero[]
-  adelantos           AdelantoFletero[]
+  empresa               Empresa             @relation(fields: [empresaId], references: [id])
+  factura               FacturaEmitida?     @relation(fields: [facturaId], references: [id], onDelete: SetNull)
+  cuentaDeposito        Cuenta?             @relation("CuentaDepositaChequeRecibido", fields: [cuentaDepositoId], references: [id], onDelete: SetNull)
+  endosadoAFletero      Fletero?            @relation("FleteroEndosoChequeRecibido", fields: [endosadoAFleteroId], references: [id], onDelete: SetNull)
+  endosadoAProveedor    Proveedor?          @relation("ProveedorEndosoChequeRecibido", fields: [endosadoAProveedorId], references: [id], onDelete: SetNull)
+  endosadoABroker       Cuenta?             @relation("CuentaBrokerChequeRecibido", fields: [endosadoABrokerId], references: [id], onDelete: SetNull)
+  operador              Usuario             @relation("OperadorChequeRecibido", fields: [operadorId], references: [id])
+  pagosEmpresa          PagoDeEmpresa[]
+  pagosFletero          PagoAFletero[]
+  adelantos             AdelantoFletero[]
+  notasCreditoDebito    NotaCreditoDebito[]
 
   @@map("cheques_recibidos")
 }
@@ -751,6 +756,74 @@ model AsientoIibb {
   viajeEnFactura     ViajeEnFactura?     @relation(fields: [viajeEnFactId], references: [id])
 
   @@map("asientos_iibb")
+}
+
+// ─── NOTAS DE CRÉDITO / DÉBITO ────────────────────────────────────────────────
+
+model NotaCreditoDebito {
+  id                  String    @id @default(uuid())
+  tipo                String
+  // NC_EMITIDA | ND_EMITIDA | NC_RECIBIDA | ND_RECIBIDA
+  subtipo             String?   @map("subtipo")
+  // NC_EMITIDA subtipos: ANULACION_TOTAL | ANULACION_PARCIAL | CORRECCION_IMPORTE
+  // ND_EMITIDA subtipos: DIFERENCIA_TARIFA | COSTO_ADICIONAL | AJUSTE | PENALIDAD | CORRECCION_ADMINISTRATIVA
+  // NC_RECIBIDA subtipos: ANULACION_LIQUIDACION
+  // ND_RECIBIDA subtipos: CHEQUE_RECHAZADO
+
+  facturaId           String?   @map("factura_id")
+  liquidacionId       String?   @map("liquidacion_id")
+  chequeRecibidoId    String?   @map("cheque_recibido_id")
+
+  nroComprobanteExterno   String?   @map("nro_comprobante_externo")
+  fechaComprobanteExterno DateTime? @map("fecha_comprobante_externo")
+  emisorExterno           String?   @map("emisor_externo")
+
+  montoNeto           Float     @map("monto_neto")
+  montoIva            Float     @default(0) @map("monto_iva")
+  montoTotal          Float     @map("monto_total")
+
+  descripcion         String?
+  motivoDetalle       String?   @map("motivo_detalle")
+
+  estado              String    @default("BORRADOR")
+
+  nroComprobante      Int?      @map("nro_comprobante")
+  ptoVenta            Int?      @default(1) @map("pto_venta")
+  tipoCbte            Int?      @map("tipo_cbte")
+  cae                 String?   @map("cae")
+  caeVto              DateTime? @map("cae_vto")
+  qrData              String?   @map("qr_data")
+  arcaEstado          String?   @default("PENDIENTE") @map("arca_estado")
+  arcaObservaciones   String?   @map("arca_observaciones")
+
+  pdfS3Key            String?   @map("pdf_s3_key")
+
+  operadorId          String    @map("operador_id")
+  creadoEn            DateTime  @default(now()) @map("creado_en")
+
+  factura             FacturaEmitida?   @relation(fields: [facturaId], references: [id], onDelete: SetNull)
+  liquidacion         Liquidacion?      @relation(fields: [liquidacionId], references: [id], onDelete: SetNull)
+  chequeRecibido      ChequeRecibido?   @relation(fields: [chequeRecibidoId], references: [id], onDelete: SetNull)
+  operador            Usuario           @relation("OperadorNotaCreditoDebito", fields: [operadorId], references: [id])
+  viajesAfectados     ViajeEnNotaCD[]
+
+  @@map("notas_credito_debito")
+}
+
+model ViajeEnNotaCD {
+  id                String @id @default(uuid())
+  notaId            String @map("nota_id")
+  viajeId           String @map("viaje_id")
+  tarifaOriginal    Float  @map("tarifa_original")
+  kilosOriginal     Float? @map("kilos_original")
+  subtotalOriginal  Float  @map("subtotal_original")
+  subtotalCorregido Float? @map("subtotal_corregido")
+
+  nota  NotaCreditoDebito @relation(fields: [notaId], references: [id], onDelete: Cascade)
+  viaje Viaje             @relation(fields: [viajeId], references: [id])
+
+  @@unique([notaId, viajeId])
+  @@map("viajes_en_nota_cd")
 }
 
 // ─── NEXTAUTH ─────────────────────────────────────────────────────────────────
