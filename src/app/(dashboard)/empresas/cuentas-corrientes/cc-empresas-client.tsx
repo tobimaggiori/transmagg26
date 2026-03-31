@@ -145,7 +145,7 @@ export function CCEmpresasClient({ empresas }: CCEmpresasClientProps) {
                 {data.saldoFinal > 0
                   ? "Saldo deudor"
                   : data.saldoFinal < 0
-                  ? "Saldo a favor"
+                  ? "Saldo a favor de la empresa"
                   : "Cuenta saldada"}
               </p>
             </div>
@@ -225,10 +225,10 @@ export function CCEmpresasClient({ empresas }: CCEmpresasClientProps) {
           {/* Leyenda saldo */}
           <p className="text-sm font-medium text-center py-2 rounded-md border">
             {data.saldoFinal > 0
-              ? `Saldo deudor: ${formatearMoneda(data.saldoFinal)} — La empresa debe esta suma a Transmagg`
+              ? `Saldo deudor: ${formatearMoneda(data.saldoFinal)} — La empresa debe este monto a Transmagg`
               : data.saldoFinal < 0
-              ? `Saldo a favor: ${formatearMoneda(Math.abs(data.saldoFinal))} — Transmagg tiene crédito con esta empresa`
-              : "Cuenta saldada — Sin deuda pendiente"}
+              ? `Saldo a favor de la empresa: ${formatearMoneda(Math.abs(data.saldoFinal))} — Se descontará en futuras facturas`
+              : "Cuenta saldada"}
           </p>
         </>
       )}
