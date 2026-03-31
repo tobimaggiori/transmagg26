@@ -13,12 +13,13 @@ import { describirCircuitoViaje, resumirWorkflowViajes } from "@/lib/viaje-ui"
 import { WorkflowSummaryCard } from "@/components/workflow/workflow-summary-card"
 import { CircuitBadge } from "@/components/workflow/circuit-badge"
 import { WorkflowNote } from "@/components/workflow/workflow-note"
+import { SearchCombobox } from "@/components/ui/search-combobox"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type Fletero = { id: string; razonSocial: string; comisionDefault?: number }
-type Empresa = { id: string; razonSocial: string }
+type Fletero = { id: string; razonSocial: string; cuit: string; comisionDefault?: number }
+type Empresa = { id: string; razonSocial: string; cuit: string }
 type Camion = { id: string; patenteChasis: string; fleteroId: string }
 type Chofer = { id: string; nombre: string; apellido: string }
 
@@ -128,6 +129,9 @@ function ModalViaje({
 
   const camionesDelFletero = camiones.filter((c) => c.fleteroId === fleteroId)
 
+  const fleteroItems = fleteros.map((f) => ({ id: f.id, label: f.razonSocial, sublabel: f.cuit }))
+  const empresaItems = empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: e.cuit }))
+
   const kilosNum = parseFloat(kilos) || 0
   const tarifaNum = parseFloat(tarifaOperativaInicial) || 0
   const toneladas = kilosNum > 0 ? calcularToneladas(kilosNum) : null
@@ -180,29 +184,25 @@ function ModalViaje({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Fletero *</label>
-              <select
+              <SearchCombobox
+                items={fleteroItems}
                 value={fleteroId}
-                onChange={(e) => { setFleteroId(e.target.value); setCamionId("") }}
+                onChange={(id) => { setFleteroId(id); setCamionId("") }}
+                placeholder="Buscar por nombre o CUIT..."
                 required
                 disabled={modo === "editar"}
-                className="w-full h-9 rounded-md border bg-background px-2 text-sm disabled:opacity-50"
-              >
-                <option value="">Seleccionar...</option>
-                {fleteros.map((f) => <option key={f.id} value={f.id}>{f.razonSocial}</option>)}
-              </select>
+              />
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Empresa *</label>
-              <select
+              <SearchCombobox
+                items={empresaItems}
                 value={empresaId}
-                onChange={(e) => setEmpresaId(e.target.value)}
+                onChange={setEmpresaId}
+                placeholder="Buscar por nombre o CUIT..."
                 required
                 disabled={modo === "editar"}
-                className="w-full h-9 rounded-md border bg-background px-2 text-sm disabled:opacity-50"
-              >
-                <option value="">Seleccionar...</option>
-                {empresas.map((e) => <option key={e.id} value={e.id}>{e.razonSocial}</option>)}
-              </select>
+              />
             </div>
           </div>
 

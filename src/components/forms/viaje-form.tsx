@@ -12,11 +12,12 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { FormError } from "@/components/ui/form-error"
+import { SearchCombobox } from "@/components/ui/search-combobox"
 
-interface Fletero { id: string; razonSocial: string }
+interface Fletero { id: string; razonSocial: string; cuit: string }
 interface Camion { id: string; patenteChasis: string; fleteroId: string }
 interface Chofer { id: string; nombre: string; apellido: string }
-interface Empresa { id: string; razonSocial: string }
+interface Empresa { id: string; razonSocial: string; cuit: string }
 
 interface ViajeFormProps {
   fleteros: Fletero[]
@@ -37,26 +38,27 @@ const PROVINCIAS_AR = [
 /**
  * ViajeForm: ViajeFormProps -> JSX.Element
  *
- * Dados los listados de fleteros, camiones, choferes y empresas junto con onSuccess,
+ * Dados los listados de fleteros (con cuit), camiones, choferes y empresas (con cuit) junto con onSuccess,
  * renderiza un formulario para cargar un viaje standalone con todos sus datos operativos.
+ * Usa SearchCombobox buscable por razón social o CUIT para Fletero y Empresa.
  * Filtra los camiones disponibles según el fletero seleccionado.
  * Envía POST /api/viajes y llama onSuccess al completarse exitosamente.
  * Existe para que los operadores internos carguen viajes independientes que luego
  * se asociarán a liquidaciones y facturas de forma separada.
  *
  * Ejemplos:
- * <ViajeForm fleteros={[{ id: "f1", razonSocial: "JP SRL" }]} camiones={[{ id: "c1", patenteChasis: "ABC123", fleteroId: "f1" }]} choferes={[...]} empresas={[...]} onSuccess={() => setOpen(false)} />
- * // => formulario con camiones filtrados al seleccionar fletero "f1"
+ * <ViajeForm fleteros={[{ id: "f1", razonSocial: "JP SRL", cuit: "20123456789" }]} camiones={[{ id: "c1", patenteChasis: "ABC123", fleteroId: "f1" }]} choferes={[...]} empresas={[...]} onSuccess={() => setOpen(false)} />
+ * // => formulario con combobox buscable y camiones filtrados al seleccionar fletero "f1"
  * <ViajeForm fleteros={[]} camiones={[]} choferes={[]} empresas={[]} onSuccess={() => {}} />
  * // => formulario con listas vacías (submit fallará con 404 si no hay datos)
  * // => submit exitoso → llama onSuccess y refresca la página
  */
 export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }: ViajeFormProps) {
   const router = useRouter()
-  const [fleteroId, setFleteroId] = useState(fleteros[0]?.id ?? "")
+  const [fleteroId, setFleteroId] = useState("")
   const [camionId, setCamionId] = useState("")
   const [choferId, setChoferId] = useState("")
-  const [empresaId, setEmpresaId] = useState(empresas[0]?.id ?? "")
+  const [empresaId, setEmpresaId] = useState("")
   const [fechaViaje, setFechaViaje] = useState(new Date().toISOString().slice(0, 10))
   const [remito, setRemito] = useState("")
   const [cupo, setCupo] = useState("")
@@ -71,6 +73,18 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
   const [error, setError] = useState<string | null>(null)
 
   const camionesDelFletero = camiones.filter((c) => c.fleteroId === fleteroId)
+
+  const fleteroItems = fleteros.map((f) => ({
+    id: f.id,
+    label: f.razonSocial,
+    sublabel: f.cuit,
+  }))
+
+  const empresaItems = empresas.map((e) => ({
+    id: e.id,
+    label: e.razonSocial,
+    sublabel: e.cuit,
+  }))
 
   function handleFleteroChange(id: string) {
     setFleteroId(id)
@@ -121,25 +135,27 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Fila 1: Fletero, Camión, Chofer */}
+      {/* Fila 1: Fletero, Empresa */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label htmlFor="fleteroId">Fletero *</Label>
-          <Select id="fleteroId" value={fleteroId} onChange={(e) => handleFleteroChange(e.target.value)} required>
-            <option value="">Seleccionar...</option>
-            {fleteros.map((f) => (
-              <option key={f.id} value={f.id}>{f.razonSocial}</option>
-            ))}
-          </Select>
+          <Label>Fletero *</Label>
+          <SearchCombobox
+            items={fleteroItems}
+            value={fleteroId}
+            onChange={handleFleteroChange}
+            placeholder="Buscar por nombre o CUIT..."
+            required
+          />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="empresaId">Empresa *</Label>
-          <Select id="empresaId" value={empresaId} onChange={(e) => setEmpresaId(e.target.value)} required>
-            <option value="">Seleccionar...</option>
-            {empresas.map((e) => (
-              <option key={e.id} value={e.id}>{e.razonSocial}</option>
-            ))}
-          </Select>
+          <Label>Empresa *</Label>
+          <SearchCombobox
+            items={empresaItems}
+            value={empresaId}
+            onChange={setEmpresaId}
+            placeholder="Buscar por nombre o CUIT..."
+            required
+          />
         </div>
       </div>
 
