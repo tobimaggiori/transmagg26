@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { esAdmin, esRolInterno } from "@/lib/permissions"
+import { esRolInterno } from "@/lib/permissions"
 import type { Rol } from "@/types"
 
 /**

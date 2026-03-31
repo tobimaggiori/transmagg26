@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { normalizarBusqueda, coincideConBusqueda } from "@/lib/search-utils"
+import { coincideConBusqueda } from "@/lib/search-utils"
 
 export type SearchComboboxItem = {
   id: string
