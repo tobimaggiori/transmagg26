@@ -72,7 +72,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/empresas/facturar", label: "Facturar" },
       { href: "/empresas/facturas", label: "Consultar Facturas" },
-      { href: "/empresas/cuenta-corriente", label: "Cuenta Corriente" },
+      { href: "/empresas/cuentas-corrientes", label: "Cuentas Corrientes" },
     ],
   },
   {
@@ -87,7 +87,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/fleteros/liquidaciones", label: "Liquidaciones" },
       { href: "/fleteros/adelantos", label: "Adelantos" },
       { href: "/fleteros/pago", label: "Pago" },
-      { href: "/fleteros/cuenta-corriente", label: "Cuenta Corriente" },
+      { href: "/fleteros/cuentas-corrientes", label: "Cuentas Corrientes" },
     ],
   },
   {
@@ -100,7 +100,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/proveedores/factura", label: "Ingresar Factura" },
       { href: "/proveedores/facturas", label: "Consultar Facturas" },
       { href: "/proveedores/pago", label: "Pago" },
-      { href: "/proveedores/cuenta-corriente", label: "Cuenta Corriente" },
+      { href: "/proveedores/cuentas-corrientes", label: "Cuentas Corrientes" },
     ],
   },
   {
