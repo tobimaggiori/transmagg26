@@ -261,3 +261,35 @@ export const crearAdelantoDescuentoSchema = z.object({
 })
 
 export const actualizarAdelantoDescuentoSchema = crearAdelantoDescuentoSchema.partial()
+
+/**
+ * crearNotaCDSchema: Schema de validación para crear una Nota de Crédito o Débito.
+ *
+ * Valida el tipo (NC_EMITIDA | ND_EMITIDA | NC_RECIBIDA | ND_RECIBIDA), el subtipo
+ * correspondiente, el documento asociado (factura, liquidación o cheque recibido),
+ * los montos y la descripción obligatoria.
+ * Para NC_RECIBIDA y ND_RECIBIDA se pueden agregar datos del comprobante externo.
+ * Este schema existe para garantizar integridad de datos antes de ejecutar la
+ * lógica de negocio en el POST de /api/notas-credito-debito.
+ *
+ * Ejemplos:
+ * crearNotaCDSchema.parse({ tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL", facturaId: "uuid", montoNeto: 1000, descripcion: "Anulación" })
+ * // => datos válidos
+ * crearNotaCDSchema.parse({ tipo: "INVALIDO", subtipo: "X", montoNeto: -1, descripcion: "" })
+ * // => ZodError con errores en tipo, montoNeto y descripcion
+ */
+export const crearNotaCDSchema = z.object({
+  tipo: z.enum(["NC_EMITIDA", "ND_EMITIDA", "NC_RECIBIDA", "ND_RECIBIDA"]),
+  subtipo: z.string().min(1),
+  facturaId: z.string().uuid().optional(),
+  liquidacionId: z.string().uuid().optional(),
+  chequeRecibidoId: z.string().uuid().optional(),
+  montoNeto: z.number().positive(),
+  ivaPct: z.number().min(0).max(100).default(21),
+  descripcion: z.string().min(1),
+  motivoDetalle: z.string().optional(),
+  viajesIds: z.array(z.string().uuid()).optional(),
+  nroComprobanteExterno: z.string().optional(),
+  fechaComprobanteExterno: z.string().optional(),
+  emisorExterno: z.string().optional(),
+})
