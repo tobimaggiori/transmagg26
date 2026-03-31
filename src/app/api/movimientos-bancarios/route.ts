@@ -9,6 +9,7 @@ import {
   serverErrorResponse,
 } from "@/lib/financial-api"
 import { crearMovimientoBancarioSchema } from "@/lib/financial-schemas"
+import { resolverOperadorId } from "@/lib/session-utils"
 
 /**
  * GET: -> Promise<NextResponse>
@@ -62,6 +63,13 @@ export async function POST(request: NextRequest) {
   const access = await requireFinancialAccess()
   if (!access.ok) return access.response
 
+  let operadorId: string
+  try {
+    operadorId = await resolverOperadorId(access.session.user)
+  } catch {
+    return NextResponse.json({ error: "Sesión inválida. Cerrá sesión y volvé a ingresar." }, { status: 401 })
+  }
+
   try {
     const body = await request.json()
     const parsed = crearMovimientoBancarioSchema.safeParse(body)
@@ -97,7 +105,7 @@ export async function POST(request: NextRequest) {
         impuestoDebitoMonto: parsed.data.impuestoDebitoMonto ?? sugerencia.impuestoDebitoMonto,
         impuestoCreditoAplica: parsed.data.impuestoCreditoAplica ?? sugerencia.impuestoCreditoAplica,
         impuestoCreditoMonto: parsed.data.impuestoCreditoMonto ?? sugerencia.impuestoCreditoMonto,
-        operadorId: access.session.user.id,
+        operadorId,
       },
     })
 

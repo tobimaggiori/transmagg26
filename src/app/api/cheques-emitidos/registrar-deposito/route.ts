@@ -8,6 +8,7 @@ import {
   serverErrorResponse,
 } from "@/lib/financial-api"
 import { registrarDepositoChequeEmitidoSchema } from "@/lib/financial-schemas"
+import { resolverOperadorId } from "@/lib/session-utils"
 
 /**
  * POST: NextRequest -> Promise<NextResponse>
@@ -23,6 +24,13 @@ import { registrarDepositoChequeEmitidoSchema } from "@/lib/financial-schemas"
 export async function POST(request: NextRequest) {
   const access = await requireFinancialAccess()
   if (!access.ok) return access.response
+
+  let operadorId: string
+  try {
+    operadorId = await resolverOperadorId(access.session.user)
+  } catch {
+    return NextResponse.json({ error: "Sesión inválida. Cerrá sesión y volvé a ingresar." }, { status: 401 })
+  }
 
   try {
     const body = await request.json()
@@ -73,7 +81,7 @@ export async function POST(request: NextRequest) {
           impuestoCreditoMonto: 0,
           otrosDescuentosDescripcion: parsed.data.otrosDescuentosDescripcion,
           otrosDescuentosMonto: parsed.data.otrosDescuentosMonto,
-          operadorId: access.session.user.id,
+          operadorId,
         },
       })
 

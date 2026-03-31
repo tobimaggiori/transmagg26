@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
+import { resolverOperadorId } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 
 /**
@@ -122,6 +123,13 @@ export async function POST(request: NextRequest) {
   const rol = session.user.rol as Rol
   if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
 
+  let operadorId: string
+  try {
+    operadorId = await resolverOperadorId(session.user)
+  } catch {
+    return NextResponse.json({ error: "Sesión inválida. Cerrá sesión y volvé a ingresar." }, { status: 401 })
+  }
+
   try {
     const body = await request.json()
     const { fleteroId, monto, tipo, referencia, fecha } = body
@@ -158,7 +166,7 @@ export async function POST(request: NextRequest) {
           monto: montoAplicar,
           referencia: referencia ?? null,
           fechaPago: new Date(fecha),
-          operadorId: session.user.id,
+          operadorId,
         },
       })
       pagosCreados.push(pago)

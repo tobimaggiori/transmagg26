@@ -7,6 +7,7 @@ import {
   serverErrorResponse,
 } from "@/lib/financial-api"
 import { crearSaldoFciSchema } from "@/lib/financial-schemas"
+import { resolverOperadorId } from "@/lib/session-utils"
 
 /**
  * GET: -> Promise<NextResponse>
@@ -53,6 +54,13 @@ export async function POST(request: NextRequest) {
   const access = await requireFinancialAccess()
   if (!access.ok) return access.response
 
+  let operadorId: string
+  try {
+    operadorId = await resolverOperadorId(access.session.user)
+  } catch {
+    return NextResponse.json({ error: "Sesión inválida. Cerrá sesión y volvé a ingresar." }, { status: 401 })
+  }
+
   try {
     const body = await request.json()
     const parsed = crearSaldoFciSchema.safeParse(body)
@@ -70,7 +78,7 @@ export async function POST(request: NextRequest) {
       data: {
         ...parsed.data,
         rendimientoPeriodo: parsed.data.saldoInformado - saldoAnterior,
-        operadorId: access.session.user.id,
+        operadorId,
       },
     })
 

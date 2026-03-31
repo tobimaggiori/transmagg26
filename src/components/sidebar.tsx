@@ -71,7 +71,7 @@ const NAV_GROUPS: NavGroup[] = [
     pathPrefix: "/empresas",
     items: [
       { href: "/empresas/facturar", label: "Facturar" },
-      { href: "/empresas/facturas", label: "Facturas" },
+      { href: "/empresas/facturas", label: "Consultar Facturas" },
       { href: "/empresas/cuenta-corriente", label: "Cuenta Corriente" },
     ],
   },
@@ -97,8 +97,8 @@ const NAV_GROUPS: NavGroup[] = [
     seccion: "proveedores",
     pathPrefix: "/proveedores",
     items: [
-      { href: "/proveedores/factura", label: "Factura" },
-      { href: "/proveedores/facturas", label: "Facturas" },
+      { href: "/proveedores/factura", label: "Ingresar Factura" },
+      { href: "/proveedores/facturas", label: "Consultar Facturas" },
       { href: "/proveedores/pago", label: "Pago" },
       { href: "/proveedores/cuenta-corriente", label: "Cuenta Corriente" },
     ],

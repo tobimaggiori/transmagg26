@@ -7,6 +7,7 @@ import {
   serverErrorResponse,
 } from "@/lib/financial-api"
 import { crearMovimientoFciSchema } from "@/lib/financial-schemas"
+import { resolverOperadorId } from "@/lib/session-utils"
 
 /**
  * GET: -> Promise<NextResponse>
@@ -54,6 +55,13 @@ export async function POST(request: NextRequest) {
   const access = await requireFinancialAccess()
   if (!access.ok) return access.response
 
+  let operadorId: string
+  try {
+    operadorId = await resolverOperadorId(access.session.user)
+  } catch {
+    return NextResponse.json({ error: "Sesión inválida. Cerrá sesión y volvé a ingresar." }, { status: 401 })
+  }
+
   try {
     const body = await request.json()
     const parsed = crearMovimientoFciSchema.safeParse(body)
@@ -70,7 +78,7 @@ export async function POST(request: NextRequest) {
     const movimiento = await prisma.movimientoFci.create({
       data: {
         ...parsed.data,
-        operadorId: access.session.user.id,
+        operadorId,
       },
     })
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { resolverOperadorId } from "@/lib/session-utils"
 import { prisma } from "@/lib/prisma"
 import {
   badRequestResponse,
@@ -62,6 +63,13 @@ export async function POST(request: NextRequest) {
   const access = await requireFinancialAccess()
   if (!access.ok) return access.response
 
+  let operadorId: string
+  try {
+    operadorId = await resolverOperadorId(access.session.user)
+  } catch {
+    return NextResponse.json({ error: "Sesión inválida. Cerrá sesión y volvé a ingresar." }, { status: 401 })
+  }
+
   try {
     const body = await request.json()
     const parsed = crearChequeEmitidoSchema.safeParse(body)
@@ -94,7 +102,7 @@ export async function POST(request: NextRequest) {
     const cheque = await prisma.chequeEmitido.create({
       data: {
         ...data,
-        operadorId: access.session.user.id,
+        operadorId,
       },
     })
 

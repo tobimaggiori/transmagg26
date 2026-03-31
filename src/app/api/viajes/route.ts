@@ -16,6 +16,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno, esRolEmpresa } from "@/lib/permissions"
 import { enriquecerViajeOperativo, ocultarTarifaOperativa } from "@/lib/viaje-serialization"
+import { resolverOperadorId } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 
 const crearViajeSchema = z.object({
@@ -156,7 +157,13 @@ export async function POST(request: NextRequest) {
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
   const rol = session.user.rol as Rol
   if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
-  if (!session.user.id) return NextResponse.json({ error: "Sesión inválida: id de usuario no encontrado" }, { status: 401 })
+
+  let operadorId: string
+  try {
+    operadorId = await resolverOperadorId(session.user)
+  } catch {
+    return NextResponse.json({ error: "Sesión inválida. Cerrá sesión y volvé a ingresar." }, { status: 401 })
+  }
 
   try {
     const body = await request.json()
@@ -185,7 +192,7 @@ export async function POST(request: NextRequest) {
         camionId,
         choferId,
         empresaId,
-        operadorId: session.user.id,
+        operadorId,
         fechaViaje: new Date(fechaViaje),
         tarifaOperativaInicial,
         estadoLiquidacion,

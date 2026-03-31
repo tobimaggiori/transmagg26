@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
 import { crearNotaCDSchema } from "@/lib/financial-schemas"
 import { calcularTotalesNotaCD, tipoCbteArcaParaNotaCD } from "@/lib/nota-cd-utils"
+import { resolverOperadorId } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 
 /**
@@ -137,6 +138,13 @@ export async function POST(request: NextRequest) {
   const rol = session.user.rol as Rol
   if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
 
+  let operadorId: string
+  try {
+    operadorId = await resolverOperadorId(session.user)
+  } catch {
+    return NextResponse.json({ error: "Sesión inválida. Cerrá sesión y volvé a ingresar." }, { status: 401 })
+  }
+
   try {
     const body = await request.json()
     const parsed = crearNotaCDSchema.safeParse(body)
@@ -187,7 +195,7 @@ export async function POST(request: NextRequest) {
               nroComprobante,
               tipoCbte,
               arcaEstado: "PENDIENTE",
-              operadorId: session.user.id,
+              operadorId,
             },
           })
 
@@ -247,7 +255,7 @@ export async function POST(request: NextRequest) {
               nroComprobante,
               tipoCbte,
               arcaEstado: "PENDIENTE",
-              operadorId: session.user.id,
+              operadorId,
             },
           })
 
@@ -291,7 +299,7 @@ export async function POST(request: NextRequest) {
               nroComprobante,
               tipoCbte,
               arcaEstado: "PENDIENTE",
-              operadorId: session.user.id,
+              operadorId,
             },
           })
         })
@@ -332,7 +340,7 @@ export async function POST(request: NextRequest) {
             nroComprobante,
             tipoCbte,
             arcaEstado: "PENDIENTE",
-            operadorId: session.user.id,
+            operadorId,
           },
         })
       })
@@ -376,7 +384,7 @@ export async function POST(request: NextRequest) {
               descripcion: data.descripcion,
               motivoDetalle: data.motivoDetalle ?? null,
               estado: "REGISTRADA",
-              operadorId: session.user.id,
+              operadorId,
             },
           })
 
@@ -437,7 +445,7 @@ export async function POST(request: NextRequest) {
               descripcion: data.descripcion,
               motivoDetalle: data.motivoDetalle ?? null,
               estado: "REGISTRADA",
-              operadorId: session.user.id,
+              operadorId,
             },
           })
         })

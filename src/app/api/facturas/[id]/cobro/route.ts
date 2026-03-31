@@ -9,6 +9,7 @@ import {
   serverErrorResponse,
 } from "@/lib/financial-api"
 import { calcularSaldoCCEmpresa } from "@/lib/cuenta-corriente"
+import { resolverOperadorId } from "@/lib/session-utils"
 
 const pagoItemSchema = z.discriminatedUnion("tipoPago", [
   z.object({
@@ -47,7 +48,12 @@ export async function POST(
   if (!acceso.ok) return acceso.response
 
   const { id: facturaId } = await params
-  const operadorId = acceso.session.user.id
+  let operadorId: string
+  try {
+    operadorId = await resolverOperadorId(acceso.session.user)
+  } catch {
+    return NextResponse.json({ error: "Sesión inválida. Cerrá sesión y volvé a ingresar." }, { status: 401 })
+  }
 
   let body: unknown
   try {

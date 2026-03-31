@@ -16,6 +16,7 @@ import { esRolInterno } from "@/lib/permissions"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
 import { obtenerTarifaOperativaInicial } from "@/lib/viaje-serialization"
 import { EstadoLiquidacionDocumento, EstadoLiquidacionViaje } from "@/lib/viaje-workflow"
+import { resolverOperadorId } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 
 const viajeEnLiqSchema = z.object({
@@ -202,6 +203,13 @@ export async function POST(request: NextRequest) {
   const rol = session.user.rol as Rol
   if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
 
+  let operadorId: string
+  try {
+    operadorId = await resolverOperadorId(session.user)
+  } catch {
+    return NextResponse.json({ error: "Sesión inválida. Cerrá sesión y volvé a ingresar." }, { status: 401 })
+  }
+
   try {
     const body = await request.json()
     const parsed = crearLiquidacionSchema.safeParse(body)
@@ -241,7 +249,7 @@ export async function POST(request: NextRequest) {
       const liq = await tx.liquidacion.create({
         data: {
           fleteroId,
-          operadorId: session.user.id,
+          operadorId,
           comisionPct,
           ivaPct,
           subtotalBruto,

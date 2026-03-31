@@ -218,18 +218,22 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
       {/* Fila 4: Origen → Destino */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label htmlFor="provinciaOrigen">Provincia origen</Label>
-          <Select id="provinciaOrigen" value={provinciaOrigen} onChange={(e) => setProvinciaOrigen(e.target.value)}>
-            <option value="">Seleccionar...</option>
-            {PROVINCIAS_AR.map((p) => <option key={p} value={p}>{p}</option>)}
-          </Select>
+          <Label>Provincia origen</Label>
+          <SearchCombobox
+            items={PROVINCIAS_AR.map((p) => ({ id: p, label: p }))}
+            value={provinciaOrigen}
+            onChange={(v) => setProvinciaOrigen(v)}
+            placeholder="Buscar provincia..."
+          />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="provinciaDestino">Provincia destino</Label>
-          <Select id="provinciaDestino" value={provinciaDestino} onChange={(e) => setProvinciaDestino(e.target.value)}>
-            <option value="">Seleccionar...</option>
-            {PROVINCIAS_AR.map((p) => <option key={p} value={p}>{p}</option>)}
-          </Select>
+          <Label>Provincia destino</Label>
+          <SearchCombobox
+            items={PROVINCIAS_AR.map((p) => ({ id: p, label: p }))}
+            value={provinciaDestino}
+            onChange={(v) => setProvinciaDestino(v)}
+            placeholder="Buscar provincia..."
+          />
         </div>
       </div>
 
