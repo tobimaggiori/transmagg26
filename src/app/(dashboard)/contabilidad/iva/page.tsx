@@ -1,14 +1,16 @@
 /**
- * Propósito: Página de IVA (ruta /contabilidad/iva).
- * Reutiliza la lógica de /iva copiando la página completa.
+ * Propósito: Página del Libro IVA (ruta /contabilidad/iva).
+ * Muestra cuatro tabs — IVA Ventas, IVA Compras, Ventas por Alícuota, Compras por Alícuota —
+ * con formato de libro contable real, resumen en cards y botones de exportación PDF y Excel por tab.
  */
 
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder } from "@/lib/permissions"
-import { formatearMoneda } from "@/lib/utils"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { FiltroPeriodo } from "@/components/contabilidad/filtro-periodo"
 import type { Rol } from "@/types"
 
 function construirWherePeriodo({
@@ -35,22 +37,26 @@ function construirWherePeriodo({
   return {}
 }
 
+type TabActivo = "ventas" | "compras" | "ventas-alicuota" | "compras-alicuota"
+
+function parseTab(tab?: string): TabActivo {
+  if (tab === "compras") return "compras"
+  if (tab === "ventas-alicuota") return "ventas-alicuota"
+  if (tab === "compras-alicuota") return "compras-alicuota"
+  return "ventas"
+}
+
 /**
  * ContabilidadIvaPage: ({ searchParams }) -> Promise<JSX.Element>
  *
- * Muestra los asientos de IVA filtrados por período.
- * Existe como alias de /iva bajo la ruta /contabilidad/iva.
- *
- * Ejemplos:
- * // Sesión ADMIN_TRANSMAGG, ?mes=3&anio=2026 → asientos de marzo 2026
- * <ContabilidadIvaPage searchParams={{ mes: "3", anio: "2026" }} />
- * // Sin sesión → redirect /login
- * <ContabilidadIvaPage searchParams={{}} />
+ * Dado los parámetros de período y tab activo, renderiza el Libro IVA con
+ * cuatro tabs en formato de libro contable con exportación PDF y Excel.
+ * Existe para reemplazar la vista simple de asientos de IVA.
  */
 export default async function ContabilidadIvaPage({
   searchParams,
 }: {
-  searchParams: { mes?: string; anio?: string; desde?: string; hasta?: string }
+  searchParams: { mes?: string; anio?: string; desde?: string; hasta?: string; tab?: string }
 }) {
   const session = await auth()
   if (!session?.user) redirect("/login")
@@ -58,6 +64,7 @@ export default async function ContabilidadIvaPage({
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
   if (!puedeAcceder(rol, "iva")) redirect("/dashboard")
 
+  const tabActivo = parseTab(searchParams.tab)
   const whereExtra = construirWherePeriodo(searchParams)
 
   const asientos = await prisma.asientoIva.findMany({
@@ -66,109 +73,112 @@ export default async function ContabilidadIvaPage({
       facturaEmitida: {
         select: {
           nroComprobante: true,
-          empresa: { select: { razonSocial: true } },
+          tipoCbte: true,
+          emitidaEn: true,
+          empresa: { select: { razonSocial: true, cuit: true } },
         },
       },
       facturaProveedor: {
         select: {
           nroComprobante: true,
-          proveedor: { select: { razonSocial: true } },
+          tipoCbte: true,
+          fechaCbte: true,
+          proveedor: { select: { razonSocial: true, cuit: true } },
         },
       },
     },
-    orderBy: [{ periodo: "desc" }, { tipo: "asc" }],
-    take: 500,
+    orderBy: [{ periodo: "asc" }],
+    take: 2000,
   })
 
-  const totalVentas = asientos.filter((a) => a.tipo === "VENTA").reduce((acc, a) => acc + a.montoIva, 0)
-  const totalCompras = asientos.filter((a) => a.tipo === "COMPRA").reduce((acc, a) => acc + a.montoIva, 0)
-  const posicionIva = totalVentas - totalCompras
+  const ventas = asientos.filter((a) => a.tipo === "VENTA")
+  const compras = asientos.filter((a) => a.tipo === "COMPRA")
 
-  const pdfParams = new URLSearchParams()
-  if (searchParams.mes) pdfParams.set("mes", searchParams.mes)
-  if (searchParams.anio) pdfParams.set("anio", searchParams.anio)
-  if (searchParams.desde) pdfParams.set("desde", searchParams.desde)
-  if (searchParams.hasta) pdfParams.set("hasta", searchParams.hasta)
-  const pdfUrl = `/api/iva/pdf${pdfParams.toString() ? "?" + pdfParams.toString() : ""}`
+  const totalNetoVentas = ventas.reduce((acc, a) => acc + a.baseImponible, 0)
+  const totalIvaVentas = ventas.reduce((acc, a) => acc + a.montoIva, 0)
+  const totalNetoCompras = compras.reduce((acc, a) => acc + a.baseImponible, 0)
+  const totalIvaCompras = compras.reduce((acc, a) => acc + a.montoIva, 0)
+  const posicionIva = totalIvaVentas - totalIvaCompras
 
-  const anioActual = new Date().getFullYear()
-  const anios = [anioActual - 1, anioActual, anioActual + 1]
-  const meses = [
-    { num: 1, nombre: "Enero" }, { num: 2, nombre: "Febrero" }, { num: 3, nombre: "Marzo" },
-    { num: 4, nombre: "Abril" }, { num: 5, nombre: "Mayo" }, { num: 6, nombre: "Junio" },
-    { num: 7, nombre: "Julio" }, { num: 8, nombre: "Agosto" }, { num: 9, nombre: "Septiembre" },
-    { num: 10, nombre: "Octubre" }, { num: 11, nombre: "Noviembre" }, { num: 12, nombre: "Diciembre" },
+  // Grouping for compras-alicuota: tipoCbte → alicuota
+  const comprasAlicuotaMap = new Map<string, Map<number, { neto: number; iva: number; count: number }>>()
+  for (const a of compras) {
+    const tipoCbte = a.tipoReferencia === "LIQUIDACION"
+      ? "Cta Vta Liq Prod"
+      : (a.facturaProveedor?.tipoCbte ?? "—")
+    if (!comprasAlicuotaMap.has(tipoCbte)) comprasAlicuotaMap.set(tipoCbte, new Map())
+    const byAlicuota = comprasAlicuotaMap.get(tipoCbte)!
+    const prev = byAlicuota.get(a.alicuota) ?? { neto: 0, iva: 0, count: 0 }
+    byAlicuota.set(a.alicuota, { neto: prev.neto + a.baseImponible, iva: prev.iva + a.montoIva, count: prev.count + 1 })
+  }
+  const comprasAlicuota = Array.from(comprasAlicuotaMap.entries()).sort(([a], [b]) => a.localeCompare(b))
+
+  // Grouping for ventas-alicuota: tipoCbte → alicuota
+  const ventasAlicuotaMap = new Map<string, Map<number, { neto: number; iva: number; count: number }>>()
+  for (const a of ventas) {
+    const tipoCbte = a.facturaEmitida?.tipoCbte ?? "—"
+    if (!ventasAlicuotaMap.has(tipoCbte)) ventasAlicuotaMap.set(tipoCbte, new Map())
+    const byAlicuota = ventasAlicuotaMap.get(tipoCbte)!
+    const prev = byAlicuota.get(a.alicuota) ?? { neto: 0, iva: 0, count: 0 }
+    byAlicuota.set(a.alicuota, { neto: prev.neto + a.baseImponible, iva: prev.iva + a.montoIva, count: prev.count + 1 })
+  }
+  const ventasAlicuota = Array.from(ventasAlicuotaMap.entries()).sort(([a], [b]) => a.localeCompare(b))
+
+  // Build export params preserving current filter
+  const exportParams = new URLSearchParams()
+  if (searchParams.mes) exportParams.set("mes", searchParams.mes)
+  if (searchParams.anio) exportParams.set("anio", searchParams.anio)
+  if (searchParams.desde) exportParams.set("desde", searchParams.desde)
+  if (searchParams.hasta) exportParams.set("hasta", searchParams.hasta)
+  const exportQuery = exportParams.toString() ? `?${exportParams.toString()}` : ""
+
+  function tabUrl(tab: TabActivo) {
+    const p = new URLSearchParams(exportParams)
+    p.set("tab", tab)
+    return `/contabilidad/iva?${p.toString()}`
+  }
+
+  const tabs: { key: TabActivo; label: string; count: number }[] = [
+    { key: "ventas", label: "IVA Ventas", count: ventas.length },
+    { key: "compras", label: "IVA Compras", count: compras.length },
+    { key: "ventas-alicuota", label: "Ventas por Alícuota", count: ventas.length },
+    { key: "compras-alicuota", label: "Compras por Alícuota", count: compras.length },
   ]
+
+  // Export endpoint per tab
+  const exportEndpointMap: Record<TabActivo, string> = {
+    "ventas": "iva-ventas",
+    "compras": "iva-compras",
+    "ventas-alicuota": "iva-ventas-alicuota",
+    "compras-alicuota": "iva-compras-alicuota",
+  }
+  const exportEndpoint = exportEndpointMap[tabActivo]
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">IVA</h2>
-          <p className="text-muted-foreground">Libro de asientos de IVA — Ventas e IVA Compras</p>
-        </div>
-        <a
-          href={pdfUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-2 hover:bg-primary/90"
-        >
-          Descargar PDF
-        </a>
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">Libro IVA</h2>
+        <p className="text-muted-foreground">Libro de IVA Ventas e IVA Compras — Transmagg</p>
       </div>
 
-      <div className="border rounded-lg p-4 space-y-3 bg-muted/40">
-        <p className="text-sm font-medium">Filtrar por período</p>
-        <div className="flex flex-wrap gap-4">
-          <form method="GET" action="/contabilidad/iva" className="flex items-end gap-2">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-muted-foreground">Mes</label>
-              <select name="mes" defaultValue={searchParams.mes ?? ""} className="h-9 rounded-md border bg-background px-2 text-sm min-w-[120px]">
-                <option value="">—</option>
-                {meses.map((m) => <option key={m.num} value={String(m.num)}>{m.nombre}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-muted-foreground">Año</label>
-              <select name="anio" defaultValue={searchParams.anio ?? String(anioActual)} className="h-9 rounded-md border bg-background px-2 text-sm">
-                {anios.map((a) => <option key={a} value={String(a)}>{a}</option>)}
-              </select>
-            </div>
-            <button type="submit" className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90">
-              Ver mes
-            </button>
-          </form>
+      <FiltroPeriodo
+        action="/contabilidad/iva"
+        extraParams={{ tab: tabActivo }}
+        mes={searchParams.mes}
+        anio={searchParams.anio}
+        desde={searchParams.desde}
+        hasta={searchParams.hasta}
+      />
 
-          <div className="text-sm text-muted-foreground flex items-center">o</div>
-
-          <form method="GET" action="/contabilidad/iva" className="flex items-end gap-2">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-muted-foreground">Desde</label>
-              <input type="date" name="desde" defaultValue={searchParams.desde ?? ""} className="h-9 rounded-md border bg-background px-2 text-sm" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-muted-foreground">Hasta</label>
-              <input type="date" name="hasta" defaultValue={searchParams.hasta ?? ""} className="h-9 rounded-md border bg-background px-2 text-sm" />
-            </div>
-            <button type="submit" className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90">
-              Ver rango
-            </button>
-          </form>
-
-          <a href="/contabilidad/iva" className="h-9 px-3 rounded-md border text-sm font-medium inline-flex items-center self-end hover:bg-accent">
-            Limpiar filtros
-          </a>
-        </div>
-      </div>
-
+      {/* Cards resumen */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">IVA Ventas</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{formatearMoneda(totalVentas)}</p>
-            <p className="text-xs text-muted-foreground">{asientos.filter((a) => a.tipo === "VENTA").length} asiento(s)</p>
+            <p className="text-2xl font-bold">{formatearMoneda(totalIvaVentas)}</p>
+            <p className="text-xs text-muted-foreground">{ventas.length} asiento(s) · Base: {formatearMoneda(totalNetoVentas)}</p>
           </CardContent>
         </Card>
         <Card>
@@ -176,8 +186,8 @@ export default async function ContabilidadIvaPage({
             <CardTitle className="text-sm font-medium text-muted-foreground">IVA Compras</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{formatearMoneda(totalCompras)}</p>
-            <p className="text-xs text-muted-foreground">{asientos.filter((a) => a.tipo === "COMPRA").length} asiento(s)</p>
+            <p className="text-2xl font-bold">{formatearMoneda(totalIvaCompras)}</p>
+            <p className="text-xs text-muted-foreground">{compras.length} asiento(s) · Base: {formatearMoneda(totalNetoCompras)}</p>
           </CardContent>
         </Card>
         <Card>
@@ -188,61 +198,291 @@ export default async function ContabilidadIvaPage({
             <p className={`text-2xl font-bold ${posicionIva >= 0 ? "text-destructive" : "text-green-600"}`}>
               {formatearMoneda(posicionIva)}
             </p>
-            <p className="text-xs text-muted-foreground">{posicionIva >= 0 ? "Saldo deudor" : "Saldo acreedor"}</p>
+            <p className="text-xs text-muted-foreground">{posicionIva >= 0 ? "Saldo deudor (a pagar)" : "Saldo acreedor (a favor)"}</p>
           </CardContent>
         </Card>
       </div>
 
-      {asientos.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Sin asientos de IVA</CardTitle>
-            <CardDescription>No hay asientos para el período seleccionado.</CardDescription>
-          </CardHeader>
-        </Card>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Asientos de IVA</CardTitle>
-            <CardDescription>{asientos.length} asiento(s) · IVA Ventas e IVA Compras</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {asientos.map((asiento) => {
-                const razonSocial =
-                  asiento.facturaEmitida?.empresa.razonSocial ??
-                  asiento.facturaProveedor?.proveedor.razonSocial ??
-                  "—"
-                const comprobante =
-                  asiento.facturaEmitida?.nroComprobante ??
-                  asiento.facturaProveedor?.nroComprobante ??
-                  ""
-                return (
-                  <div
-                    key={asiento.id}
-                    className="flex items-center justify-between rounded-lg border p-3 text-sm"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${asiento.tipo === "VENTA" ? "bg-blue-100 text-blue-800" : "bg-orange-100 text-orange-800"}`}>
-                        {asiento.tipo}
-                      </span>
-                      <div>
-                        <p className="font-medium">{razonSocial}</p>
-                        <p className="text-muted-foreground">
-                          {asiento.periodo}{comprobante ? ` · ${comprobante}` : ""} · {asiento.alicuota}%
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold">{formatearMoneda(asiento.montoIva)}</p>
-                      <p className="text-xs text-muted-foreground">Base: {formatearMoneda(asiento.baseImponible)}</p>
-                    </div>
-                  </div>
-                )
-              })}
+      {/* Tabs nav */}
+      <div className="border-b">
+        <nav className="flex gap-0 -mb-px">
+          {tabs.map((t) => (
+            <a
+              key={t.key}
+              href={tabUrl(t.key)}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                tabActivo === t.key
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground"
+              }`}
+            >
+              {t.label} ({t.count})
+            </a>
+          ))}
+        </nav>
+      </div>
+
+      {/* Botones exportación */}
+      <div className="flex gap-2">
+        <a
+          href={`/api/contabilidad/${exportEndpoint}/pdf${exportQuery}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-2 hover:bg-primary/90"
+        >
+          Descargar PDF
+        </a>
+        <a
+          href={`/api/contabilidad/${exportEndpoint}/excel${exportQuery}`}
+          download
+          className="h-9 px-4 rounded-md border text-sm font-medium inline-flex items-center gap-2 hover:bg-accent"
+        >
+          Exportar Excel
+        </a>
+      </div>
+
+      {/* Tabla IVA Ventas */}
+      {tabActivo === "ventas" && (
+        <div className="border rounded-lg overflow-hidden">
+          {ventas.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground text-sm">
+              Sin asientos de IVA Ventas para el período seleccionado.
             </div>
-          </CardContent>
-        </Card>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Fecha</th>
+                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Empresa</th>
+                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Comprobante</th>
+                    <th className="px-3 py-3 text-right font-medium text-xs text-muted-foreground">Neto Gravado</th>
+                    <th className="px-3 py-3 text-right font-medium text-xs text-muted-foreground">IVA</th>
+                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">CUIT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ventas.map((a) => {
+                    const fecha = a.facturaEmitida?.emitidaEn
+                    const empresa = a.facturaEmitida?.empresa.razonSocial ?? "—"
+                    const cbte = a.facturaEmitida
+                      ? `${a.facturaEmitida.tipoCbte} ${a.facturaEmitida.nroComprobante ?? "s/n"}`
+                      : "—"
+                    const cuit = a.facturaEmitida?.empresa.cuit
+                    return (
+                      <tr key={a.id} className="border-b hover:bg-muted/30">
+                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                          {fecha ? formatearFecha(fecha) : a.periodo}
+                        </td>
+                        <td className="px-3 py-2 font-medium">{empresa}</td>
+                        <td className="px-3 py-2 font-mono text-xs">{cbte}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{formatearMoneda(a.baseImponible)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {formatearMoneda(a.montoIva)}
+                          <span className="text-xs text-muted-foreground ml-1">({a.alicuota}%)</span>
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                          {cuit ? formatearCuit(cuit) : "—"}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-muted font-semibold border-t-2">
+                    <td colSpan={3} className="px-3 py-3 text-right text-xs text-muted-foreground uppercase tracking-wide">
+                      Totales del período
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums">{formatearMoneda(totalNetoVentas)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums">{formatearMoneda(totalIvaVentas)}</td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tabla IVA Compras */}
+      {tabActivo === "compras" && (
+        <div className="border rounded-lg overflow-hidden">
+          {compras.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground text-sm">
+              Sin asientos de IVA Compras para el período seleccionado.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Fecha</th>
+                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Proveedor / Fletero</th>
+                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Comprobante</th>
+                    <th className="px-3 py-3 text-right font-medium text-xs text-muted-foreground">Neto Gravado</th>
+                    <th className="px-3 py-3 text-right font-medium text-xs text-muted-foreground">IVA</th>
+                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">CUIT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {compras.map((a) => {
+                    const fecha = a.facturaProveedor?.fechaCbte
+                    const proveedor = a.facturaProveedor?.proveedor.razonSocial ?? "—"
+                    const cbte = a.facturaProveedor
+                      ? `${a.facturaProveedor.tipoCbte} ${a.facturaProveedor.nroComprobante}`
+                      : "—"
+                    const cuit = a.facturaProveedor?.proveedor.cuit
+                    return (
+                      <tr key={a.id} className="border-b hover:bg-muted/30">
+                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                          {fecha ? formatearFecha(fecha) : a.periodo}
+                        </td>
+                        <td className="px-3 py-2 font-medium">{proveedor}</td>
+                        <td className="px-3 py-2 font-mono text-xs">{cbte}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{formatearMoneda(a.baseImponible)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {formatearMoneda(a.montoIva)}
+                          <span className="text-xs text-muted-foreground ml-1">({a.alicuota}%)</span>
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                          {cuit ? formatearCuit(cuit) : "—"}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-muted font-semibold border-t-2">
+                    <td colSpan={3} className="px-3 py-3 text-right text-xs text-muted-foreground uppercase tracking-wide">
+                      Totales del período
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums">{formatearMoneda(totalNetoCompras)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums">{formatearMoneda(totalIvaCompras)}</td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tabla Ventas por Alícuota */}
+      {tabActivo === "ventas-alicuota" && (
+        <div className="space-y-4">
+          {ventas.length === 0 ? (
+            <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
+              Sin asientos de IVA Ventas para el período seleccionado.
+            </div>
+          ) : (
+            ventasAlicuota.map(([tipoCbte, byAlicuota]) => {
+              const filas = Array.from(byAlicuota.entries()).sort(([a], [b]) => a - b)
+              const totalNeto = filas.reduce((acc, [, v]) => acc + v.neto, 0)
+              const totalIva = filas.reduce((acc, [, v]) => acc + v.iva, 0)
+              return (
+                <div key={tipoCbte} className="border rounded-lg overflow-hidden">
+                  <div className="bg-muted px-4 py-2 font-semibold text-sm">
+                    Tipo comprobante: {tipoCbte}
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/20">
+                        <th className="px-4 py-2 text-left font-medium text-xs text-muted-foreground">Alícuota</th>
+                        <th className="px-4 py-2 text-right font-medium text-xs text-muted-foreground">Cant. asientos</th>
+                        <th className="px-4 py-2 text-right font-medium text-xs text-muted-foreground">Neto Gravado</th>
+                        <th className="px-4 py-2 text-right font-medium text-xs text-muted-foreground">IVA</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filas.map(([alicuota, v]) => (
+                        <tr key={alicuota} className="border-b hover:bg-muted/20">
+                          <td className="px-4 py-2">{alicuota}%</td>
+                          <td className="px-4 py-2 text-right text-muted-foreground">{v.count}</td>
+                          <td className="px-4 py-2 text-right tabular-nums">{formatearMoneda(v.neto)}</td>
+                          <td className="px-4 py-2 text-right tabular-nums">{formatearMoneda(v.iva)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-muted/30 font-semibold text-xs border-t">
+                        <td colSpan={2} className="px-4 py-2 text-right text-muted-foreground uppercase tracking-wide">
+                          Subtotal {tipoCbte}
+                        </td>
+                        <td className="px-4 py-2 text-right tabular-nums">{formatearMoneda(totalNeto)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{formatearMoneda(totalIva)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )
+            })
+          )}
+          {ventas.length > 0 && (
+            <div className="border rounded-lg bg-muted px-4 py-3 flex justify-between font-semibold text-sm">
+              <span>TOTAL GENERAL VENTAS</span>
+              <span>{formatearMoneda(totalNetoVentas)} neto · {formatearMoneda(totalIvaVentas)} IVA</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tabla Compras por Alícuota */}
+      {tabActivo === "compras-alicuota" && (
+        <div className="space-y-4">
+          {compras.length === 0 ? (
+            <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
+              Sin asientos de IVA Compras para el período seleccionado.
+            </div>
+          ) : (
+            comprasAlicuota.map(([tipoCbte, byAlicuota]) => {
+              const filas = Array.from(byAlicuota.entries()).sort(([a], [b]) => a - b)
+              const totalNeto = filas.reduce((acc, [, v]) => acc + v.neto, 0)
+              const totalIva = filas.reduce((acc, [, v]) => acc + v.iva, 0)
+              return (
+                <div key={tipoCbte} className="border rounded-lg overflow-hidden">
+                  <div className="bg-muted px-4 py-2 font-semibold text-sm">
+                    Tipo comprobante: {tipoCbte}
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/20">
+                        <th className="px-4 py-2 text-left font-medium text-xs text-muted-foreground">Alícuota</th>
+                        <th className="px-4 py-2 text-right font-medium text-xs text-muted-foreground">Cant. asientos</th>
+                        <th className="px-4 py-2 text-right font-medium text-xs text-muted-foreground">Neto Gravado</th>
+                        <th className="px-4 py-2 text-right font-medium text-xs text-muted-foreground">IVA</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filas.map(([alicuota, v]) => (
+                        <tr key={alicuota} className="border-b hover:bg-muted/20">
+                          <td className="px-4 py-2">{alicuota}%</td>
+                          <td className="px-4 py-2 text-right text-muted-foreground">{v.count}</td>
+                          <td className="px-4 py-2 text-right tabular-nums">{formatearMoneda(v.neto)}</td>
+                          <td className="px-4 py-2 text-right tabular-nums">{formatearMoneda(v.iva)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-muted/30 font-semibold text-xs border-t">
+                        <td colSpan={2} className="px-4 py-2 text-right text-muted-foreground uppercase tracking-wide">
+                          Subtotal {tipoCbte}
+                        </td>
+                        <td className="px-4 py-2 text-right tabular-nums">{formatearMoneda(totalNeto)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{formatearMoneda(totalIva)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )
+            })
+          )}
+          {compras.length > 0 && (
+            <div className="border rounded-lg bg-muted px-4 py-3 flex justify-between font-semibold text-sm">
+              <span>TOTAL GENERAL COMPRAS</span>
+              <span>{formatearMoneda(totalNetoCompras)} neto · {formatearMoneda(totalIvaCompras)} IVA</span>
+            </div>
+          )}
+        </div>
       )}
     </div>
   )

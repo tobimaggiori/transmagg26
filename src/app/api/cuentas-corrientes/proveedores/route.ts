@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
+import { resolverOperadorId } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 
 /**
@@ -98,13 +99,21 @@ export async function POST(request: NextRequest) {
   if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
 
   try {
+    let operadorId: string | null = null
+    try {
+      operadorId = await resolverOperadorId(session.user)
+    } catch {
+      // operadorId optional for MovimientoBancario; proceed without it if not found
+    }
+
     const body = await request.json()
-    const { proveedorId, monto, tipo, referencia, fecha } = body as {
+    const { proveedorId, monto, tipo, referencia, fecha, cuentaBancariaId } = body as {
       proveedorId?: string
       monto?: number
       tipo?: string
       referencia?: string
       fecha?: string
+      cuentaBancariaId?: string
     }
 
     if (!proveedorId || !monto || !tipo || !fecha) {
@@ -123,6 +132,7 @@ export async function POST(request: NextRequest) {
 
     let montoRestante = parseFloat(String(monto))
     const pagosCreados: { id: string; facturaProveedorId: string; monto: number }[] = []
+    const fechaPago = new Date(fecha)
 
     for (const f of facturas) {
       if (montoRestante <= 0) break
@@ -131,17 +141,35 @@ export async function POST(request: NextRequest) {
       if (saldo <= 0) continue
 
       const montoAplicar = Math.min(montoRestante, saldo)
-      const pago = await prisma.pagoAProveedor.create({
+      const pago = await prisma.pagoProveedor.create({
         data: {
           facturaProveedorId: f.id,
-          tipoPago: tipo,
+          tipo,
           monto: montoAplicar,
-          referencia: referencia ?? null,
-          fechaPago: new Date(fecha),
+          observaciones: referencia ?? null,
+          fecha: fechaPago,
+          operadorId: operadorId ?? undefined,
         },
       })
       pagosCreados.push(pago)
       montoRestante -= montoAplicar
+    }
+
+    // Crear MovimientoSinFactura para TRANSFERENCIA si se provee cuenta y operador
+    if (tipo === "TRANSFERENCIA" && cuentaBancariaId && operadorId) {
+      const montoTotal = parseFloat(String(monto))
+      await prisma.movimientoSinFactura.create({
+        data: {
+          cuentaId: cuentaBancariaId,
+          tipo: "EGRESO",
+          categoria: "TRANSFERENCIA_ENVIADA",
+          monto: montoTotal,
+          fecha: fechaPago,
+          descripcion: `Pago proveedor ${proveedor.razonSocial}`,
+          referencia: referencia ?? null,
+          operadorId,
+        },
+      })
     }
 
     return NextResponse.json(pagosCreados, { status: 201 })

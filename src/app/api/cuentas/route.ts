@@ -33,8 +33,8 @@ export async function GET() {
   try {
     const cuentas = await prisma.cuenta.findMany({
       include: {
-        movimientosBancarios: {
-          select: { monto: true, tipo: true },
+        movimientosSinFactura: {
+          select: { monto: true, tipo: true, categoria: true },
         },
         fci: {
           include: {
@@ -52,7 +52,7 @@ export async function GET() {
     const resultado = cuentas.map((cuenta) => {
       const saldoContable = calcularSaldoContableCuenta(
         cuenta.saldoInicial,
-        cuenta.movimientosBancarios.map((movimiento) => movimiento.monto)
+        cuenta.movimientosSinFactura.map((m) => m.tipo === "INGRESO" ? m.monto : -m.monto)
       )
 
       const detalleFci = cuenta.fci.map((fci) => ({
@@ -63,12 +63,12 @@ export async function GET() {
 
       const saldoEnFciPropios = calcularSaldoEnFciPropiosCuenta(detalleFci)
       const saldoDisponible = calcularSaldoDisponibleCuenta(saldoContable, saldoEnFciPropios)
-      const capitalEnviado = cuenta.movimientosBancarios
-        .filter((movimiento) => movimiento.tipo === "ENVIO_A_BROKER")
-        .reduce((acumulado, movimiento) => acumulado + Math.abs(movimiento.monto), 0)
-      const capitalRescatado = cuenta.movimientosBancarios
-        .filter((movimiento) => movimiento.tipo === "RESCATE_DE_BROKER")
-        .reduce((acumulado, movimiento) => acumulado + Math.abs(movimiento.monto), 0)
+      const capitalEnviado = cuenta.movimientosSinFactura
+        .filter((m) => m.categoria === "ENVIO_A_BROKER")
+        .reduce((acumulado, m) => acumulado + m.monto, 0)
+      const capitalRescatado = cuenta.movimientosSinFactura
+        .filter((m) => m.categoria === "RESCATE_DE_BROKER")
+        .reduce((acumulado, m) => acumulado + m.monto, 0)
       const capitalNetoEnBroker = calcularCapitalNetoBroker(capitalEnviado, capitalRescatado)
       const rendimiento = calcularRendimientoBroker({
         capitalEnviado,

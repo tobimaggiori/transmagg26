@@ -16,13 +16,14 @@ datasource db {
 // Tipo pago fletero:           CHEQUE_PROPIO | CHEQUE_TERCERO | TRANSFERENCIA | EFECTIVO | ADELANTO
 // Tipo pago empresa:           CHEQUE | TRANSFERENCIA | EFECTIVO
 // Tipo IVA:                    VENTA | COMPRA
-// Tipo cbte:                   A | B | C | M | X
+// Tipo cbte:                   A | B | C | M | X | LIQ_PROD
 // Condición IVA:               RESPONSABLE_INSCRIPTO | MONOTRIBUTISTA | EXENTO | CONSUMIDOR_FINAL
 // Tipo cuenta:                 BANCO | BILLETERA_VIRTUAL | BROKER
 // Moneda cuenta/FCI:           PESOS | DOLARES | OTRO
 // Formato reconciliación:      PDF | EXCEL | AMBOS
 // Tipo movimiento FCI:         SUSCRIPCION | RESCATE
-// Tipo movimiento bancario:    CHEQUE_DEPOSITADO | CHEQUE_EMITIDO_DEBITADO | TRANSFERENCIA_RECIBIDA |
+// Tipo movimiento sin factura:  INGRESO | EGRESO
+// Categoria movimiento:         CHEQUE_DEPOSITADO | CHEQUE_EMITIDO_DEBITADO | TRANSFERENCIA_RECIBIDA |
 //                               TRANSFERENCIA_ENVIADA | TRANSFERENCIA_ENTRE_CUENTAS_PROPIAS | ENVIO_A_BROKER |
 //                               RESCATE_DE_BROKER | INTERES_CUENTA_REMUNERADA | PAGO_SERVICIO |
 //                               MANTENIMIENTO_CUENTA | PAGO_TARJETA | DESCUENTO_CHEQUE_BANCO |
@@ -35,9 +36,14 @@ datasource db {
 // Cláusula cheque emitido:     A_LA_ORDEN | NO_A_LA_ORDEN
 // Estado cheque emitido:       PENDIENTE_EMISION | EMITIDO | DEPOSITADO | RECHAZADO
 // Estado planilla Galicia:     BORRADOR | DESCARGADA | PROCESADA
-// Tipo gasto prepaga:          COMBUSTIBLE | PEAJE | COMIDA | ALOJAMIENTO | REPUESTO | LAVADO | OTRO
+// Tipo gasto prepaga/tarjeta:  COMBUSTIBLE | PEAJE | COMIDA | ALOJAMIENTO | REPUESTO | LAVADO | OTRO
+// Tipo tarjeta:                CREDITO | DEBITO | PREPAGA
+// Titular tarjeta tipo:        EMPRESA | CHOFER | EMPLEADO
 // Tipo adelanto fletero:       EFECTIVO | TRANSFERENCIA | CHEQUE_PROPIO | CHEQUE_TERCERO | COMBUSTIBLE
 // Estado adelanto fletero:     PENDIENTE_DESCUENTO | DESCONTADO_PARCIAL | DESCONTADO_TOTAL
+// Tipo pago proveedor:         TRANSFERENCIA | CHEQUE_PROPIO | CHEQUE_FISICO_TERCERO | CHEQUE_ELECTRONICO_TERCERO | TARJETA_CREDITO | TARJETA_DEBITO | TARJETA_PREPAGA | EFECTIVO
+// Estado pago factura prov.:   PENDIENTE | PARCIALMENTE_PAGADA | PAGADA
+// Tipo gasto tarjeta (extra):  PAGO_PROVEEDOR
 
 // ─── USUARIOS ─────────────────────────────────────────────────────────────────
 
@@ -63,17 +69,20 @@ model Usuario {
   viajesOperador             Viaje[]                 @relation("OperadorViajes")
   movimientosFciOpera        MovimientoFci[]         @relation("OperadorMovimientoFci")
   saldosFciOpera             SaldoFci[]              @relation("OperadorSaldoFci")
-  movimientosBancariosOpera  MovimientoBancario[]    @relation("OperadorMovimientoBancario")
+  movimientosSinFacturaOpera MovimientoSinFactura[]  @relation("OperadorMovimientoSinFactura")
   chequesRecibidosOpera      ChequeRecibido[]        @relation("OperadorChequeRecibido")
   chequesEmitidosOpera       ChequeEmitido[]         @relation("OperadorChequeEmitido")
   planillasGaliciaOpera      PlanillaGalicia[]       @relation("OperadorPlanillaGalicia")
   tarjetasPrepagaChofer      TarjetaPrepaga[]        @relation("ChoferTarjetaPrepaga")
   gastosTarjetaPrepagaOpera  GastoTarjetaPrepaga[]   @relation("OperadorGastoTarjetaPrepaga")
+  tarjetasChofer             Tarjeta[]               @relation("ChoferTarjeta")
+  gastosTarjetaOpera         GastoTarjeta[]          @relation("OperadorGastoTarjeta")
   empleado                   Empleado?               @relation("EmpleadoUsuario")
   adelantosFleterosOpera     AdelantoFletero[]       @relation("OperadorAdelantoFletero")
   notasCreditoDebitoOpera    NotaCreditoDebito[]     @relation("OperadorNotaCreditoDebito")
   pagosEmpresaOpera          PagoDeEmpresa[]         @relation("OperadorPagoEmpresa")
   pagosFleterosOpera         PagoAFletero[]          @relation("OperadorPagoFletero")
+  pagosProveedorOpera        PagoProveedor[]         @relation("OperadorPagoProveedor")
 
   @@map("usuarios")
 }
@@ -355,16 +364,17 @@ model Cuenta {
   esCuentaComitenteBroker        Boolean             @default(false) @map("es_cuenta_comitente_broker")
 
   fci                            Fci[]
-  movimientosBancarios           MovimientoBancario[] @relation("CuentaMovimientoBancario")
-  movimientosComoDestino         MovimientoBancario[] @relation("CuentaDestinoMovimientoBancario")
-  movimientosComoBroker          MovimientoBancario[] @relation("CuentaBrokerMovimientoBancario")
+  movimientosSinFactura          MovimientoSinFactura[] @relation("CuentaMovimientoSinFactura")
+  movimientosComoDestino         MovimientoSinFactura[] @relation("CuentaDestinoMovimientoSinFactura")
   movimientosFciOrigenDestino    MovimientoFci[]      @relation("CuentaOrigenDestinoMovimientoFci")
   chequesRecibidosDepositados    ChequeRecibido[]     @relation("CuentaDepositaChequeRecibido")
   chequesRecibidosBroker         ChequeRecibido[]     @relation("CuentaBrokerChequeRecibido")
   chequesEmitidos                ChequeEmitido[]      @relation("CuentaChequeEmitido")
   planillasGalicia              PlanillaGalicia[]
   tarjetasPrepagas               TarjetaPrepaga[]
+  tarjetas                       Tarjeta[]
   brokers                        Broker[]
+  pagosProveedor                 PagoProveedor[]  @relation("CuentaPagoProveedor")
   pagosAFletero                  PagoAFletero[]       @relation("CuentaPagoAFletero")
   pagosDeEmpresa                 PagoDeEmpresa[]      @relation("CuentaPagoDeEmpresa")
 
@@ -431,40 +441,32 @@ model Empleado {
   activo       Boolean             @default(true)
   creadoEn     DateTime            @default(now()) @map("creado_en")
 
-  usuario              Usuario?             @relation("EmpleadoUsuario", fields: [usuarioId], references: [id], onDelete: SetNull)
-  movimientosBancarios MovimientoBancario[]
+  usuario  Usuario? @relation("EmpleadoUsuario", fields: [usuarioId], references: [id], onDelete: SetNull)
 
   @@map("empleados")
 }
 
-model MovimientoBancario {
-  id                         String    @id @default(uuid())
-  cuentaId                   String    @map("cuenta_id")
-  tipo                       String
-  monto                      Float
-  fecha                      DateTime
-  descripcion                String
-  referencia                 String?
-  comprobanteS3Key           String?   @map("comprobante_s3_key")
-  impuestoDebitoAplica       Boolean   @default(false) @map("impuesto_debito_aplica")
-  impuestoDebitoMonto        Float     @default(0) @map("impuesto_debito_monto")
-  impuestoCreditoAplica      Boolean   @default(false) @map("impuesto_credito_aplica")
-  impuestoCreditoMonto       Float     @default(0) @map("impuesto_credito_monto")
-  otrosDescuentosDescripcion String?   @map("otros_descuentos_descripcion")
-  otrosDescuentosMonto       Float     @default(0) @map("otros_descuentos_monto")
-  cuentaDestinoId            String?   @map("cuenta_destino_id")
-  cuentaBrokerId             String?   @map("cuenta_broker_id")
-  empleadoId                 String?   @map("empleado_id")
-  operadorId                 String    @map("operador_id")
-  creadoEn                   DateTime  @default(now()) @map("creado_en")
+model MovimientoSinFactura {
+  id               String   @id @default(uuid())
+  cuentaId         String   @map("cuenta_id")
+  tipo             String   // INGRESO | EGRESO
+  categoria        String   // CHEQUE_DEPOSITADO | CHEQUE_EMITIDO_DEBITADO | TRANSFERENCIA_RECIBIDA | TRANSFERENCIA_ENVIADA | TRANSFERENCIA_ENTRE_CUENTAS_PROPIAS | ENVIO_A_BROKER | RESCATE_DE_BROKER | INTERES_CUENTA_REMUNERADA | PAGO_SERVICIO | MANTENIMIENTO_CUENTA | PAGO_TARJETA | DESCUENTO_CHEQUE_BANCO | PAGO_SUELDO | OTRO
+  monto            Float    // siempre positivo
+  fecha            DateTime
+  descripcion      String
+  referencia       String?
+  comprobanteS3Key String?  @map("comprobante_s3_key")
+  cuentaDestinoId  String?  @map("cuenta_destino_id")
+  tarjetaId        String?  @map("tarjeta_id")
+  operadorId       String   @map("operador_id")
+  creadoEn         DateTime @default(now()) @map("creado_en")
 
-  cuenta        Cuenta    @relation("CuentaMovimientoBancario", fields: [cuentaId], references: [id])
-  cuentaDestino Cuenta?   @relation("CuentaDestinoMovimientoBancario", fields: [cuentaDestinoId], references: [id], onDelete: SetNull)
-  cuentaBroker  Cuenta?   @relation("CuentaBrokerMovimientoBancario", fields: [cuentaBrokerId], references: [id], onDelete: SetNull)
-  empleado      Empleado? @relation(fields: [empleadoId], references: [id], onDelete: SetNull)
-  operador      Usuario   @relation("OperadorMovimientoBancario", fields: [operadorId], references: [id])
+  cuenta        Cuenta   @relation("CuentaMovimientoSinFactura", fields: [cuentaId], references: [id])
+  cuentaDestino Cuenta?  @relation("CuentaDestinoMovimientoSinFactura", fields: [cuentaDestinoId], references: [id], onDelete: SetNull)
+  tarjeta       Tarjeta? @relation("TarjetaMovimientoSinFactura", fields: [tarjetaId], references: [id], onDelete: SetNull)
+  operador      Usuario  @relation("OperadorMovimientoSinFactura", fields: [operadorId], references: [id])
 
-  @@map("movimientos_bancarios")
+  @@map("movimientos_sin_factura")
 }
 
 model ChequeRecibido {
@@ -483,9 +485,12 @@ model ChequeRecibido {
   endosadoAProveedorId String?        @map("endosado_a_proveedor_id")
   endosadoABrokerId   String?         @map("endosado_a_broker_id")
   fechaAcreditacion   DateTime?       @map("fecha_acreditacion")
+  cuitLibrador        String?         @map("cuit_librador")
   tasaDescuento       Float?          @map("tasa_descuento")
   operadorId          String          @map("operador_id")
   creadoEn            DateTime        @default(now()) @map("creado_en")
+  // false = cheque físico recibido de empresa cliente; true = ECheq electrónico recibido
+  esElectronico       Boolean         @default(false) @map("es_electronico")
 
   empresa               Empresa             @relation(fields: [empresaId], references: [id])
   factura               FacturaEmitida?     @relation(fields: [facturaId], references: [id], onDelete: SetNull)
@@ -496,6 +501,7 @@ model ChequeRecibido {
   operador              Usuario             @relation("OperadorChequeRecibido", fields: [operadorId], references: [id])
   pagosEmpresa          PagoDeEmpresa[]
   pagosFletero          PagoAFletero[]
+  pagosProveedor        PagoProveedor[]  @relation("ChequeRecibidoPagoProveedor")
   adelantos             AdelantoFletero[]
   notasCreditoDebito    NotaCreditoDebito[]
 
@@ -524,6 +530,8 @@ model ChequeEmitido {
   planillaGaliciaId   String?         @map("planilla_galicia_id")
   operadorId          String          @map("operador_id")
   creadoEn            DateTime        @default(now()) @map("creado_en")
+  // Transmagg solo emite cheques electrónicos — siempre true
+  esElectronico       Boolean         @default(true)  @map("es_electronico")
 
   fletero           Fletero?         @relation("FleteroChequeEmitido", fields: [fleteroId], references: [id], onDelete: SetNull)
   proveedor         Proveedor?       @relation("ProveedorChequeEmitido", fields: [proveedorId], references: [id], onDelete: SetNull)
@@ -532,6 +540,7 @@ model ChequeEmitido {
   planillaGalicia   PlanillaGalicia? @relation(fields: [planillaGaliciaId], references: [id], onDelete: SetNull)
   operador          Usuario          @relation("OperadorChequeEmitido", fields: [operadorId], references: [id])
   pagosFletero      PagoAFletero[]
+  pagosProveedor    PagoProveedor[]  @relation("ChequeEmitidoPagoProveedor")
   adelantos         AdelantoFletero[]
 
   @@map("cheques_emitidos")
@@ -586,6 +595,68 @@ model GastoTarjetaPrepaga {
   operador Usuario        @relation("OperadorGastoTarjetaPrepaga", fields: [operadorId], references: [id])
 
   @@map("gastos_tarjeta_prepaga")
+}
+
+// ─── TARJETAS UNIFICADAS ───────────────────────────────────────────────────────
+// tipo: CREDITO | DEBITO | PREPAGA
+// titularTipo: EMPRESA | CHOFER | EMPLEADO
+
+model Tarjeta {
+  id             String   @id @default(uuid())
+  nombre         String
+  tipo           String
+  banco          String
+  ultimos4       String   @map("ultimos_4")
+  titularTipo    String   @map("titular_tipo")
+  titularNombre  String   @map("titular_nombre")
+  cuentaId       String?  @map("cuenta_id")
+  choferId       String?  @map("chofer_id")
+  limiteMensual  Float?   @map("limite_mensual")
+  activa         Boolean  @default(true)
+  creadoEn       DateTime @default(now()) @map("creado_en")
+
+  cuenta          Cuenta?          @relation(fields: [cuentaId], references: [id])
+  chofer          Usuario?         @relation("ChoferTarjeta", fields: [choferId], references: [id])
+  resumenes          ResumenTarjeta[]
+  gastos             GastoTarjeta[]
+  pagosProveedor     PagoProveedor[]       @relation("TarjetaPagoProveedor")
+  movimientosSinFact MovimientoSinFactura[] @relation("TarjetaMovimientoSinFactura")
+
+  @@map("tarjetas")
+}
+
+model ResumenTarjeta {
+  id           String   @id @default(uuid())
+  tarjetaId    String   @map("tarjeta_id")
+  periodo      String
+  fechaVtoPago DateTime @map("fecha_vto_pago")
+  totalARS     Float    @map("total_ars")
+  totalUSD     Float?   @map("total_usd")
+  s3Key        String?  @map("s3_key")
+  pagado       Boolean  @default(false)
+  creadoEn     DateTime @default(now()) @map("creado_en")
+
+  tarjeta        Tarjeta       @relation(fields: [tarjetaId], references: [id], onDelete: Cascade)
+  pagosProveedor PagoProveedor[] @relation("ResumenTarjetaPagoProveedor")
+
+  @@map("resumenes_tarjeta")
+}
+
+model GastoTarjeta {
+  id               String   @id @default(uuid())
+  tarjetaId        String   @map("tarjeta_id")
+  tipoGasto        String   @map("tipo_gasto")
+  monto            Float
+  fecha            DateTime
+  descripcion      String?
+  comprobanteS3Key String?  @map("comprobante_s3_key")
+  operadorId       String   @map("operador_id")
+  creadoEn         DateTime @default(now()) @map("creado_en")
+
+  tarjeta  Tarjeta @relation(fields: [tarjetaId], references: [id], onDelete: Cascade)
+  operador Usuario @relation("OperadorGastoTarjeta", fields: [operadorId], references: [id])
+
+  @@map("gastos_tarjeta")
 }
 
 model Broker {
@@ -705,34 +776,73 @@ model Proveedor {
 }
 
 model FacturaProveedor {
-  id             String   @id @default(uuid())
-  proveedorId    String   @map("proveedor_id")
-  nroComprobante String   @map("nro_comprobante")
-  tipoCbte       String   @map("tipo_cbte")
-  neto           Float
-  ivaMonto       Float    @map("iva_monto")
-  total          Float
-  fechaCbte      DateTime @map("fecha_cbte")
-  pdfS3Key       String?  @map("pdf_s3_key")
+  id                  String   @id @default(uuid())
+  proveedorId         String   @map("proveedor_id")
+  nroComprobante      String   @map("nro_comprobante")
+  ptoVenta            String?  @map("pto_venta")
+  tipoCbte            String   @map("tipo_cbte")
+  neto                Float
+  ivaMonto            Float    @map("iva_monto")
+  total               Float
+  fechaCbte           DateTime @map("fecha_cbte")
+  concepto            String?  @map("concepto")
+  pdfS3Key            String?  @map("pdf_s3_key")
+  estadoPago          String   @default("PENDIENTE") @map("estado_pago")
+  percepcionIIBB      Float?   @map("percepcion_iibb")
+  percepcionIVA       Float?   @map("percepcion_iva")
+  percepcionGanancias Float?   @map("percepcion_ganancias")
 
-  proveedor   Proveedor        @relation(fields: [proveedorId], references: [id])
-  pagos       PagoAProveedor[]
+  proveedor   Proveedor              @relation(fields: [proveedorId], references: [id])
+  pagos       PagoProveedor[]
   asientosIva AsientoIva[]
+  items       ItemFacturaProveedor[]
 
   @@map("facturas_proveedor")
 }
 
-model PagoAProveedor {
+model ItemFacturaProveedor {
   id                 String   @id @default(uuid())
   facturaProveedorId String   @map("factura_proveedor_id")
-  tipoPago           String   @map("tipo_pago")
-  monto              Float
-  referencia         String?
-  fechaPago          DateTime @map("fecha_pago")
+  descripcion        String
+  cantidad           Float    @default(1)
+  precioUnitario     Float    @map("precio_unitario")
+  alicuotaIva        Float    @map("alicuota_iva")
+  esExento           Boolean  @default(false) @map("es_exento")
+  subtotalNeto       Float    @map("subtotal_neto")
+  montoIva           Float    @map("monto_iva")
+  subtotalTotal      Float    @map("subtotal_total")
 
-  facturaProveedor FacturaProveedor @relation(fields: [facturaProveedorId], references: [id])
+  facturaProveedor FacturaProveedor @relation(fields: [facturaProveedorId], references: [id], onDelete: Cascade)
 
-  @@map("pagos_a_proveedores")
+  @@map("items_factura_proveedor")
+}
+
+// TipoPagoProveedor: TRANSFERENCIA | CHEQUE_PROPIO | CHEQUE_FISICO_TERCERO | CHEQUE_ELECTRONICO_TERCERO | TARJETA_CREDITO | TARJETA_DEBITO | TARJETA_PREPAGA | EFECTIVO
+model PagoProveedor {
+  id                  String    @id @default(uuid())
+  facturaProveedorId  String    @map("factura_proveedor_id")
+  fecha               DateTime
+  monto               Float
+  tipo                String
+  observaciones       String?
+  comprobantePdfS3Key String?   @map("comprobante_pdf_s3_key")
+  cuentaId            String?   @map("cuenta_id")
+  chequeRecibidoId    String?   @map("cheque_recibido_id")
+  chequeEmitidoId     String?   @map("cheque_emitido_id")
+  tarjetaId           String?   @map("tarjeta_id")
+  resumenTarjetaId    String?   @map("resumen_tarjeta_id")
+  operadorId          String?   @map("operador_id")
+  creadoEn            DateTime  @default(now()) @map("creado_en")
+
+  facturaProveedor  FacturaProveedor @relation(fields: [facturaProveedorId], references: [id])
+  cuenta            Cuenta?          @relation("CuentaPagoProveedor", fields: [cuentaId], references: [id])
+  chequeRecibido    ChequeRecibido?  @relation("ChequeRecibidoPagoProveedor", fields: [chequeRecibidoId], references: [id])
+  chequeEmitido     ChequeEmitido?   @relation("ChequeEmitidoPagoProveedor", fields: [chequeEmitidoId], references: [id])
+  tarjeta           Tarjeta?         @relation("TarjetaPagoProveedor", fields: [tarjetaId], references: [id])
+  resumenTarjeta    ResumenTarjeta?  @relation("ResumenTarjetaPagoProveedor", fields: [resumenTarjetaId], references: [id])
+  operador          Usuario?         @relation("OperadorPagoProveedor", fields: [operadorId], references: [id])
+
+  @@map("pagos_proveedor")
 }
 
 // ─── CONTABILIDAD ─────────────────────────────────────────────────────────────

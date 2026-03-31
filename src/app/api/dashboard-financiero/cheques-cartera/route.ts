@@ -54,6 +54,7 @@ export async function GET(request: NextRequest) {
       monto: c.monto,
       fechaCobro: c.fechaCobro.toISOString(),
       estado: c.estado,
+      esElectronico: c.esElectronico,
     }))
 
     return NextResponse.json(resultado)

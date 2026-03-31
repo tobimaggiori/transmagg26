@@ -38,7 +38,7 @@ export async function GET(
     const cuenta = await prisma.cuenta.findUnique({
       where: { id: params.id },
       include: {
-        movimientosBancarios: true,
+        movimientosSinFactura: { orderBy: { fecha: "desc" } },
         fci: {
           include: {
             saldos: {
@@ -63,16 +63,16 @@ export async function GET(
     }))
     const saldoContable = calcularSaldoContableCuenta(
       cuenta.saldoInicial,
-      cuenta.movimientosBancarios.map((movimiento) => movimiento.monto)
+      cuenta.movimientosSinFactura.map((m) => m.tipo === "INGRESO" ? m.monto : -m.monto)
     )
     const saldoEnFciPropios = calcularSaldoEnFciPropiosCuenta(detalleFci)
     const saldoDisponible = calcularSaldoDisponibleCuenta(saldoContable, saldoEnFciPropios)
-    const capitalEnviado = cuenta.movimientosBancarios
-      .filter((movimiento) => movimiento.tipo === "ENVIO_A_BROKER")
-      .reduce((acumulado, movimiento) => acumulado + Math.abs(movimiento.monto), 0)
-    const capitalRescatado = cuenta.movimientosBancarios
-      .filter((movimiento) => movimiento.tipo === "RESCATE_DE_BROKER")
-      .reduce((acumulado, movimiento) => acumulado + Math.abs(movimiento.monto), 0)
+    const capitalEnviado = cuenta.movimientosSinFactura
+      .filter((m) => m.categoria === "ENVIO_A_BROKER")
+      .reduce((acumulado, m) => acumulado + m.monto, 0)
+    const capitalRescatado = cuenta.movimientosSinFactura
+      .filter((m) => m.categoria === "RESCATE_DE_BROKER")
+      .reduce((acumulado, m) => acumulado + m.monto, 0)
 
     return NextResponse.json({
       ...cuenta,

@@ -1,6 +1,6 @@
 /**
  * Propósito: Página para ingresar facturas de proveedores (ruta /proveedores/factura).
- * Server component: carga proveedores activos y renderiza FacturaProveedorIngresoClient.
+ * Server component: carga proveedores activos, cuentas, tarjetas y cheques en cartera.
  */
 
 import { auth } from "@/lib/auth"
@@ -14,8 +14,8 @@ import type { Rol } from "@/types"
  * ProveedoresFacturaPage: () -> Promise<JSX.Element>
  *
  * Verifica autenticación y permisos (solo roles internos).
- * Carga proveedores activos y renderiza el formulario de ingreso.
- * Existe como entry point para cargar facturas de proveedores.
+ * Carga proveedores activos, cuentas, tarjetas y cheques en cartera y renderiza el formulario.
+ * Existe como entry point para cargar facturas de proveedores con pago opcional inline.
  *
  * Ejemplos:
  * // Sesión ADMIN_TRANSMAGG → formulario de ingreso de factura de proveedor
@@ -30,11 +30,47 @@ export default async function ProveedoresFacturaPage() {
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
   if (!esRolInterno(rol)) redirect("/dashboard")
 
-  const proveedores = await prisma.proveedor.findMany({
-    where: { activo: true },
-    select: { id: true, razonSocial: true, cuit: true },
-    orderBy: { razonSocial: "asc" },
-  })
+  const [proveedores, cuentas, tarjetas, chequesRaw] = await Promise.all([
+    prisma.proveedor.findMany({
+      where: { activo: true },
+      select: { id: true, razonSocial: true, cuit: true },
+      orderBy: { razonSocial: "asc" },
+    }),
+    prisma.cuenta.findMany({
+      where: { activa: true },
+      select: { id: true, nombre: true, tipo: true, tieneChequera: true },
+      orderBy: { nombre: "asc" },
+    }),
+    prisma.tarjeta.findMany({
+      where: { activa: true },
+      select: { id: true, nombre: true, tipo: true, banco: true, ultimos4: true },
+      orderBy: { nombre: "asc" },
+    }),
+    prisma.chequeRecibido.findMany({
+      where: { estado: "EN_CARTERA" },
+      select: {
+        id: true,
+        nroCheque: true,
+        bancoEmisor: true,
+        monto: true,
+        fechaCobro: true,
+        esElectronico: true,
+      },
+      orderBy: { fechaCobro: "asc" },
+    }),
+  ])
 
-  return <FacturaProveedorIngresoClient proveedores={proveedores} />
+  const chequesEnCartera = chequesRaw.map((c) => ({
+    ...c,
+    fechaCobro: c.fechaCobro.toISOString(),
+  }))
+
+  return (
+    <FacturaProveedorIngresoClient
+      proveedores={proveedores}
+      cuentas={cuentas}
+      tarjetas={tarjetas}
+      chequesEnCartera={chequesEnCartera}
+    />
+  )
 }

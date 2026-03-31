@@ -81,6 +81,9 @@ export async function POST(
         fleteroId: true,
         total: true,
         estado: true,
+        nroComprobante: true,
+        ptoVenta: true,
+        fletero: { select: { razonSocial: true } },
         pagos: { select: { monto: true } },
       },
     })
@@ -121,6 +124,28 @@ export async function POST(
               referencia: pago.referencia,
               fechaPago,
               cuentaId: pago.cuentaBancariaId,
+              operadorId,
+            },
+          })
+          // Registrar movimiento bancario: TRANSFERENCIA_ENVIADA
+          const cuenta = await tx.cuenta.findUnique({
+            where: { id: pago.cuentaBancariaId },
+            select: { tieneImpuestoDebcred: true, alicuotaImpuesto: true },
+          })
+          const nroLiq =
+            liquidacion.ptoVenta != null && liquidacion.nroComprobante != null
+              ? `${String(liquidacion.ptoVenta).padStart(4, "0")}-${String(liquidacion.nroComprobante).padStart(8, "0")}`
+              : "s/n"
+          const descripcionMov = `Pago Liquidación ${nroLiq} — ${liquidacion.fletero.razonSocial}`
+          await tx.movimientoSinFactura.create({
+            data: {
+              cuentaId: pago.cuentaBancariaId,
+              tipo: "EGRESO",
+              categoria: "TRANSFERENCIA_ENVIADA",
+              monto: pago.monto,
+              fecha: fechaPago,
+              descripcion: descripcionMov,
+              referencia: pago.referencia,
               operadorId,
             },
           })

@@ -50,19 +50,6 @@ interface FciItem {
   saldos: Array<{ id: string; saldoInformado: number; fechaActualizacion: string }>
 }
 
-interface MovimientoBancario {
-  id: string
-  fecha: string
-  tipo: string
-  descripcion: string
-  referencia: string | null
-  monto: number
-  impuestoDebitoAplica: boolean
-  impuestoDebitoMonto: number
-  impuestoCreditoAplica: boolean
-  impuestoCreditoMonto: number
-  otrosDescuentosMonto: number
-}
 
 interface ChequeRecibido {
   id: string
@@ -72,6 +59,7 @@ interface ChequeRecibido {
   monto: number
   fechaCobro: string
   estado: string
+  esElectronico: boolean
 }
 
 interface ChequeEmitido {
@@ -82,6 +70,7 @@ interface ChequeEmitido {
   fechaPago: string
   estado: string
   planillaGaliciaId: string | null
+  esElectronico: boolean
 }
 
 interface PlanillaGalicia {
@@ -91,14 +80,6 @@ interface PlanillaGalicia {
   totalMonto: number
   cantidadCheques: number
   creadaEn: string
-}
-
-interface TarjetaPrepaga {
-  id: string
-  nroTarjeta: string | null
-  limiteMensual: number | null
-  activa: boolean
-  chofer: { nombre: string; apellido: string }
 }
 
 type TabId = "movimientos" | "cheques-recibidos" | "cheques-emitidos" | "planillas-galicia" | "fci" | "tarjetas"
@@ -111,232 +92,18 @@ interface CuentasClientProps {
 // --- Sub-componente: Tab Movimientos ---
 
 function TabMovimientos({ cuenta }: { cuenta: Cuenta }) {
-  const [movimientos, setMovimientos] = useState<MovimientoBancario[]>([])
-  const [loading, setLoading] = useState(true)
-  const [modalAbierto, setModalAbierto] = useState(false)
-  const [form, setForm] = useState({
-    tipo: "TRANSFERENCIA_RECIBIDA",
-    monto: "",
-    fecha: new Date().toISOString().slice(0, 10),
-    descripcion: "",
-    referencia: "",
-    impuestoDebitoAplica: false,
-    impuestoDebitoMonto: "",
-    impuestoCreditoAplica: false,
-    impuestoCreditoMonto: "",
-    otrosDescuentosMonto: "",
-    otrosDescuentosDescripcion: "",
-    cuentaDestinoId: "",
-    cuentaBrokerId: "",
-    empleadoId: "",
-  })
-  const [cuentasOtras, setCuentasOtras] = useState<Array<{ id: string; nombre: string }>>([])
-  const [brokers, setBrokers] = useState<Array<{ id: string; nombre: string; cuentaId: string }>>([])
-  const [empleados, setEmpleados] = useState<Array<{ id: string; nombre: string; apellido: string }>>([])
-  const [error, setError] = useState("")
-  const [guardando, setGuardando] = useState(false)
-
-  const cargarMovimientos = useCallback(() => {
-    setLoading(true)
-    fetch(`/api/movimientos-bancarios?cuentaId=${cuenta.id}`)
-      .then(r => r.json())
-      .then(d => { setMovimientos(Array.isArray(d) ? d : []); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [cuenta.id])
-
-  useEffect(() => { cargarMovimientos() }, [cargarMovimientos])
-
-  function abrirModal() {
-    fetch("/api/cuentas").then(r => r.json()).then(d => setCuentasOtras((d as Cuenta[]).filter(c => c.id !== cuenta.id)))
-    fetch("/api/brokers").then(r => r.json()).then(setBrokers)
-    fetch("/api/empleados").then(r => r.json()).then(setEmpleados)
-    setModalAbierto(true)
-  }
-
-  async function guardar() {
-    setError("")
-    setGuardando(true)
-    const body: Record<string, unknown> = {
-      cuentaId: cuenta.id,
-      tipo: form.tipo,
-      monto: parseFloat(form.monto),
-      fecha: form.fecha,
-      descripcion: form.descripcion,
-      referencia: form.referencia || null,
-      impuestoDebitoAplica: form.impuestoDebitoAplica,
-      impuestoDebitoMonto: form.impuestoDebitoAplica ? parseFloat(form.impuestoDebitoMonto || "0") : 0,
-      impuestoCreditoAplica: form.impuestoCreditoAplica,
-      impuestoCreditoMonto: form.impuestoCreditoAplica ? parseFloat(form.impuestoCreditoMonto || "0") : 0,
-      otrosDescuentosMonto: parseFloat(form.otrosDescuentosMonto || "0"),
-      otrosDescuentosDescripcion: form.otrosDescuentosDescripcion || null,
-      cuentaDestinoId: form.cuentaDestinoId || null,
-      cuentaBrokerId: form.cuentaBrokerId || null,
-      empleadoId: form.empleadoId || null,
-    }
-    const res = await fetch("/api/movimientos-bancarios", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
-    setGuardando(false)
-    if (res.ok) {
-      setModalAbierto(false)
-      cargarMovimientos()
-    } else {
-      const d = await res.json()
-      setError(d.error ?? "Error al guardar")
-    }
-  }
-
-  // Calcular saldo acumulado
-  let saldoAcum = 0
-  const movOrdenados = [...movimientos].sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime())
-  const conSaldo = movOrdenados.map((m) => {
-    saldoAcum += m.monto - m.impuestoDebitoMonto - m.impuestoCreditoMonto - m.otrosDescuentosMonto
-    return { ...m, saldoAcum }
-  }).reverse()
-
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button size="sm" onClick={abrirModal}><Plus className="h-4 w-4 mr-1" /> Registrar movimiento</Button>
+      <div className="rounded-lg border bg-muted/30 p-5 text-sm text-muted-foreground">
+        <p className="font-medium text-foreground mb-1">Los movimientos de esta cuenta se gestionan en Contabilidad → Movimientos.</p>
+        <p className="mb-4">Podés registrar ingresos y egresos, filtrar por período, cuenta y categoría, y exportar a Excel.</p>
+        <a
+          href={`/contabilidad/movimientos?cuentaId=${cuenta.id}`}
+          className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+        >
+          Ver movimientos de {cuenta.nombre}
+        </a>
       </div>
-      {loading ? <p className="text-muted-foreground text-sm">Cargando...</p> : (
-        <div className="border rounded overflow-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="text-left px-3 py-2">Fecha</th>
-                <th className="text-left px-3 py-2">Tipo</th>
-                <th className="text-left px-3 py-2">Descripción</th>
-                <th className="text-left px-3 py-2">Referencia</th>
-                <th className="text-right px-3 py-2">Débito</th>
-                <th className="text-right px-3 py-2">Crédito</th>
-                <th className="text-right px-3 py-2">Imp.D</th>
-                <th className="text-right px-3 py-2">Imp.C</th>
-                <th className="text-right px-3 py-2">Otros desc.</th>
-                <th className="text-right px-3 py-2">Saldo acum.</th>
-              </tr>
-            </thead>
-            <tbody>
-              {conSaldo.map((m) => (
-                <tr key={m.id} className="border-t hover:bg-muted/20">
-                  <td className="px-3 py-2">{formatearFecha(m.fecha)}</td>
-                  <td className="px-3 py-2"><span className="text-xs bg-muted px-1.5 py-0.5 rounded">{m.tipo}</span></td>
-                  <td className="px-3 py-2">{m.descripcion}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{m.referencia ?? "-"}</td>
-                  <td className="px-3 py-2 text-right">{m.monto < 0 ? formatearMoneda(Math.abs(m.monto)) : "-"}</td>
-                  <td className="px-3 py-2 text-right text-green-700">{m.monto >= 0 ? formatearMoneda(m.monto) : "-"}</td>
-                  <td className="px-3 py-2 text-right text-xs">{m.impuestoDebitoMonto > 0 ? formatearMoneda(m.impuestoDebitoMonto) : "-"}</td>
-                  <td className="px-3 py-2 text-right text-xs">{m.impuestoCreditoMonto > 0 ? formatearMoneda(m.impuestoCreditoMonto) : "-"}</td>
-                  <td className="px-3 py-2 text-right text-xs">{m.otrosDescuentosMonto > 0 ? formatearMoneda(m.otrosDescuentosMonto) : "-"}</td>
-                  <td className={`px-3 py-2 text-right font-medium ${m.saldoAcum < 0 ? "text-destructive" : ""}`}>{formatearMoneda(m.saldoAcum)}</td>
-                </tr>
-              ))}
-              {conSaldo.length === 0 && (
-                <tr><td colSpan={10} className="px-3 py-4 text-center text-muted-foreground">Sin movimientos registrados.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <Dialog open={modalAbierto} onOpenChange={setModalAbierto}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Registrar movimiento</DialogTitle>
-            <DialogDescription>Nuevo movimiento bancario para {cuenta.nombre}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 max-h-[60vh] overflow-auto">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Tipo</Label>
-                <Select value={form.tipo} onChange={(e) => setForm(f => ({ ...f, tipo: e.target.value }))}>
-                  {["CHEQUE_DEPOSITADO","CHEQUE_EMITIDO_DEBITADO","TRANSFERENCIA_RECIBIDA","TRANSFERENCIA_ENVIADA","TRANSFERENCIA_ENTRE_CUENTAS_PROPIAS","ENVIO_A_BROKER","RESCATE_DE_BROKER","INTERES_CUENTA_REMUNERADA","PAGO_SERVICIO","MANTENIMIENTO_CUENTA","PAGO_TARJETA","DESCUENTO_CHEQUE_BANCO","PAGO_SUELDO","OTRO"].map(t => <option key={t} value={t}>{t}</option>)}
-                </Select>
-              </div>
-              <div>
-                <Label>Monto</Label>
-                <Input type="number" value={form.monto} onChange={(e) => setForm(f => ({ ...f, monto: e.target.value }))} placeholder="0.00" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Fecha</Label>
-                <Input type="date" value={form.fecha} onChange={(e) => setForm(f => ({ ...f, fecha: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Referencia</Label>
-                <Input value={form.referencia} onChange={(e) => setForm(f => ({ ...f, referencia: e.target.value }))} />
-              </div>
-            </div>
-            <div>
-              <Label>Descripción</Label>
-              <Input value={form.descripcion} onChange={(e) => setForm(f => ({ ...f, descripcion: e.target.value }))} />
-            </div>
-            {form.tipo === "TRANSFERENCIA_ENTRE_CUENTAS_PROPIAS" && (
-              <div>
-                <Label>Cuenta destino</Label>
-                <Select value={form.cuentaDestinoId} onChange={(e) => setForm(f => ({ ...f, cuentaDestinoId: e.target.value }))}>
-                  <option value="">Seleccionar...</option>
-                  {cuentasOtras.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                </Select>
-              </div>
-            )}
-            {(form.tipo === "ENVIO_A_BROKER" || form.tipo === "RESCATE_DE_BROKER") && (
-              <div>
-                <Label>Broker</Label>
-                <Select value={form.cuentaBrokerId} onChange={(e) => setForm(f => ({ ...f, cuentaBrokerId: e.target.value }))}>
-                  <option value="">Seleccionar...</option>
-                  {brokers.map(b => <option key={b.id} value={b.cuentaId}>{b.nombre}</option>)}
-                </Select>
-              </div>
-            )}
-            {form.tipo === "PAGO_SUELDO" && (
-              <div>
-                <Label>Empleado</Label>
-                <Select value={form.empleadoId} onChange={(e) => setForm(f => ({ ...f, empleadoId: e.target.value }))}>
-                  <option value="">Seleccionar...</option>
-                  {empleados.map(e => <option key={e.id} value={e.id}>{e.nombre} {e.apellido}</option>)}
-                </Select>
-              </div>
-            )}
-            {cuenta.tieneImpuestoDebcred && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={form.impuestoDebitoAplica} onChange={(e) => setForm(f => ({ ...f, impuestoDebitoAplica: e.target.checked }))} />
-                    Impuesto débito
-                  </label>
-                  {form.impuestoDebitoAplica && <Input type="number" value={form.impuestoDebitoMonto} onChange={(e) => setForm(f => ({ ...f, impuestoDebitoMonto: e.target.value }))} placeholder="Monto" />}
-                </div>
-                <div>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={form.impuestoCreditoAplica} onChange={(e) => setForm(f => ({ ...f, impuestoCreditoAplica: e.target.checked }))} />
-                    Impuesto crédito
-                  </label>
-                  {form.impuestoCreditoAplica && <Input type="number" value={form.impuestoCreditoMonto} onChange={(e) => setForm(f => ({ ...f, impuestoCreditoMonto: e.target.value }))} placeholder="Monto" />}
-                </div>
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Otros descuentos (monto)</Label>
-                <Input type="number" value={form.otrosDescuentosMonto} onChange={(e) => setForm(f => ({ ...f, otrosDescuentosMonto: e.target.value }))} placeholder="0" />
-              </div>
-              <div>
-                <Label>Descripción descuentos</Label>
-                <Input value={form.otrosDescuentosDescripcion} onChange={(e) => setForm(f => ({ ...f, otrosDescuentosDescripcion: e.target.value }))} />
-              </div>
-            </div>
-            {error && <FormError message={error} />}
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setModalAbierto(false)}>Cancelar</Button>
-            <Button onClick={guardar} disabled={guardando}>{guardando ? "Guardando..." : "Guardar"}</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
@@ -347,7 +114,7 @@ function TabChequesRecibidos({ cuenta }: { cuenta: Cuenta }) {
   const [cheques, setCheques] = useState<ChequeRecibido[]>([])
   const [loading, setLoading] = useState(true)
   const [modalAlta, setModalAlta] = useState(false)
-  const [form, setForm] = useState({ empresaId: "", nroCheque: "", bancoEmisor: "", monto: "", fechaEmision: new Date().toISOString().slice(0,10), fechaCobro: new Date().toISOString().slice(0,10) })
+  const [form, setForm] = useState({ empresaId: "", nroCheque: "", bancoEmisor: "", monto: "", fechaEmision: new Date().toISOString().slice(0,10), fechaCobro: new Date().toISOString().slice(0,10), esElectronico: false })
   const [empresas, setEmpresas] = useState<Array<{ id: string; razonSocial: string }>>([])
   const [error, setError] = useState("")
   const [guardando, setGuardando] = useState(false)
@@ -394,61 +161,90 @@ function TabChequesRecibidos({ cuenta }: { cuenta: Cuenta }) {
     cargar()
   }
 
+  const chequesFisicos = cheques.filter((c) => !c.esElectronico)
+  const chequesElectronicos = cheques.filter((c) => c.esElectronico)
+
+  function FilaChequeRecibido({ c }: { c: ChequeRecibido }) {
+    return (
+      <tr key={c.id} className="border-t hover:bg-muted/20">
+        <td className="px-3 py-2">{c.empresa.razonSocial}</td>
+        <td className="px-3 py-2">
+          <span>{c.nroCheque}</span>
+          {c.esElectronico && <span className="ml-1.5 text-xs bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded font-medium">ECheq</span>}
+        </td>
+        <td className="px-3 py-2">{c.bancoEmisor}</td>
+        <td className="px-3 py-2 text-right">{formatearMoneda(c.monto)}</td>
+        <td className="px-3 py-2 text-right">{formatearFecha(c.fechaCobro)}</td>
+        <td className="px-3 py-2"><span className="text-xs bg-muted px-1.5 py-0.5 rounded">{c.estado}</span></td>
+        <td className="px-3 py-2">
+          {c.estado === "EN_CARTERA" && (
+            <div className="flex flex-wrap gap-1">
+              <button onClick={() => cambiarEstado(c.id, "DEPOSITADO")} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded hover:bg-blue-100">Depositar</button>
+              <button onClick={() => cambiarEstado(c.id, "ENDOSADO_FLETERO")} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded hover:bg-green-100">Endosar</button>
+              <button onClick={() => cambiarEstado(c.id, "DESCONTADO_BANCO")} className="text-xs bg-orange-50 text-orange-700 px-2 py-0.5 rounded hover:bg-orange-100">Descontar</button>
+              <button onClick={() => cambiarEstado(c.id, "RECHAZADO")} className="text-xs bg-red-50 text-red-700 px-2 py-0.5 rounded hover:bg-red-100">Rechazar</button>
+            </div>
+          )}
+        </td>
+      </tr>
+    )
+  }
+
+  function TablaGrupoCheques({ titulo, lista }: { titulo: string; lista: ChequeRecibido[] }) {
+    if (lista.length === 0) return null
+    return (
+      <div className="border rounded overflow-auto">
+        <div className="bg-muted/30 px-3 py-1.5 flex items-center justify-between text-xs font-medium text-muted-foreground">
+          <span>{titulo}</span>
+          <span>{lista.length} cheque(s) — {formatearMoneda(lista.reduce((acc, c) => acc + c.monto, 0))}</span>
+        </div>
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50">
+            <tr>
+              <th className="text-left px-3 py-2">Empresa</th>
+              <th className="text-left px-3 py-2">Nro. Cheque</th>
+              <th className="text-left px-3 py-2">Banco</th>
+              <th className="text-right px-3 py-2">Monto</th>
+              <th className="text-right px-3 py-2">Fecha cobro</th>
+              <th className="text-left px-3 py-2">Estado</th>
+              <th className="text-left px-3 py-2">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lista.map((c) => <FilaChequeRecibido key={c.id} c={c} />)}
+          </tbody>
+          <tfoot>
+            <tr className="border-t font-semibold">
+              <td colSpan={3} className="px-3 py-2">Total {titulo}</td>
+              <td className="px-3 py-2 text-right">{formatearMoneda(lista.reduce((acc, c) => acc + c.monto, 0))}</td>
+              <td colSpan={3}></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
         <Button size="sm" onClick={abrirModal}><Plus className="h-4 w-4 mr-1" /> Registrar cheque</Button>
       </div>
       {loading ? <p className="text-muted-foreground text-sm">Cargando...</p> : (
-        <div className="border rounded overflow-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="text-left px-3 py-2">Empresa</th>
-                <th className="text-left px-3 py-2">Nro. Cheque</th>
-                <th className="text-left px-3 py-2">Banco</th>
-                <th className="text-right px-3 py-2">Monto</th>
-                <th className="text-right px-3 py-2">Fecha cobro</th>
-                <th className="text-left px-3 py-2">Estado</th>
-                <th className="text-left px-3 py-2">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cheques.map((c) => (
-                <tr key={c.id} className="border-t hover:bg-muted/20">
-                  <td className="px-3 py-2">{c.empresa.razonSocial}</td>
-                  <td className="px-3 py-2">{c.nroCheque}</td>
-                  <td className="px-3 py-2">{c.bancoEmisor}</td>
-                  <td className="px-3 py-2 text-right">{formatearMoneda(c.monto)}</td>
-                  <td className="px-3 py-2 text-right">{formatearFecha(c.fechaCobro)}</td>
-                  <td className="px-3 py-2"><span className="text-xs bg-muted px-1.5 py-0.5 rounded">{c.estado}</span></td>
-                  <td className="px-3 py-2">
-                    {c.estado === "EN_CARTERA" && (
-                      <div className="flex flex-wrap gap-1">
-                        <button onClick={() => cambiarEstado(c.id, "DEPOSITADO")} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded hover:bg-blue-100">Depositar</button>
-                        <button onClick={() => cambiarEstado(c.id, "ENDOSADO_FLETERO")} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded hover:bg-green-100">Endosar</button>
-                        <button onClick={() => cambiarEstado(c.id, "DESCONTADO_BANCO")} className="text-xs bg-orange-50 text-orange-700 px-2 py-0.5 rounded hover:bg-orange-100">Descontar</button>
-                        <button onClick={() => cambiarEstado(c.id, "RECHAZADO")} className="text-xs bg-red-50 text-red-700 px-2 py-0.5 rounded hover:bg-red-100">Rechazar</button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {cheques.length === 0 && (
-                <tr><td colSpan={7} className="px-3 py-4 text-center text-muted-foreground">Sin cheques registrados.</td></tr>
-              )}
-            </tbody>
-            {cheques.length > 0 && (
-              <tfoot>
-                <tr className="border-t font-semibold">
-                  <td colSpan={3} className="px-3 py-2">Total</td>
-                  <td className="px-3 py-2 text-right">{formatearMoneda(cheques.reduce((acc, c) => acc + c.monto, 0))}</td>
-                  <td colSpan={3}></td>
-                </tr>
-              </tfoot>
+        cheques.length === 0 ? (
+          <div className="border rounded p-6 text-center text-muted-foreground text-sm">Sin cheques registrados.</div>
+        ) : (
+          <div className="space-y-3">
+            <TablaGrupoCheques titulo="Cheques físicos en cartera" lista={chequesFisicos} />
+            <TablaGrupoCheques titulo="Cheques electrónicos (ECheq)" lista={chequesElectronicos} />
+            {chequesFisicos.length > 0 && chequesElectronicos.length > 0 && (
+              <div className="border rounded px-3 py-2 bg-muted/20 flex justify-between text-sm font-semibold">
+                <span>Total en cartera</span>
+                <span>{formatearMoneda(cheques.reduce((acc, c) => acc + c.monto, 0))}</span>
+              </div>
             )}
-          </table>
-        </div>
+          </div>
+        )
       )}
 
       <Dialog open={modalAlta} onOpenChange={setModalAlta}>
@@ -473,6 +269,16 @@ function TabChequesRecibidos({ cuenta }: { cuenta: Cuenta }) {
               <div><Label>Monto</Label><Input type="number" value={form.monto} onChange={(e) => setForm(f => ({ ...f, monto: e.target.value }))} /></div>
               <div><Label>Fecha emisión</Label><Input type="date" value={form.fechaEmision} onChange={(e) => setForm(f => ({ ...f, fechaEmision: e.target.value }))} /></div>
               <div><Label>Fecha cobro</Label><Input type="date" value={form.fechaCobro} onChange={(e) => setForm(f => ({ ...f, fechaCobro: e.target.value }))} /></div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="esElectronico"
+                type="checkbox"
+                checked={form.esElectronico}
+                onChange={(e) => setForm(f => ({ ...f, esElectronico: e.target.checked }))}
+                className="h-4 w-4 rounded border-input"
+              />
+              <Label htmlFor="esElectronico" className="cursor-pointer">¿Es cheque electrónico (ECheq)?</Label>
             </div>
             {error && <FormError message={error} />}
           </div>
@@ -557,7 +363,10 @@ function TabChequesEmitidos({ cuenta }: { cuenta: Cuenta }) {
               {cheques.map((c) => (
                 <tr key={c.id} className="border-t hover:bg-muted/20">
                   <td className="px-3 py-2">{c.nroDocBeneficiario}</td>
-                  <td className="px-3 py-2">{c.nroCheque ?? "-"}</td>
+                  <td className="px-3 py-2">
+                    <span>{c.nroCheque ?? "-"}</span>
+                    <span className="ml-1.5 text-xs bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded font-medium">ECheq</span>
+                  </td>
                   <td className="px-3 py-2 text-right">{formatearMoneda(c.monto)}</td>
                   <td className="px-3 py-2 text-right">{formatearFecha(c.fechaPago)}</td>
                   <td className="px-3 py-2"><span className="text-xs bg-muted px-1.5 py-0.5 rounded">{c.estado}</span></td>
@@ -767,104 +576,20 @@ function TabFCI({ cuenta }: { cuenta: Cuenta }) {
   )
 }
 
-// --- Sub-componente: Tab Tarjetas Prepagas ---
+// --- Sub-componente: Tab Tarjetas Prepagas (movido a /contabilidad/tarjetas) ---
 
-function TabTarjetasPrepagas({ cuenta }: { cuenta: Cuenta }) {
-  const [tarjetas, setTarjetas] = useState<TarjetaPrepaga[]>([])
-  const [loading, setLoading] = useState(true)
-  const [seleccionada, setSeleccionada] = useState<string | null>(null)
-  const [gastos, setGastos] = useState<Array<{ id: string; tipoGasto: string; monto: number; fecha: string; descripcion: string | null }>>([])
-  const [modalGasto, setModalGasto] = useState(false)
-  const [formGasto, setFormGasto] = useState({ tipoGasto: "COMBUSTIBLE", monto: "", fecha: new Date().toISOString().slice(0,10), descripcion: "" })
-  const [error, setError] = useState("")
-  const [guardando, setGuardando] = useState(false)
-
-  useEffect(() => {
-    fetch(`/api/tarjetas-prepagas?cuentaId=${cuenta.id}`)
-      .then(r => r.json())
-      .then(d => { setTarjetas(Array.isArray(d) ? d : []); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [cuenta.id])
-
-  useEffect(() => {
-    if (!seleccionada) return
-    fetch(`/api/gastos-tarjeta-prepaga?tarjetaId=${seleccionada}`)
-      .then(r => r.json())
-      .then(d => setGastos(Array.isArray(d) ? d : []))
-  }, [seleccionada])
-
-  async function guardarGasto() {
-    if (!seleccionada) return
-    setError("")
-    setGuardando(true)
-    const res = await fetch("/api/gastos-tarjeta-prepaga", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tarjetaId: seleccionada, tipoGasto: formGasto.tipoGasto, monto: parseFloat(formGasto.monto), fecha: formGasto.fecha, descripcion: formGasto.descripcion || null }),
-    })
-    setGuardando(false)
-    if (res.ok) {
-      setModalGasto(false)
-      const d = await fetch(`/api/gastos-tarjeta-prepaga?tarjetaId=${seleccionada}`).then(r => r.json())
-      setGastos(Array.isArray(d) ? d : [])
-    } else { const d = await res.json(); setError(d.error ?? "Error al guardar") }
-  }
-
-  if (loading) return <p className="text-muted-foreground text-sm">Cargando...</p>
-
+function TabTarjetasPrepagas(_props: { cuenta: Cuenta }) {
   return (
-    <div className="grid grid-cols-3 gap-4">
-      <div className="space-y-2">
-        {tarjetas.map((t) => (
-          <div key={t.id} onClick={() => setSeleccionada(t.id)} className={`border rounded p-3 cursor-pointer hover:border-primary ${seleccionada === t.id ? "border-primary bg-primary/5" : ""}`}>
-            <p className="font-medium text-sm">{t.chofer.nombre} {t.chofer.apellido}</p>
-            <p className="text-xs text-muted-foreground">{t.nroTarjeta ?? "Sin nro."}</p>
-            {t.limiteMensual && <p className="text-xs">Límite: {formatearMoneda(t.limiteMensual)}</p>}
-          </div>
-        ))}
-      </div>
-      <div className="col-span-2 space-y-3">
-        {seleccionada && (
-          <>
-            <div className="flex justify-end">
-              <Button size="sm" onClick={() => setModalGasto(true)}><Plus className="h-4 w-4 mr-1" /> Registrar gasto</Button>
-            </div>
-            <div className="border rounded overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50"><tr><th className="text-left px-3 py-2">Tipo</th><th className="text-right px-3 py-2">Monto</th><th className="text-right px-3 py-2">Fecha</th><th className="text-left px-3 py-2">Descripción</th></tr></thead>
-                <tbody>
-                  {gastos.map((g) => (
-                    <tr key={g.id} className="border-t">
-                      <td className="px-3 py-2">{g.tipoGasto}</td>
-                      <td className="px-3 py-2 text-right">{formatearMoneda(g.monto)}</td>
-                      <td className="px-3 py-2 text-right">{formatearFecha(g.fecha)}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{g.descripcion ?? "-"}</td>
-                    </tr>
-                  ))}
-                  {gastos.length === 0 && <tr><td colSpan={4} className="px-3 py-4 text-center text-muted-foreground">Sin gastos.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-      </div>
-      <Dialog open={modalGasto} onOpenChange={setModalGasto}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Registrar gasto</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div><Label>Tipo gasto</Label>
-              <Select value={formGasto.tipoGasto} onChange={(e) => setFormGasto(f => ({ ...f, tipoGasto: e.target.value }))}>
-                {["COMBUSTIBLE","PEAJE","COMIDA","ALOJAMIENTO","REPUESTO","LAVADO","OTRO"].map(t => <option key={t} value={t}>{t}</option>)}
-              </Select>
-            </div>
-            <div><Label>Monto</Label><Input type="number" value={formGasto.monto} onChange={(e) => setFormGasto(f => ({ ...f, monto: e.target.value }))} /></div>
-            <div><Label>Fecha</Label><Input type="date" value={formGasto.fecha} onChange={(e) => setFormGasto(f => ({ ...f, fecha: e.target.value }))} /></div>
-            <div><Label>Descripción</Label><Input value={formGasto.descripcion} onChange={(e) => setFormGasto(f => ({ ...f, descripcion: e.target.value }))} /></div>
-            {error && <FormError message={error} />}
-          </div>
-          <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setModalGasto(false)}>Cancelar</Button><Button onClick={guardarGasto} disabled={guardando}>Guardar</Button></div>
-        </DialogContent>
-      </Dialog>
+    <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
+      <p className="text-muted-foreground text-sm">
+        Las tarjetas prepagas de choferes se gestionan en el módulo unificado de Tarjetas.
+      </p>
+      <a
+        href="/contabilidad/tarjetas"
+        className="text-primary text-sm underline underline-offset-2 hover:opacity-80"
+      >
+        Ir a Contabilidad → Tarjetas
+      </a>
     </div>
   )
 }

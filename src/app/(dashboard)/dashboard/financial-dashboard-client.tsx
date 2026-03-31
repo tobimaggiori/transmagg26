@@ -42,7 +42,7 @@ interface DashboardData {
   deudaFleteros: number
   pendienteFacturar: number
   pendienteLiquidar: number
-  chequesEnCartera: { alDia: number; noAlDia: number; total: number }
+  chequesEnCartera: { alDia: number; noAlDia: number; total: number; fisico: number; electronico: number }
   chequesEmitidosNoCobrados: number
   alertasFci: AlertaFci[]
   cuentas: CuentaDashboard[]
@@ -86,6 +86,7 @@ interface ChequeCartera {
   monto: number
   fechaCobro: string
   estado: string
+  esElectronico: boolean
 }
 
 interface ChequeEmitido {
@@ -334,7 +335,10 @@ function ChequesCarteraModal({ tipo }: { tipo: "al_dia" | "no_al_dia" }) {
         {data.map((c) => (
           <tr key={c.id} className="border-b last:border-0">
             <td className="py-1">{c.empresa}</td>
-            <td className="py-1">{c.nroCheque}</td>
+            <td className="py-1">
+              <span>{c.nroCheque}</span>
+              {c.esElectronico && <span className="ml-1 text-xs bg-violet-100 text-violet-700 px-1 py-0.5 rounded">ECheq</span>}
+            </td>
             <td className="py-1">{c.bancoEmisor}</td>
             <td className="text-right py-1 font-medium">{formatearMoneda(c.monto)}</td>
             <td className="text-right py-1">{formatearFecha(c.fechaCobro)}</td>
@@ -440,12 +444,17 @@ export function FinancialDashboardClient() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [modalAbierto, setModalAbierto] = useState<ModalTipo>(null)
+  const [efectivoCaja, setEfectivoCaja] = useState<number | null>(null)
 
   useEffect(() => {
     fetch("/api/dashboard-financiero")
       .then((r) => r.json())
       .then((d) => { setData(d?.alertasFci !== undefined ? d : null); setLoading(false) })
       .catch(() => setLoading(false))
+    fetch("/api/dashboard-financiero/efectivo-caja")
+      .then((r) => r.json())
+      .then((d: { efectivoEnCaja: number }) => setEfectivoCaja(d.efectivoEnCaja ?? null))
+      .catch(() => null)
   }, [])
 
   if (loading) {
@@ -551,7 +560,7 @@ export function FinancialDashboardClient() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{formatearMoneda(data.chequesEnCartera?.total ?? 0)}</p>
-            <div className="flex gap-2 mt-1">
+            <div className="flex flex-wrap gap-2 mt-1">
               <button
                 onClick={() => setModalAbierto("cheques-cartera-al-dia")}
                 className="text-xs text-green-700 bg-green-50 hover:bg-green-100 px-2 py-0.5 rounded transition-colors"
@@ -564,6 +573,14 @@ export function FinancialDashboardClient() {
               >
                 Vencidos: {formatearMoneda(data.chequesEnCartera?.noAlDia ?? 0)}
               </button>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-1">
+              <span className="text-xs text-muted-foreground">
+                Físicos: {formatearMoneda(data.chequesEnCartera?.fisico ?? 0)}
+              </span>
+              <span className="text-xs text-violet-700">
+                ECheq: {formatearMoneda(data.chequesEnCartera?.electronico ?? 0)}
+              </span>
             </div>
           </CardContent>
         </Card>
@@ -578,6 +595,18 @@ export function FinancialDashboardClient() {
           <CardContent>
             <p className="text-2xl font-bold">{formatearMoneda(data.chequesEmitidosNoCobrados)}</p>
             <p className="text-xs text-muted-foreground mt-1">Estado EMITIDO — click para ver detalle</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Efectivo en Caja</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className={`text-2xl font-bold ${efectivoCaja !== null && efectivoCaja < 0 ? "text-destructive" : ""}`}>
+              {efectivoCaja !== null ? formatearMoneda(efectivoCaja) : "—"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">Cobros − Pagos en efectivo</p>
           </CardContent>
         </Card>
       </div>

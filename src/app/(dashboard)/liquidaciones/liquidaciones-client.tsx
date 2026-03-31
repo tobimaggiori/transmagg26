@@ -104,6 +104,7 @@ type LiquidacionesClientProps = {
   camiones: Camion[]
   choferes: Chofer[]
   fleteroIdPropio: string | null
+  titulo?: string
 }
 
 // ─── Estado badge ─────────────────────────────────────────────────────────────
@@ -702,7 +703,7 @@ type LiquidacionesClientPropsExt = LiquidacionesClientProps & {
   cuentasBancarias: CuentaBancaria[]
 }
 
-export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fleteroIdPropio, cuentasBancarias }: LiquidacionesClientPropsExt) {
+export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fleteroIdPropio, cuentasBancarias, titulo = "Liquidaciones" }: LiquidacionesClientPropsExt) {
   const esInterno = rol === "ADMIN_TRANSMAGG" || rol === "OPERADOR_TRANSMAGG"
 
   const [fleteroId, setFleteroId] = useState<string>(fleteroIdPropio ?? "")
@@ -867,7 +868,7 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Liquidaciones</h2>
+        <h2 className="text-2xl font-bold tracking-tight">{titulo}</h2>
         <p className="text-muted-foreground">
           {rol === "FLETERO" ? "Tus liquidaciones de viajes" : "Circuito de liquidación al fletero"}
         </p>

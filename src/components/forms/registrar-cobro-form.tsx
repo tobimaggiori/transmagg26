@@ -39,7 +39,9 @@ type PagoItemCheque = {
   monto: string
   nroCheque: string
   bancoEmisor: string
+  fechaEmision: string
   fechaCobro: string
+  cuitLibrador: string
 }
 type PagoItemTransferencia = {
   tipoPago: "TRANSFERENCIA"
@@ -50,6 +52,7 @@ type PagoItemTransferencia = {
 type PagoItemEfectivo = {
   tipoPago: "EFECTIVO"
   monto: string
+  descripcion: string
 }
 type PagoItemSaldoAFavor = {
   tipoPago: "SALDO_A_FAVOR"
@@ -76,6 +79,8 @@ export function RegistrarCobroModal({
   onSuccess,
   onClose,
 }: Props) {
+  const hoy = new Date().toISOString().split("T")[0]
+  const [fecha, setFecha] = useState(hoy)
   const [pagos, setPagos] = useState<PagoItem[]>([defaultPago()])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -95,11 +100,11 @@ export function RegistrarCobroModal({
     const monto = pagos[index].monto
     let next: PagoItem
     if (tipo === "CHEQUE") {
-      next = { tipoPago: "CHEQUE", monto, nroCheque: "", bancoEmisor: "", fechaCobro: "" }
+      next = { tipoPago: "CHEQUE", monto, nroCheque: "", bancoEmisor: "", fechaEmision: "", fechaCobro: "", cuitLibrador: "" }
     } else if (tipo === "TRANSFERENCIA") {
       next = { tipoPago: "TRANSFERENCIA", monto, cuentaBancariaId: "", referencia: "" }
     } else if (tipo === "EFECTIVO") {
-      next = { tipoPago: "EFECTIVO", monto }
+      next = { tipoPago: "EFECTIVO", monto, descripcion: "" }
     } else {
       next = { tipoPago: "SALDO_A_FAVOR", monto }
     }
@@ -129,21 +134,20 @@ export function RegistrarCobroModal({
     setError(null)
     setLoading(true)
     try {
-      const today = new Date().toISOString().split("T")[0]
       const body = {
         pagos: pagos.map((p) => {
           const monto = parseFloat(p.monto)
           if (p.tipoPago === "CHEQUE") {
-            return { tipoPago: p.tipoPago, monto, nroCheque: p.nroCheque, bancoEmisor: p.bancoEmisor, fechaCobro: p.fechaCobro }
+            return { tipoPago: p.tipoPago, monto, nroCheque: p.nroCheque, bancoEmisor: p.bancoEmisor, fechaEmision: p.fechaEmision, fechaCobro: p.fechaCobro, cuitLibrador: p.cuitLibrador || undefined }
           } else if (p.tipoPago === "TRANSFERENCIA") {
             return { tipoPago: p.tipoPago, monto, cuentaBancariaId: p.cuentaBancariaId, referencia: p.referencia || undefined }
           } else if (p.tipoPago === "EFECTIVO") {
-            return { tipoPago: p.tipoPago, monto }
+            return { tipoPago: p.tipoPago, monto, descripcion: p.descripcion || undefined }
           } else {
             return { tipoPago: p.tipoPago, monto }
           }
         }),
-        fecha: today,
+        fecha,
       }
       const res = await fetch(`/api/facturas/${factura.id}/cobro`, {
         method: "POST",
@@ -186,6 +190,11 @@ export function RegistrarCobroModal({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          <div className="space-y-1">
+            <Label>Fecha del cobro</Label>
+            <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+          </div>
+
           {pagos.map((pago, i) => (
             <div key={i} className="border rounded-md p-4 space-y-3">
               <div className="flex items-center justify-between">
@@ -227,28 +236,48 @@ export function RegistrarCobroModal({
               </div>
 
               {pago.tipoPago === "CHEQUE" && (
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="space-y-1">
-                    <Label>Nro cheque</Label>
-                    <Input
-                      value={pago.nroCheque}
-                      onChange={(e) => updatePago(i, { nroCheque: e.target.value } as Partial<PagoItem>)}
-                    />
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <Label>Nro cheque</Label>
+                      <Input
+                        value={pago.nroCheque}
+                        onChange={(e) => updatePago(i, { nroCheque: e.target.value } as Partial<PagoItem>)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Banco emisor</Label>
+                      <Input
+                        value={pago.bancoEmisor}
+                        onChange={(e) => updatePago(i, { bancoEmisor: e.target.value } as Partial<PagoItem>)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>CUIT librador</Label>
+                      <Input
+                        value={pago.cuitLibrador}
+                        onChange={(e) => updatePago(i, { cuitLibrador: e.target.value } as Partial<PagoItem>)}
+                        placeholder="20-12345678-1"
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <Label>Banco emisor</Label>
-                    <Input
-                      value={pago.bancoEmisor}
-                      onChange={(e) => updatePago(i, { bancoEmisor: e.target.value } as Partial<PagoItem>)}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label>Fecha de cobro</Label>
-                    <Input
-                      type="date"
-                      value={pago.fechaCobro}
-                      onChange={(e) => updatePago(i, { fechaCobro: e.target.value } as Partial<PagoItem>)}
-                    />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label>Fecha de emisión</Label>
+                      <Input
+                        type="date"
+                        value={pago.fechaEmision}
+                        onChange={(e) => updatePago(i, { fechaEmision: e.target.value } as Partial<PagoItem>)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Fecha de cobro</Label>
+                      <Input
+                        type="date"
+                        value={pago.fechaCobro}
+                        onChange={(e) => updatePago(i, { fechaCobro: e.target.value } as Partial<PagoItem>)}
+                      />
+                    </div>
                   </div>
                 </div>
               )}
@@ -276,6 +305,17 @@ export function RegistrarCobroModal({
                       onChange={(e) => updatePago(i, { referencia: e.target.value } as Partial<PagoItem>)}
                     />
                   </div>
+                </div>
+              )}
+
+              {pago.tipoPago === "EFECTIVO" && (
+                <div className="space-y-1">
+                  <Label>Descripción (opcional)</Label>
+                  <Input
+                    value={pago.descripcion}
+                    onChange={(e) => updatePago(i, { descripcion: e.target.value } as Partial<PagoItem>)}
+                    placeholder="Ej: pago en caja, efectivo mostrador..."
+                  />
                 </div>
               )}
             </div>

@@ -32,7 +32,6 @@ export async function GET(
       where: { id: params.id },
       include: {
         usuario: { select: { id: true, nombre: true, apellido: true, email: true } },
-        movimientosBancarios: { orderBy: { fecha: "desc" } },
       },
     })
 

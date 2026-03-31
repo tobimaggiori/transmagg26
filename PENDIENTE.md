@@ -37,7 +37,7 @@
 - CRUD de Saldos FCI (actualizaciones periódicas)
 - CRUD de Brokers
 - CRUD de Empleados
-- CRUD de Movimientos bancarios (con sugerencia automática de impuesto débito/crédito)
+- CRUD de Movimientos sin factura (tipo INGRESO/EGRESO + categoria; reemplaza MovimientoBancario)
 - CRUD de Cheques recibidos (de clientes)
 - CRUD de Cheques emitidos (a fleteros/proveedores) + registro de depósito
 - Planillas de emisión masiva Banco Galicia (generación Excel con exceljs)
@@ -77,12 +77,13 @@
 
 ### Calidad del código
 - LCC documentation en todas las funciones exportadas de lib/
-- 13 test suites, 218 tests unitarios, todos pasando
+- 14 test suites, 237 tests unitarios, todos pasando
 - TypeScript sin errores (npx tsc --noEmit limpio)
 - Error handling completo en todos los API endpoints (try/catch + detail en 500)
+- Componente compartido FiltroPeriodo para todas las páginas de contabilidad
 
 ## Estado de tests
-Tests: 218 passed, 218 total (as of 2026-03-31)
+Tests: 237 passed, 237 total (as of 2026-03-31)
 
 ## Pendiente ARCA
 
@@ -102,13 +103,35 @@ Tests: 218 passed, 218 total (as of 2026-03-31)
 - [ ] Homologación: https://wswhomo.afip.gov.ar/wsr/service.asmx
 - [ ] Producción: https://servicios1.afip.gov.ar/wsr/service.asmx
 
+### Contabilidad
+- [x] Libro IVA Compras y Ventas con exportación PDF/Excel — dos tabs (IVA Ventas / IVA Compras) en formato de libro contable real con totales, 6 endpoints bajo /api/contabilidad/
+- [x] IVA por Tipo de Comprobante y Alícuota — dos tabs adicionales (Ventas por Alícuota / Compras por Alícuota) en /contabilidad/iva, agrupados por tipoCbte → alícuota, con PDF y Excel (4 nuevos endpoints)
+- [x] Detalle de Gastos por Concepto — nueva página /contabilidad/gastos con filtro de período, tabla agrupada por rubro (FacturaProveedor por concepto + Liquidaciones EMITIDA como "VIAJES CONTRATADOS"), PDF y Excel. Campo concepto agregado a FacturaProveedor con migración y select en formulario de carga.
+- [x] Reporte LP vs Facturas (comparación) — página /contabilidad/lp-vs-facturas con tabla agrupada por provincia mostrando subtotal LP vs subtotal factura y diferencia por viaje, con exportación PDF y Excel.
+- [x] Reporte Viajes Facturados sin LP — página /contabilidad/viajes-sin-lp con viajes que tienen factura emitida pero no tienen liquidación activa, agrupado por provincia, con exportación PDF y Excel.
+- [x] Módulo de Contabilidad completo: IVA (4 tabs), IIBB, Gastos, LP vs Facturas, Viajes sin LP — con exportación PDF/Excel en todas las secciones, página índice /contabilidad, componente FiltroPeriodo compartido, sidebar con 7 ítems.
+
 ## Pendiente general
 
 - [ ] Envío real de emails OTP (actualmente el flujo OTP está implementado pero el transporte de email puede necesitar configuración en producción)
 - [ ] Generación de PDF para liquidaciones y facturas (preview modal existe en UI)
 - [ ] Generación de PDF para NC/ND (botón "Descargar PDF" actualmente muestra alerta)
-- [ ] Módulo de pagos a fleteros (la tabla `PagoLiquidacion` existe en schema pero no hay CRUD completo)
-- [ ] Módulo de cobros de facturas (la tabla `PagoFactura` existe en schema pero no hay CRUD completo)
-- [ ] Reportes de IIBB por provincia y período
+- [x] Módulo de pagos a fleteros — Registrar Pago: multi-liquidación, multi-medio (transferencia/ECheq propio/cheque tercero/efectivo), pago parcial, distribución proporcional, impacto en MovimientoSinFactura + chequera + endoso cheques
+- [x] Pago a Proveedores: Registrar Pago con comprobante PDF en S3, historial de pagos, Consultar Facturas con filtros y comprobantes — modelo PagoProveedor con 8 tipos de pago, efectos secundarios atómicos (MovimientoSinFactura, ChequeEmitido, endoso de ChequeRecibido, GastoTarjeta + ResumenTarjeta automático), estadoPago en FacturaProveedor, modal de detalle con historial
+- [x] Reportes de IIBB por provincia y período — Implementado: tabla agrupada por provincia con fechas/empresa/mercadería/procedencia/subtotal, PDF y Excel
+- [x] Cheques físicos vs electrónicos diferenciados en schema, formularios y dashboard — campo `esElectronico` en `ChequeRecibido` (default false) y `ChequeEmitido` (default true, siempre ECheq); separación visual en cartera; badge ECheq en emitidos; distinción físico/ECheq en card del dashboard financiero
+- [x] Menú Fleteros renombrado: Líquido Producto, Consultar Liq. Prod., Registrar Pago — labels actualizados en sidebar y títulos h2 en páginas correspondientes
+- [x] Módulo unificado de Tarjetas (Contabilidad): modelos Tarjeta/ResumenTarjeta/GastoTarjeta, migración, APIs CRUD completas, página /contabilidad/tarjetas con tabs Corporativas/Prepagas, sidebar actualizado, TabTarjetasPrepagas reemplazado por nota de navegación en CuentasClient
+- [x] Módulo Movimientos: MovimientoBancario reemplazado por MovimientoSinFactura (tipo INGRESO/EGRESO + categoria, monto siempre positivo); APIs CRUD /api/movimientos-sin-factura; página /contabilidad/movimientos con filtros, tabla, exportación Excel; TabMovimientos en cuentas simplificado a link; saldo contable y métricas broker actualizadas; todos los side-effects de pago migrados
+- [x] Cloudflare R2 configurado: subida de PDFs, URLs firmadas temporales, componentes UploadPDF y ViewPDF reutilizables
+  - `liquidaciones/` → PDFs de Líquidos Productos (liquidaciones a fleteros)
+  - `facturas-emitidas/` → PDFs de facturas emitidas a empresas
+  - `facturas-proveedor/` → PDFs de facturas de proveedores
+  - `comprobantes-pago-proveedor/` → Comprobantes de pago a proveedores
+  - `comprobantes-pago-fletero/` → Comprobantes de pago de LP a fleteros
+  - `resumenes-bancarios/` → Resúmenes mensuales bancarios
+  - `resumenes-tarjeta/` → Resúmenes mensuales de tarjetas
+- [x] Ingresar Factura de Proveedor mejorado: ítems con alícuota IVA por ítem, regla B/C/X sin discriminación IVA, PDF obligatorio en R2, desglose de ítems en modal de Consultar Facturas
+- [x] Pago opcional al ingresar factura de proveedor: registro en un solo paso con transacción atómica; lógica de pago extraída a src/lib/pago-proveedor.ts y compartida con /api/proveedores/[id]/pago
 - [ ] Conciliación bancaria automática
 - [ ] Deploy a producción (configurar variables de entorno, dominio, DB en Turso)

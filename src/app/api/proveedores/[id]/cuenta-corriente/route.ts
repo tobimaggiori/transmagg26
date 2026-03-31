@@ -88,17 +88,17 @@ export async function GET(
           tipoCbte: true,
         },
       }),
-      prisma.pagoAProveedor.findMany({
+      prisma.pagoProveedor.findMany({
         where: {
           facturaProveedor: { proveedorId: params.id },
-          fechaPago: { gte: desdeDate, lte: hastaDate },
+          fecha: { gte: desdeDate, lte: hastaDate },
         },
         select: {
           id: true,
-          fechaPago: true,
+          fecha: true,
           monto: true,
-          tipoPago: true,
-          referencia: true,
+          tipo: true,
+          observaciones: true,
         },
       }),
     ])
@@ -118,10 +118,10 @@ export async function GET(
 
     for (const p of pagos) {
       movimientos.push({
-        fechaRaw: p.fechaPago,
-        fecha: p.fechaPago.toISOString(),
-        concepto: `Pago — ${capitalize(p.tipoPago.toLowerCase().replace(/_/g, " "))}`,
-        comprobante: p.referencia ?? "",
+        fechaRaw: p.fecha,
+        fecha: p.fecha.toISOString(),
+        concepto: `Pago — ${capitalize(p.tipo.toLowerCase().replace(/_/g, " "))}`,
+        comprobante: p.observaciones ?? "",
         debe: 0,
         haber: p.monto,
       })

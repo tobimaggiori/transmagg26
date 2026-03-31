@@ -74,13 +74,19 @@ export async function GET() {
     // Cheques en cartera
     const chequesCartera = await prisma.chequeRecibido.findMany({
       where: { estado: "EN_CARTERA" },
-      select: { monto: true, fechaCobro: true },
+      select: { monto: true, fechaCobro: true, esElectronico: true },
     })
     const chequesAlDia = chequesCartera
       .filter((c) => new Date(c.fechaCobro) <= hoy)
       .reduce((acc, c) => acc + c.monto, 0)
     const chequesNoAlDia = chequesCartera
       .filter((c) => new Date(c.fechaCobro) > hoy)
+      .reduce((acc, c) => acc + c.monto, 0)
+    const chequesFisico = chequesCartera
+      .filter((c) => !c.esElectronico)
+      .reduce((acc, c) => acc + c.monto, 0)
+    const chequesElectronico = chequesCartera
+      .filter((c) => c.esElectronico)
       .reduce((acc, c) => acc + c.monto, 0)
 
     // Cheques emitidos no cobrados
@@ -118,7 +124,7 @@ export async function GET() {
     const cuentas = await prisma.cuenta.findMany({
       where: { activa: true },
       include: {
-        movimientosBancarios: { select: { monto: true, tipo: true } },
+        movimientosSinFactura: { select: { monto: true, tipo: true, categoria: true } },
         fci: {
           include: {
             saldos: {
@@ -145,7 +151,7 @@ export async function GET() {
     const cuentasResultado = cuentas.map((cuenta) => {
       const saldoContable = calcularSaldoContableCuenta(
         cuenta.saldoInicial,
-        cuenta.movimientosBancarios.map((m) => m.monto)
+        cuenta.movimientosSinFactura.map((m) => m.tipo === "INGRESO" ? m.monto : -m.monto)
       )
       const fciDetalle = cuenta.fci.map((fci) => ({
         id: fci.id,
@@ -154,12 +160,12 @@ export async function GET() {
       }))
       const saldoEnFciPropios = calcularSaldoEnFciPropiosCuenta(fciDetalle)
       const saldoDisponible = calcularSaldoDisponibleCuenta(saldoContable, saldoEnFciPropios)
-      const capitalEnviado = cuenta.movimientosBancarios
-        .filter((m) => m.tipo === "ENVIO_A_BROKER")
-        .reduce((acc, m) => acc + Math.abs(m.monto), 0)
-      const capitalRescatado = cuenta.movimientosBancarios
-        .filter((m) => m.tipo === "RESCATE_DE_BROKER")
-        .reduce((acc, m) => acc + Math.abs(m.monto), 0)
+      const capitalEnviado = cuenta.movimientosSinFactura
+        .filter((m) => m.categoria === "ENVIO_A_BROKER")
+        .reduce((acc, m) => acc + m.monto, 0)
+      const capitalRescatado = cuenta.movimientosSinFactura
+        .filter((m) => m.categoria === "RESCATE_DE_BROKER")
+        .reduce((acc, m) => acc + m.monto, 0)
       const capitalNetoEnBroker = calcularCapitalNetoBroker(capitalEnviado, capitalRescatado)
       const rendimiento = calcularRendimientoBroker({
         capitalEnviado,
@@ -197,6 +203,8 @@ export async function GET() {
         alDia: chequesAlDia,
         noAlDia: chequesNoAlDia,
         total: chequesAlDia + chequesNoAlDia,
+        fisico: chequesFisico,
+        electronico: chequesElectronico,
       },
       chequesEmitidosNoCobrados,
       alertasFci,

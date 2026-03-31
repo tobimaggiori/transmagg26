@@ -440,7 +440,7 @@ function TabAdelantosFleteros() {
  * <PagosClient /> // tab Adelantos con modal para nuevo adelanto
  * <PagosClient /> // tab Recibidos con panel lateral al seleccionar empresa
  */
-export function PagosClient() {
+export function PagosClient({ titulo = "Pagos" }: { titulo?: string } = {}) {
   const [tab, setTab] = useState<TabId>("recibidos")
 
   const TABS: Array<{ id: TabId; label: string }> = [
@@ -453,7 +453,7 @@ export function PagosClient() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Pagos</h2>
+        <h2 className="text-2xl font-bold tracking-tight">{titulo}</h2>
         <p className="text-muted-foreground">Gestión de pagos recibidos y realizados</p>
       </div>
 

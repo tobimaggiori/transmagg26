@@ -17,7 +17,9 @@ const pagoItemSchema = z.discriminatedUnion("tipoPago", [
     monto: z.number().positive(),
     nroCheque: z.string().min(1),
     bancoEmisor: z.string().min(1),
+    fechaEmision: z.string(),
     fechaCobro: z.string(),
+    cuitLibrador: z.string().optional(),
   }),
   z.object({
     tipoPago: z.literal("TRANSFERENCIA"),
@@ -28,6 +30,7 @@ const pagoItemSchema = z.discriminatedUnion("tipoPago", [
   z.object({
     tipoPago: z.literal("EFECTIVO"),
     monto: z.number().positive(),
+    descripcion: z.string().optional(),
   }),
   z.object({
     tipoPago: z.literal("SALDO_A_FAVOR"),
@@ -75,6 +78,9 @@ export async function POST(
         empresaId: true,
         total: true,
         estado: true,
+        tipoCbte: true,
+        nroComprobante: true,
+        empresa: { select: { razonSocial: true } },
         pagos: { select: { monto: true } },
       },
     })
@@ -113,8 +119,9 @@ export async function POST(
               nroCheque: pago.nroCheque,
               bancoEmisor: pago.bancoEmisor,
               monto: pago.monto,
-              fechaEmision: new Date(),
+              fechaEmision: new Date(pago.fechaEmision),
               fechaCobro: new Date(pago.fechaCobro),
+              cuitLibrador: pago.cuitLibrador,
               estado: "EN_CARTERA",
               operadorId,
             },
@@ -143,6 +150,25 @@ export async function POST(
               operadorId,
             },
           })
+          // Registrar movimiento bancario: TRANSFERENCIA_RECIBIDA
+          const cuenta = await tx.cuenta.findUnique({
+            where: { id: pago.cuentaBancariaId },
+            select: { tieneImpuestoDebcred: true, alicuotaImpuesto: true },
+          })
+          const nroCbte = factura.nroComprobante ?? "s/n"
+          const descripcionMov = `Cobro Factura ${factura.tipoCbte} ${nroCbte} — ${factura.empresa.razonSocial}`
+          await tx.movimientoSinFactura.create({
+            data: {
+              cuentaId: pago.cuentaBancariaId,
+              tipo: "INGRESO",
+              categoria: "TRANSFERENCIA_RECIBIDA",
+              monto: pago.monto,
+              fecha: fechaPago,
+              descripcion: descripcionMov,
+              referencia: pago.referencia,
+              operadorId,
+            },
+          })
         } else if (pago.tipoPago === "EFECTIVO") {
           await tx.pagoDeEmpresa.create({
             data: {
@@ -150,6 +176,7 @@ export async function POST(
               facturaId,
               tipoPago: "EFECTIVO",
               monto: pago.monto,
+              referencia: pago.descripcion,
               fechaPago,
               operadorId,
             },

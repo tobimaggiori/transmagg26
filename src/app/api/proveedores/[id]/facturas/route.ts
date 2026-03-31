@@ -19,6 +19,7 @@ const crearFacturaProveedorSchema = z.object({
   alicuotaIva: z.number().min(0).default(21),
   total: z.number().positive("El total debe ser mayor a 0"),
   fechaCbte: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida (YYYY-MM-DD)"),
+  concepto: z.string().optional(),
 })
 
 /**
@@ -56,7 +57,7 @@ export async function POST(
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { nroComprobante, tipoCbte, neto, alicuotaIva, total, fechaCbte } = parsed.data
+    const { nroComprobante, tipoCbte, neto, alicuotaIva, total, fechaCbte, concepto } = parsed.data
     const ivaMonto = neto * (alicuotaIva / 100)
     const periodo = fechaCbte.slice(0, 7)
 
@@ -70,6 +71,7 @@ export async function POST(
           ivaMonto,
           total,
           fechaCbte: new Date(fechaCbte),
+          concepto: concepto ?? null,
         },
       })
 
@@ -122,7 +124,7 @@ export async function GET(
 
   const facturas = await prisma.facturaProveedor.findMany({
     where: { proveedorId: params.id },
-    include: { pagos: { select: { monto: true, tipoPago: true, fechaPago: true } } },
+    include: { pagos: { select: { monto: true, tipo: true, fecha: true } } },
     orderBy: { fechaCbte: "desc" },
   })
 

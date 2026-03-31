@@ -73,6 +73,7 @@ export default async function FleterosLiquidacionesPage() {
       choferes={choferes}
       fleteroIdPropio={fleteroIdPropio}
       cuentasBancarias={cuentasBancarias}
+      titulo="Consultar Liq. Prod."
     />
   )
 }

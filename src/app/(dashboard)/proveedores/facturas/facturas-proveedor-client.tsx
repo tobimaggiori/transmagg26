@@ -6,12 +6,33 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { Select } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ViewPDF } from "@/components/view-pdf"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 
-type Proveedor = {
+type Proveedor = { id: string; razonSocial: string; cuit: string }
+
+type ItemFacturaProveedor = {
   id: string
-  razonSocial: string
-  cuit: string
+  descripcion: string
+  cantidad: number
+  precioUnitario: number
+  alicuotaIva: number
+  esExento: boolean
+  subtotalNeto: number
+  montoIva: number
+  subtotalTotal: number
+}
+
+type PagoFactura = {
+  id: string
+  monto: number
+  tipo: string
+  fecha: string
+  observaciones: string | null
+  comprobantePdfS3Key: string | null
+  resumenTarjeta: { id: string; periodo: string; s3Key: string | null } | null
 }
 
 type FacturaProveedor = {
@@ -22,33 +43,57 @@ type FacturaProveedor = {
   neto: number
   ivaMonto: number
   total: number
+  concepto: string | null
+  pdfS3Key: string | null
+  estadoPago: string
   proveedor: { id: string; razonSocial: string; cuit: string }
   saldoPendiente: number
-  estado: string
+  pagos: PagoFactura[]
+  items: ItemFacturaProveedor[]
 }
 
-type FacturasProveedorClientProps = {
-  proveedores: Proveedor[]
+type FacturasProveedorClientProps = { proveedores: Proveedor[] }
+
+const BADGE_ESTADO: Record<string, string> = {
+  PENDIENTE: "bg-red-100 text-red-800",
+  PARCIALMENTE_PAGADA: "bg-yellow-100 text-yellow-800",
+  PAGADA: "bg-green-100 text-green-800",
+}
+
+const LABEL_ESTADO: Record<string, string> = {
+  PENDIENTE: "Pendiente",
+  PARCIALMENTE_PAGADA: "Parcial",
+  PAGADA: "Pagada",
+}
+
+const LABEL_TIPO_PAGO: Record<string, string> = {
+  TRANSFERENCIA: "Transferencia",
+  CHEQUE_PROPIO: "Cheque propio",
+  CHEQUE_FISICO_TERCERO: "Cheque físico",
+  CHEQUE_ELECTRONICO_TERCERO: "ECheq",
+  TARJETA_CREDITO: "T. Crédito",
+  TARJETA_DEBITO: "T. Débito",
+  TARJETA_PREPAGA: "T. Prepaga",
+  EFECTIVO: "Efectivo",
 }
 
 /**
  * FacturasProveedorClient: FacturasProveedorClientProps -> JSX.Element
  *
  * Dado la lista de proveedores, muestra filtros y tabla de facturas de proveedores.
- * Fetches desde /api/facturas-proveedor con los filtros activos.
- * Existe para el módulo de consulta de facturas de proveedores en /proveedores/facturas.
- *
- * Ejemplos:
- * <FacturasProveedorClient proveedores={[...]} />
+ * Incluye filtro por estado de pago, botones PDF para factura y comprobante de pago,
+ * y modal de detalle con historial de pagos.
  */
 export function FacturasProveedorClient({ proveedores }: FacturasProveedorClientProps) {
   const [desde, setDesde] = useState("")
   const [hasta, setHasta] = useState("")
   const [proveedorId, setProveedorId] = useState("")
   const [nroComprobante, setNroComprobante] = useState("")
+  const [estadoPago, setEstadoPago] = useState("")
   const [facturas, setFacturas] = useState<FacturaProveedor[]>([])
   const [loading, setLoading] = useState(false)
   const [buscado, setBuscado] = useState(false)
+  const [facturaDetalle, setFacturaDetalle] = useState<FacturaProveedor | null>(null)
 
   const buscar = useCallback(async () => {
     setLoading(true)
@@ -58,6 +103,7 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
       if (hasta) params.set("hasta", hasta)
       if (proveedorId) params.set("proveedorId", proveedorId)
       if (nroComprobante) params.set("nroComprobante", nroComprobante)
+      if (estadoPago) params.set("estadoPago", estadoPago)
 
       const res = await fetch(`/api/facturas-proveedor?${params.toString()}`)
       if (res.ok) {
@@ -68,7 +114,7 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
       setLoading(false)
       setBuscado(true)
     }
-  }, [desde, hasta, proveedorId, nroComprobante])
+  }, [desde, hasta, proveedorId, nroComprobante, estadoPago])
 
   const totalGeneral = facturas.reduce((acc, f) => acc + f.total, 0)
   const totalPendiente = facturas.reduce((acc, f) => acc + f.saldoPendiente, 0)
@@ -104,14 +150,25 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
               placeholder="Todos los proveedores..."
             />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="nroComprobante">Número de comprobante</Label>
-            <Input
-              id="nroComprobante"
-              value={nroComprobante}
-              onChange={(e) => setNroComprobante(e.target.value)}
-              placeholder="0001-..."
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="nroComprobante">Número de comprobante</Label>
+              <Input
+                id="nroComprobante"
+                value={nroComprobante}
+                onChange={(e) => setNroComprobante(e.target.value)}
+                placeholder="0001-..."
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Estado de pago</Label>
+              <Select value={estadoPago} onChange={(e) => setEstadoPago(e.target.value)}>
+                <option value="">Todos</option>
+                <option value="PENDIENTE">Pendiente</option>
+                <option value="PARCIALMENTE_PAGADA">Parcialmente pagada</option>
+                <option value="PAGADA">Pagada</option>
+              </Select>
+            </div>
           </div>
           <Button onClick={buscar} disabled={loading}>
             {loading ? "Buscando..." : "Buscar"}
@@ -141,33 +198,62 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b text-left text-muted-foreground">
-                        <th className="pb-2 pr-4">Fecha</th>
-                        <th className="pb-2 pr-4">Número</th>
-                        <th className="pb-2 pr-4">Tipo</th>
-                        <th className="pb-2 pr-4">Proveedor</th>
-                        <th className="pb-2 pr-4 text-right">Subtotal</th>
-                        <th className="pb-2 pr-4 text-right">IVA</th>
-                        <th className="pb-2 pr-4 text-right">Total</th>
-                        <th className="pb-2 text-center">Estado</th>
+                        <th className="pb-2 pr-3">Fecha</th>
+                        <th className="pb-2 pr-3">Número</th>
+                        <th className="pb-2 pr-3">Proveedor</th>
+                        <th className="pb-2 pr-3 text-right">Total</th>
+                        <th className="pb-2 pr-3 text-right">Saldo</th>
+                        <th className="pb-2 pr-3 text-center">Estado</th>
+                        <th className="pb-2 pr-3 text-center">Factura</th>
+                        <th className="pb-2 text-center">Comprobante</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {facturas.map((f) => (
-                        <tr key={f.id} className="hover:bg-muted/50">
-                          <td className="py-2 pr-4">{formatearFecha(f.fechaCbte)}</td>
-                          <td className="py-2 pr-4 font-mono text-xs">{f.nroComprobante}</td>
-                          <td className="py-2 pr-4">{f.tipoCbte}</td>
-                          <td className="py-2 pr-4">{f.proveedor.razonSocial}</td>
-                          <td className="py-2 pr-4 text-right">{formatearMoneda(f.neto)}</td>
-                          <td className="py-2 pr-4 text-right">{formatearMoneda(f.ivaMonto)}</td>
-                          <td className="py-2 pr-4 text-right font-semibold">{formatearMoneda(f.total)}</td>
-                          <td className="py-2 text-center">
-                            <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${f.estado === "Pagada" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                              {f.estado}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
+                      {facturas.map((f) => {
+                        // Primer comprobante de pago disponible
+                        const primerComprobante = f.pagos.find(
+                          (p) => p.comprobantePdfS3Key || p.resumenTarjeta?.s3Key
+                        )
+                        const compKey = primerComprobante?.comprobantePdfS3Key
+                          ?? primerComprobante?.resumenTarjeta?.s3Key
+                          ?? null
+
+                        return (
+                          <tr
+                            key={f.id}
+                            className="hover:bg-muted/50 cursor-pointer"
+                            onClick={() => setFacturaDetalle(f)}
+                          >
+                            <td className="py-2 pr-3 whitespace-nowrap">{formatearFecha(f.fechaCbte)}</td>
+                            <td className="py-2 pr-3 font-mono text-xs">{f.tipoCbte} {f.nroComprobante}</td>
+                            <td className="py-2 pr-3">{f.proveedor.razonSocial}</td>
+                            <td className="py-2 pr-3 text-right font-semibold">{formatearMoneda(f.total)}</td>
+                            <td className="py-2 pr-3 text-right text-destructive">
+                              {f.saldoPendiente > 0.01 ? formatearMoneda(f.saldoPendiente) : "—"}
+                            </td>
+                            <td className="py-2 pr-3 text-center">
+                              <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${BADGE_ESTADO[f.estadoPago] ?? "bg-gray-100 text-gray-800"}`}>
+                                {LABEL_ESTADO[f.estadoPago] ?? f.estadoPago}
+                              </span>
+                            </td>
+                            <td className="py-2 pr-3 text-center" onClick={(e) => e.stopPropagation()}>
+                              <ViewPDF s3Key={f.pdfS3Key} size="sm" label="Ver" />
+                            </td>
+                            <td className="py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                              {f.pagos.length > 1 ? (
+                                <button
+                                  className="text-xs text-primary underline underline-offset-2"
+                                  onClick={() => setFacturaDetalle(f)}
+                                >
+                                  {f.pagos.length} pagos
+                                </button>
+                              ) : (
+                                <ViewPDF s3Key={compKey} size="sm" label="Ver" />
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -176,6 +262,139 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
           )}
         </>
       )}
+
+      {/* Modal detalle de factura */}
+      <Dialog open={!!facturaDetalle} onOpenChange={(open) => !open && setFacturaDetalle(null)}>
+        {facturaDetalle && (
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                Factura {facturaDetalle.tipoCbte} {facturaDetalle.nroComprobante} — {facturaDetalle.proveedor.razonSocial}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* Datos factura */}
+              <div className="grid grid-cols-3 gap-3 text-sm">
+                <div>
+                  <p className="text-muted-foreground text-xs">Fecha</p>
+                  <p>{formatearFecha(facturaDetalle.fechaCbte)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs">Concepto</p>
+                  <p>{facturaDetalle.concepto ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs">Estado</p>
+                  <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${BADGE_ESTADO[facturaDetalle.estadoPago] ?? "bg-gray-100"}`}>
+                    {LABEL_ESTADO[facturaDetalle.estadoPago] ?? facturaDetalle.estadoPago}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs">Neto</p>
+                  <p>{formatearMoneda(facturaDetalle.neto)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs">IVA</p>
+                  <p>{formatearMoneda(facturaDetalle.ivaMonto)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs">Total</p>
+                  <p className="font-semibold">{formatearMoneda(facturaDetalle.total)}</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <ViewPDF s3Key={facturaDetalle.pdfS3Key} label="Ver factura PDF" />
+              </div>
+
+              {/* Ítems */}
+              {facturaDetalle.items && facturaDetalle.items.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-2">Ítems</p>
+                  <div className="border rounded overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="text-left px-3 py-2">Descripción</th>
+                          <th className="text-right px-3 py-2">Cant.</th>
+                          <th className="text-right px-3 py-2">P. Unit.</th>
+                          <th className="text-right px-3 py-2">Alíc. IVA</th>
+                          <th className="text-right px-3 py-2">Subtotal</th>
+                          <th className="text-right px-3 py-2">IVA</th>
+                          <th className="text-right px-3 py-2">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {facturaDetalle.items.map((item) => (
+                          <tr key={item.id} className="border-t">
+                            <td className="px-3 py-2">{item.descripcion}</td>
+                            <td className="px-3 py-2 text-right">{item.cantidad}</td>
+                            <td className="px-3 py-2 text-right">{formatearMoneda(item.precioUnitario)}</td>
+                            <td className="px-3 py-2 text-right text-muted-foreground text-xs">
+                              {item.esExento ? "Exento" : `${item.alicuotaIva}%`}
+                            </td>
+                            <td className="px-3 py-2 text-right">{formatearMoneda(item.subtotalNeto)}</td>
+                            <td className="px-3 py-2 text-right text-muted-foreground">{formatearMoneda(item.montoIva)}</td>
+                            <td className="px-3 py-2 text-right font-medium">{formatearMoneda(item.subtotalTotal)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Historial de pagos */}
+              <div>
+                <p className="text-sm font-medium mb-2">
+                  Historial de pagos
+                  {facturaDetalle.saldoPendiente > 0.01 && (
+                    <span className="ml-2 text-destructive text-xs">
+                      Saldo pendiente: {formatearMoneda(facturaDetalle.saldoPendiente)}
+                    </span>
+                  )}
+                </p>
+                {facturaDetalle.pagos.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Sin pagos registrados.</p>
+                ) : (
+                  <div className="border rounded overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="text-left px-3 py-2">Fecha</th>
+                          <th className="text-left px-3 py-2">Tipo</th>
+                          <th className="text-right px-3 py-2">Monto</th>
+                          <th className="text-center px-3 py-2">Comprobante</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {facturaDetalle.pagos.map((p) => {
+                          const compKey = p.comprobantePdfS3Key ?? p.resumenTarjeta?.s3Key ?? null
+                          return (
+                            <tr key={p.id} className="border-t">
+                              <td className="px-3 py-2 whitespace-nowrap">{formatearFecha(p.fecha)}</td>
+                              <td className="px-3 py-2">
+                                {LABEL_TIPO_PAGO[p.tipo] ?? p.tipo}
+                                {p.resumenTarjeta && (
+                                  <span className="ml-1 text-xs text-muted-foreground">({p.resumenTarjeta.periodo})</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-right font-medium">{formatearMoneda(p.monto)}</td>
+                              <td className="px-3 py-2 text-center">
+                                <ViewPDF s3Key={compKey} size="sm" label="Ver" />
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
     </div>
   )
 }

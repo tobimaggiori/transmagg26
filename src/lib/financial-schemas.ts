@@ -170,6 +170,7 @@ export const crearChequeRecibidoSchema = z.object({
   endosadoABrokerId: z.string().uuid("Broker inválido").nullable().optional(),
   fechaAcreditacion: z.coerce.date().nullable().optional(),
   tasaDescuento: z.number().nullable().optional(),
+  esElectronico: z.boolean().optional().default(false),
 })
 
 export const actualizarChequeRecibidoSchema = crearChequeRecibidoSchema.partial()

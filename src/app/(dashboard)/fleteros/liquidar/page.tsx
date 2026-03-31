@@ -73,6 +73,7 @@ export default async function FleterosLiquidarPage() {
       choferes={choferes}
       fleteroIdPropio={fleteroIdPropio}
       cuentasBancarias={cuentasBancarias}
+      titulo="Líquido Producto"
     />
   )
 }
