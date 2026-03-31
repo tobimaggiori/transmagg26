@@ -45,14 +45,28 @@
 - Adelantos a fleteros con descuentos en liquidaciones
 - Dashboard financiero con 6 sub-endpoints (saldos, deudas, pendientes)
 
+### Notas de Crédito y Débito (NC/ND)
+- Modelos NotaCreditoDebito y ViajeEnNotaCD en schema con migración aplicada
+- 4 tipos: NC_EMITIDA | ND_EMITIDA | NC_RECIBIDA | ND_RECIBIDA
+- 10 subtipos documentados (ANULACION_TOTAL, ANULACION_PARCIAL, CORRECCION_IMPORTE, DIFERENCIA_TARIFA, COSTO_ADICIONAL, AJUSTE, PENALIDAD, CORRECCION_ADMINISTRATIVA, ANULACION_LIQUIDACION, CHEQUE_RECHAZADO)
+- API GET/POST /api/notas-credito-debito con lógica de negocio completa en transacciones
+- API GET/PATCH /api/notas-credito-debito/[id]
+- Utilidades en src/lib/nota-cd-utils.ts (labelTipoNotaCD, labelSubtipoNotaCD, esEmitida, tipoCbteArcaParaNotaCD, calcularTotalesNotaCD)
+- Schema Zod crearNotaCDSchema en financial-schemas.ts
+- Página /notas-credito-debito con filtros por tipo, tabla y modal de detalle con viajes afectados
+- Sidebar con entrada "NC / ND" con icono FileMinus
+- Integración en modal de factura: sección NC/ND + botones "Emitir NC" / "Emitir ND"
+- Cuentas corrientes empresas y fleteros ajustan saldo con NC/ND (excluyendo estado ANULADA)
+- Campos ARCA precalculados (tipoCbte 2/3/7/8 por condicionIva del receptor)
+
 ### Calidad del código
 - LCC documentation en todas las funciones exportadas de lib/
-- 11 test suites, 177 tests unitarios, todos pasando
+- 12 test suites, 208 tests unitarios, todos pasando
 - TypeScript sin errores (npx tsc --noEmit limpio)
 - Error handling completo en todos los API endpoints (try/catch + detail en 500)
 
 ## Estado de tests
-Tests: 177 passed, 177 total (as of 2026-03-30)
+Tests: 208 passed, 208 total (as of 2026-03-31)
 
 ## Pendiente ARCA
 
@@ -60,6 +74,7 @@ Tests: 177 passed, 177 total (as of 2026-03-30)
 - [ ] Generar TRA (Ticket de Requerimiento de Acceso) y obtener Token + Sign (válidos 12 horas)
 - [ ] Implementar `FECompUltimoAutorizado` para sincronizar numeración con ARCA
 - [ ] Implementar `FECAESolicitar` para autorizar liquidaciones (tipoCbte 186 o 187)
+- [ ] Implementar `FECAESolicitar` para autorizar NC/ND (tipoCbte 2/3/7/8 con campo CmpAsoc)
 - [ ] Guardar CAE (14 dígitos) + CAEFchVto en BD al autorizar
 - [ ] Actualizar `arcaEstado` a AUTORIZADA/RECHAZADA según respuesta
 - [ ] Guardar observaciones de rechazo en `arcaObservaciones`
@@ -67,6 +82,7 @@ Tests: 177 passed, 177 total (as of 2026-03-30)
 - [ ] Determinar tipoCbte (186 vs 187) por `condicionIva` del fletero al momento de autorizar
 - [ ] Variables de entorno: `ARCA_CUIT`, `ARCA_PTO_VENTA`, `ARCA_CERT`, `ARCA_KEY`, `ARCA_MODO`
 - [ ] Endpoint POST /api/liquidaciones/[id]/autorizar-arca
+- [ ] Endpoint POST /api/notas-credito-debito/[id]/autorizar-arca
 - [ ] Homologación: https://wswhomo.afip.gov.ar/wsr/service.asmx
 - [ ] Producción: https://servicios1.afip.gov.ar/wsr/service.asmx
 
@@ -74,6 +90,7 @@ Tests: 177 passed, 177 total (as of 2026-03-30)
 
 - [ ] Envío real de emails OTP (actualmente el flujo OTP está implementado pero el transporte de email puede necesitar configuración en producción)
 - [ ] Generación de PDF para liquidaciones y facturas (preview modal existe en UI)
+- [ ] Generación de PDF para NC/ND (botón "Descargar PDF" actualmente muestra alerta)
 - [ ] Módulo de pagos a fleteros (la tabla `PagoLiquidacion` existe en schema pero no hay CRUD completo)
 - [ ] Módulo de cobros de facturas (la tabla `PagoFactura` existe en schema pero no hay CRUD completo)
 - [ ] Reportes de IIBB por provincia y período
