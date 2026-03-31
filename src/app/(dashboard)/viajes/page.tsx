@@ -43,14 +43,14 @@ export default async function ViajesPage({
     esInterno
       ? prisma.fletero.findMany({
           where: { activo: true },
-          select: { id: true, razonSocial: true, comisionDefault: true },
+          select: { id: true, razonSocial: true, cuit: true, comisionDefault: true },
           orderBy: { razonSocial: "asc" },
         })
       : [],
     esInterno
       ? prisma.empresa.findMany({
           where: { activa: true },
-          select: { id: true, razonSocial: true },
+          select: { id: true, razonSocial: true, cuit: true },
           orderBy: { razonSocial: "asc" },
         })
       : [],
