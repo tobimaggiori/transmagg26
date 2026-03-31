@@ -11,6 +11,7 @@ import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
 import { labelCondicionIva, formatearNroComprobante } from "@/lib/liquidacion-utils"
 import { WorkflowNote } from "@/components/workflow/workflow-note"
+import { RegistrarPagoFleteroModal } from "@/components/forms/registrar-pago-fletero-form"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -87,6 +88,9 @@ type Liquidacion = {
   ivaMonto: number
   total: number
   estado: string
+  nroComprobante: number | null
+  ptoVenta: number | null
+  fleteroId: string
   fletero: { razonSocial: string }
   viajes: ViajeEnLiquidacion[]
   pagos: { monto: number }[]
@@ -108,12 +112,16 @@ function EstadoBadge({ estado }: { estado: string }) {
   const estilos: Record<string, string> = {
     BORRADOR: "bg-yellow-100 text-yellow-800",
     EMITIDA: "bg-blue-100 text-blue-800",
+    PARCIALMENTE_PAGADA: "bg-amber-100 text-amber-800",
     PAGADA: "bg-green-100 text-green-800",
     ANULADA: "bg-red-100 text-red-800",
   }
+  const labels: Record<string, string> = {
+    PARCIALMENTE_PAGADA: "Parcial",
+  }
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilos[estado] ?? "bg-gray-100 text-gray-800"}`}>
-      {estado}
+      {labels[estado] ?? estado}
     </span>
   )
 }
@@ -132,11 +140,13 @@ function EstadoBadge({ estado }: { estado: string }) {
 function ModalDetalleLiquidacion({
   liq,
   onCambiarEstado,
+  onRegistrarPago,
   onCerrar,
   cargando,
 }: {
   liq: Liquidacion
   onCambiarEstado: (estado: string) => void
+  onRegistrarPago: () => void
   onCerrar: () => void
   cargando: boolean
 }) {
@@ -212,9 +222,9 @@ function ModalDetalleLiquidacion({
                 Marcar como emitida en ARCA
               </button>
             )}
-            {liq.estado === "EMITIDA" && (
+            {(liq.estado === "EMITIDA" || liq.estado === "PARCIALMENTE_PAGADA") && (
               <button
-                onClick={() => onCambiarEstado("PAGADA")}
+                onClick={onRegistrarPago}
                 disabled={cargando}
                 className="h-9 px-4 rounded-md bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50"
               >
@@ -686,7 +696,13 @@ function ModalPreviewLiquidacion({
  * // Con fletero seleccionado → tabla de viajes + lista de liquidaciones
  * <LiquidacionesClient rol="ADMIN_TRANSMAGG" fleteros={[...]} fleteroIdPropio={null} />
  */
-export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fleteroIdPropio }: LiquidacionesClientProps) {
+type CuentaBancaria = { id: string; nombre: string; bancoOEntidad: string }
+
+type LiquidacionesClientPropsExt = LiquidacionesClientProps & {
+  cuentasBancarias: CuentaBancaria[]
+}
+
+export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fleteroIdPropio, cuentasBancarias }: LiquidacionesClientPropsExt) {
   const esInterno = rol === "ADMIN_TRANSMAGG" || rol === "OPERADOR_TRANSMAGG"
 
   const [fleteroId, setFleteroId] = useState<string>(fleteroIdPropio ?? "")
@@ -703,6 +719,8 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
   const [cambioEstadoCargando, setCambioEstadoCargando] = useState(false)
   const [viajeEditando, setViajeEditando] = useState<ViajeParaLiquidar | null>(null)
   const [fleteroInfo, setFleteroInfo] = useState<FleteroInfo | null>(null)
+  const [pagandoLiquidacion, setPagandoLiquidacion] = useState<Liquidacion | null>(null)
+  const [saldoAFavorCC, setSaldoAFavorCC] = useState(0)
 
   /**
    * cargarDatos: () -> Promise<void>
@@ -1024,8 +1042,41 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
         <ModalDetalleLiquidacion
           liq={liquidacionDetalle}
           onCambiarEstado={(estado) => cambiarEstadoLiquidacion(liquidacionDetalle.id, estado)}
+          onRegistrarPago={async () => {
+            try {
+              const res = await fetch(`/api/fleteros/${liquidacionDetalle.fleteroId}/saldo-cc`)
+              if (res.ok) {
+                const data = await res.json()
+                setSaldoAFavorCC(data.saldoAFavor ?? 0)
+              }
+            } catch { /* silencioso */ }
+            setPagandoLiquidacion(liquidacionDetalle)
+            setLiquidacionDetalle(null)
+          }}
           onCerrar={() => setLiquidacionDetalle(null)}
           cargando={cambioEstadoCargando}
+        />
+      )}
+
+      {/* Modal pago fletero */}
+      {pagandoLiquidacion && (
+        <RegistrarPagoFleteroModal
+          liquidacion={{
+            id: pagandoLiquidacion.id,
+            nroComprobante: pagandoLiquidacion.nroComprobante,
+            ptoVenta: pagandoLiquidacion.ptoVenta,
+            total: pagandoLiquidacion.total,
+            pagosExistentes: pagandoLiquidacion.pagos.reduce((s, p) => s + p.monto, 0),
+            fletero: { id: pagandoLiquidacion.fleteroId, razonSocial: pagandoLiquidacion.fletero.razonSocial },
+          }}
+          cuentasBancarias={cuentasBancarias}
+          chequesEnCartera={[]}
+          saldoAFavorCC={saldoAFavorCC}
+          onSuccess={() => {
+            setPagandoLiquidacion(null)
+            cargarDatos()
+          }}
+          onClose={() => setPagandoLiquidacion(null)}
         />
       )}
 

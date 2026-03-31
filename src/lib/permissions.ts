@@ -29,6 +29,19 @@ export const PERMISOS_SECCION: Record<string, Rol[]> = {
   pagos: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
   abm: ["ADMIN_TRANSMAGG"],
   admin: ["ADMIN_TRANSMAGG"],
+  // Secciones de grupos de navegación (nuevas rutas agrupadas)
+  empresas_facturar: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG", "ADMIN_EMPRESA", "OPERADOR_EMPRESA"],
+  empresas_facturas: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG", "ADMIN_EMPRESA", "OPERADOR_EMPRESA"],
+  empresas_cuenta_corriente: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG", "ADMIN_EMPRESA", "OPERADOR_EMPRESA"],
+  fleteros_liquidar: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG", "FLETERO"],
+  fleteros_liquidaciones: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG", "FLETERO"],
+  fleteros_adelantos: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG", "FLETERO"],
+  fleteros_pago: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  fleteros_cuenta_corriente: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG", "FLETERO"],
+  contabilidad_cuentas: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  contabilidad_iva: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  contabilidad_iibb: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  contabilidad_notas: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
 }
 
 /**

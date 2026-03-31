@@ -10,8 +10,8 @@ datasource db {
 // Rol:                         ADMIN_TRANSMAGG | OPERADOR_TRANSMAGG | FLETERO | CHOFER | ADMIN_EMPRESA | OPERADOR_EMPRESA
 // Canal OTP:                   EMAIL | SMS
 // Estado viaje:                PENDIENTE | EN_LIQUIDACION | EN_FACTURA | COMPLETO
-// Estado liquidación:          BORRADOR | EMITIDA | PAGADA | ANULADA
-// Estado factura:              PENDIENTE | EMITIDA | COBRADA | ANULADA
+// Estado liquidación:          BORRADOR | EMITIDA | PARCIALMENTE_PAGADA | PAGADA | ANULADA
+// Estado factura:              BORRADOR | EMITIDA | PARCIALMENTE_COBRADA | COBRADA | ANULADA
 // Estado ARCA:                 PENDIENTE | ACEPTADA | RECHAZADA
 // Tipo pago fletero:           CHEQUE_PROPIO | CHEQUE_TERCERO | TRANSFERENCIA | EFECTIVO | ADELANTO
 // Tipo pago empresa:           CHEQUE | TRANSFERENCIA | EFECTIVO
@@ -72,6 +72,8 @@ model Usuario {
   empleado                   Empleado?               @relation("EmpleadoUsuario")
   adelantosFleterosOpera     AdelantoFletero[]       @relation("OperadorAdelantoFletero")
   notasCreditoDebitoOpera    NotaCreditoDebito[]     @relation("OperadorNotaCreditoDebito")
+  pagosEmpresaOpera          PagoDeEmpresa[]         @relation("OperadorPagoEmpresa")
+  pagosFleterosOpera         PagoAFletero[]          @relation("OperadorPagoFletero")
 
   @@map("usuarios")
 }
@@ -640,7 +642,7 @@ model AdelantoDescuento {
 model PagoAFletero {
   id               String          @id @default(uuid())
   fleteroId        String          @map("fletero_id")
-  liquidacionId    String          @map("liquidacion_id")
+  liquidacionId    String?         @map("liquidacion_id")
   tipoPago         String          @map("tipo_pago")
   monto            Float
   referencia       String?
@@ -649,12 +651,15 @@ model PagoAFletero {
   chequeEmitidoId  String?         @map("cheque_emitido_id")
   chequeRecibidoId String?         @map("cheque_recibido_id")
   cuentaId         String?         @map("cuenta_id")
+  operadorId       String          @map("operador_id")
+  creadoEn         DateTime        @default(now()) @map("creado_en")
 
   fletero        Fletero         @relation(fields: [fleteroId], references: [id])
-  liquidacion    Liquidacion     @relation(fields: [liquidacionId], references: [id])
+  liquidacion    Liquidacion?    @relation(fields: [liquidacionId], references: [id])
   chequeEmitido  ChequeEmitido?  @relation(fields: [chequeEmitidoId], references: [id], onDelete: SetNull)
   chequeRecibido ChequeRecibido? @relation(fields: [chequeRecibidoId], references: [id], onDelete: SetNull)
   cuenta         Cuenta?         @relation("CuentaPagoAFletero", fields: [cuentaId], references: [id], onDelete: SetNull)
+  operador       Usuario         @relation("OperadorPagoFletero", fields: [operadorId], references: [id])
 
   @@map("pagos_a_fleteros")
 }
@@ -662,7 +667,7 @@ model PagoAFletero {
 model PagoDeEmpresa {
   id               String          @id @default(uuid())
   empresaId        String          @map("empresa_id")
-  facturaId        String          @map("factura_id")
+  facturaId        String?         @map("factura_id")
   tipoPago         String          @map("tipo_pago")
   monto            Float
   referencia       String?
@@ -670,11 +675,14 @@ model PagoDeEmpresa {
   comprobanteS3Key String?         @map("comprobante_s3_key")
   chequeRecibidoId String?         @map("cheque_recibido_id")
   cuentaId         String?         @map("cuenta_id")
+  operadorId       String          @map("operador_id")
+  creadoEn         DateTime        @default(now()) @map("creado_en")
 
-  empresa        Empresa         @relation(fields: [empresaId], references: [id])
-  factura        FacturaEmitida  @relation(fields: [facturaId], references: [id])
-  chequeRecibido ChequeRecibido? @relation(fields: [chequeRecibidoId], references: [id], onDelete: SetNull)
-  cuenta         Cuenta?         @relation("CuentaPagoDeEmpresa", fields: [cuentaId], references: [id], onDelete: SetNull)
+  empresa        Empresa          @relation(fields: [empresaId], references: [id])
+  factura        FacturaEmitida?  @relation(fields: [facturaId], references: [id])
+  chequeRecibido ChequeRecibido?  @relation(fields: [chequeRecibidoId], references: [id], onDelete: SetNull)
+  cuenta         Cuenta?          @relation("CuentaPagoDeEmpresa", fields: [cuentaId], references: [id], onDelete: SetNull)
+  operador       Usuario          @relation("OperadorPagoEmpresa", fields: [operadorId], references: [id])
 
   @@map("pagos_de_empresas")
 }

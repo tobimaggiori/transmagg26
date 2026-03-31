@@ -30,7 +30,7 @@ export async function GET() {
       where: { activo: true },
       include: {
         liquidaciones: {
-          where: { estado: "EMITIDA" },
+          where: { estado: { in: ["EMITIDA", "PARCIALMENTE_PAGADA"] } },
           include: { pagos: { select: { monto: true } } },
           orderBy: { grabadaEn: "desc" },
         },

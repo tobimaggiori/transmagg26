@@ -39,6 +39,8 @@ export default async function FacturasPage() {
   let camiones: { id: string; patenteChasis: string; fleteroId: string }[] = []
   let choferes: { id: string; nombre: string; apellido: string }[] = []
 
+  let cuentasBancarias: { id: string; nombre: string; bancoOEntidad: string }[] = []
+
   if (esRolEmpresa(rol)) {
     const empUsr = await prisma.empresaUsuario.findFirst({
       where: { usuario: { email: session.user.email ?? "" } },
@@ -62,8 +64,13 @@ export default async function FacturasPage() {
         select: { id: true, nombre: true, apellido: true },
         orderBy: { apellido: "asc" },
       }),
+      prisma.cuenta.findMany({
+        where: { activa: true },
+        select: { id: true, nombre: true, bancoOEntidad: true },
+        orderBy: { nombre: "asc" },
+      }),
     ])
-    ;[empresas, camiones, choferes] = data
+    ;[empresas, camiones, choferes, cuentasBancarias] = data
   }
 
   return (
@@ -73,6 +80,7 @@ export default async function FacturasPage() {
       camiones={camiones}
       choferes={choferes}
       empresaIdPropia={empresaIdPropia}
+      cuentasBancarias={cuentasBancarias}
     />
   )
 }

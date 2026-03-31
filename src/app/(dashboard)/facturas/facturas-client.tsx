@@ -11,6 +11,7 @@ import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje, calcularFactura } from "@/lib/viajes"
 import { calcularTotalesNotaCD, labelTipoNotaCD, labelSubtipoNotaCD } from "@/lib/nota-cd-utils"
 import { WorkflowNote } from "@/components/workflow/workflow-note"
+import { RegistrarCobroModal } from "@/components/forms/registrar-cobro-form"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -81,6 +82,7 @@ type Factura = {
   total: number
   estado: string
   estadoArca: string
+  empresaId: string
   empresa: { razonSocial: string }
   viajes: ViajeEnFactura[]
   pagos: { monto: number }[]
@@ -88,12 +90,15 @@ type Factura = {
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
+type CuentaBancaria = { id: string; nombre: string; bancoOEntidad: string }
+
 type FacturasClientProps = {
   rol: Rol
   empresas: Empresa[]
   camiones: Camion[]
   choferes: Chofer[]
   empresaIdPropia: string | null
+  cuentasBancarias: CuentaBancaria[]
 }
 
 type NotaCDResumen = {
@@ -111,12 +116,16 @@ function EstadoBadge({ estado }: { estado: string }) {
   const estilos: Record<string, string> = {
     BORRADOR: "bg-yellow-100 text-yellow-800",
     EMITIDA: "bg-blue-100 text-blue-800",
+    PARCIALMENTE_COBRADA: "bg-amber-100 text-amber-800",
     COBRADA: "bg-green-100 text-green-800",
     ANULADA: "bg-red-100 text-red-800",
   }
+  const labels: Record<string, string> = {
+    PARCIALMENTE_COBRADA: "Parcial",
+  }
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilos[estado] ?? "bg-gray-100 text-gray-800"}`}>
-      {estado}
+      {labels[estado] ?? estado}
     </span>
   )
 }
@@ -479,11 +488,13 @@ function ModalEmitirND({
 function ModalDetalleFactura({
   factura,
   onCambiarEstado,
+  onRegistrarCobro,
   onCerrar,
   cargando,
 }: {
   factura: Factura
   onCambiarEstado: (estado: string, nroComprobante?: string) => void
+  onRegistrarCobro: () => void
   onCerrar: () => void
   cargando: boolean
 }) {
@@ -657,9 +668,9 @@ function ModalDetalleFactura({
                 Marcar como emitida en ARCA
               </button>
             )}
-            {factura.estado === "EMITIDA" && (
+            {(factura.estado === "EMITIDA" || factura.estado === "PARCIALMENTE_COBRADA") && (
               <button
-                onClick={() => onCambiarEstado("COBRADA")}
+                onClick={onRegistrarCobro}
                 disabled={cargando}
                 className="h-9 px-4 rounded-md bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50"
               >
@@ -719,7 +730,7 @@ function ModalDetalleFactura({
  * // Con empresa seleccionada → tabla de viajes + lista de facturas
  * <FacturasClient rol="ADMIN_TRANSMAGG" empresas={[...]} empresaIdPropia={null} />
  */
-export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPropia }: FacturasClientProps) {
+export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPropia, cuentasBancarias }: FacturasClientProps) {
   const esInterno = rol === "ADMIN_TRANSMAGG" || rol === "OPERADOR_TRANSMAGG"
 
   const [empresaId, setEmpresaId] = useState<string>(empresaIdPropia ?? "")
@@ -734,6 +745,8 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
   const [errorGen, setErrorGen] = useState<string | null>(null)
   const [facturaDetalle, setFacturaDetalle] = useState<Factura | null>(null)
   const [cambioEstadoCargando, setCambioEstadoCargando] = useState(false)
+  const [cobrandoFactura, setCobrandoFactura] = useState<Factura | null>(null)
+  const [saldoAFavorCC, setSaldoAFavorCC] = useState(0)
 
   const cargarDatos = useCallback(async () => {
     if (!empresaId) return
@@ -1149,17 +1162,12 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
             ) : (
               <div className="space-y-2">
                 {facturas.map((fact) => {
-                  const pagado = fact.pagos.reduce((acc, p) => acc + p.monto, 0)
-                  const estadoPago = fact.estado === "COBRADA" || pagado >= fact.total ? "COBRADA" : "PENDIENTE"
                   return (
                     <div key={fact.id} className="flex items-center justify-between p-4 rounded-lg border hover:bg-muted/30">
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium">{formatearFecha(new Date(fact.emitidaEn))}</span>
                           <EstadoBadge estado={fact.estado} />
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${estadoPago === "COBRADA" ? "bg-green-100 text-green-800" : "bg-orange-100 text-orange-800"}`}>
-                            {estadoPago === "COBRADA" ? "Cobrada" : "Pendiente cobro"}
-                          </span>
                           {fact.nroComprobante && (
                             <span className="text-xs text-muted-foreground">#{fact.nroComprobante}</span>
                           )}
@@ -1191,8 +1199,41 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
         <ModalDetalleFactura
           factura={facturaDetalle}
           onCambiarEstado={(estado, nroComprobante) => cambiarEstadoFactura(facturaDetalle.id, estado, nroComprobante)}
+          onRegistrarCobro={async () => {
+            // Fetch saldo CC for this empresa
+            try {
+              const res = await fetch(`/api/empresas/${facturaDetalle.empresaId}/saldo-cc`)
+              if (res.ok) {
+                const data = await res.json()
+                setSaldoAFavorCC(data.saldoAFavor ?? 0)
+              }
+            } catch { /* silencioso */ }
+            setCobrandoFactura(facturaDetalle)
+            setFacturaDetalle(null)
+          }}
           onCerrar={() => setFacturaDetalle(null)}
           cargando={cambioEstadoCargando}
+        />
+      )}
+
+      {/* Modal cobro */}
+      {cobrandoFactura && (
+        <RegistrarCobroModal
+          factura={{
+            id: cobrandoFactura.id,
+            nroComprobante: cobrandoFactura.nroComprobante,
+            tipoCbte: cobrandoFactura.tipoCbte,
+            total: cobrandoFactura.total,
+            pagosExistentes: cobrandoFactura.pagos.reduce((s, p) => s + p.monto, 0),
+            empresa: { id: cobrandoFactura.empresaId, razonSocial: cobrandoFactura.empresa.razonSocial },
+          }}
+          cuentasBancarias={cuentasBancarias}
+          saldoAFavorCC={saldoAFavorCC}
+          onSuccess={() => {
+            setCobrandoFactura(null)
+            cargarDatos()
+          }}
+          onClose={() => setCobrandoFactura(null)}
         />
       )}
     </div>

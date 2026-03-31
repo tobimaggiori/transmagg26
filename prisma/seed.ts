@@ -803,6 +803,7 @@ async function main() {
       fechaPago: new Date("2026-03-12T00:00:00.000Z"),
       chequeRecibidoId: chequeRecibidoDepositado.id,
       cuentaId: cuentaGaliciaPesos.id,
+      operadorId: operadorTransmagg.id,
     },
   })
 
@@ -816,6 +817,7 @@ async function main() {
       fechaPago: new Date("2026-04-15T00:00:00.000Z"),
       chequeEmitidoId: chequeEmitidoPlanilla1.id,
       cuentaId: cuentaGaliciaPesos.id,
+      operadorId: operadorTransmagg.id,
     },
   })
 

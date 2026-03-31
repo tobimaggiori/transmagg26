@@ -33,7 +33,7 @@ export default async function LiquidacionesPage() {
 
   const esInterno = esRolInterno(rol)
 
-  const [fleteros, camiones, choferes] = esInterno
+  const [fleteros, camiones, choferes, cuentasBancarias] = esInterno
     ? await Promise.all([
         prisma.fletero.findMany({
           where: { activo: true },
@@ -50,8 +50,13 @@ export default async function LiquidacionesPage() {
           select: { id: true, nombre: true, apellido: true },
           orderBy: { apellido: "asc" },
         }),
+        prisma.cuenta.findMany({
+          where: { activa: true },
+          select: { id: true, nombre: true, bancoOEntidad: true },
+          orderBy: { nombre: "asc" },
+        }),
       ])
-    : [[], [], []]
+    : [[], [], [], []]
 
   // Para FLETERO: obtener su propio fleteroId
   let fleteroIdPropio: string | null = null
@@ -70,6 +75,7 @@ export default async function LiquidacionesPage() {
       camiones={camiones}
       choferes={choferes}
       fleteroIdPropio={fleteroIdPropio}
+      cuentasBancarias={cuentasBancarias}
     />
   )
 }

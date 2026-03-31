@@ -15,11 +15,10 @@ import { UsuariosAbm } from "@/components/abm/usuarios-abm"
 import { ProveedoresAbm } from "@/components/abm/proveedores-abm"
 import { CuentasAbm } from "@/components/abm/cuentas-abm"
 import { FciAbm } from "@/components/abm/fci-abm"
-import { BrokersAbm } from "@/components/abm/brokers-abm"
 import { EmpleadosAbm } from "@/components/abm/empleados-abm"
 import type { Rol } from "@/types"
 
-type Tab = "empresas" | "fleteros" | "usuarios" | "proveedores" | "cuentas" | "fci" | "brokers" | "empleados"
+type Tab = "empresas" | "fleteros" | "usuarios" | "proveedores" | "cuentas" | "fci" | "empleados"
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "empresas", label: "Empresas" },
@@ -28,7 +27,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "proveedores", label: "Proveedores" },
   { id: "cuentas", label: "Cuentas" },
   { id: "fci", label: "FCI" },
-  { id: "brokers", label: "Brokers" },
   { id: "empleados", label: "Empleados" },
 ]
 
@@ -63,7 +61,7 @@ export default async function AbmPage({
   const tabValido = TABS.some((t) => t.id === tab) ? tab : "empresas"
 
   // Fetch data según tab activo para no cargar todo innecesariamente
-  const [empresas, fleteros, , usuarios, proveedores, cuentas, fcis, brokers, empleados] = await Promise.all([
+  const [empresas, fleteros, , usuarios, proveedores, cuentas, fcis, empleados] = await Promise.all([
     tabValido === "empresas"
       ? prisma.empresa.findMany({
           select: { id: true, razonSocial: true, cuit: true, condicionIva: true, direccion: true },
@@ -115,7 +113,7 @@ export default async function AbmPage({
           select: { id: true, razonSocial: true, cuit: true, condicionIva: true, rubro: true, activo: true },
         })
       : [],
-    (tabValido === "cuentas" || tabValido === "fci" || tabValido === "brokers")
+    (tabValido === "cuentas" || tabValido === "fci")
       ? prisma.cuenta.findMany({
           orderBy: { nombre: "asc" },
           select: { id: true, nombre: true, tipo: true, bancoOEntidad: true, moneda: true, activa: true, tieneChequera: true, tienePlanillaEmisionMasiva: true, tieneCuentaRemunerada: true, tieneTarjetasPrepagasChoferes: true, tieneImpuestoDebcred: true, alicuotaImpuesto: true },
@@ -123,12 +121,6 @@ export default async function AbmPage({
       : [],
     tabValido === "fci"
       ? prisma.fci.findMany({
-          orderBy: { nombre: "asc" },
-          include: { cuenta: { select: { nombre: true } } },
-        })
-      : [],
-    tabValido === "brokers"
-      ? prisma.broker.findMany({
           orderBy: { nombre: "asc" },
           include: { cuenta: { select: { nombre: true } } },
         })
@@ -186,7 +178,6 @@ export default async function AbmPage({
         {tabValido === "proveedores" && <ProveedoresAbm proveedores={proveedores} />}
         {tabValido === "cuentas" && <CuentasAbm cuentas={cuentas} />}
         {tabValido === "fci" && <FciAbm fcis={fcis} cuentas={cuentas.map(c => ({ id: c.id, nombre: c.nombre }))} />}
-        {tabValido === "brokers" && <BrokersAbm brokers={brokers} cuentas={cuentas.map(c => ({ id: c.id, nombre: c.nombre }))} />}
         {tabValido === "empleados" && <EmpleadosAbm empleados={empleados.map(e => ({ ...e, fechaIngreso: e.fechaIngreso.toISOString() }))} />}
       </div>
     </div>

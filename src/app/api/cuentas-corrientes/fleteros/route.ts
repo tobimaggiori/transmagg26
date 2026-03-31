@@ -158,6 +158,7 @@ export async function POST(request: NextRequest) {
           monto: montoAplicar,
           referencia: referencia ?? null,
           fechaPago: new Date(fecha),
+          operadorId: session.user.id,
         },
       })
       pagosCreados.push(pago)
