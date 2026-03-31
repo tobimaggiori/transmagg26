@@ -23,6 +23,7 @@ import {
   CreditCard,
   Building2,
   ArrowLeftRight,
+  FileMinus,
 } from "lucide-react"
 
 /**
@@ -61,6 +62,12 @@ const NAV_ITEMS: NavItemDef[] = [
     label: "Facturas",
     icon: Receipt,
     seccion: "facturas",
+  },
+  {
+    href: "/notas-credito-debito",
+    label: "NC / ND",
+    icon: FileMinus,
+    seccion: "notas_credito_debito",
   },
   {
     href: "/proveedores",
