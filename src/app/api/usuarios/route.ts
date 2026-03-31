@@ -18,6 +18,8 @@ const crearUsuarioSchema = z.object({
   telefono: z.string().optional(),
   rol: z.enum(["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG", "FLETERO", "CHOFER", "ADMIN_EMPRESA", "OPERADOR_EMPRESA"]),
   empresaId: z.string().uuid().optional(), // Para ADMIN_EMPRESA / OPERADOR_EMPRESA
+  fleteroId: z.string().uuid().optional(), // Para CHOFER
+  camionId: z.string().uuid().optional(),  // Para CHOFER: camión inicial asignado
 })
 
 /**
@@ -75,14 +77,18 @@ export async function GET() {
 /**
  * POST: NextRequest -> Promise<NextResponse>
  *
- * Dado el body { nombre, apellido, email, rol, telefono?, empresaId? },
- * crea un usuario y opcionalmente lo asocia a una empresa en una transacción.
+ * Dado el body { nombre, apellido, email, rol, telefono?, empresaId?, fleteroId?, camionId? },
+ * crea un usuario y opcionalmente lo asocia a una empresa o fletero en una transacción.
+ * Para rol CHOFER: requiere fleteroId y camionId; crea el CamionChofer inicial.
+ * Para roles ADMIN_EMPRESA/OPERADOR_EMPRESA: requiere empresaId.
  * Existe para que el administrador pueda dar de alta usuarios de todos los roles,
- * creando automáticamente la relación empresa-usuario para roles ADMIN_EMPRESA/OPERADOR_EMPRESA.
+ * creando automáticamente las relaciones necesarias según el rol.
  *
  * Ejemplos:
  * POST /api/usuarios { nombre: "Laura", apellido: "Gómez", email: "laura@x.com", rol: "OPERADOR_TRANSMAGG" }
  * // => 201 { id, nombre: "Laura", apellido: "Gómez", rol: "OPERADOR_TRANSMAGG" }
+ * POST /api/usuarios { ...datos, rol: "CHOFER", fleteroId: "f1", camionId: "c1" }
+ * // => 201 { id, nombre, rol: "CHOFER", fleteroId: "f1" }
  * POST /api/usuarios { ...datos, email: "existente@x.com" } (email duplicado)
  * // => 409 { error: "El email ya está registrado" }
  * POST /api/usuarios { nombre: "A", apellido: "B", email: "x", rol: "INVALIDO" }
@@ -100,14 +106,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { nombre, apellido, email, telefono, rol, empresaId } = parsed.data
+    const { nombre, apellido, email, telefono, rol, empresaId, fleteroId, camionId } = parsed.data
+
+    // Validaciones específicas por rol
+    if (rol === "CHOFER") {
+      if (!fleteroId) return NextResponse.json({ error: "Se requiere fleteroId para crear un chofer" }, { status: 400 })
+      if (!camionId) return NextResponse.json({ error: "Se requiere camionId para crear un chofer" }, { status: 400 })
+      const camion = await prisma.camion.findUnique({ where: { id: camionId } })
+      if (!camion) return NextResponse.json({ error: "Camión no encontrado" }, { status: 404 })
+      if (camion.fleteroId !== fleteroId) return NextResponse.json({ error: "El camión no pertenece al fletero indicado" }, { status: 400 })
+    }
 
     const emailExiste = await prisma.usuario.findUnique({ where: { email } })
     if (emailExiste) return NextResponse.json({ error: "El email ya está registrado" }, { status: 409 })
 
+    const ahora = new Date()
+
     const usuario = await prisma.$transaction(async (tx) => {
       const usr = await tx.usuario.create({
-        data: { nombre, apellido, email, telefono, rol },
+        data: {
+          nombre,
+          apellido,
+          email,
+          telefono,
+          rol,
+          ...(rol === "CHOFER" && fleteroId ? { fleteroId } : {}),
+        },
       })
 
       // Si es rol de empresa, crear la relación empresa-usuario
@@ -118,6 +142,17 @@ export async function POST(request: NextRequest) {
             empresaId,
             nivelAcceso: rol === "ADMIN_EMPRESA" ? "ADMIN" : "OPERADOR",
           },
+        })
+      }
+
+      // Si es CHOFER, cerrar asignación previa del camión y crear la nueva
+      if (rol === "CHOFER" && camionId) {
+        await tx.camionChofer.updateMany({
+          where: { camionId, hasta: null },
+          data: { hasta: ahora },
+        })
+        await tx.camionChofer.create({
+          data: { camionId, choferId: usr.id, desde: ahora },
         })
       }
 

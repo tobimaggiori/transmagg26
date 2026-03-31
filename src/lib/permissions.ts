@@ -15,6 +15,7 @@ export const ROLES_FLETERO: Rol[] = ["FLETERO", "CHOFER"]
 
 export const PERMISOS_SECCION: Record<string, Rol[]> = {
   dashboard: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG", "FLETERO", "ADMIN_EMPRESA", "OPERADOR_EMPRESA"],
+  mi_flota: ["FLETERO"],
   viajes: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG", "FLETERO", "CHOFER", "ADMIN_EMPRESA", "OPERADOR_EMPRESA"],
   liquidaciones: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG", "FLETERO"],
   facturas: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG", "ADMIN_EMPRESA", "OPERADOR_EMPRESA"],
@@ -148,4 +149,23 @@ export function esRolEmpresa(rol: Rol): boolean {
  */
 export function esRolFletero(rol: Rol): boolean {
   return ROLES_FLETERO.includes(rol)
+}
+
+/**
+ * puedeGestionarFlota: Rol -> boolean
+ *
+ * Dado un rol, devuelve true si puede gestionar su propia flota de camiones y choferes.
+ * Solo el rol FLETERO puede acceder a la sección "Mi Flota" para ver el estado
+ * de sus camiones y choferes asignados.
+ * ADMIN_TRANSMAGG gestiona la flota de todos los fleteros desde el ABM.
+ * Existe para controlar el acceso a la página de Mi Flota exclusiva del fletero.
+ *
+ * Ejemplos:
+ * puedeGestionarFlota("FLETERO")           === true
+ * puedeGestionarFlota("ADMIN_TRANSMAGG")   === false
+ * puedeGestionarFlota("CHOFER")            === false
+ * puedeGestionarFlota("OPERADOR_EMPRESA")  === false
+ */
+export function puedeGestionarFlota(rol: Rol): boolean {
+  return rol === "FLETERO"
 }

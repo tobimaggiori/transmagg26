@@ -16,7 +16,7 @@ import { SearchCombobox } from "@/components/ui/search-combobox"
 
 interface Fletero { id: string; razonSocial: string; cuit: string }
 interface Camion { id: string; patenteChasis: string; fleteroId: string }
-interface Chofer { id: string; nombre: string; apellido: string }
+interface Chofer { id: string; nombre: string; apellido: string; fleteroId: string | null }
 interface Empresa { id: string; razonSocial: string; cuit: string }
 
 interface ViajeFormProps {
@@ -73,6 +73,9 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
   const [error, setError] = useState<string | null>(null)
 
   const camionesDelFletero = camiones.filter((c) => c.fleteroId === fleteroId)
+  const choferesDelFletero = fleteroId
+    ? choferes.filter((c) => c.fleteroId === fleteroId)
+    : choferes
 
   const fleteroItems = fleteros.map((f) => ({
     id: f.id,
@@ -173,7 +176,7 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
           <Label htmlFor="choferId">Chofer *</Label>
           <Select id="choferId" value={choferId} onChange={(e) => setChoferId(e.target.value)} required>
             <option value="">Seleccionar...</option>
-            {choferes.map((c) => (
+            {choferesDelFletero.map((c) => (
               <option key={c.id} value={c.id}>{c.nombre} {c.apellido}</option>
             ))}
           </Select>

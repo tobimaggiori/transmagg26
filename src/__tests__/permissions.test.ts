@@ -11,6 +11,7 @@ import {
   esAdmin,
   esRolEmpresa,
   esRolFletero,
+  puedeGestionarFlota,
 } from "@/lib/permissions"
 
 describe("puedeAcceder", () => {
@@ -108,5 +109,23 @@ describe("esRolFletero", () => {
 
   it('esRolFletero("ADMIN_TRANSMAGG") === false', () => {
     expect(esRolFletero("ADMIN_TRANSMAGG")).toBe(false)
+  })
+})
+
+describe("puedeGestionarFlota", () => {
+  it('puedeGestionarFlota("FLETERO") === true', () => {
+    expect(puedeGestionarFlota("FLETERO")).toBe(true)
+  })
+
+  it('puedeGestionarFlota("ADMIN_TRANSMAGG") === false', () => {
+    expect(puedeGestionarFlota("ADMIN_TRANSMAGG")).toBe(false)
+  })
+
+  it('puedeGestionarFlota("CHOFER") === false', () => {
+    expect(puedeGestionarFlota("CHOFER")).toBe(false)
+  })
+
+  it('puedeGestionarFlota("OPERADOR_EMPRESA") === false', () => {
+    expect(puedeGestionarFlota("OPERADOR_EMPRESA")).toBe(false)
   })
 })

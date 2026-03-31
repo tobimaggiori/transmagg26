@@ -59,14 +59,30 @@
 - Cuentas corrientes empresas y fleteros ajustan saldo con NC/ND (excluyendo estado ANULADA)
 - Campos ARCA precalculados (tipoCbte 2/3/7/8 por condicionIva del receptor)
 
+### Gestión de flota (choferes + camiones por fletero)
+- Campo `fleteroId` en `Usuario` para vincular CHOFER con su fletero empleador (migración aplicada)
+- Relación inversa `Fletero.choferes []` para acceder a todos los choferes del fletero
+- `POST /api/camiones/[id]/asignar-chofer`: asignación atómica chofer↔camión (cierra asignación previa, crea CamionChofer, vincula fleteroId en usuario)
+- `GET /api/fleteros/[id]/flota`: devuelve camiones activos con chofer actual + choferes sin camión
+- `POST /api/usuarios` soporta rol CHOFER con `fleteroId` + `camionId` obligatorios; crea CamionChofer inicial en transacción
+- `PATCH /api/usuarios/[id]` soporta `camionId` para reasignación de camión (cierra asignación previa, abre nueva)
+- ABM eliminó tab "Choferes" independiente; flota integrada en tab "Fleteros" con subsección expandible por fletero
+- FloterosAbm muestra camiones con chofer asignado (verde) o sin chofer (ámbar) + choferes sin camión
+- FloterosAbm permite: agregar camión, editar camión, desactivar camión, nuevo chofer (con camión inicial), asignar chofer a camión
+- Página `/mi-flota` exclusiva para rol FLETERO: vista de su flota con tarjetas por camión y estado del chofer
+- Sidebar: ítem "Mi Flota" con icono Warehouse, visible solo para FLETERO
+- `puedeGestionarFlota(rol)` en `permissions.ts`: true solo para FLETERO
+- Choferes filtrados por fletero en formulario de nuevo viaje y modal editar viaje
+- 218 tests unitarios (4 nuevos para `puedeGestionarFlota`)
+
 ### Calidad del código
 - LCC documentation en todas las funciones exportadas de lib/
-- 12 test suites, 208 tests unitarios, todos pasando
+- 13 test suites, 218 tests unitarios, todos pasando
 - TypeScript sin errores (npx tsc --noEmit limpio)
 - Error handling completo en todos los API endpoints (try/catch + detail en 500)
 
 ## Estado de tests
-Tests: 208 passed, 208 total (as of 2026-03-31)
+Tests: 218 passed, 218 total (as of 2026-03-31)
 
 ## Pendiente ARCA
 

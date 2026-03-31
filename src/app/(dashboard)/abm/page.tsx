@@ -11,7 +11,6 @@ import { prisma } from "@/lib/prisma"
 import { esAdmin } from "@/lib/permissions"
 import { EmpresasAbm } from "@/components/abm/empresas-abm"
 import { FleterosAbm } from "@/components/abm/fleteros-abm"
-import { ChoforesAbm } from "@/components/abm/choferes-abm"
 import { UsuariosAbm } from "@/components/abm/usuarios-abm"
 import { ProveedoresAbm } from "@/components/abm/proveedores-abm"
 import { CuentasAbm } from "@/components/abm/cuentas-abm"
@@ -20,12 +19,11 @@ import { BrokersAbm } from "@/components/abm/brokers-abm"
 import { EmpleadosAbm } from "@/components/abm/empleados-abm"
 import type { Rol } from "@/types"
 
-type Tab = "empresas" | "fleteros" | "choferes" | "usuarios" | "proveedores" | "cuentas" | "fci" | "brokers" | "empleados"
+type Tab = "empresas" | "fleteros" | "usuarios" | "proveedores" | "cuentas" | "fci" | "brokers" | "empleados"
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "empresas", label: "Empresas" },
   { id: "fleteros", label: "Fleteros" },
-  { id: "choferes", label: "Choferes" },
   { id: "usuarios", label: "Usuarios" },
   { id: "proveedores", label: "Proveedores" },
   { id: "cuentas", label: "Cuentas" },
@@ -65,7 +63,7 @@ export default async function AbmPage({
   const tabValido = TABS.some((t) => t.id === tab) ? tab : "empresas"
 
   // Fetch data según tab activo para no cargar todo innecesariamente
-  const [empresas, fleteros, choferes, usuarios, proveedores, cuentas, fcis, brokers, empleados] = await Promise.all([
+  const [empresas, fleteros, , usuarios, proveedores, cuentas, fcis, brokers, empleados] = await Promise.all([
     tabValido === "empresas"
       ? prisma.empresa.findMany({
           select: { id: true, razonSocial: true, cuit: true, condicionIva: true, direccion: true },
@@ -79,20 +77,29 @@ export default async function AbmPage({
             usuario: { select: { nombre: true, apellido: true, email: true } },
             camiones: {
               where: { activo: true },
-              select: { id: true, patenteChasis: true, patenteAcoplado: true, tipoCamion: true },
+              select: {
+                id: true,
+                patenteChasis: true,
+                patenteAcoplado: true,
+                tipoCamion: true,
+                choferHistorial: {
+                  where: { hasta: null },
+                  select: { chofer: { select: { id: true, nombre: true, apellido: true, email: true } } },
+                  take: 1,
+                },
+              },
               orderBy: { patenteChasis: "asc" },
+            },
+            choferes: {
+              where: { rol: "CHOFER", activo: true },
+              select: { id: true, nombre: true, apellido: true, email: true },
+              orderBy: [{ apellido: "asc" }, { nombre: "asc" }],
             },
           },
           orderBy: { razonSocial: "asc" },
         })
       : [],
-    tabValido === "choferes"
-      ? prisma.usuario.findMany({
-          where: { rol: "CHOFER" },
-          select: { id: true, nombre: true, apellido: true, email: true, telefono: true, activo: true },
-          orderBy: [{ activo: "desc" }, { apellido: "asc" }],
-        })
-      : [],
+    [] as never[],
     tabValido === "usuarios"
       ? prisma.usuario.findMany({
           orderBy: [{ activo: "desc" }, { apellido: "asc" }],
@@ -175,7 +182,6 @@ export default async function AbmPage({
       <div>
         {tabValido === "empresas" && <EmpresasAbm empresas={empresas} />}
         {tabValido === "fleteros" && <FleterosAbm fleteros={fleteros} />}
-        {tabValido === "choferes" && <ChoforesAbm choferes={choferes} />}
         {tabValido === "usuarios" && <UsuariosAbm usuarios={usuarios} empresas={empresasParaUsuarios} />}
         {tabValido === "proveedores" && <ProveedoresAbm proveedores={proveedores} />}
         {tabValido === "cuentas" && <CuentasAbm cuentas={cuentas} />}

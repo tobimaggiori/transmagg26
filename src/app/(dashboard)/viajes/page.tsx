@@ -64,7 +64,7 @@ export default async function ViajesPage({
     esInterno
       ? prisma.usuario.findMany({
           where: { rol: "CHOFER", activo: true },
-          select: { id: true, nombre: true, apellido: true },
+          select: { id: true, nombre: true, apellido: true, fleteroId: true },
           orderBy: { apellido: "asc" },
         })
       : [],

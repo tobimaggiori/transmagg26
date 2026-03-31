@@ -15,7 +15,7 @@ import { ViajeForm } from "@/components/forms/viaje-form"
 interface Props {
   fleteros: Array<{ id: string; razonSocial: string; cuit: string }>
   camiones: Array<{ id: string; patenteChasis: string; fleteroId: string }>
-  choferes: Array<{ id: string; nombre: string; apellido: string }>
+  choferes: Array<{ id: string; nombre: string; apellido: string; fleteroId: string | null }>
   empresas: Array<{ id: string; razonSocial: string; cuit: string }>
 }
 

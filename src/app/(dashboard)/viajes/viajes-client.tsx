@@ -21,7 +21,7 @@ import type { Rol } from "@/types"
 type Fletero = { id: string; razonSocial: string; cuit: string; comisionDefault?: number }
 type Empresa = { id: string; razonSocial: string; cuit: string }
 type Camion = { id: string; patenteChasis: string; fleteroId: string }
-type Chofer = { id: string; nombre: string; apellido: string }
+type Chofer = { id: string; nombre: string; apellido: string; fleteroId: string | null }
 
 type ViajeAPI = {
   id: string
@@ -128,6 +128,9 @@ function ModalViaje({
   const [tarifaOperativaInicial, setTarifaBase] = useState(viaje?.tarifaOperativaInicial?.toString() ?? "")
 
   const camionesDelFletero = camiones.filter((c) => c.fleteroId === fleteroId)
+  const choferesDelFletero = fleteroId
+    ? choferes.filter((c) => c.fleteroId === fleteroId)
+    : choferes
 
   const fleteroItems = fleteros.map((f) => ({ id: f.id, label: f.razonSocial, sublabel: f.cuit }))
   const empresaItems = empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: e.cuit }))
@@ -230,7 +233,7 @@ function ModalViaje({
                 className="w-full h-9 rounded-md border bg-background px-2 text-sm"
               >
                 <option value="">Seleccionar...</option>
-                {choferes.map((c) => <option key={c.id} value={c.id}>{c.apellido}, {c.nombre}</option>)}
+                {choferesDelFletero.map((c) => <option key={c.id} value={c.id}>{c.apellido}, {c.nombre}</option>)}
               </select>
             </div>
           </div>

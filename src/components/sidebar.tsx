@@ -24,6 +24,7 @@ import {
   Building2,
   ArrowLeftRight,
   FileMinus,
+  Warehouse,
 } from "lucide-react"
 
 /**
@@ -50,6 +51,12 @@ const NAV_ITEMS: NavItemDef[] = [
     label: "Viajes",
     icon: Route,
     seccion: "viajes",
+  },
+  {
+    href: "/mi-flota",
+    label: "Mi Flota",
+    icon: Warehouse,
+    seccion: "mi_flota",
   },
   {
     href: "/liquidaciones",

@@ -38,6 +38,7 @@ describe("calcularFiltroFletero", () => {
     comisionDefault: 10,
     usuario: { nombre: "Juan", apellido: "Pérez", email: "juan.perez@fletero.com" },
     camiones: [],
+    choferes: [],
   }
 
   it("retorna true cuando coincide con razón social", () => {

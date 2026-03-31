@@ -42,18 +42,20 @@ datasource db {
 // ─── USUARIOS ─────────────────────────────────────────────────────────────────
 
 model Usuario {
-  id        String   @id @default(uuid())
-  nombre    String
-  apellido  String
-  email     String   @unique
-  telefono  String?
-  rol       String
-  activo    Boolean  @default(true)
-  creadoEn  DateTime @default(now()) @map("creado_en")
+  id          String   @id @default(uuid())
+  nombre      String
+  apellido    String
+  email       String   @unique
+  telefono    String?
+  rol         String
+  activo      Boolean  @default(true)
+  creadoEn    DateTime @default(now()) @map("creado_en")
+  fleteroId   String?  @map("fletero_id")
 
   otpCodigos                 OtpCodigo[]
   empresaUsuarios            EmpresaUsuario[]
   fletero                    Fletero?                @relation("FleteroUsuario")
+  fleteroEmpleador           Fletero?                @relation("FleteroChoferes", fields: [fleteroId], references: [id])
   liquidacionesOpera         Liquidacion[]           @relation("OperadorLiquidacion")
   facturasOpera              FacturaEmitida[]        @relation("OperadorFactura")
   camionesChofer             CamionChofer[]          @relation("ChoferHistorial")
@@ -134,6 +136,7 @@ model Fletero {
   activo          Boolean @default(true)
 
   usuario                  Usuario            @relation("FleteroUsuario", fields: [usuarioId], references: [id])
+  choferes                 Usuario[]          @relation("FleteroChoferes")
   camiones                 Camion[]
   liquidaciones            Liquidacion[]
   viajes                   Viaje[]            @relation("FleteroViajes")

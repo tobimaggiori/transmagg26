@@ -15,19 +15,24 @@ const actualizarSchema = z.object({
   apellido: z.string().min(1).optional(),
   telefono: z.string().optional(),
   activo: z.boolean().optional(),
+  camionId: z.string().uuid().optional(), // Para CHOFER: reasignar camión
 })
 
 /**
  * PATCH: NextRequest { params: { id } } -> Promise<NextResponse>
  *
- * Dado el id del usuario y campos opcionales { nombre, apellido, telefono, activo },
- * actualiza los datos del usuario. Solo accesible por ADMIN_TRANSMAGG.
- * Existe para que el administrador pueda modificar o desactivar usuarios
+ * Dado el id del usuario y campos opcionales { nombre, apellido, telefono, activo, camionId? },
+ * actualiza los datos del usuario. Para CHOFER, si se envía camionId, cierra la asignación
+ * previa y crea una nueva en CamionChofer (y valida que el camión sea del mismo fletero).
+ * Solo accesible por ADMIN_TRANSMAGG.
+ * Existe para que el administrador pueda modificar o reasignar usuarios
  * del sistema sin necesidad de eliminarlos.
  *
  * Ejemplos:
  * PATCH /api/usuarios/u1 { activo: false }
  * // => 200 { id: "u1", activo: false, ... }
+ * PATCH /api/usuarios/u1 { camionId: "c2" } (chofer, camión del mismo fletero)
+ * // => 200 { id: "u1", ... } (nueva asignación CamionChofer creada)
  * PATCH /api/usuarios/noexiste { activo: false }
  * // => 404 { error: "Usuario no encontrado" }
  * PATCH /api/usuarios/u1 { nombre: "" }
@@ -51,9 +56,37 @@ export async function PATCH(
     const existe = await prisma.usuario.findUnique({ where: { id: params.id } })
     if (!existe) return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 })
 
+    const { camionId, ...datosUsuario } = parsed.data
+
+    // Si se envía camionId y el usuario es CHOFER, reasignar camión
+    if (camionId !== undefined && existe.rol === "CHOFER") {
+      const camion = await prisma.camion.findUnique({ where: { id: camionId } })
+      if (!camion) return NextResponse.json({ error: "Camión no encontrado" }, { status: 404 })
+      if (existe.fleteroId && camion.fleteroId !== existe.fleteroId) {
+        return NextResponse.json({ error: "El camión no pertenece al fletero del chofer" }, { status: 400 })
+      }
+
+      const ahora = new Date()
+      const usuario = await prisma.$transaction(async (tx) => {
+        await tx.camionChofer.updateMany({
+          where: { camionId, hasta: null },
+          data: { hasta: ahora },
+        })
+        await tx.camionChofer.updateMany({
+          where: { choferId: params.id, hasta: null },
+          data: { hasta: ahora },
+        })
+        await tx.camionChofer.create({
+          data: { camionId, choferId: params.id, desde: ahora },
+        })
+        return tx.usuario.update({ where: { id: params.id }, data: datosUsuario })
+      })
+      return NextResponse.json(usuario)
+    }
+
     const usuario = await prisma.usuario.update({
       where: { id: params.id },
-      data: parsed.data,
+      data: datosUsuario,
     })
 
     return NextResponse.json(usuario)
