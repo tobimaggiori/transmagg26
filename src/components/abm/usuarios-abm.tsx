@@ -2,7 +2,8 @@
 
 /**
  * Componente ABM para gestión de usuarios del sistema.
- * Incluye búsqueda, creación, edición, desactivación y asignación de roles.
+ * Secciones: Transmagg / Empresas / Fleteros.
+ * ADMIN_TRANSMAGG puede configurar SMTP por usuario.
  */
 
 import { useState } from "react"
@@ -19,7 +20,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog"
-import { Plus, Pencil, Trash2, Search } from "lucide-react"
+import { Plus, Pencil, Trash2, Search, Mail, Settings } from "lucide-react"
 import type { Rol } from "@/types"
 
 export interface UsuarioAbm {
@@ -30,6 +31,13 @@ export interface UsuarioAbm {
   telefono: string | null
   rol: string
   activo: boolean
+  fleteroId: string | null
+  smtpHost: string | null
+  smtpPuerto: number | null
+  smtpUsuario: string | null
+  smtpSsl: boolean
+  smtpActivo: boolean
+  smtpTienePassword: boolean
   empresaUsuarios: { empresa: { razonSocial: string }; nivelAcceso: string }[]
 }
 
@@ -41,6 +49,7 @@ export interface EmpresaSimple {
 interface UsuariosAbmProps {
   usuarios: UsuarioAbm[]
   empresas: EmpresaSimple[]
+  rolActual: string
 }
 
 const ROLES_DISPLAY: Record<string, string> = {
@@ -52,18 +61,15 @@ const ROLES_DISPLAY: Record<string, string> = {
   OPERADOR_EMPRESA: "Operador Empresa",
 }
 
-/**
- * calcularFiltroUsuario: UsuarioAbm string -> boolean
- *
- * Dado un usuario y un texto de búsqueda, devuelve true si el nombre, apellido,
- * email o rol contienen el texto (insensible a mayúsculas).
- * Existe para filtrar la lista de usuarios en el cliente sin roundtrips al servidor.
- *
- * Ejemplos:
- * calcularFiltroUsuario({ nombre: "Ana", apellido: "García", rol: "OPERADOR_TRANSMAGG", email: "ana@x.com" }, "gar") === true
- * calcularFiltroUsuario({ nombre: "Ana", apellido: "García", rol: "OPERADOR_TRANSMAGG", email: "ana@x.com" }, "fletero") === false
- * calcularFiltroUsuario({ nombre: "Ana", apellido: "García", rol: "OPERADOR_TRANSMAGG", email: "ana@x.com" }, "operador") === true
- */
+const COLORES_ROL: Record<string, string> = {
+  ADMIN_TRANSMAGG: "bg-purple-100 text-purple-800",
+  OPERADOR_TRANSMAGG: "bg-blue-100 text-blue-800",
+  FLETERO: "bg-orange-100 text-orange-800",
+  CHOFER: "bg-yellow-100 text-yellow-800",
+  ADMIN_EMPRESA: "bg-green-100 text-green-800",
+  OPERADOR_EMPRESA: "bg-teal-100 text-teal-800",
+}
+
 export function calcularFiltroUsuario(usuario: UsuarioAbm, busqueda: string): boolean {
   const q = busqueda.toLowerCase()
   return (
@@ -73,6 +79,156 @@ export function calcularFiltroUsuario(usuario: UsuarioAbm, busqueda: string): bo
     usuario.rol.toLowerCase().includes(q)
   )
 }
+
+// ─── Modal SMTP ───────────────────────────────────────────────────────────────
+
+function SmtpModal({
+  usuario,
+  onClose,
+}: {
+  usuario: UsuarioAbm
+  onClose: () => void
+}) {
+  const router = useRouter()
+  const [form, setForm] = useState({
+    smtpHost: usuario.smtpHost ?? "",
+    smtpPuerto: usuario.smtpPuerto ? String(usuario.smtpPuerto) : "587",
+    smtpUsuario: usuario.smtpUsuario ?? usuario.email,
+    smtpPassword: "",
+    smtpSsl: usuario.smtpSsl,
+    smtpActivo: usuario.smtpActivo,
+  })
+  const [loading, setLoading] = useState(false)
+  const [probando, setProbando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const { name, value, type, checked } = e.target
+    setForm((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }))
+    setTestResult(null)
+  }
+
+  async function handleProbar() {
+    setProbando(true)
+    setTestResult(null)
+    setError(null)
+    try {
+      const res = await fetch(`/api/abm/usuarios/${usuario.id}/probar-smtp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          smtpHost: form.smtpHost,
+          smtpPuerto: parseInt(form.smtpPuerto, 10),
+          smtpUsuario: form.smtpUsuario,
+          smtpPassword: form.smtpPassword || undefined,
+          smtpSsl: form.smtpSsl,
+        }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setTestResult({ ok: true, msg: "Conexión exitosa" })
+      } else {
+        setTestResult({ ok: false, msg: data.error ?? "Conexión fallida" })
+      }
+    } catch {
+      setTestResult({ ok: false, msg: "Error de red" })
+    } finally {
+      setProbando(false)
+    }
+  }
+
+  async function handleGuardar(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/abm/usuarios/${usuario.id}/smtp`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          smtpHost: form.smtpHost,
+          smtpPuerto: parseInt(form.smtpPuerto, 10),
+          smtpUsuario: form.smtpUsuario,
+          smtpPassword: form.smtpPassword || undefined,
+          smtpSsl: form.smtpSsl,
+          smtpActivo: form.smtpActivo,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error ?? "Error al guardar"); return }
+      router.refresh()
+      onClose()
+    } catch {
+      setError("Error de conexión.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleGuardar} className="space-y-4">
+      <div className="bg-muted/40 rounded-md px-3 py-2 text-sm">
+        <span className="text-muted-foreground">Remitente: </span>
+        <span className="font-medium">{usuario.email}</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1 col-span-2 sm:col-span-1">
+          <Label htmlFor="smtpHost">Servidor SMTP *</Label>
+          <Input id="smtpHost" name="smtpHost" value={form.smtpHost} onChange={handleChange} placeholder="smtp.gmail.com" required disabled={loading} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="smtpPuerto">Puerto *</Label>
+          <Input id="smtpPuerto" name="smtpPuerto" type="number" value={form.smtpPuerto} onChange={handleChange} placeholder="587" required disabled={loading} />
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <Label htmlFor="smtpUsuario">Usuario SMTP *</Label>
+        <Input id="smtpUsuario" name="smtpUsuario" value={form.smtpUsuario} onChange={handleChange} placeholder="usuario@empresa.com" required disabled={loading} />
+      </div>
+
+      <div className="space-y-1">
+        <Label htmlFor="smtpPassword">
+          Contraseña SMTP {usuario.smtpTienePassword && <span className="text-xs text-muted-foreground">(ya configurada — dejar vacío para no cambiar)</span>}
+        </Label>
+        <Input id="smtpPassword" name="smtpPassword" type="password" value={form.smtpPassword} onChange={handleChange} placeholder={usuario.smtpTienePassword ? "••••••••" : "Contraseña"} disabled={loading} autoComplete="new-password" />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" name="smtpSsl" checked={form.smtpSsl} onChange={handleChange} className="h-4 w-4 rounded border-input" disabled={loading} />
+          Usar SSL/TLS
+        </label>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" name="smtpActivo" checked={form.smtpActivo} onChange={handleChange} className="h-4 w-4 rounded border-input" disabled={loading} />
+          SMTP activo (habilitar envío de emails)
+        </label>
+      </div>
+
+      {testResult && (
+        <p className={`text-sm font-medium ${testResult.ok ? "text-green-600" : "text-destructive"}`}>
+          {testResult.ok ? "✓ " : "✗ "}{testResult.msg}
+        </p>
+      )}
+
+      <FormError message={error} />
+
+      <div className="flex justify-between gap-2 pt-2">
+        <Button type="button" variant="outline" onClick={handleProbar} disabled={loading || probando || !form.smtpHost || (!form.smtpPassword && !usuario.smtpTienePassword)}>
+          {probando ? "Probando..." : "Probar conexión"}
+        </Button>
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" onClick={onClose} disabled={loading}>Cancelar</Button>
+          <Button type="submit" disabled={loading}>{loading ? "Guardando..." : "Guardar"}</Button>
+        </div>
+      </div>
+    </form>
+  )
+}
+
+// ─── Modal crear/editar usuario ───────────────────────────────────────────────
 
 function UsuarioFormModal({
   usuario,
@@ -180,32 +336,89 @@ function UsuarioFormModal({
   )
 }
 
-/**
- * UsuariosAbm: UsuariosAbmProps -> JSX.Element
- *
- * Dado el listado de usuarios y empresas, renderiza la tabla ABM con buscador,
- * botones de acción y dialog de creación/edición con asignación de roles.
- * Existe para gestionar todos los usuarios del sistema independientemente de su rol,
- * incluyendo la asignación de empresa para roles ADMIN_EMPRESA/OPERADOR_EMPRESA.
- *
- * Ejemplos:
- * <UsuariosAbm usuarios={[{ id:"u1", nombre:"Ana", rol:"OPERADOR_TRANSMAGG" }]} empresas={[...]} />
- * // => lista con "Ana" + badge de rol + botones editar/desactivar
- * <UsuariosAbm usuarios={[]} empresas={[]} />
- * // => mensaje "No hay usuarios" + botón "Nuevo usuario"
- */
-export function UsuariosAbm({ usuarios, empresas }: UsuariosAbmProps) {
+// ─── Fila de usuario ──────────────────────────────────────────────────────────
+
+function FilaUsuario({
+  u,
+  rolActual,
+  mostrarSmtp,
+  onEditar,
+  onEliminar,
+  onSmtp,
+}: {
+  u: UsuarioAbm
+  rolActual: string
+  mostrarSmtp: boolean
+  onEditar: (u: UsuarioAbm) => void
+  onEliminar: (u: UsuarioAbm) => void
+  onSmtp: (u: UsuarioAbm) => void
+}) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="font-medium">{u.apellido}, {u.nombre}</p>
+          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${COLORES_ROL[u.rol] ?? "bg-gray-100 text-gray-800"}`}>
+            {ROLES_DISPLAY[u.rol] ?? u.rol}
+          </span>
+          {!u.activo && <span className="text-xs text-destructive">(inactivo)</span>}
+          {mostrarSmtp && (
+            u.smtpActivo
+              ? <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800">
+                  <Mail className="h-3 w-3" /> SMTP activo
+                </span>
+              : <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-500">
+                  <Mail className="h-3 w-3" /> Sin SMTP
+                </span>
+          )}
+        </div>
+        <p className="text-sm text-muted-foreground">
+          {u.email}
+          {u.empresaUsuarios.length > 0 && ` · ${u.empresaUsuarios[0].empresa.razonSocial}`}
+        </p>
+      </div>
+      <div className="flex gap-2 ml-3">
+        {mostrarSmtp && rolActual === "ADMIN_TRANSMAGG" && (
+          <Button variant="outline" size="sm" onClick={() => onSmtp(u)}>
+            <Settings className="h-3.5 w-3.5 mr-1" /> SMTP
+          </Button>
+        )}
+        <Button variant="outline" size="sm" onClick={() => onEditar(u)}>
+          <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
+        </Button>
+        <Button variant="destructive" size="sm" onClick={() => onEliminar(u)} disabled={!u.activo}>
+          <Trash2 className="h-3.5 w-3.5 mr-1" /> Desactivar
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Sección de usuarios ──────────────────────────────────────────────────────
+
+function SeccionUsuarios({
+  titulo,
+  descripcion,
+  usuarios,
+  rolActual,
+  mostrarSmtp,
+  empresas,
+  onSmtp,
+}: {
+  titulo: string
+  descripcion: string
+  usuarios: UsuarioAbm[]
+  rolActual: string
+  mostrarSmtp: boolean
+  empresas: EmpresaSimple[]
+  onSmtp: (u: UsuarioAbm) => void
+}) {
   const router = useRouter()
-  const [busqueda, setBusqueda] = useState("")
   const [dialogCrear, setDialogCrear] = useState(false)
   const [dialogEditar, setDialogEditar] = useState<UsuarioAbm | null>(null)
   const [dialogEliminar, setDialogEliminar] = useState<UsuarioAbm | null>(null)
   const [loadingElim, setLoadingElim] = useState(false)
   const [errorElim, setErrorElim] = useState<string | null>(null)
-
-  const filtrados = busqueda
-    ? usuarios.filter((u) => calcularFiltroUsuario(u, busqueda))
-    : usuarios
 
   async function handleEliminar() {
     if (!dialogEliminar) return
@@ -224,62 +437,32 @@ export function UsuariosAbm({ usuarios, empresas }: UsuariosAbmProps) {
     }
   }
 
-  const colores: Record<string, string> = {
-    ADMIN_TRANSMAGG: "bg-purple-100 text-purple-800",
-    OPERADOR_TRANSMAGG: "bg-blue-100 text-blue-800",
-    FLETERO: "bg-orange-100 text-orange-800",
-    CHOFER: "bg-yellow-100 text-yellow-800",
-    ADMIN_EMPRESA: "bg-green-100 text-green-800",
-    OPERADOR_EMPRESA: "bg-teal-100 text-teal-800",
-  }
-
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por nombre, apellido, email o rol..."
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            className="pl-9"
-          />
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold text-base">{titulo}</h3>
+          <p className="text-xs text-muted-foreground">{descripcion}</p>
         </div>
-        <Button onClick={() => setDialogCrear(true)}>
-          <Plus className="h-4 w-4 mr-1" /> Nuevo usuario
+        <Button size="sm" onClick={() => setDialogCrear(true)}>
+          <Plus className="h-4 w-4 mr-1" /> Nuevo
         </Button>
       </div>
 
-      {filtrados.length === 0 ? (
-        <p className="text-center py-8 text-muted-foreground">
-          {busqueda ? "Sin resultados para la búsqueda." : "No hay usuarios registrados."}
-        </p>
+      {usuarios.length === 0 ? (
+        <p className="text-sm text-center py-4 text-muted-foreground border rounded-lg">Sin usuarios en esta sección.</p>
       ) : (
         <div className="border rounded-lg divide-y">
-          {filtrados.map((u) => (
-            <div key={u.id} className="flex items-center justify-between px-4 py-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-medium">{u.apellido}, {u.nombre}</p>
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${colores[u.rol] ?? "bg-gray-100 text-gray-800"}`}>
-                    {ROLES_DISPLAY[u.rol] ?? u.rol}
-                  </span>
-                  {!u.activo && <span className="text-xs text-destructive">(inactivo)</span>}
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {u.email}
-                  {u.empresaUsuarios.length > 0 && ` · ${u.empresaUsuarios[0].empresa.razonSocial}`}
-                </p>
-              </div>
-              <div className="flex gap-2 ml-3">
-                <Button variant="outline" size="sm" onClick={() => setDialogEditar(u)}>
-                  <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
-                </Button>
-                <Button variant="destructive" size="sm" onClick={() => setDialogEliminar(u)} disabled={!u.activo}>
-                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Desactivar
-                </Button>
-              </div>
-            </div>
+          {usuarios.map((u) => (
+            <FilaUsuario
+              key={u.id}
+              u={u}
+              rolActual={rolActual}
+              mostrarSmtp={mostrarSmtp}
+              onEditar={(u) => setDialogEditar(u)}
+              onEliminar={(u) => setDialogEliminar(u)}
+              onSmtp={onSmtp}
+            />
           ))}
         </div>
       )}
@@ -319,6 +502,83 @@ export function UsuariosAbm({ usuarios, empresas }: UsuariosAbmProps) {
               {loadingElim ? "Desactivando..." : "Desactivar"}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+// ─── Componente principal ─────────────────────────────────────────────────────
+
+export function UsuariosAbm({ usuarios, empresas, rolActual }: UsuariosAbmProps) {
+  const [busqueda, setBusqueda] = useState("")
+  const [dialogSmtp, setDialogSmtp] = useState<UsuarioAbm | null>(null)
+
+  const filtrados = busqueda
+    ? usuarios.filter((u) => calcularFiltroUsuario(u, busqueda))
+    : usuarios
+
+  const transmagg = filtrados.filter(
+    (u) => u.rol === "ADMIN_TRANSMAGG" || u.rol === "OPERADOR_TRANSMAGG" || (u.rol === "CHOFER" && !u.fleteroId)
+  )
+  const empresasUsers = filtrados.filter(
+    (u) => u.rol === "ADMIN_EMPRESA" || u.rol === "OPERADOR_EMPRESA"
+  )
+  const fleteros = filtrados.filter(
+    (u) => u.rol === "FLETERO" || (u.rol === "CHOFER" && u.fleteroId)
+  )
+
+  return (
+    <div className="space-y-6">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Buscar por nombre, apellido, email o rol..."
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          className="pl-9"
+        />
+      </div>
+
+      <SeccionUsuarios
+        titulo="Transmagg"
+        descripcion="Administradores, operadores y choferes propios de Transmagg"
+        usuarios={transmagg}
+        rolActual={rolActual}
+        mostrarSmtp={true}
+        empresas={empresas}
+        onSmtp={(u) => setDialogSmtp(u)}
+      />
+
+      <SeccionUsuarios
+        titulo="Empresas"
+        descripcion="Usuarios de las empresas clientes"
+        usuarios={empresasUsers}
+        rolActual={rolActual}
+        mostrarSmtp={false}
+        empresas={empresas}
+        onSmtp={() => {}}
+      />
+
+      <SeccionUsuarios
+        titulo="Fleteros"
+        descripcion="Fleteros y choferes asignados a fleteros"
+        usuarios={fleteros}
+        rolActual={rolActual}
+        mostrarSmtp={false}
+        empresas={empresas}
+        onSmtp={() => {}}
+      />
+
+      <Dialog open={!!dialogSmtp} onOpenChange={(o) => { if (!o) setDialogSmtp(null) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Configurar SMTP — {dialogSmtp?.nombre} {dialogSmtp?.apellido}</DialogTitle>
+            <DialogDescription>
+              Configurá la cuenta de email desde la que este usuario enviará documentos.
+            </DialogDescription>
+          </DialogHeader>
+          {dialogSmtp && <SmtpModal usuario={dialogSmtp} onClose={() => setDialogSmtp(null)} />}
         </DialogContent>
       </Dialog>
     </div>

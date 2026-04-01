@@ -89,6 +89,13 @@ describe("calcularFiltroUsuario", () => {
     telefono: null,
     rol: "OPERADOR_TRANSMAGG",
     activo: true,
+    fleteroId: null,
+    smtpHost: null,
+    smtpPuerto: null,
+    smtpUsuario: null,
+    smtpSsl: true,
+    smtpActivo: false,
+    smtpTienePassword: false,
     empresaUsuarios: [],
   }
 

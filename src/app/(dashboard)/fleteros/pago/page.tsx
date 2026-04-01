@@ -17,7 +17,7 @@ export default async function OrdenDePagoPage() {
   const rol = (session.user.rol ?? "OPERADOR_TRANSMAGG") as Rol
   if (!puedeAcceder(rol, "pagos")) redirect("/dashboard")
 
-  const [fleteros, cuentas, chequesEnCartera] = await Promise.all([
+  const [fleteros, cuentas, chequesEnCartera, operador] = await Promise.all([
     prisma.fletero.findMany({
       where: { activo: true },
       select: { id: true, razonSocial: true, cuit: true, usuario: { select: { email: true } } },
@@ -39,6 +39,10 @@ export default async function OrdenDePagoPage() {
       },
       orderBy: { fechaCobro: "asc" },
     }).then((rows) => rows.map((r) => ({ ...r, fechaCobro: r.fechaCobro.toISOString() }))),
+    prisma.usuario.findUnique({
+      where: { id: session.user.id },
+      select: { email: true, smtpActivo: true },
+    }),
   ])
 
   return (
@@ -46,6 +50,8 @@ export default async function OrdenDePagoPage() {
       fleteros={fleteros}
       cuentas={cuentas}
       chequesEnCartera={chequesEnCartera}
+      operadorEmail={operador?.email ?? null}
+      operadorSmtpActivo={operador?.smtpActivo ?? false}
     />
   )
 }

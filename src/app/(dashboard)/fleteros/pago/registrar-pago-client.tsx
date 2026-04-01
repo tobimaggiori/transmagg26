@@ -63,6 +63,8 @@ interface RegistrarPagoClientProps {
   fleteros: Fletero[]
   cuentas: CuentaBancaria[]
   chequesEnCartera: ChequeEnCartera[]
+  operadorEmail: string | null
+  operadorSmtpActivo: boolean
 }
 
 interface ConfirmacionOP {
@@ -70,6 +72,8 @@ interface ConfirmacionOP {
   opId: string
   fleteroNombre: string
   fleteroEmail: string | null
+  operadorEmail: string | null
+  operadorSmtpActivo: boolean
 }
 
 function nroLP(ptoVenta: number | null, nro: number | null): string {
@@ -91,7 +95,7 @@ function ModalConfirmacionOP({
   confirmacion: ConfirmacionOP
   onClose: () => void
 }) {
-  const { opId, opNro, fleteroNombre, fleteroEmail } = confirmacion
+  const { opId, opNro, fleteroNombre, fleteroEmail, operadorEmail, operadorSmtpActivo } = confirmacion
   const [mostrarEmail, setMostrarEmail] = useState(false)
   const [emailDestino, setEmailDestino] = useState(fleteroEmail ?? "")
   const [mensajeAdicional, setMensajeAdicional] = useState("")
@@ -174,6 +178,15 @@ function ModalConfirmacionOP({
             ) : (
               <>
                 <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Remitente</label>
+                  <p className="text-sm font-medium">{operadorEmail ?? "—"}</p>
+                </div>
+                {!operadorSmtpActivo && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    No tenés SMTP configurado. Pedí al administrador que configure tu cuenta en ABM → Usuarios.
+                  </p>
+                )}
+                <div className="space-y-1">
                   <label className="text-xs font-medium">Email destinatario</label>
                   <input
                     type="email"
@@ -181,6 +194,7 @@ function ModalConfirmacionOP({
                     onChange={(e) => setEmailDestino(e.target.value)}
                     className="w-full h-8 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="email@ejemplo.com"
+                    disabled={!operadorSmtpActivo}
                   />
                 </div>
                 <div className="space-y-1">
@@ -191,12 +205,13 @@ function ModalConfirmacionOP({
                     className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
                     rows={2}
                     placeholder="Adjunto la Orden de Pago..."
+                    disabled={!operadorSmtpActivo}
                   />
                 </div>
                 {errorEmail && <p className="text-sm text-destructive">{errorEmail}</p>}
                 <button
                   onClick={enviarEmail}
-                  disabled={enviando || !emailDestino}
+                  disabled={enviando || !emailDestino || !operadorSmtpActivo}
                   className="h-8 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {enviando ? "Enviando…" : "Enviar"}
@@ -222,7 +237,7 @@ function ModalConfirmacionOP({
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera }: RegistrarPagoClientProps) {
+export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera, operadorEmail, operadorSmtpActivo }: RegistrarPagoClientProps) {
   const [fleteroId, setFleteroId] = useState("")
   const [liquidaciones, setLiquidaciones] = useState<LiquidacionPendiente[]>([])
   const [gastosPendientes, setGastosPendientes] = useState<GastoPendiente[]>([])
@@ -304,6 +319,8 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera }: Reg
       opId,
       fleteroNombre: fletero?.razonSocial ?? "",
       fleteroEmail: fletero?.email ?? null,
+      operadorEmail,
+      operadorSmtpActivo,
     })
     onSelectFletero(fleteroId)
   }

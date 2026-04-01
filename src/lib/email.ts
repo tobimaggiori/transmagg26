@@ -1,4 +1,6 @@
 import nodemailer from "nodemailer"
+import { prisma } from "@/lib/prisma"
+import { decrypt } from "@/lib/crypto"
 
 /**
  * crearTransporter: -> Transporter
@@ -7,16 +9,6 @@ import nodemailer from "nodemailer"
  * configurado a partir de variables de entorno.
  * Si EMAIL_SERVER existe como URL completa, la usa directamente;
  * si no, ensambla la configuración desde EMAIL_SERVER_HOST/PORT/USER/PASSWORD.
- * Existe para centralizar la configuración SMTP y permitir cambiar
- * el proveedor de email solo modificando variables de entorno.
- *
- * Ejemplos:
- * // Con EMAIL_SERVER="smtp://user:pass@host:587"
- * crearTransporter() // => Transporter configurado con esa URL
- * // Sin EMAIL_SERVER, con EMAIL_SERVER_HOST="smtp.example.com"
- * crearTransporter() // => Transporter con host/port/auth individuales
- * // Sin ninguna variable (desarrollo local)
- * crearTransporter() // => Transporter con smtp.ethereal.email:587
  */
 function crearTransporter() {
   if (process.env.EMAIL_SERVER) {
@@ -45,17 +37,6 @@ interface EnviarOtpParams {
  *
  * Dados el email del destinatario, su nombre y el código OTP,
  * envía un email transaccional con el código formateado en texto y HTML.
- * Existe para notificar al usuario su código de acceso de un solo uso
- * durante el flujo de autenticación sin contraseña de Transmagg.
- * Lanza un error si el servidor SMTP rechaza el envío.
- *
- * Ejemplos:
- * await enviarEmailOtp({ destinatario: "juan@fletero.com", nombre: "Juan", codigo: "042891" })
- * // => void (envía email con asunto "Tu código de acceso Transmagg: 042891")
- * await enviarEmailOtp({ destinatario: "admin@empresa.com", nombre: "Laura", codigo: "123456" })
- * // => void (envía email con código 123456 válido 10 minutos)
- * await enviarEmailOtp({ destinatario: "x", nombre: "N", codigo: "000000" })
- * // => lanza Error si el SMTP falla
  */
 export async function enviarEmailOtp({
   destinatario,
@@ -103,5 +84,69 @@ Transmagg - Sistema de Gestión de Transporte
 </body>
 </html>
 `.trim(),
+  })
+}
+
+export interface OpcionesEmail {
+  to: string
+  subject: string
+  text: string
+  html: string
+  attachments?: { filename: string; content: Buffer; contentType: string }[]
+}
+
+export class SmtpNoConfiguradoError extends Error {
+  constructor() {
+    super("El usuario no tiene SMTP configurado")
+    this.name = "SmtpNoConfiguradoError"
+  }
+}
+
+/**
+ * enviarEmail: (usuarioId: string, opciones: OpcionesEmail) -> Promise<void>
+ *
+ * Envía un email usando la configuración SMTP del usuario indicado.
+ * Descifra la contraseña SMTP almacenada en base de datos.
+ * Lanza SmtpNoConfiguradoError si el usuario no tiene SMTP activo.
+ *
+ * Ejemplos:
+ * await enviarEmail("usr_123", { to: "cliente@empresa.com", subject: "OP #42", text: "...", html: "..." })
+ * // => void (envía desde la cuenta SMTP del usuario)
+ */
+export async function enviarEmail(usuarioId: string, opciones: OpcionesEmail): Promise<void> {
+  const usuario = await prisma.usuario.findUnique({
+    where: { id: usuarioId },
+    select: {
+      email: true,
+      smtpHost: true,
+      smtpPuerto: true,
+      smtpUsuario: true,
+      smtpPassword: true,
+      smtpSsl: true,
+      smtpActivo: true,
+    },
+  })
+
+  if (!usuario || !usuario.smtpActivo || !usuario.smtpHost || !usuario.smtpPassword) {
+    throw new SmtpNoConfiguradoError()
+  }
+
+  const password = decrypt(usuario.smtpPassword)
+
+  const transporter = nodemailer.createTransport({
+    host: usuario.smtpHost,
+    port: usuario.smtpPuerto ?? 587,
+    secure: usuario.smtpSsl,
+    auth: {
+      user: usuario.smtpUsuario ?? usuario.email,
+      pass: password,
+    },
+  })
+
+  const from = usuario.smtpUsuario ?? usuario.email
+
+  await transporter.sendMail({
+    from,
+    ...opciones,
   })
 }

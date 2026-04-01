@@ -1,28 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
-import nodemailer from "nodemailer"
 import { z } from "zod"
 import { requireFinancialAccess, notFoundResponse, serverErrorResponse } from "@/lib/financial-api"
 import { prisma } from "@/lib/prisma"
 import { generarHTMLOrdenPago } from "@/lib/pdf-orden-pago"
+import { enviarEmail, SmtpNoConfiguradoError } from "@/lib/email"
 
 const bodySchema = z.object({
   emailDestino: z.string().email().optional(),
 })
-
-function crearTransporter() {
-  if (process.env.EMAIL_SERVER) {
-    return nodemailer.createTransport(process.env.EMAIL_SERVER)
-  }
-  return nodemailer.createTransport({
-    host: process.env.EMAIL_SERVER_HOST ?? "smtp.ethereal.email",
-    port: parseInt(process.env.EMAIL_SERVER_PORT ?? "587", 10),
-    secure: false,
-    auth: {
-      user: process.env.EMAIL_SERVER_USER ?? "",
-      pass: process.env.EMAIL_SERVER_PASSWORD ?? "",
-    },
-  })
-}
 
 export async function POST(
   req: NextRequest,
@@ -70,12 +55,9 @@ export async function POST(
       return NextResponse.json({ ok: true, emailDestino, dev: true })
     }
 
-    const transporter = crearTransporter()
-    const from = process.env.EMAIL_FROM ?? "noreply@transmagg.com.ar"
     const fecha = new Date(op.fecha).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })
 
-    await transporter.sendMail({
-      from,
+    await enviarEmail(acceso.session.user.id, {
       to: emailDestino,
       subject: `Orden de Pago Nro ${String(op.nro).padStart(8, "0")} — ${op.fletero.razonSocial} — ${fecha}`,
       text: `Adjunto encontrará la Orden de Pago Nro ${op.nro} de Trans-Magg S.R.L.`,
@@ -84,6 +66,9 @@ export async function POST(
 
     return NextResponse.json({ ok: true, emailDestino })
   } catch (error) {
+    if (error instanceof SmtpNoConfiguradoError) {
+      return NextResponse.json({ error: "No tenés SMTP configurado. Configurá tu cuenta de email en ABM → Usuarios." }, { status: 422 })
+    }
     return serverErrorResponse("POST /api/ordenes-pago/[id]/enviar-email", error)
   }
 }

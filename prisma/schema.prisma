@@ -60,6 +60,13 @@ model Usuario {
   creadoEn    DateTime @default(now()) @map("creado_en")
   fleteroId   String?  @map("fletero_id")
 
+  smtpHost     String?  @map("smtp_host")
+  smtpPuerto   Int?     @map("smtp_puerto")
+  smtpUsuario  String?  @map("smtp_usuario")
+  smtpPassword String?  @map("smtp_password")
+  smtpSsl      Boolean  @default(true) @map("smtp_ssl")
+  smtpActivo   Boolean  @default(false) @map("smtp_activo")
+
   otpCodigos                 OtpCodigo[]
   empresaUsuarios            EmpresaUsuario[]
   fletero                    Fletero?                @relation("FleteroUsuario")

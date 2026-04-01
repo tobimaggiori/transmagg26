@@ -105,6 +105,8 @@ export default async function AbmPage({
           orderBy: [{ activo: "desc" }, { apellido: "asc" }],
           select: {
             id: true, nombre: true, apellido: true, email: true, telefono: true, rol: true, activo: true,
+            fleteroId: true,
+            smtpHost: true, smtpPuerto: true, smtpUsuario: true, smtpPassword: true, smtpSsl: true, smtpActivo: true,
             empresaUsuarios: { select: { empresa: { select: { razonSocial: true } }, nivelAcceso: true } },
           },
         })
@@ -197,7 +199,13 @@ export default async function AbmPage({
       <div>
         {tabValido === "empresas" && <EmpresasAbm empresas={empresas} />}
         {tabValido === "fleteros" && <FleterosAbm fleteros={fleteros} />}
-        {tabValido === "usuarios" && <UsuariosAbm usuarios={usuarios} empresas={empresasParaUsuarios} />}
+        {tabValido === "usuarios" && (
+          <UsuariosAbm
+            usuarios={usuarios.map((u) => ({ ...u, smtpTienePassword: !!u.smtpPassword, smtpPassword: undefined }))}
+            empresas={empresasParaUsuarios}
+            rolActual={rol}
+          />
+        )}
         {tabValido === "proveedores" && <ProveedoresAbm proveedores={proveedores} />}
         {tabValido === "cuentas" && <CuentasAbm cuentas={cuentas} />}
         {tabValido === "fci" && <FciAbm fcis={fcis} cuentas={cuentas.map(c => ({ id: c.id, nombre: c.nombre }))} />}
