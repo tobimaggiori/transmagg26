@@ -425,7 +425,6 @@ function PanelCamion({
   }
 
   function calcularAlerta(polizas: Poliza[]): CamionPropio["alertaPoliza"] {
-    const now = new Date()
     const activa = polizas.find((p) => p.estadoPoliza !== "VENCIDA")
     if (!activa) return "SIN_COBERTURA"
     if (activa.estadoPoliza === "POR_VENCER") return "POR_VENCER"

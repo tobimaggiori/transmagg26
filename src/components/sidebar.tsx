@@ -24,6 +24,7 @@ import {
   LogOut,
   ChevronDown,
   ChevronRight,
+  ShieldAlert,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
@@ -39,6 +40,8 @@ interface SidebarProps {
   emailUsuario?: string
   /** Cuando es true, muestra solo "Mi Panel" (chofer empleado de Transmagg) */
   esChoferTransmagg?: boolean
+  /** Cuando es false y el rol es ADMIN_TRANSMAGG, muestra alerta de config ARCA incompleta */
+  arcaActiva?: boolean
 }
 
 /**
@@ -176,7 +179,7 @@ function NavSimpleItem({
  * <Sidebar rol="ADMIN_EMPRESA" emailUsuario="empresa@x.com" />
  * // => sidebar con Dashboard, grupo Empresas
  */
-export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg }: SidebarProps) {
+export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, arcaActiva = true }: SidebarProps) {
   const pathname = usePathname()
 
   // Determine which group (if any) is currently active based on pathname
@@ -283,12 +286,24 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg }:
 
           {/* ABM */}
           {puedeAcceder(rol, "abm") && (
-            <NavSimpleItem
-              href="/abm"
-              label="ABM"
-              icon={Settings2}
-              pathname={pathname}
-            />
+            <>
+              <NavSimpleItem
+                href="/abm"
+                label="ABM"
+                icon={Settings2}
+                pathname={pathname}
+              />
+              {/* Alerta ARCA para ADMIN_TRANSMAGG cuando config está incompleta */}
+              {rol === "ADMIN_TRANSMAGG" && !arcaActiva && (
+                <a
+                  href="/abm?tab=arca"
+                  className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs text-yellow-300 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors ml-2"
+                >
+                  <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+                  <span>Config ARCA incompleta</span>
+                </a>
+              )}
+            </>
           )}
 
           {/* Mi Flota — roles internos y FLETERO */}

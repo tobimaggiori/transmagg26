@@ -1726,6 +1726,33 @@ async function main() {
   console.log("\n✅ Datos de prueba adicionales cargados exitosamente.")
   console.log("  4 empresas | 5 fleteros | 15 viajes | 4 LPs | 2 facturas emitidas | 4 facturas proveedor | 2 GastoFletero | 3 movimientos")
 
+  // ── ConfiguracionArca singleton ────────────────────────────────────────────
+  await prisma.configuracionArca.upsert({
+    where: { id: "unico" },
+    update: {},
+    create: {
+      id: "unico",
+      cuit: "30709381683",
+      razonSocial: "TRANSMAGG S.R.L.",
+      modo: "homologacion",
+      puntosVenta: JSON.stringify({
+        "1": "FACTURA_A",
+        "2": "FACTURA_B",
+        "3": "FACTURA_C",
+        "4": "NOTA_CREDITO_A",
+        "5": "NOTA_CREDITO_B",
+        "6": "NOTA_DEBITO_A",
+        "7": "NOTA_DEBITO_B",
+        "8": "LIQ_PROD",
+        "9": "RECIBO",
+        "10": "ORDEN_PAGO",
+      }),
+      modalidadMiPymes: "SCA",
+      activa: false,
+    },
+  })
+  console.log("✅ ConfiguracionArca singleton creada/actualizada")
+
   console.log("\n🎉 Seed completado exitosamente.")
   console.log("\nUsuarios de prueba:")
   console.log("  admin@transmagg.com.ar            → ADMIN_TRANSMAGG")

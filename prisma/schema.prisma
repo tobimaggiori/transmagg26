@@ -1110,6 +1110,25 @@ model VerificationToken {
 // ─── HISTORIAL DE PAGOS ───────────────────────────────────────────────────────
 // tipoEvento: CREACION | MODIFICACION | ANULACION
 
+// ─── CONFIGURACIÓN ARCA ───────────────────────────────────────────────────────
+
+model ConfiguracionArca {
+  id               String   @id @default("unico")
+  cuit             String   @default("30709381683")
+  razonSocial      String   @default("") @map("razon_social")
+  certificadoB64   String?  @map("certificado_b64")
+  certificadoPass  String?  @map("certificado_pass")
+  modo             String   @default("homologacion")
+  puntosVenta      String   @default("{}") @map("puntos_venta")
+  cbuMiPymes       String?  @map("cbu_mi_pymes")
+  modalidadMiPymes String?  @default("SCA") @map("modalidad_mi_pymes")
+  activa           Boolean  @default(false)
+  actualizadoEn    DateTime @updatedAt @map("actualizado_en")
+  actualizadoPor   String?  @map("actualizado_por")
+
+  @@map("configuracion_arca")
+}
+
 model HistorialPago {
   id                String    @id @default(uuid())
   pagoFleteroId     String?   @map("pago_fletero_id")

@@ -16,9 +16,10 @@ import { ProveedoresAbm } from "@/components/abm/proveedores-abm"
 import { CuentasAbm } from "@/components/abm/cuentas-abm"
 import { FciAbm } from "@/components/abm/fci-abm"
 import { EmpleadosAbm } from "@/components/abm/empleados-abm"
+import { ConfiguracionArcaAbm } from "@/components/abm/configuracion-arca-abm"
 import type { Rol } from "@/types"
 
-type Tab = "empresas" | "fleteros" | "usuarios" | "proveedores" | "cuentas" | "fci" | "empleados"
+type Tab = "empresas" | "fleteros" | "usuarios" | "proveedores" | "cuentas" | "fci" | "empleados" | "arca"
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "empresas", label: "Empresas" },
@@ -28,6 +29,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "cuentas", label: "Cuentas" },
   { id: "fci", label: "FCI" },
   { id: "empleados", label: "Empleados" },
+  { id: "arca", label: "ARCA" },
 ]
 
 /**
@@ -142,6 +144,27 @@ export default async function AbmPage({
       })
     : []
 
+  // Config ARCA (tab arca)
+  const arcaConfigRaw = tabValido === "arca"
+    ? await prisma.configuracionArca.findFirst()
+    : null
+
+  const arcaConfig = arcaConfigRaw
+    ? (() => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { certificadoB64, certificadoPass, ...safe } = arcaConfigRaw
+        return {
+          ...safe,
+          tieneCertificado: !!certificadoB64,
+          actualizadoEn: safe.actualizadoEn.toISOString(),
+          puntosVenta: (() => {
+            try { return JSON.parse(safe.puntosVenta) as Record<string, string> }
+            catch { return {} }
+          })(),
+        }
+      })()
+    : null
+
   return (
     <div className="space-y-6">
       <div>
@@ -179,6 +202,7 @@ export default async function AbmPage({
         {tabValido === "cuentas" && <CuentasAbm cuentas={cuentas} />}
         {tabValido === "fci" && <FciAbm fcis={fcis} cuentas={cuentas.map(c => ({ id: c.id, nombre: c.nombre }))} />}
         {tabValido === "empleados" && <EmpleadosAbm empleados={empleados.map(e => ({ ...e, fechaIngreso: e.fechaIngreso.toISOString() }))} />}
+        {tabValido === "arca" && <ConfiguracionArcaAbm config={arcaConfig} />}
       </div>
     </div>
   )

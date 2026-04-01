@@ -54,9 +54,16 @@ export default async function DashboardLayout({
     esChoferTransmagg = !!usuario?.empleado && !usuario.fleteroId
   }
 
+  // Indicador ARCA: solo para ADMIN_TRANSMAGG
+  let arcaActiva = true
+  if (rol === "ADMIN_TRANSMAGG") {
+    const arcaConfig = await prisma.configuracionArca.findFirst({ select: { activa: true } })
+    arcaActiva = arcaConfig?.activa ?? false
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar rol={rol} nombreUsuario={nombre} emailUsuario={email} esChoferTransmagg={esChoferTransmagg} />
+      <Sidebar rol={rol} nombreUsuario={nombre} emailUsuario={email} esChoferTransmagg={esChoferTransmagg} arcaActiva={arcaActiva} />
       <main className="flex-1 overflow-auto">
         <div className="h-full p-6">{children}</div>
       </main>
