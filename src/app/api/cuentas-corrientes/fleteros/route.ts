@@ -45,7 +45,7 @@ export async function GET() {
         liquidaciones: {
           where: { estado: { in: ["EMITIDA", "BORRADOR"] } },
           include: {
-            pagos: { select: { monto: true } },
+            pagos: { where: { anulado: false }, select: { monto: true } },
           },
           orderBy: { grabadaEn: "desc" },
         },
@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
     // Distribuir pago contra liquidaciones impagas (FIFO)
     const liquidaciones = await prisma.liquidacion.findMany({
       where: { fleteroId, estado: { not: "ANULADA" } },
-      include: { pagos: { select: { monto: true } } },
+      include: { pagos: { where: { anulado: false }, select: { monto: true } } },
       orderBy: { grabadaEn: "asc" },
     })
 

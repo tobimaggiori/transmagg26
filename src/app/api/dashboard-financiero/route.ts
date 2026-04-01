@@ -54,6 +54,7 @@ export async function GET() {
     })
     const pagosFleterosAgg = await prisma.pagoAFletero.aggregate({
       _sum: { monto: true },
+      where: { anulado: false },
     })
     const deudaFleteros = (liquidacionesAgg._sum.total ?? 0) - (pagosFleterosAgg._sum.monto ?? 0)
 

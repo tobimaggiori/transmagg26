@@ -108,7 +108,7 @@ export async function POST(
 
     const factura = await prisma.facturaProveedor.findUnique({
       where: { id: data.facturaProveedorId },
-      include: { pagos: { select: { monto: true } } },
+      include: { pagos: { where: { anulado: false }, select: { monto: true } } },
     })
     if (!factura || factura.proveedorId !== proveedorId) {
       return NextResponse.json({ error: "Factura no encontrada" }, { status: 404 })

@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
       where: { activo: true },
       include: {
         facturas: {
-          include: { pagos: { select: { monto: true } } },
+          include: { pagos: { where: { anulado: false }, select: { monto: true } } },
           orderBy: { fechaCbte: "asc" },
         },
       },
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
     // Distribuir pago contra facturas impagas (FIFO por fechaCbte)
     const facturas = await prisma.facturaProveedor.findMany({
       where: { proveedorId },
-      include: { pagos: { select: { monto: true } } },
+      include: { pagos: { where: { anulado: false }, select: { monto: true } } },
       orderBy: { fechaCbte: "asc" },
     })
 

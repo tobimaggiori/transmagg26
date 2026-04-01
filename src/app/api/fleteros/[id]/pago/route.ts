@@ -111,7 +111,7 @@ export async function POST(
         estado: true,
         nroComprobante: true,
         ptoVenta: true,
-        pagos: { select: { monto: true } },
+        pagos: { where: { anulado: false }, select: { monto: true } },
       },
     })
 

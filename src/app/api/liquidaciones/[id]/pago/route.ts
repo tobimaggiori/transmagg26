@@ -100,7 +100,7 @@ export async function POST(
         nroComprobante: true,
         ptoVenta: true,
         fletero: { select: { razonSocial: true } },
-        pagos: { select: { monto: true } },
+        pagos: { where: { anulado: false }, select: { monto: true } },
       },
     })
 

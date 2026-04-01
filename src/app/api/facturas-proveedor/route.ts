@@ -115,6 +115,7 @@ export async function GET(request: NextRequest) {
       include: {
         proveedor: { select: { id: true, razonSocial: true, cuit: true } },
         pagos: {
+          where: { anulado: false },
           select: {
             id: true,
             monto: true,

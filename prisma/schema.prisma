@@ -795,6 +795,8 @@ model PagoAFletero {
   cuentaId         String?         @map("cuenta_id")
   operadorId       String          @map("operador_id")
   creadoEn         DateTime        @default(now()) @map("creado_en")
+  anulado          Boolean         @default(false)
+  motivoAnulacion  String?         @map("motivo_anulacion")
 
   fletero        Fletero         @relation(fields: [fleteroId], references: [id])
   liquidacion    Liquidacion?    @relation(fields: [liquidacionId], references: [id])
@@ -910,6 +912,8 @@ model PagoProveedor {
   resumenTarjetaId    String?   @map("resumen_tarjeta_id")
   operadorId          String?   @map("operador_id")
   creadoEn            DateTime  @default(now()) @map("creado_en")
+  anulado             Boolean   @default(false)
+  motivoAnulacion     String?   @map("motivo_anulacion")
 
   facturaProveedor  FacturaProveedor @relation(fields: [facturaProveedorId], references: [id])
   cuenta            Cuenta?          @relation("CuentaPagoProveedor", fields: [cuentaId], references: [id])

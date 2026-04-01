@@ -140,6 +140,13 @@ function TabEmitidos() {
   const [errorAccion, setErrorAccion] = useState("")
   const [guardando, setGuardando] = useState(false)
 
+  // Estado del flujo de rechazo con preview
+  type ImpactoItem = { tipo: string; referencia: string; montoAnulado: number; estadoActual: string; estadoResultante: string }
+  type ImpactoData = { impactos: ImpactoItem[]; costoBancario: { aplica: boolean } }
+  const [impactoData, setImpactoData] = useState<ImpactoData | null>(null)
+  const [loadingImpacto, setLoadingImpacto] = useState(false)
+  const [costoBancarioMonto, setCostoBancarioMonto] = useState("")
+
   const cargar = useCallback(() => {
     setLoading(true)
     const p = new URLSearchParams()
@@ -165,21 +172,57 @@ function TabEmitidos() {
   const proximos7 = cheques.filter(c => c.estado === "EMITIDO" && diasHasta(c.fechaPago) >= 0 && diasHasta(c.fechaPago) <= 7)
   const vencidos = cheques.filter(c => c.estado === "EMITIDO" && diasHasta(c.fechaPago) < 0)
 
-  async function ejecutarAccion() {
-    if (!accion || accion.tipo === "detalle") return
+  async function ejecutarDepositar() {
+    if (!accion || accion.tipo !== "depositar") return
     setErrorAccion("")
     setGuardando(true)
-    const body = accion.tipo === "depositar"
-      ? { estado: "DEPOSITADO", fechaDeposito }
-      : { estado: "RECHAZADO" }
     const res = await fetch(`/api/cheques-emitidos/${accion.cheque.id}`, {
       method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ estado: "DEPOSITADO", fechaDeposito }),
+    })
+    setGuardando(false)
+    if (res.ok) { setAccion(null); cargar() }
+    else { const d = await res.json() as { error?: string }; setErrorAccion(d.error ?? "Error al actualizar") }
+  }
+
+  async function abrirImpactoRechazo(cheque: ChequeEmitido) {
+    setErrorAccion("")
+    setImpactoData(null)
+    setCostoBancarioMonto("")
+    setAccion({ tipo: "rechazar", cheque })
+    setLoadingImpacto(true)
+    try {
+      const res = await fetch(`/api/cheques/${cheque.id}/impacto-rechazo`)
+      if (res.ok) {
+        const data = await res.json() as ImpactoData
+        setImpactoData(data)
+      } else {
+        const d = await res.json() as { error?: string }
+        setErrorAccion(d.error ?? "Error al cargar impacto")
+      }
+    } catch {
+      setErrorAccion("Error de conexión")
+    } finally {
+      setLoadingImpacto(false)
+    }
+  }
+
+  async function confirmarRechazo() {
+    if (!accion || accion.tipo !== "rechazar") return
+    setErrorAccion("")
+    setGuardando(true)
+    const body: { costoBancarioMonto?: number } = {}
+    const monto = parseFloat(costoBancarioMonto)
+    if (!isNaN(monto) && monto > 0) body.costoBancarioMonto = monto
+    const res = await fetch(`/api/cheques/${accion.cheque.id}/confirmar-rechazo`, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
     setGuardando(false)
-    if (res.ok) { setAccion(null); cargar() }
-    else { const d = await res.json(); setErrorAccion(d.error ?? "Error al actualizar") }
+    if (res.ok) { setAccion(null); setImpactoData(null); cargar() }
+    else { const d = await res.json() as { error?: string }; setErrorAccion(d.error ?? "Error al rechazar") }
   }
 
   function VinculadoA({ c }: { c: ChequeEmitido }) {
@@ -322,7 +365,7 @@ function TabEmitidos() {
                         {c.estado === "EMITIDO" && (
                           <button
                             type="button"
-                            onClick={() => { setErrorAccion(""); setAccion({ tipo: "rechazar", cheque: c }) }}
+                            onClick={() => abrirImpactoRechazo(c)}
                             className="text-xs bg-red-50 text-red-700 px-2 py-0.5 rounded hover:bg-red-100"
                           >
                             Rechazado
@@ -376,29 +419,84 @@ function TabEmitidos() {
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => setAccion(null)}>Cancelar</Button>
-            <Button onClick={ejecutarAccion} disabled={guardando}>
+            <Button onClick={ejecutarDepositar} disabled={guardando}>
               {guardando ? "Guardando..." : "Confirmar"}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Modal marcar rechazado */}
-      <Dialog open={accion?.tipo === "rechazar"} onOpenChange={o => !o && setAccion(null)}>
-        <DialogContent>
+      {/* Modal marcar rechazado con preview de impacto */}
+      <Dialog open={accion?.tipo === "rechazar"} onOpenChange={o => !o && (setAccion(null), setImpactoData(null))}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Marcar como rechazado</DialogTitle>
             <DialogDescription>
-              ¿Confirmás que el cheque{" "}
-              {accion?.tipo === "rechazar" ? (accion.cheque.nroCheque ?? "s/n") : ""}{" "}
-              ({accion?.tipo === "rechazar" ? formatearMoneda(accion.cheque.monto) : ""}) fue rechazado?
+              Cheque {accion?.tipo === "rechazar" ? (accion.cheque.nroCheque ?? "s/n") : ""} —{" "}
+              {accion?.tipo === "rechazar" ? formatearMoneda(accion.cheque.monto) : ""}
             </DialogDescription>
           </DialogHeader>
+
+          {loadingImpacto ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">Calculando impacto...</p>
+          ) : impactoData ? (
+            <div className="space-y-4">
+              {impactoData.impactos.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Este cheque no tiene pagos asociados activos.</p>
+              ) : (
+                <div>
+                  <p className="text-sm font-medium mb-2">Documentos afectados:</p>
+                  <table className="w-full text-xs border rounded">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="text-left px-2 py-1.5">Documento</th>
+                        <th className="text-right px-2 py-1.5">Monto anulado</th>
+                        <th className="text-left px-2 py-1.5">Estado actual</th>
+                        <th className="text-left px-2 py-1.5">Nuevo estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {impactoData.impactos.map((imp, i) => (
+                        <tr key={i} className="border-t">
+                          <td className="px-2 py-1.5 font-mono">{imp.referencia}</td>
+                          <td className="px-2 py-1.5 text-right text-destructive">{formatearMoneda(imp.montoAnulado)}</td>
+                          <td className="px-2 py-1.5 text-muted-foreground">{imp.estadoActual}</td>
+                          <td className="px-2 py-1.5 font-medium">{imp.estadoResultante}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {impactoData.costoBancario.aplica && (
+                <div>
+                  <Label htmlFor="costo-bancario" className="text-sm">Costo bancario (opcional)</Label>
+                  <Input
+                    id="costo-bancario"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={costoBancarioMonto}
+                    onChange={e => setCostoBancarioMonto(e.target.value)}
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Se registrará como EGRESO en la cuenta del cheque.</p>
+                </div>
+              )}
+            </div>
+          ) : null}
+
           {errorAccion && <FormError message={errorAccion} />}
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setAccion(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={ejecutarAccion} disabled={guardando}>
-              {guardando ? "Guardando..." : "Marcar rechazado"}
+            <Button variant="outline" onClick={() => { setAccion(null); setImpactoData(null) }}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              onClick={confirmarRechazo}
+              disabled={guardando || loadingImpacto || !!errorAccion}
+            >
+              {guardando ? "Procesando..." : "Confirmar rechazo"}
             </Button>
           </div>
         </DialogContent>

@@ -96,6 +96,7 @@ export async function GET(
         where: {
           facturaProveedor: { proveedorId: params.id },
           fecha: { gte: desdeDate, lte: hastaDate },
+          anulado: false,
         },
         select: {
           id: true,
