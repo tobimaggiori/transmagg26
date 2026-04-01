@@ -18,6 +18,7 @@ import type { Rol } from "@/types"
 const actualizarViajeSchema = z.object({
   fechaViaje: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   remito: z.string().nullable().optional(),
+  tieneCupo: z.boolean().optional(),
   cupo: z.string().nullable().optional(),
   mercaderia: z.string().nullable().optional(),
   procedencia: z.string().nullable().optional(),

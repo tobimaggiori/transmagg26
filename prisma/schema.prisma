@@ -206,6 +206,7 @@ model Viaje {
   operadorId          String   @map("operador_id")
   fechaViaje          DateTime @map("fecha_viaje")
   remito              String?
+  tieneCupo           Boolean  @default(false) @map("tiene_cupo")
   cupo                String?
   mercaderia          String?
   procedencia         String?

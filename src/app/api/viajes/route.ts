@@ -27,7 +27,8 @@ const crearViajeSchema = z.object({
   empresaId: z.string().uuid(),
   fechaViaje: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida (YYYY-MM-DD)"),
   remito: z.string().optional(),
-  cupo: z.string().optional(),
+  tieneCupo: z.boolean().default(false),
+  cupo: z.string().nullable().optional(),
   mercaderia: z.string().optional(),
   procedencia: z.string().optional(),
   provinciaOrigen: z.enum(PROVINCIAS_ARGENTINA as unknown as [string, ...string[]]),
@@ -39,7 +40,10 @@ const crearViajeSchema = z.object({
   estadoFactura: z.string().default("PENDIENTE_FACTURAR"),
   nroCartaPorte: z.string().min(1, "El número de carta de porte es obligatorio"),
   cartaPorteS3Key: z.string().min(1, "El PDF de la carta de porte es obligatorio"),
-})
+}).refine(
+  (data) => !data.tieneCupo || (data.cupo != null && data.cupo.trim().length > 0),
+  { message: "El número de cupo es obligatorio cuando el viaje lleva cupo", path: ["cupo"] }
+)
 
 /**
  * GET: NextRequest -> Promise<NextResponse>

@@ -8,6 +8,8 @@
 
 import { useState, useCallback, useEffect, Fragment } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
+import type { ProvinciaArgentina } from "@/lib/provincias"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
 import { labelCondicionIva, formatearNroComprobante } from "@/lib/liquidacion-utils"
 import { WorkflowNote } from "@/components/workflow/workflow-note"
@@ -38,6 +40,7 @@ type ViajeParaLiquidar = {
   choferId: string
   chofer: { nombre: string; apellido: string }
   remito: string | null
+  tieneCupo: boolean | null
   cupo: string | null
   mercaderia: string | null
   procedencia: string | null
@@ -52,12 +55,13 @@ type ViajeParaLiquidar = {
   tarifaEdit?: number
   fechaEdit?: string
   remitoEdit?: string
+  tieneCupoEdit?: boolean
   cupoEdit?: string
   mercaderiaEdit?: string
   procedenciaEdit?: string
-  origenEdit?: string
+  origenEdit?: ProvinciaArgentina
   destinoEdit?: string
-  provinciaDestinoEdit?: string
+  provinciaDestinoEdit?: ProvinciaArgentina
   camionIdEdit?: string
   choferIdEdit?: string
 }
@@ -188,6 +192,7 @@ function ModalDetalleLiquidacion({
               <tr>
                 <th className="px-3 py-2 text-left">Fecha</th>
                 <th className="px-3 py-2 text-left">Remito</th>
+                <th className="px-3 py-2 text-left">Cupo</th>
                 <th className="px-3 py-2 text-left">Mercadería</th>
                 <th className="px-3 py-2 text-left">Origen</th>
                 <th className="px-3 py-2 text-left">Destino</th>
@@ -202,6 +207,7 @@ function ModalDetalleLiquidacion({
                 <tr key={v.id}>
                   <td className="px-3 py-2">{formatearFecha(new Date(v.fechaViaje))}</td>
                   <td className="px-3 py-2">{v.remito ?? "-"}</td>
+                  <td className="px-3 py-2">{v.cupo ?? "—"}</td>
                   <td className="px-3 py-2">{v.mercaderia ?? "-"}</td>
                   <td className="px-3 py-2">{v.provinciaOrigen ?? v.procedencia ?? "-"}</td>
                   <td className="px-3 py-2">{v.provinciaDestino ?? v.destino ?? "-"}</td>
@@ -745,13 +751,32 @@ function ModalEditarViaje({
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Cupo</label>
-            <input
-              type="text"
-              value={form.cupoEdit ?? ""}
-              onChange={(e) => set("cupoEdit", e.target.value)}
-              className="h-9 w-full rounded border bg-background px-2 text-sm"
-            />
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">¿Lleva cupo?</label>
+            <div className="flex rounded-md border overflow-hidden h-9">
+              <button
+                type="button"
+                onClick={() => { set("tieneCupoEdit", false); set("cupoEdit", "") }}
+                className={`flex-1 text-xs font-medium border-r ${!(form.tieneCupoEdit ?? form.tieneCupo) ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+              >
+                No
+              </button>
+              <button
+                type="button"
+                onClick={() => set("tieneCupoEdit", true)}
+                className={`flex-1 text-xs font-medium ${(form.tieneCupoEdit ?? form.tieneCupo) ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+              >
+                Sí
+              </button>
+            </div>
+            {(form.tieneCupoEdit ?? form.tieneCupo) && (
+              <input
+                type="text"
+                value={form.cupoEdit ?? ""}
+                onChange={(e) => set("cupoEdit", e.target.value)}
+                placeholder="Nro. de cupo"
+                className="h-9 w-full rounded border bg-background px-2 text-sm mt-2"
+              />
+            )}
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Mercadería</label>
@@ -773,12 +798,16 @@ function ModalEditarViaje({
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Prov. Origen</label>
-            <input
-              type="text"
-              value={form.origenEdit ?? ""}
-              onChange={(e) => set("origenEdit", e.target.value)}
+            <select
+              value={form.origenEdit ?? form.provinciaOrigen ?? ""}
+              onChange={(e) => set("origenEdit", e.target.value as ProvinciaArgentina)}
               className="h-9 w-full rounded border bg-background px-2 text-sm"
-            />
+            >
+              <option value="">Seleccionar provincia...</option>
+              {PROVINCIAS_ARGENTINA.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Destino</label>
@@ -791,12 +820,16 @@ function ModalEditarViaje({
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Prov. Destino</label>
-            <input
-              type="text"
-              value={form.provinciaDestinoEdit ?? ""}
-              onChange={(e) => set("provinciaDestinoEdit", e.target.value)}
+            <select
+              value={form.provinciaDestinoEdit ?? form.provinciaDestino ?? ""}
+              onChange={(e) => set("provinciaDestinoEdit", e.target.value as ProvinciaArgentina)}
               className="h-9 w-full rounded border bg-background px-2 text-sm"
-            />
+            >
+              <option value="">Seleccionar provincia...</option>
+              {PROVINCIAS_ARGENTINA.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Kilos</label>
@@ -979,12 +1012,16 @@ function ModalPreviewLiquidacion({
                       />
                     </td>
                     <td className="px-1 py-1">
-                      <input
-                        type="text"
-                        value={v.cupoEdit ?? ""}
-                        onChange={(e) => actualizarCelda(v.id, "cupoEdit", e.target.value)}
-                        className="h-7 w-20 rounded border bg-background px-1 text-xs"
-                      />
+                      {(v.tieneCupoEdit ?? v.tieneCupo) ? (
+                        <input
+                          type="text"
+                          value={v.cupoEdit ?? ""}
+                          onChange={(e) => actualizarCelda(v.id, "cupoEdit", e.target.value)}
+                          className="h-7 w-20 rounded border bg-background px-1 text-xs"
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </td>
                     <td className="px-1 py-1">
                       <input
@@ -1003,12 +1040,16 @@ function ModalPreviewLiquidacion({
                       />
                     </td>
                     <td className="px-1 py-1">
-                      <input
-                        type="text"
-                        value={v.origenEdit ?? ""}
-                        onChange={(e) => actualizarCelda(v.id, "origenEdit", e.target.value)}
-                        className="h-7 w-28 rounded border bg-background px-1 text-xs"
-                      />
+                      <select
+                        value={v.origenEdit ?? v.provinciaOrigen ?? ""}
+                        onChange={(e) => actualizarCelda(v.id, "origenEdit", e.target.value as ProvinciaArgentina)}
+                        className="h-7 w-36 rounded border bg-background px-1 text-xs"
+                      >
+                        <option value="">— sin provincia —</option>
+                        {PROVINCIAS_ARGENTINA.map((p) => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
+                      </select>
                     </td>
                     <td className="px-1 py-1">
                       <input
@@ -1019,12 +1060,16 @@ function ModalPreviewLiquidacion({
                       />
                     </td>
                     <td className="px-1 py-1">
-                      <input
-                        type="text"
-                        value={v.provinciaDestinoEdit ?? ""}
-                        onChange={(e) => actualizarCelda(v.id, "provinciaDestinoEdit", e.target.value)}
-                        className="h-7 w-28 rounded border bg-background px-1 text-xs"
-                      />
+                      <select
+                        value={v.provinciaDestinoEdit ?? v.provinciaDestino ?? ""}
+                        onChange={(e) => actualizarCelda(v.id, "provinciaDestinoEdit", e.target.value as ProvinciaArgentina)}
+                        className="h-7 w-36 rounded border bg-background px-1 text-xs"
+                      >
+                        <option value="">— sin provincia —</option>
+                        {PROVINCIAS_ARGENTINA.map((p) => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
+                      </select>
                     </td>
                     <td className="px-1 py-1">
                       <input
@@ -1199,12 +1244,17 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
           tarifaEdit: v.tarifaOperativaInicial,
           fechaEdit: v.fechaViaje.slice(0, 10),
           remitoEdit: v.remito ?? "",
-          cupoEdit: v.cupo ?? "",
+          tieneCupoEdit: v.tieneCupo ?? false,
+          cupoEdit: v.tieneCupo ? (v.cupo ?? "") : "",
           mercaderiaEdit: v.mercaderia ?? "",
           procedenciaEdit: v.procedencia ?? "",
-          origenEdit: v.provinciaOrigen ?? "",
+          origenEdit: (PROVINCIAS_ARGENTINA as readonly string[]).includes(v.provinciaOrigen ?? "")
+            ? v.provinciaOrigen as ProvinciaArgentina
+            : undefined,
           destinoEdit: v.destino ?? "",
-          provinciaDestinoEdit: v.provinciaDestino ?? "",
+          provinciaDestinoEdit: (PROVINCIAS_ARGENTINA as readonly string[]).includes(v.provinciaDestino ?? "")
+            ? v.provinciaDestino as ProvinciaArgentina
+            : undefined,
           camionIdEdit: v.camionId,
           choferIdEdit: v.choferId,
         }))
@@ -1270,7 +1320,7 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
           choferId: v.choferIdEdit ?? v.choferId,
           fechaViaje: v.fechaEdit ?? v.fechaViaje.slice(0, 10),
           remito: v.remitoEdit || null,
-          cupo: v.cupoEdit || null,
+          cupo: (v.tieneCupoEdit ?? v.tieneCupo) ? (v.cupoEdit || null) : null,
           mercaderia: v.mercaderiaEdit || null,
           procedencia: v.procedenciaEdit || null,
           provinciaOrigen: v.origenEdit || null,
@@ -1425,7 +1475,7 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
                           </td>
                           <td className="px-3 py-2">{formatearFecha(v.fechaEdit ?? new Date(v.fechaViaje))}</td>
                           <td className="px-3 py-2">{v.remitoEdit || v.remito || "-"}</td>
-                          <td className="px-3 py-2">{v.cupoEdit || v.cupo || "-"}</td>
+                          <td className="px-3 py-2">{(v.tieneCupoEdit ?? v.tieneCupo) ? (v.cupoEdit || v.cupo || "-") : "—"}</td>
                           <td className="px-3 py-2">{v.mercaderiaEdit || v.mercaderia || "-"}</td>
                           <td className="px-3 py-2">{v.origenEdit || v.provinciaOrigen || v.procedencia || "-"}</td>
                           <td className="px-3 py-2">{v.provinciaDestinoEdit || v.destinoEdit || v.provinciaDestino || v.destino || "-"}</td>

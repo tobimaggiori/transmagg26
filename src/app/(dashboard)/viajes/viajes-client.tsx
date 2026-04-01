@@ -32,6 +32,7 @@ type ViajeAPI = {
   fleteroId: string
   empresaId: string
   remito: string | null
+  tieneCupo: boolean | null
   cupo: string | null
   mercaderia: string | null
   procedencia: string | null
@@ -169,6 +170,7 @@ function ModalViaje({
     viaje ? viaje.fechaViaje.slice(0, 10) : new Date().toISOString().slice(0, 10)
   )
   const [remito, setRemito] = useState(viaje?.remito ?? "")
+  const [tieneCupo, setTieneCupo] = useState(viaje?.tieneCupo ?? false)
   const [cupo, setCupo] = useState(viaje?.cupo ?? "")
   const [mercaderia, setMercaderia] = useState(viaje?.mercaderia ?? "")
   const [procedencia, setProcedencia] = useState(viaje?.procedencia ?? "")
@@ -217,7 +219,8 @@ function ModalViaje({
       empresaId,
       fechaViaje,
       remito: remito || undefined,
-      cupo: cupo || undefined,
+      tieneCupo,
+      cupo: tieneCupo ? (cupo || undefined) : null,
       mercaderia: mercaderia || undefined,
       procedencia: procedencia || undefined,
       provinciaOrigen: provinciaOrigen || undefined,
@@ -324,8 +327,32 @@ function ModalViaje({
               <input type="text" value={remito} onChange={(e) => setRemito(e.target.value)} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Cupo</label>
-              <input type="text" value={cupo} onChange={(e) => setCupo(e.target.value)} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
+              <label className="text-xs font-medium text-muted-foreground block mb-1">¿Lleva cupo?</label>
+              <div className="flex rounded-md border overflow-hidden h-9">
+                <button
+                  type="button"
+                  onClick={() => { setTieneCupo(false); setCupo("") }}
+                  className={`flex-1 text-xs font-medium border-r ${!tieneCupo ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                >
+                  No
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTieneCupo(true)}
+                  className={`flex-1 text-xs font-medium ${tieneCupo ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                >
+                  Sí
+                </button>
+              </div>
+              {tieneCupo && (
+                <input
+                  type="text"
+                  value={cupo}
+                  onChange={(e) => setCupo(e.target.value)}
+                  placeholder="Nro. de cupo"
+                  className="w-full h-9 rounded-md border bg-background px-2 text-sm mt-2"
+                />
+              )}
             </div>
           </div>
 
@@ -521,6 +548,7 @@ export function ViajesClient({
   const [desde, setDesde] = useState("")
   const [hasta, setHasta] = useState("")
   const [buscarCarta, setBuscarCarta] = useState("")
+  const [filtroCupo, setFiltroCupo] = useState<"todos" | "con_cupo" | "sin_cupo">("todos")
   const [modalAbierto, setModalAbierto] = useState(false)
   const [viajeEditando, setViajeEditando] = useState<ViajeAPI | undefined>(undefined)
   const [guardando, setGuardando] = useState(false)
@@ -562,6 +590,10 @@ export function ViajesClient({
   }).filter((v) => {
     if (!buscarCarta.trim()) return true
     return v.nroCartaPorte?.toLowerCase().includes(buscarCarta.toLowerCase())
+  }).filter((v) => {
+    if (filtroCupo === "con_cupo") return v.tieneCupo === true
+    if (filtroCupo === "sin_cupo") return !v.tieneCupo
+    return true
   })
   const resumen = resumirWorkflowViajes(viajesFiltrados)
 
@@ -668,6 +700,21 @@ export function ViajesClient({
               className="h-9 rounded-md border bg-background px-2 text-sm w-44"
             />
           </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Cupo</label>
+            <div className="flex rounded-md border overflow-hidden h-9">
+              {(["todos", "con_cupo", "sin_cupo"] as const).map((val) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setFiltroCupo(val)}
+                  className={`px-3 text-xs font-medium border-r last:border-r-0 ${filtroCupo === val ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                >
+                  {val === "todos" ? "Todos" : val === "con_cupo" ? "Con cupo" : "Sin cupo"}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex items-end gap-2">
             <button onClick={cargarViajes} className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90">
               Filtrar
@@ -753,7 +800,7 @@ export function ViajesClient({
                               <p className="font-medium">{v.empresa.razonSocial}</p>
                               <p className="text-xs text-muted-foreground">{v.fletero.razonSocial}</p>
                               <p className="text-xs text-muted-foreground">
-                                Remito {v.remito ?? "-"} · Cupo {v.cupo ?? "-"}
+                                Remito {v.remito ?? "-"} · Cupo {v.tieneCupo ? (v.cupo ?? "-") : "—"}
                               </p>
                             </div>
                           </td>

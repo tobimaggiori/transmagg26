@@ -130,6 +130,7 @@ export async function GET(request: NextRequest) {
           choferId: true,
           chofer: { select: { nombre: true, apellido: true } },
           remito: true,
+          tieneCupo: true,
           cupo: true,
           mercaderia: true,
           procedencia: true,
@@ -357,19 +358,27 @@ export async function POST(request: NextRequest) {
           },
         })
 
-        // Asiento IIBB por provincia de origen
+        // Asiento IIBB por provincia de origen — upsert para cubrir casos de re-procesamiento
         const provincia = viaje.provinciaOrigen ?? viajeData.provinciaOrigen
         if (provincia) {
           const periodo = new Date(viaje.fechaViaje).toISOString().slice(0, 7)
-          await tx.asientoIibb.create({
-            data: {
-              viajeEnLiqId: enLiq.id,
-              tablaOrigen: "viajes_en_liquidacion",
-              provincia,
-              montoIngreso: subtotalViaje,
-              periodo,
-            },
-          })
+          const asientoExistente = await tx.asientoIibb.findFirst({ where: { viajeEnLiqId: enLiq.id } })
+          if (asientoExistente) {
+            await tx.asientoIibb.update({
+              where: { id: asientoExistente.id },
+              data: { provincia, montoIngreso: subtotalViaje, periodo },
+            })
+          } else {
+            await tx.asientoIibb.create({
+              data: {
+                viajeEnLiqId: enLiq.id,
+                tablaOrigen: "viajes_en_liquidacion",
+                provincia,
+                montoIngreso: subtotalViaje,
+                periodo,
+              },
+            })
+          }
         }
       }
 
