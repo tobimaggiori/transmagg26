@@ -26,8 +26,6 @@ const pagoFleteroItemSchema = z.discriminatedUnion("tipoPago", [
     chequePropio: z.object({
       cuentaId: z.string().uuid(),
       nroCheque: z.string().min(1, "El número de cheque es obligatorio"),
-      tipoDocBeneficiario: z.string().min(1),
-      nroDocBeneficiario: z.string().min(1),
       mailBeneficiario: z.string().optional().nullable(),
       fechaEmision: z.string().min(1),
       fechaPago: z.string().min(1),
@@ -101,7 +99,7 @@ export async function POST(
         estado: true,
         nroComprobante: true,
         ptoVenta: true,
-        fletero: { select: { razonSocial: true } },
+        fletero: { select: { razonSocial: true, cuit: true } },
         pagos: { where: { anulado: false }, select: { monto: true } },
       },
     })
@@ -189,8 +187,8 @@ export async function POST(
               fleteroId: liquidacion.fleteroId,
               cuentaId: ch.cuentaId,
               nroCheque: ch.nroCheque,
-              tipoDocBeneficiario: ch.tipoDocBeneficiario,
-              nroDocBeneficiario: ch.nroDocBeneficiario,
+              tipoDocBeneficiario: "CUIT",
+              nroDocBeneficiario: liquidacion.fletero.cuit.replace(/\D/g, ""),
               mailBeneficiario: ch.mailBeneficiario ?? null,
               monto: pago.monto,
               fechaEmision: new Date(ch.fechaEmision),

@@ -74,8 +74,6 @@ type PagoItemChequePropio = {
   monto: string
   cuentaId: string
   nroCheque: string
-  tipoDocBeneficiario: string
-  nroDocBeneficiario: string
   mailBeneficiario: string
   fechaEmision: string
   fechaPago: string
@@ -109,15 +107,11 @@ type PagoItem =
 const ars = (n: number) =>
   new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(n)
 
-function defaultDraft(
-  tipo: PagoItem["tipoPago"],
-  cuit: string,
-): PagoItem {
+function defaultDraft(tipo: PagoItem["tipoPago"]): PagoItem {
   const today = new Date().toISOString().slice(0, 10)
   if (tipo === "TRANSFERENCIA") return { tipoPago: "TRANSFERENCIA", monto: "", cuentaBancariaId: "", referencia: "" }
   if (tipo === "CHEQUE_PROPIO") return {
     tipoPago: "CHEQUE_PROPIO", monto: "", cuentaId: "", nroCheque: "",
-    tipoDocBeneficiario: "CUIT", nroDocBeneficiario: cuit,
     mailBeneficiario: "", fechaEmision: today, fechaPago: "", clausula: "NO_A_LA_ORDEN",
     descripcion1: "", descripcion2: "",
   }
@@ -207,7 +201,7 @@ export function RegistrarPagoFleteroModal({
   }
 
   function iniciarDraft(tipo: PagoItem["tipoPago"]) {
-    setDraft(defaultDraft(tipo, liquidacion.fletero.cuit))
+    setDraft(defaultDraft(tipo))
     setDraftError(null)
   }
 
@@ -216,7 +210,7 @@ export function RegistrarPagoFleteroModal({
   }
 
   function changeDraftTipo(tipo: PagoItem["tipoPago"]) {
-    setDraft(defaultDraft(tipo, liquidacion.fletero.cuit))
+    setDraft(defaultDraft(tipo))
     setDraftError(null)
   }
 
@@ -275,8 +269,6 @@ export function RegistrarPagoFleteroModal({
               chequePropio: {
                 cuentaId: p.cuentaId,
                 nroCheque: p.nroCheque,
-                tipoDocBeneficiario: p.tipoDocBeneficiario,
-                nroDocBeneficiario: p.nroDocBeneficiario,
                 mailBeneficiario: p.mailBeneficiario || null,
                 fechaEmision: p.fechaEmision,
                 fechaPago: p.fechaPago,
@@ -523,6 +515,7 @@ export function RegistrarPagoFleteroModal({
                 cuentasBancarias={cuentasBancarias}
                 chequesEnCartera={chequesEnCartera}
                 saldoAFavorCC={saldoAFavorCC}
+                cuit={liquidacion.fletero.cuit}
                 onChangeTipo={changeDraftTipo}
                 onUpdate={updateDraft}
                 onConfirm={confirmarDraft}
@@ -574,6 +567,7 @@ function DraftForm({
   cuentasBancarias,
   chequesEnCartera,
   saldoAFavorCC,
+  cuit,
   onChangeTipo,
   onUpdate,
   onConfirm,
@@ -584,6 +578,7 @@ function DraftForm({
   cuentasBancarias: CuentaBancaria[]
   chequesEnCartera: ChequeEnCartera[]
   saldoAFavorCC: number
+  cuit: string
   onChangeTipo: (tipo: PagoItem["tipoPago"]) => void
   onUpdate: (updates: Partial<PagoItem>) => void
   onConfirm: () => void
@@ -684,6 +679,11 @@ function DraftForm({
               />
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Beneficiario:</span>
+            <span className="text-xs font-medium">CUIT</span>
+            <span className="text-xs font-mono">{cuit}</span>
+          </div>
           <div className="grid grid-cols-3 gap-2">
             <div>
               <Label className="text-xs">Fecha emisión</Label>
@@ -694,28 +694,6 @@ function DraftForm({
                 className="h-8 text-xs mt-0.5"
               />
             </div>
-            <div>
-              <Label className="text-xs">Tipo doc. beneficiario</Label>
-              <Select
-                value={draft.tipoDocBeneficiario}
-                onChange={(e) => onUpdate({ tipoDocBeneficiario: e.target.value } as Partial<PagoItem>)}
-                className="h-8 text-xs mt-0.5"
-              >
-                <option value="CUIT">CUIT</option>
-                <option value="CUIL">CUIL</option>
-                <option value="CDI">CDI</option>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs">Nro. doc. beneficiario</Label>
-              <Input
-                value={draft.nroDocBeneficiario}
-                onChange={(e) => onUpdate({ nroDocBeneficiario: e.target.value } as Partial<PagoItem>)}
-                className="h-8 text-xs mt-0.5"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
             <div>
               <Label className="text-xs">Cláusula</Label>
               <Select
@@ -737,14 +715,14 @@ function DraftForm({
                 placeholder="email@ejemplo.com"
               />
             </div>
-            <div>
-              <Label className="text-xs">Descripción (opcional)</Label>
-              <Input
-                value={draft.descripcion1}
-                onChange={(e) => onUpdate({ descripcion1: e.target.value } as Partial<PagoItem>)}
-                className="h-8 text-xs mt-0.5"
-              />
-            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Descripción (opcional)</Label>
+            <Input
+              value={draft.descripcion1}
+              onChange={(e) => onUpdate({ descripcion1: e.target.value } as Partial<PagoItem>)}
+              className="h-8 text-xs mt-0.5"
+            />
           </div>
         </div>
       )}
