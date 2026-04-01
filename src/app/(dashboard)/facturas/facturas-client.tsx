@@ -74,7 +74,7 @@ type ViajeEnFactura = {
 type Factura = {
   id: string
   emitidaEn: string
-  tipoCbte: string
+  tipoCbte: number
   ivaPct: number
   nroComprobante: string | null
   neto: number
@@ -739,7 +739,7 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
   const [cargando, setCargando] = useState(false)
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [enPreview, setEnPreview] = useState(false)
-  const [tipoCbte, setTipoCbte] = useState<string>("A")
+  const [tipoCbte, setTipoCbte] = useState<number>(1)
   const [ivaPct, setIvaPct] = useState<number>(21)
   const [generando, setGenerando] = useState(false)
   const [errorGen, setErrorGen] = useState<string | null>(null)
@@ -1104,14 +1104,12 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
                   <label className="text-xs font-medium text-muted-foreground block mb-1">Tipo de comprobante</label>
                   <select
                     value={tipoCbte}
-                    onChange={(e) => setTipoCbte(e.target.value)}
+                    onChange={(e) => setTipoCbte(Number(e.target.value))}
                     className="h-8 rounded border bg-background px-2 text-sm"
                   >
-                    <option value="A">A</option>
-                    <option value="B">B</option>
-                    <option value="C">C</option>
-                    <option value="M">M</option>
-                    <option value="X">X</option>
+                    <option value={1}>Factura A (1)</option>
+                    <option value={6}>Factura B (6)</option>
+                    <option value={201}>Factura A MiPyme (201)</option>
                   </select>
                 </div>
                 <div>

@@ -57,9 +57,25 @@ type ViajeParaFacturar = {
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 type FacturarEmpresaClientProps = {
-  empresas: Array<{ id: string; razonSocial: string }>
+  empresas: Array<{ id: string; razonSocial: string; condicionIva: string }>
   camiones: Array<{ id: string; patenteChasis: string; fleteroId: string }>
   choferes: Array<{ id: string; nombre: string; apellido: string; fleteroId: string | null }>
+}
+
+// ─── TipoCbteBadge ───────────────────────────────────────────────────────────
+
+export function TipoCbteBadge({ tipoCbte, modalidad }: { tipoCbte: number; modalidad?: string }) {
+  if (tipoCbte === 1)
+    return <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">Fact. A</span>
+  if (tipoCbte === 201)
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-medium text-violet-800">
+        MiPyme{modalidad ? ` · ${modalidad}` : ""}
+      </span>
+    )
+  if (tipoCbte === 6)
+    return <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">Fact. B</span>
+  return <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">Cbte {tipoCbte}</span>
 }
 
 /**
@@ -84,7 +100,8 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
   const [cargando, setCargando] = useState(false)
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [enPreview, setEnPreview] = useState(false)
-  const [tipoCbte, setTipoCbte] = useState<string>("A")
+  const [tipoCbteNum, setTipoCbteNum] = useState<number | null>(null)
+  const [modalidadMiPymes, setModalidadMiPymes] = useState<"SCA" | "ADC" | null>(null)
   const [ivaPct, setIvaPct] = useState<number>(21)
   const [generando, setGenerando] = useState(false)
   const [errorGen, setErrorGen] = useState<string | null>(null)
@@ -165,7 +182,8 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
     try {
       const body = {
         empresaId,
-        tipoCbte,
+        tipoCbte: tipoCbteNum,
+        modalidadMiPymes: modalidadMiPymes ?? undefined,
         ivaPct,
         viajes: viajesSeleccionados.map((v) => ({
           viajeId: v.id,
@@ -206,10 +224,23 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
     setExitoMsg(null)
     setEnPreview(false)
     setSeleccionados(new Set())
-    setTipoCbte("A")
+    setTipoCbteNum(null)
+    setModalidadMiPymes(null)
     setIvaPct(21)
     setErrorGen(null)
   }
+
+  const empresaSeleccionada = empresas.find((e) => e.id === empresaId)
+  const esRI = empresaSeleccionada?.condicionIva === "RESPONSABLE_INSCRIPTO"
+
+  // Derivar tipoCbte automático para no-RI
+  const tipoCbteEfectivo = esRI ? tipoCbteNum : 6
+
+  // Validación: puede avanzar a preview solo si tiene tipo de comprobante seleccionado
+  const tipoCbteValido =
+    !empresaId ||
+    (!esRI && tipoCbteEfectivo === 6) ||
+    (esRI && tipoCbteNum !== null && (tipoCbteNum !== 201 || modalidadMiPymes !== null))
 
   const empresasItems = empresas.map((e) => ({ id: e.id, label: e.razonSocial }))
 
@@ -237,7 +268,7 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
         />
       </div>
 
-      {/* Selector de Empresa */}
+      {/* Selector de Empresa + Tipo Comprobante */}
       <div className="flex flex-wrap gap-4 p-4 bg-muted/40 rounded-lg border">
         <div className="flex flex-col gap-1 min-w-[300px]">
           <label className="text-xs font-medium text-muted-foreground">Empresa</label>
@@ -249,10 +280,91 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
               setSeleccionados(new Set())
               setEnPreview(false)
               setExitoMsg(null)
+              setTipoCbteNum(null)
+              setModalidadMiPymes(null)
             }}
             placeholder="Seleccioná una empresa..."
           />
         </div>
+
+        {/* Tipo de comprobante — aparece al seleccionar empresa */}
+        {empresaId && (
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-medium text-muted-foreground">Tipo de comprobante</label>
+            {esRI ? (
+              /* RI: selector manual */
+              <div className="space-y-2">
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer text-sm">
+                    <input
+                      type="radio"
+                      name="tipoCbte"
+                      value="1"
+                      checked={tipoCbteNum === 1}
+                      onChange={() => { setTipoCbteNum(1); setModalidadMiPymes(null) }}
+                      className="accent-primary"
+                    />
+                    Factura A <span className="text-xs text-muted-foreground">(cód. 1)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer text-sm">
+                    <input
+                      type="radio"
+                      name="tipoCbte"
+                      value="201"
+                      checked={tipoCbteNum === 201}
+                      onChange={() => setTipoCbteNum(201)}
+                      className="accent-primary"
+                    />
+                    Factura A MiPyme <span className="text-xs text-muted-foreground">(cód. 201)</span>
+                  </label>
+                </div>
+                {tipoCbteNum === 201 && (
+                  <div className="flex gap-4 pl-1 border-l-2 border-primary/30">
+                    <label className="text-xs font-medium text-muted-foreground mr-1 self-center">Modalidad:</label>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-sm">
+                      <input
+                        type="radio"
+                        name="modalidadMiPymes"
+                        value="SCA"
+                        checked={modalidadMiPymes === "SCA"}
+                        onChange={() => setModalidadMiPymes("SCA")}
+                        className="accent-primary"
+                      />
+                      SCA <span className="text-xs text-muted-foreground">— Circulación Abierta</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-sm">
+                      <input
+                        type="radio"
+                        name="modalidadMiPymes"
+                        value="ADC"
+                        checked={modalidadMiPymes === "ADC"}
+                        onChange={() => setModalidadMiPymes("ADC")}
+                        className="accent-primary"
+                      />
+                      ADC <span className="text-xs text-muted-foreground">— Depósito Colectivo</span>
+                    </label>
+                  </div>
+                )}
+                {!tipoCbteValido && empresaId && (
+                  <p className="text-xs text-amber-600">
+                    {tipoCbteNum === null
+                      ? "Seleccioná el tipo de comprobante para continuar."
+                      : "Seleccioná la modalidad MiPyme para continuar."}
+                  </p>
+                )}
+              </div>
+            ) : (
+              /* No-RI: automático */
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">Factura B</span>
+                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">automático</span>
+                <span className="text-xs text-muted-foreground">
+                  ({empresaSeleccionada?.condicionIva?.replace(/_/g, " ").toLowerCase()})
+                </span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {!empresaId && (
@@ -293,7 +405,9 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
               {seleccionados.size > 0 && !enPreview && (
                 <button
                   onClick={() => setEnPreview(true)}
-                  className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
+                  disabled={!tipoCbteValido}
+                  title={!tipoCbteValido ? "Seleccioná el tipo de comprobante primero" : undefined}
+                  className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Generar factura con {seleccionados.size} seleccionado(s)
                 </button>
@@ -485,17 +599,10 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <label className="text-xs font-medium text-muted-foreground block mb-1">Tipo de comprobante</label>
-                  <select
-                    value={tipoCbte}
-                    onChange={(e) => setTipoCbte(e.target.value)}
-                    className="h-8 rounded border bg-background px-2 text-sm"
-                  >
-                    <option value="A">A</option>
-                    <option value="B">B</option>
-                    <option value="C">C</option>
-                    <option value="M">M</option>
-                    <option value="X">X</option>
-                  </select>
+                  <div className="flex items-center gap-2 h-8">
+                    <TipoCbteBadge tipoCbte={tipoCbteEfectivo ?? 1} modalidad={modalidadMiPymes ?? undefined} />
+                    <span className="text-xs text-muted-foreground">(código ARCA: {tipoCbteEfectivo})</span>
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground block mb-1">IVA %</label>
@@ -530,7 +637,7 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
                 </button>
                 <button
                   onClick={confirmarFactura}
-                  disabled={generando}
+                  disabled={generando || !tipoCbteValido}
                   className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
                 >
                   {generando ? "Generando..." : "Confirmar y generar"}

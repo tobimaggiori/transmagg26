@@ -23,7 +23,7 @@ type Props = {
   factura: {
     id: string
     nroComprobante: string | null
-    tipoCbte: string
+    tipoCbte: number
     total: number
     pagosExistentes: number
     empresa: { id: string; razonSocial: string }

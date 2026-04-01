@@ -614,7 +614,7 @@ async function main() {
     data: {
       empresaId: empresa1.id,
       operadorId: operadorTransmagg.id,
-      tipoCbte: "A",
+      tipoCbte: 1,
       nroComprobante: "0001-00000001",
       neto: 200000,
       ivaMonto: 42000,
@@ -1450,7 +1450,7 @@ async function main() {
     data: {
       empresaId: empCereales.id,
       operadorId: anaGarcia.id,
-      tipoCbte: "A",
+      tipoCbte: 1,
       nroComprobante: "0001-00000001",
       neto: 220000,
       ivaMonto: 46200,
@@ -1473,7 +1473,7 @@ async function main() {
     data: {
       empresaId: empTransUnidos.id,
       operadorId: anaGarcia.id,
-      tipoCbte: "A",
+      tipoCbte: 1,
       nroComprobante: "0001-00000002",
       neto: 195000,
       ivaMonto: 40950,

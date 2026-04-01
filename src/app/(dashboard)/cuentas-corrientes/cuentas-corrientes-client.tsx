@@ -19,7 +19,7 @@ import { Plus, Printer } from "lucide-react"
 interface FacturaImpaga {
   id: string
   nroComprobante: string | null
-  tipoCbte: string
+  tipoCbte: number
   total: number
   ivaMonto: number
   estado: string

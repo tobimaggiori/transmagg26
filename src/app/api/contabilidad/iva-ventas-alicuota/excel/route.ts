@@ -46,7 +46,8 @@ export async function GET(request: NextRequest): Promise<Response> {
     // Group: tipoCbte → alicuota
     const grupoMap = new Map<string, Map<number, { neto: number; iva: number; count: number }>>()
     for (const a of asientos) {
-      const tipoCbte = a.tipoReferencia === "LIQUIDACION" ? "Cta Vta Liq Prod" : (a.facturaEmitida?.tipoCbte ?? "—")
+      const tipoCbteRaw = a.tipoReferencia === "LIQUIDACION" ? "Cta Vta Liq Prod" : (a.facturaEmitida?.tipoCbte != null ? String(a.facturaEmitida.tipoCbte) : "—")
+      const tipoCbte = tipoCbteRaw
       if (!grupoMap.has(tipoCbte)) grupoMap.set(tipoCbte, new Map())
       const byAlic = grupoMap.get(tipoCbte)!
       const prev = byAlic.get(a.alicuota) ?? { neto: 0, iva: 0, count: 0 }

@@ -38,7 +38,12 @@ const viajeEnFactSchema = z.object({
 
 const crearFacturaSchema = z.object({
   empresaId: z.string().uuid(),
-  tipoCbte: z.enum(["A", "B", "C", "M", "X"]),
+  // 1=Factura A, 6=Factura B, 201=Factura A MiPyme
+  tipoCbte: z.number().int().refine((v) => [1, 6, 201].includes(v), {
+    message: "tipoCbte debe ser 1 (Fact. A), 6 (Fact. B) o 201 (Fact. A MiPyme)",
+  }),
+  // solo requerido si tipoCbte === 201
+  modalidadMiPymes: z.enum(["SCA", "ADC"]).optional(),
   ivaPct: z.number().min(0).max(100).default(21),
   viajes: z.array(viajeEnFactSchema).min(1, "Debe incluir al menos un viaje"),
 })
@@ -196,10 +201,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { empresaId, tipoCbte, ivaPct, viajes } = parsed.data
+    const { empresaId, tipoCbte, modalidadMiPymes, ivaPct, viajes } = parsed.data
 
     const empresa = await prisma.empresa.findFirst({ where: { id: empresaId, activa: true } })
     if (!empresa) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 })
+
+    // Validar tipoCbte según condición IVA de la empresa
+    if (empresa.condicionIva === "RESPONSABLE_INSCRIPTO") {
+      if (![1, 201].includes(tipoCbte)) {
+        return NextResponse.json(
+          { error: "Para empresas RI solo se puede emitir Factura A (1) o Factura A MiPyme (201)" },
+          { status: 422 }
+        )
+      }
+    } else {
+      if (tipoCbte !== 6) {
+        return NextResponse.json(
+          { error: "Para empresas no RI solo se puede emitir Factura B (6)" },
+          { status: 422 }
+        )
+      }
+    }
+
+    // Para MiPyme, modalidad es obligatoria
+    if (tipoCbte === 201 && !modalidadMiPymes) {
+      return NextResponse.json(
+        { error: "Para Factura A MiPyme se debe especificar la modalidad (SCA o ADC)" },
+        { status: 422 }
+      )
+    }
+
+    // TODO ARCA — al integrar:
+    // Tipo 1   → ptoVenta 4, FE1.F1CabeceraCbteTipo = 1
+    // Tipo 201 → ptoVenta 4, FE1.F1CabeceraCbteTipo = 201
+    //            Campo opcional 2101 = CBU MiPyMEs (desde ConfiguracionArca.cbuMiPymes)
+    //            Campo opcional 27 = modalidadMiPymes ("SCA" | "ADC")
+    // Tipo 6   → ptoVenta 4, FE1.F1CabeceraCbteTipo = 6
 
     // Verificar que todos los viajes existen, pertenecen a la empresa y están pendientes de facturar
     const viajeIds = viajes.map((v) => v.viajeId)
@@ -242,6 +279,7 @@ export async function POST(request: NextRequest) {
           empresaId,
           operadorId,
           tipoCbte,
+          modalidadMiPymes: modalidadMiPymes ?? null,
           ivaPct,
           neto,
           ivaMonto,

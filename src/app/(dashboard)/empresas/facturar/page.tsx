@@ -37,7 +37,7 @@ export default async function EmpresasFacturarPage() {
   const [empresas, camiones, choferes] = await Promise.all([
     prisma.empresa.findMany({
       where: { activa: true },
-      select: { id: true, razonSocial: true },
+      select: { id: true, razonSocial: true, condicionIva: true },
       orderBy: { razonSocial: "asc" },
     }),
     prisma.camion.findMany({

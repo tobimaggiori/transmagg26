@@ -34,11 +34,13 @@ function parsePeriodo(searchParams: { mes?: string; anio?: string; desde?: strin
   }
 }
 
-function labelTipoCbte(tipoCbte: string): string {
-  const map: Record<string, string> = {
-    A: "Factura A", B: "Factura B", C: "Factura C", M: "Factura M", X: "Factura X",
+function labelTipoCbte(tipoCbte: number): string {
+  const map: Record<number, string> = {
+    1: "Factura A",
+    6: "Factura B",
+    201: "Factura A MiPyme",
   }
-  return map[tipoCbte] ?? tipoCbte
+  return map[tipoCbte] ?? `Tipo ${tipoCbte}`
 }
 
 /**

@@ -124,7 +124,7 @@ export default async function ContabilidadIvaPage({
   // Grouping for ventas-alicuota: tipoCbte → alicuota
   const ventasAlicuotaMap = new Map<string, Map<number, { neto: number; iva: number; count: number }>>()
   for (const a of ventas) {
-    const tipoCbte = a.tipoReferencia === "LIQUIDACION" ? "Cta Vta Liq Prod" : (a.facturaEmitida?.tipoCbte ?? "—")
+    const tipoCbte = a.tipoReferencia === "LIQUIDACION" ? "Cta Vta Liq Prod" : (a.facturaEmitida?.tipoCbte != null ? String(a.facturaEmitida.tipoCbte) : "—")
     if (!ventasAlicuotaMap.has(tipoCbte)) ventasAlicuotaMap.set(tipoCbte, new Map())
     const byAlicuota = ventasAlicuotaMap.get(tipoCbte)!
     const prev = byAlicuota.get(a.alicuota) ?? { neto: 0, iva: 0, count: 0 }

@@ -21,6 +21,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { RegistrarCobroModal } from "@/components/forms/registrar-cobro-form"
+import { TipoCbteBadge } from "@/app/(dashboard)/empresas/facturar/facturar-client"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -53,7 +54,8 @@ type ViajeEnFacturaRow = {
 type FacturaRow = {
   id: string
   emitidaEn: string
-  tipoCbte: string
+  tipoCbte: number
+  modalidadMiPymes?: string | null
   nroComprobante: string | null
   ivaPct: number
   neto: number
@@ -305,7 +307,7 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
                       <tr key={fact.id} className="border-b hover:bg-muted/30">
                         <td className="px-3 py-2">{formatearFecha(fact.emitidaEn)}</td>
                         <td className="px-3 py-2 font-mono text-xs">{fact.nroComprobante ?? "—"}</td>
-                        <td className="px-3 py-2">{fact.tipoCbte}</td>
+                        <td className="px-3 py-2"><TipoCbteBadge tipoCbte={fact.tipoCbte} modalidad={fact.modalidadMiPymes ?? undefined} /></td>
                         <td className="px-3 py-2 max-w-[160px] truncate">{fact.empresa.razonSocial}</td>
                         <td className="px-3 py-2 text-right">{formatearMoneda(fact.neto)}</td>
                         <td className="px-3 py-2 text-right">{formatearMoneda(fact.ivaMonto)}</td>

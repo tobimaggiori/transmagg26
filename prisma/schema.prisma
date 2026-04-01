@@ -356,15 +356,18 @@ model FacturaEmitida {
   empresaId      String   @map("empresa_id")
   operadorId     String   @map("operador_id")
   nroComprobante String?  @map("nro_comprobante")
-  tipoCbte       String   @map("tipo_cbte")
-  ivaPct         Float    @default(21) @map("iva_pct")
-  neto           Float
-  ivaMonto       Float    @map("iva_monto")
-  total          Float
-  estadoArca     String   @default("PENDIENTE") @map("estado_arca")
-  estado         String   @default("BORRADOR")
-  pdfS3Key       String?  @map("pdf_s3_key")
-  emitidaEn      DateTime @default(now()) @map("emitida_en")
+  tipoCbte         Int      @default(1) @map("tipo_cbte")
+  // 1=Factura A, 6=Factura B, 201=Factura A MiPyme
+  modalidadMiPymes String?  @map("modalidad_mi_pymes")
+  // "SCA" | "ADC" — solo para tipoCbte=201
+  ivaPct           Float    @default(21) @map("iva_pct")
+  neto             Float
+  ivaMonto         Float    @map("iva_monto")
+  total            Float
+  estadoArca       String   @default("PENDIENTE") @map("estado_arca")
+  estado           String   @default("BORRADOR")
+  pdfS3Key         String?  @map("pdf_s3_key")
+  emitidaEn        DateTime @default(now()) @map("emitida_en")
 
   empresa              Empresa             @relation(fields: [empresaId], references: [id])
   operador             Usuario             @relation("OperadorFactura", fields: [operadorId], references: [id])
