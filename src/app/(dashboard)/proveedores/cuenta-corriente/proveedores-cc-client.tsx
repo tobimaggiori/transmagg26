@@ -215,7 +215,7 @@ export function ProveedoresCCClient({ saldos: saldosIniciales }: ProveedoresCCCl
                   )}
                   {seleccionado.facturasFletero.length > 0 && (
                     <div className="space-y-2">
-                      <p className="text-sm font-medium text-blue-700">Por cuenta de fletero</p>
+                      <p className="text-sm font-medium text-blue-700" title="Estas facturas fueron ingresadas desde Fleteros → Ingresar Gasto">Por cuenta de fletero</p>
                       {seleccionado.facturasFletero.map((f) => (
                         <div key={f.id} className="flex items-center justify-between rounded border border-blue-200 bg-blue-50/50 p-2 text-sm">
                           <div>

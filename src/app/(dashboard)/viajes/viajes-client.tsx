@@ -15,6 +15,8 @@ import { CircuitBadge } from "@/components/workflow/circuit-badge"
 import { WorkflowNote } from "@/components/workflow/workflow-note"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { viajeEsFacturable, razonNoFacturable } from "@/lib/facturacion"
+import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
+import { UploadPDF } from "@/components/upload-pdf"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -40,6 +42,8 @@ type ViajeAPI = {
   tarifaOperativaInicial?: number | null
   estadoLiquidacion: string
   estadoFactura: string
+  nroCartaPorte?: string | null
+  cartaPorteS3Key?: string | null
   enLiquidaciones?: Array<{
     liquidacion: { estado: string; cae: string | null; arcaEstado: string | null }
   }>
@@ -75,6 +79,49 @@ type ViajesClientProps = {
   empresaIdPropio: string | null
   initialFleteroId: string | null
   initialEmpresaId: string | null
+}
+
+// ─── Carta de porte cell ──────────────────────────────────────────────────────
+
+function CartaPorteCell({ nro, s3Key }: { nro: string; s3Key?: string }) {
+  const [cargando, setCargando] = useState(false)
+  const [error, setError] = useState("")
+
+  async function verPDF() {
+    if (!s3Key) return
+    setCargando(true)
+    setError("")
+    try {
+      const res = await fetch(`/api/storage/signed-url?key=${encodeURIComponent(s3Key)}`)
+      const data = await res.json()
+      if (res.ok && data.url) {
+        window.open(data.url as string, "_blank", "noopener,noreferrer")
+      } else {
+        setError(data.error ?? "Error al obtener el PDF")
+      }
+    } catch {
+      setError("Error de red")
+    } finally {
+      setCargando(false)
+    }
+  }
+
+  return (
+    <div className="space-y-0.5">
+      <p className="text-sm font-medium">{nro}</p>
+      {s3Key && (
+        <button
+          type="button"
+          onClick={verPDF}
+          disabled={cargando}
+          className="text-xs text-primary hover:underline disabled:opacity-50"
+        >
+          {cargando ? "Cargando..." : "Ver PDF"}
+        </button>
+      )}
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  )
 }
 
 // ─── Modal Nuevo/Editar Viaje ─────────────────────────────────────────────────
@@ -130,6 +177,8 @@ function ModalViaje({
   const [provinciaDestino, setProvinciaDestino] = useState(viaje?.provinciaDestino ?? "")
   const [kilos, setKilos] = useState(viaje?.kilos?.toString() ?? "")
   const [tarifaOperativaInicial, setTarifaBase] = useState(viaje?.tarifaOperativaInicial?.toString() ?? "")
+  const [nroCartaPorte, setNroCartaPorte] = useState(viaje?.nroCartaPorte ?? "")
+  const [cartaPorteS3Key, setCartaPorteS3Key] = useState(viaje?.cartaPorteS3Key ?? "")
 
   const camionesDelFletero = camiones.filter((c) => c.fleteroId === fleteroId)
   const choferesDelFletero = fleteroId
@@ -144,8 +193,23 @@ function ModalViaje({
   const toneladas = kilosNum > 0 ? calcularToneladas(kilosNum) : null
   const totalCalc = kilosNum > 0 && tarifaNum > 0 ? calcularTotalViaje(kilosNum, tarifaNum) : null
 
+  const esNuevo = modo === "nuevo"
+  const puedeGuardar =
+    fleteroId && camionId && choferId && empresaId && fechaViaje &&
+    provinciaOrigen && provinciaDestino && tarifaNum > 0 &&
+    (!esNuevo || (nroCartaPorte.trim() !== "" && cartaPorteS3Key !== ""))
+
+  const tooltipDeshabilitado = !puedeGuardar
+    ? !cartaPorteS3Key && esNuevo
+      ? "Debés subir el PDF de la carta de porte para continuar"
+      : !nroCartaPorte.trim() && esNuevo
+        ? "Ingresá el número de carta de porte"
+        : "Completá todos los campos obligatorios"
+    : undefined
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!puedeGuardar) return
     onGuardar({
       fleteroId,
       camionId,
@@ -161,6 +225,7 @@ function ModalViaje({
       provinciaDestino: provinciaDestino || undefined,
       kilos: kilosNum > 0 ? kilosNum : undefined,
       tarifaOperativaInicial: tarifaNum > 0 ? tarifaNum : undefined,
+      ...(esNuevo ? { nroCartaPorte: nroCartaPorte.trim(), cartaPorteS3Key } : {}),
     })
   }
 
@@ -282,12 +347,32 @@ function ModalViaje({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Provincia origen</label>
-              <input type="text" value={provinciaOrigen} onChange={(e) => setProvinciaOrigen(e.target.value)} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Provincia origen *</label>
+              <select
+                value={provinciaOrigen}
+                onChange={(e) => setProvinciaOrigen(e.target.value)}
+                required
+                className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="">Seleccioná una provincia...</option>
+                {PROVINCIAS_ARGENTINA.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Provincia destino</label>
-              <input type="text" value={provinciaDestino} onChange={(e) => setProvinciaDestino(e.target.value)} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Provincia destino *</label>
+              <select
+                value={provinciaDestino}
+                onChange={(e) => setProvinciaDestino(e.target.value)}
+                required
+                className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="">Seleccioná una provincia...</option>
+                {PROVINCIAS_ARGENTINA.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -328,17 +413,64 @@ function ModalViaje({
             </div>
           </div>
 
+          {/* Carta de Porte */}
+          {modo === "nuevo" && (
+            <div className="space-y-3 border-t pt-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Carta de Porte</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Nro. de carta de porte *</label>
+                  <input
+                    type="text"
+                    value={nroCartaPorte}
+                    onChange={(e) => setNroCartaPorte(e.target.value)}
+                    placeholder="Ej: 12345678"
+                    className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">Debe ser único en el sistema.</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">PDF de la carta de porte *</label>
+                  <UploadPDF
+                    prefijo="cartas-de-porte"
+                    onUpload={(key) => setCartaPorteS3Key(key)}
+                    label="Subir PDF"
+                    s3Key={cartaPorteS3Key || undefined}
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {modo === "editar" && (viaje?.nroCartaPorte || viaje?.cartaPorteS3Key) && (
+            <div className="border-t pt-3 space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Carta de Porte</p>
+              <p className="text-sm">Nro: <span className="font-medium">{viaje.nroCartaPorte ?? "-"}</span></p>
+              {viaje.cartaPorteS3Key && (
+                <UploadPDF
+                  prefijo="cartas-de-porte"
+                  onUpload={() => {}}
+                  s3Key={viaje.cartaPorteS3Key}
+                  disabled
+                />
+              )}
+            </div>
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onCerrar} className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent">
               Cancelar
             </button>
-            <button
-              type="submit"
-              disabled={cargando}
-              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
-            >
-              {cargando ? "Guardando..." : modo === "nuevo" ? "Crear viaje" : "Guardar cambios"}
-            </button>
+            <span title={tooltipDeshabilitado}>
+              <button
+                type="submit"
+                disabled={cargando || !puedeGuardar}
+                className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+              >
+                {cargando ? "Guardando..." : modo === "nuevo" ? "Crear viaje" : "Guardar cambios"}
+              </button>
+            </span>
           </div>
         </form>
       </div>
@@ -388,6 +520,7 @@ export function ViajesClient({
   const [vista, setVista] = useState<Vista>("todos")
   const [desde, setDesde] = useState("")
   const [hasta, setHasta] = useState("")
+  const [buscarCarta, setBuscarCarta] = useState("")
   const [modalAbierto, setModalAbierto] = useState(false)
   const [viajeEditando, setViajeEditando] = useState<ViajeAPI | undefined>(undefined)
   const [guardando, setGuardando] = useState(false)
@@ -420,12 +553,15 @@ export function ViajesClient({
     }
   }, [cargarViajes, tieneSeleccion, fleteroIdPropio, empresaIdPropio])
 
-  // Filtrar viajes según la vista
+  // Filtrar viajes según la vista y búsqueda por carta de porte
   const viajesFiltrados = viajes.filter((v) => {
     if (vista === "pend_liquidar") return v.estadoLiquidacion === "PENDIENTE_LIQUIDAR"
     if (vista === "pend_facturar") return v.estadoFactura === "PENDIENTE_FACTURAR"
     if (vista === "pend_ambos") return v.estadoLiquidacion === "PENDIENTE_LIQUIDAR" && v.estadoFactura === "PENDIENTE_FACTURAR"
     return true
+  }).filter((v) => {
+    if (!buscarCarta.trim()) return true
+    return v.nroCartaPorte?.toLowerCase().includes(buscarCarta.toLowerCase())
   })
   const resumen = resumirWorkflowViajes(viajesFiltrados)
 
@@ -522,6 +658,16 @@ export function ViajesClient({
             <label className="text-xs font-medium text-muted-foreground">Hasta</label>
             <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="h-9 rounded-md border bg-background px-2 text-sm" />
           </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Carta de porte</label>
+            <input
+              type="text"
+              value={buscarCarta}
+              onChange={(e) => setBuscarCarta(e.target.value)}
+              placeholder="Buscar por nro..."
+              className="h-9 rounded-md border bg-background px-2 text-sm w-44"
+            />
+          </div>
           <div className="flex items-end gap-2">
             <button onClick={cargarViajes} className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90">
               Filtrar
@@ -587,6 +733,7 @@ export function ViajesClient({
                       <th className="px-3 py-2 text-right font-medium">Ton</th>
                       {esInterno && <th className="px-3 py-2 text-right font-medium">Tarifa operativa inicial</th>}
                       {esInterno && <th className="px-3 py-2 text-right font-medium">Referencia</th>}
+                      <th className="px-3 py-2 text-left font-medium">Carta de Porte</th>
                       <th className="px-3 py-2 text-left font-medium">Workflow</th>
                       {esInterno && <th className="px-3 py-2 text-center font-medium">Acc.</th>}
                     </tr>
@@ -625,6 +772,13 @@ export function ViajesClient({
                           <td className="px-3 py-2 text-right">{toneladas?.toLocaleString("es-AR") ?? "-"}</td>
                           {esInterno && <td className="px-3 py-2 text-right">{tarifaOperativa != null ? formatearMoneda(tarifaOperativa) : "-"}</td>}
                           {esInterno && <td className="px-3 py-2 text-right font-medium">{total != null ? formatearMoneda(total) : "-"}</td>}
+                          <td className="px-3 py-2">
+                            {v.nroCartaPorte ? (
+                              <CartaPorteCell nro={v.nroCartaPorte} s3Key={v.cartaPorteS3Key ?? undefined} />
+                            ) : (
+                              <span className="text-muted-foreground text-xs">-</span>
+                            )}
+                          </td>
                           <td className="px-3 py-2">
                             <div className="space-y-1">
                               <div className="flex flex-wrap gap-1.5">

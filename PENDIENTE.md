@@ -142,5 +142,9 @@ Tests: 237 passed, 237 total (as of 2026-03-31 — Refactorización Cuentas fusi
   - `resumenes-tarjeta/` → Resúmenes mensuales de tarjetas
 - [x] Ingresar Factura de Proveedor mejorado: ítems con alícuota IVA por ítem, regla B/C/X sin discriminación IVA, PDF obligatorio en R2, desglose de ítems en modal de Consultar Facturas
 - [x] Pago opcional al ingresar factura de proveedor: registro en un solo paso con transacción atómica; lógica de pago extraída a src/lib/pago-proveedor.ts y compartida con /api/proveedores/[id]/pago
+- [x] Gastos por cuenta de fletero: factura proveedor al fletero pagada por Transmagg, CC proveedor con dos secciones, pago desde Registrar Pago identificando factura de fletero, descuento manual en LP con detalle, CC fletero muestra deuda y descuentos
+- [x] Módulo Gastos Fleteros: submenú en Fleteros con "Ingresar Gasto" (/fleteros/gastos/ingresar) y "Consultar Gastos" (/fleteros/gastos); formulario sin PDF crea FacturaProveedor + GastoFletero en transacción; eliminado checkbox de proveedores; API GET/POST /api/fleteros/gastos
+- [x] Bloqueo de facturación a empresa sin LP con CAE en ARCA: helper viajeEsFacturable(), filtro en facturar-client, validación 422 en POST /api/facturas, badge LP/CAE en viajes, contadores listos/bloqueados en dashboard
+- [x] Viajes: provincias de Argentina como select fijo (24 provincias canónicas), carta de porte obligatoria al crear viaje (nro único + PDF en R2 en carpeta cartas-de-porte/), validación de unicidad del nro, filtro por carta de porte en tabla de viajes
 - [ ] Conciliación bancaria automática
 - [ ] Deploy a producción (configurar variables de entorno, dominio, DB en Turso)

@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
 import { enriquecerViajeOperativo } from "@/lib/viaje-serialization"
 import { construirAvisosEdicionViaje } from "@/lib/viaje-workflow"
+import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 import type { Rol } from "@/types"
 
 const actualizarViajeSchema = z.object({
@@ -20,9 +21,9 @@ const actualizarViajeSchema = z.object({
   cupo: z.string().nullable().optional(),
   mercaderia: z.string().nullable().optional(),
   procedencia: z.string().nullable().optional(),
-  provinciaOrigen: z.string().nullable().optional(),
+  provinciaOrigen: z.enum(PROVINCIAS_ARGENTINA as unknown as [string, ...string[]]).nullable().optional(),
   destino: z.string().nullable().optional(),
-  provinciaDestino: z.string().nullable().optional(),
+  provinciaDestino: z.enum(PROVINCIAS_ARGENTINA as unknown as [string, ...string[]]).nullable().optional(),
   kilos: z.number().positive().nullable().optional(),
   tarifaOperativaInicial: z.number().positive().optional(),
 })

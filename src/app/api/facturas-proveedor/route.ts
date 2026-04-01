@@ -68,10 +68,6 @@ const crearFacturaProveedorV2Schema = z.object({
   pdfS3Key: z.string().min(1, "El PDF de la factura es obligatorio"),
   items: z.array(itemSchema).min(1, "Debe cargar al menos un ítem"),
   pago: pagoOpcionalSchema.optional().nullable(),
-  gastoFletero: z.object({
-    fleteroId: z.string().uuid(),
-    tipo: z.enum(["COMBUSTIBLE", "OTRO"]),
-  }).optional().nullable(),
 })
 
 /**
@@ -97,14 +93,12 @@ export async function GET(request: NextRequest) {
     const proveedorId = searchParams.get("proveedorId")
     const nroComprobante = searchParams.get("nroComprobante")
     const estadoPago = searchParams.get("estadoPago")
-    const esPorCuentaDeFleteroParam = searchParams.get("esPorCuentaDeFletero")
 
     const where: {
       fechaCbte?: { gte?: Date; lte?: Date }
       proveedorId?: string
       nroComprobante?: { contains: string }
       estadoPago?: string
-      esPorCuentaDeFletero?: boolean
     } = {}
 
     if (desde || hasta) {
@@ -115,14 +109,11 @@ export async function GET(request: NextRequest) {
     if (proveedorId) where.proveedorId = proveedorId
     if (nroComprobante) where.nroComprobante = { contains: nroComprobante }
     if (estadoPago) where.estadoPago = estadoPago
-    if (esPorCuentaDeFleteroParam === "true") where.esPorCuentaDeFletero = true
-    if (esPorCuentaDeFleteroParam === "false") where.esPorCuentaDeFletero = false
 
     const facturas = await prisma.facturaProveedor.findMany({
       where,
       include: {
         proveedor: { select: { id: true, razonSocial: true, cuit: true } },
-        fletero: { select: { id: true, razonSocial: true } },
         pagos: {
           select: {
             id: true,
@@ -213,16 +204,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Proveedor no encontrado" }, { status: 404 })
     }
 
-    // Si es gasto por cuenta de fletero, verificar que el fletero exista
-    if (data.gastoFletero) {
-      const fletero = await prisma.fletero.findUnique({
-        where: { id: data.gastoFletero.fleteroId, activo: true },
-      })
-      if (!fletero) {
-        return NextResponse.json({ error: "Fletero no encontrado" }, { status: 404 })
-      }
-    }
-
     // Calcular totales desde los ítems (el servidor no confía en valores del cliente)
     const itemsCalculados = data.items.map((item) => {
       const subtotalNeto = item.cantidad * item.precioUnitario
@@ -270,9 +251,6 @@ export async function POST(request: NextRequest) {
           percepcionIIBB: percIIBB > 0 ? percIIBB : null,
           percepcionIVA: percIVA > 0 ? percIVA : null,
           percepcionGanancias: percGanancias > 0 ? percGanancias : null,
-          esPorCuentaDeFletero: !!data.gastoFletero,
-          fleteroId: data.gastoFletero?.fleteroId ?? null,
-          tipoGastoFletero: data.gastoFletero?.tipo ?? null,
         },
       })
 
@@ -284,10 +262,9 @@ export async function POST(request: NextRequest) {
         })),
       })
 
-      // 3. Asientos IVA — solo para A, M, LIQ_PROD y NUNCA para facturas por cuenta de fletero
-      // (la factura es del fletero, no de Transmagg → no genera crédito fiscal para Transmagg)
+      // 3. Asientos IVA — solo para A, M, LIQ_PROD
       const asientosCreados = []
-      if (discriminaIVA && !data.gastoFletero) {
+      if (discriminaIVA) {
         // Agrupar ítems no exentos por alícuota
         const porAlicuota = new Map<number, number>()
         let baseExenta = 0
@@ -367,22 +344,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 4. Si es gasto por cuenta de fletero: crear GastoFletero
-      // La deuda del fletero nace al ingresar la factura (no al pagar al proveedor)
-      if (data.gastoFletero) {
-        await tx.gastoFletero.create({
-          data: {
-            fleteroId: data.gastoFletero.fleteroId,
-            facturaProveedorId: factura.id,
-            tipo: data.gastoFletero.tipo,
-            montoPagado: total,
-            montoDescontado: 0,
-            estado: "PENDIENTE_PAGO",
-          },
-        })
-      }
-
-      // 5. Pago opcional — dentro de la misma transacción atómica
+      // 4. Pago opcional — dentro de la misma transacción atómica
       let pagoResult: { nuevoEstado: string } | null = null
       if (data.pago) {
         pagoResult = await procesarPagoProveedor(
@@ -410,7 +372,7 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      return { factura, itemsCount: itemsCalculados.length, asientosCount: asientosCreados.length, pagoResult, esGastoFletero: !!data.gastoFletero }
+      return { factura, itemsCount: itemsCalculados.length, asientosCount: asientosCreados.length, pagoResult }
     })
 
     return NextResponse.json(

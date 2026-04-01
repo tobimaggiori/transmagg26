@@ -17,6 +17,7 @@ import { prisma } from "@/lib/prisma"
 import { esRolInterno, esRolEmpresa } from "@/lib/permissions"
 import { enriquecerViajeOperativo, ocultarTarifaOperativa } from "@/lib/viaje-serialization"
 import { resolverOperadorId } from "@/lib/session-utils"
+import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 import type { Rol } from "@/types"
 
 const crearViajeSchema = z.object({
@@ -29,13 +30,15 @@ const crearViajeSchema = z.object({
   cupo: z.string().optional(),
   mercaderia: z.string().optional(),
   procedencia: z.string().optional(),
-  provinciaOrigen: z.string().optional(),
+  provinciaOrigen: z.enum(PROVINCIAS_ARGENTINA as unknown as [string, ...string[]]),
   destino: z.string().optional(),
-  provinciaDestino: z.string().optional(),
+  provinciaDestino: z.enum(PROVINCIAS_ARGENTINA as unknown as [string, ...string[]]),
   kilos: z.number().positive().optional(),
   tarifaOperativaInicial: z.number().positive("La tarifa debe ser mayor a 0"),
   estadoLiquidacion: z.string().default("PENDIENTE_LIQUIDAR"),
   estadoFactura: z.string().default("PENDIENTE_FACTURAR"),
+  nroCartaPorte: z.string().min(1, "El número de carta de porte es obligatorio"),
+  cartaPorteS3Key: z.string().min(1, "El PDF de la carta de porte es obligatorio"),
 })
 
 /**
@@ -190,6 +193,15 @@ export async function POST(request: NextRequest) {
     if (!camion) return NextResponse.json({ error: "Camión no encontrado" }, { status: 404 })
     if (!chofer) return NextResponse.json({ error: "Chofer no encontrado" }, { status: 404 })
     if (!empresa) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 })
+
+    const { nroCartaPorte } = parsed.data
+    const existente = await prisma.viaje.findFirst({ where: { nroCartaPorte } })
+    if (existente) {
+      return NextResponse.json(
+        { error: `Ya existe un viaje con la carta de porte ${nroCartaPorte}` },
+        { status: 409 }
+      )
+    }
 
     const viaje = await prisma.viaje.create({
       data: {

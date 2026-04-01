@@ -215,6 +215,9 @@ model Viaje {
   tarifaOperativaInicial Float    @map("tarifa_operativa_inicial")
   estadoLiquidacion   String   @default("PENDIENTE_LIQUIDAR") @map("estado_liquidacion")
   estadoFactura       String   @default("PENDIENTE_FACTURAR") @map("estado_factura")
+  // Carta de porte — número único + PDF en R2
+  nroCartaPorte       String?  @map("nro_carta_porte")
+  cartaPorteS3Key     String?  @map("carta_porte_s3_key")
   creadoEn            DateTime @default(now()) @map("creado_en")
 
   fletero  Fletero @relation("FleteroViajes", fields: [fleteroId], references: [id])
@@ -227,6 +230,7 @@ model Viaje {
   enFacturas      ViajeEnFactura[]
   viajesEnNotasCD ViajeEnNotaCD[]
 
+  @@index([nroCartaPorte])
   @@map("viajes")
 }
 

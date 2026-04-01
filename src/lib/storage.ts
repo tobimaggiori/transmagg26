@@ -10,6 +10,7 @@
  *   comprobantes-pago-fletero/    → Comprobantes de pago de LP a fleteros
  *   resumenes-bancarios/          → Resúmenes mensuales bancarios
  *   resumenes-tarjeta/            → Resúmenes mensuales de tarjetas
+ *   cartas-de-porte/              → PDFs de cartas de porte de viajes
  */
 
 import {
@@ -29,6 +30,7 @@ export type StoragePrefijo =
   | "comprobantes-pago-fletero"
   | "resumenes-bancarios"
   | "resumenes-tarjeta"
+  | "cartas-de-porte"
 
 export const PREFIJOS_VALIDOS: StoragePrefijo[] = [
   "liquidaciones",
@@ -38,6 +40,7 @@ export const PREFIJOS_VALIDOS: StoragePrefijo[] = [
   "comprobantes-pago-fletero",
   "resumenes-bancarios",
   "resumenes-tarjeta",
+  "cartas-de-porte",
 ]
 
 const r2 = new S3Client({
