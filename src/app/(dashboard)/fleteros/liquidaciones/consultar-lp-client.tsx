@@ -635,17 +635,18 @@ export function ConsultarLPClient({ rol, fleteros, cuentasBancarias, fleteroIdPr
       {/* Modal pago */}
       {pagandoLiquidacion && (
         <RegistrarPagoFleteroModal
-          liquidacion={{
+          liquidaciones={[{
             id: pagandoLiquidacion.id,
             nroComprobante: pagandoLiquidacion.nroComprobante,
             ptoVenta: pagandoLiquidacion.ptoVenta,
             total: pagandoLiquidacion.total,
-            pagosExistentes: pagandoLiquidacion.pagos.reduce((s, p) => s + p.monto, 0),
-            fletero: {
-              id: pagandoLiquidacion.fleteroId,
-              razonSocial: pagandoLiquidacion.fletero.razonSocial,
-              cuit: fleteroInfo?.cuit ?? (fleteroActual ? "" : ""),
-            },
+            saldoPendiente: Math.max(0, pagandoLiquidacion.total - pagandoLiquidacion.pagos.reduce((s, p) => s + p.monto, 0)),
+            grabadaEn: pagandoLiquidacion.grabadaEn,
+          }]}
+          fletero={{
+            id: pagandoLiquidacion.fleteroId,
+            razonSocial: pagandoLiquidacion.fletero.razonSocial,
+            cuit: fleteroInfo?.cuit ?? "",
           }}
           cuentasBancarias={cuentasBancarias}
           chequesEnCartera={[]}

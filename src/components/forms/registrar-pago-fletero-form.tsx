@@ -1,8 +1,8 @@
 "use client"
 
 /**
- * Propósito: Formulario de dos paneles para registrar pago a fletero.
- * Panel izquierdo fijo: resumen del LP, gastos a descontar, botones de acción.
+ * Propósito: Formulario de dos paneles para registrar pago a uno o varios LPs del mismo fletero.
+ * Panel izquierdo fijo: lista de LPs a pagar, gastos a descontar, totales y botones.
  * Panel derecho con scroll interno: tabla de medios de pago + formulario inline de alta.
  */
 
@@ -14,6 +14,15 @@ import { Select } from "@/components/ui/select"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
+
+type LiqItem = {
+  id: string
+  nroComprobante: number | null
+  ptoVenta: number | null
+  total: number
+  saldoPendiente: number
+  grabadaEn: string
+}
 
 type CuentaBancaria = {
   id: string
@@ -45,19 +54,13 @@ type GastoPendiente = {
 }
 
 type Props = {
-  liquidacion: {
-    id: string
-    nroComprobante: number | null
-    ptoVenta: number | null
-    total: number
-    pagosExistentes: number
-    fletero: { id: string; razonSocial: string; cuit: string }
-  }
+  liquidaciones: LiqItem[]
+  fletero: { id: string; razonSocial: string; cuit: string }
   cuentasBancarias: CuentaBancaria[]
   chequesEnCartera: ChequeEnCartera[]
   saldoAFavorCC: number
   gastosPendientes?: GastoPendiente[]
-  onSuccess: () => void
+  onSuccess: (nroOP: number) => void
   onClose: () => void
 }
 
@@ -107,6 +110,11 @@ type PagoItem =
 const ars = (n: number) =>
   new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(n)
 
+function nroLP(ptoVenta: number | null, nro: number | null): string {
+  if (ptoVenta == null || nro == null) return "s/n"
+  return `${String(ptoVenta).padStart(4, "0")}-${String(nro).padStart(8, "0")}`
+}
+
 function defaultDraft(tipo: PagoItem["tipoPago"]): PagoItem {
   const today = new Date().toISOString().slice(0, 10)
   if (tipo === "TRANSFERENCIA") return { tipoPago: "TRANSFERENCIA", monto: "", cuentaBancariaId: "", referencia: "" }
@@ -150,7 +158,8 @@ function resumenItem(p: PagoItem, cuentas: CuentaBancaria[], cheques: ChequeEnCa
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export function RegistrarPagoFleteroModal({
-  liquidacion,
+  liquidaciones,
+  fletero,
   cuentasBancarias,
   chequesEnCartera,
   saldoAFavorCC,
@@ -172,14 +181,14 @@ export function RegistrarPagoFleteroModal({
   const [proximoNro, setProximoNro] = useState<number | null>(null)
 
   // ── Cálculos ────────────────────────────────────────────────────────────────
-  const saldoPendiente = liquidacion.total - liquidacion.pagosExistentes
+  const saldoPendienteTotal = liquidaciones.reduce((s, l) => s + l.saldoPendiente, 0)
 
   const totalGastosDescontados = gastosPendientes.reduce((sum, g) => {
     if (!gastosSeleccionados[g.id]) return sum
     return sum + (parseFloat(gastosMontos[g.id] ?? "0") || 0)
   }, 0)
 
-  const saldoAjustado = Math.max(0, saldoPendiente - totalGastosDescontados)
+  const saldoAjustado = Math.max(0, saldoPendienteTotal - totalGastosDescontados)
 
   const totalMedios = pagos.reduce((sum, p) => sum + (parseFloat(p.monto) || 0), 0)
   const diferencia = totalMedios - saldoAjustado
@@ -257,6 +266,8 @@ export function RegistrarPagoFleteroModal({
         .filter((g) => g.montoDescontar > 0)
 
       const body = {
+        fleteroId: fletero.id,
+        liquidacionIds: liquidaciones.map((l) => l.id),
         pagos: pagos.map((p) => {
           const monto = parseFloat(p.monto)
           if (p.tipoPago === "TRANSFERENCIA") {
@@ -285,29 +296,20 @@ export function RegistrarPagoFleteroModal({
         gastos: gastosPayload.length > 0 ? gastosPayload : undefined,
       }
 
-      // Allow pagos array to be empty if only gastos are being discounted
-      if (body.pagos.length === 0 && gastosPayload.length > 0) {
-        body.pagos = []
-      }
-
-      const res = await fetch(`/api/liquidaciones/${liquidacion.id}/pago`, {
+      const res = await fetch("/api/ordenes-pago", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error ?? "Error al registrar pago"); return }
-      onSuccess()
+      onSuccess(data.ordenPago.nro)
     } catch {
       setError("Error de red al registrar pago")
     } finally {
       setLoading(false)
     }
   }
-
-  const nroLabel = liquidacion.ptoVenta != null && liquidacion.nroComprobante != null
-    ? `LP ${String(liquidacion.ptoVenta).padStart(4, "0")}-${String(liquidacion.nroComprobante).padStart(8, "0")}`
-    : "LP (sin número)"
 
   const puedeConfirmar = !loading && (pagos.length > 0 || totalGastosDescontados > 0) && !draft
 
@@ -332,8 +334,8 @@ export function RegistrarPagoFleteroModal({
       <PreviewOrdenPago
         nro={proximoNro}
         fecha={new Date().toISOString().slice(0, 10)}
-        fletero={liquidacion.fletero}
-        nroLabel={nroLabel}
+        fletero={fletero}
+        liquidaciones={liquidaciones}
         pagos={pagos}
         gastosDescontados={gastosPendientes.filter((g) => gastosSeleccionados[g.id]).map((g) => ({
           razonSocial: g.facturaProveedor.proveedor.razonSocial,
@@ -360,25 +362,39 @@ export function RegistrarPagoFleteroModal({
         {/* ── Panel izquierdo ─────────────────────────────────────────────── */}
         <div className="md:w-[340px] flex-shrink-0 border-b md:border-b-0 md:border-r flex flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto p-5 space-y-4">
-            {/* Header LP */}
+            {/* Header */}
             <div>
               <h2 className="text-base font-semibold">Registrar pago</h2>
-              <p className="text-sm font-medium mt-0.5">{nroLabel}</p>
-              <p className="text-xs text-muted-foreground">{liquidacion.fletero.razonSocial}</p>
+              <p className="text-xs text-muted-foreground">{fletero.razonSocial}</p>
+            </div>
+
+            {/* Lista de LPs a pagar */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                Facturas a pagar
+              </p>
+              <div className="space-y-1">
+                {liquidaciones.map((liq) => {
+                  const esParcial = liq.saldoPendiente < liq.total
+                  return (
+                    <div key={liq.id} className="flex justify-between items-center text-xs py-1 border-b last:border-0">
+                      <span className="font-mono text-muted-foreground">
+                        LP {nroLP(liq.ptoVenta, liq.nroComprobante)}
+                        {esParcial && <span className="ml-1 text-amber-600">(parcial)</span>}
+                      </span>
+                      <span className="font-semibold">{ars(liq.saldoPendiente)}</span>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
 
             {/* Resumen financiero */}
             <div className="rounded-md border p-3 space-y-1 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Total LP</span>
-                <span>{ars(liquidacion.total)}</span>
+                <span className="text-muted-foreground">Saldo total</span>
+                <span>{ars(saldoPendienteTotal)}</span>
               </div>
-              {liquidacion.pagosExistentes > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Ya pagado</span>
-                  <span className="text-green-600">- {ars(liquidacion.pagosExistentes)}</span>
-                </div>
-              )}
               {totalGastosDescontados > 0 && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Gastos a descontar</span>
@@ -386,7 +402,7 @@ export function RegistrarPagoFleteroModal({
                 </div>
               )}
               <div className="flex justify-between font-semibold border-t pt-1 mt-1">
-                <span>Saldo a cubrir</span>
+                <span>A cubrir</span>
                 <span>{ars(saldoAjustado)}</span>
               </div>
               {saldoAFavorCC > 0 && (
@@ -515,7 +531,7 @@ export function RegistrarPagoFleteroModal({
                 cuentasBancarias={cuentasBancarias}
                 chequesEnCartera={chequesEnCartera}
                 saldoAFavorCC={saldoAFavorCC}
-                cuit={liquidacion.fletero.cuit}
+                cuit={fletero.cuit}
                 onChangeTipo={changeDraftTipo}
                 onUpdate={updateDraft}
                 onConfirm={confirmarDraft}
@@ -782,7 +798,7 @@ function PreviewOrdenPago({
   nro,
   fecha,
   fletero,
-  nroLabel,
+  liquidaciones,
   pagos,
   gastosDescontados,
   totalMedios,
@@ -796,7 +812,7 @@ function PreviewOrdenPago({
   nro: number | null
   fecha: string
   fletero: { id: string; razonSocial: string; cuit: string }
-  nroLabel: string
+  liquidaciones: LiqItem[]
   pagos: PagoItem[]
   gastosDescontados: GastoDescontadoPreview[]
   totalMedios: number
@@ -807,6 +823,9 @@ function PreviewOrdenPago({
   onVolver: () => void
   onConfirmar: () => void
 }) {
+  const ars = (n: number) =>
+    new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(n)
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 md:p-4">
       <div
@@ -820,7 +839,10 @@ function PreviewOrdenPago({
               Preview — Orden de Pago{nro != null ? ` Nro ${nro.toLocaleString("es-AR")}` : ""}
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {nroLabel} · {fletero.razonSocial} · {new Date(fecha + "T00:00:00").toLocaleDateString("es-AR")}
+              {fletero.razonSocial} · {new Date(fecha + "T00:00:00").toLocaleDateString("es-AR")}
+              {liquidaciones.length === 1
+                ? ` · LP ${nroLP(liquidaciones[0].ptoVenta, liquidaciones[0].nroComprobante)}`
+                : ` · ${liquidaciones.length} LPs`}
             </p>
           </div>
           <button onClick={onVolver} className="text-muted-foreground hover:text-foreground text-xl leading-none">
@@ -834,6 +856,38 @@ function PreviewOrdenPago({
           <div className="rounded border p-3 text-sm space-y-0.5">
             <p className="font-semibold">{fletero.razonSocial}</p>
             <p className="text-xs text-muted-foreground">CUIT: {fletero.cuit}</p>
+          </div>
+
+          {/* Facturas aplicadas */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
+              Facturas Aplicadas
+            </p>
+            <div className="rounded border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-3 py-1.5 text-left text-xs font-medium">LP</th>
+                    <th className="px-3 py-1.5 text-right text-xs font-medium">Saldo a pagar</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {liquidaciones.map((liq) => (
+                    <tr key={liq.id}>
+                      <td className="px-3 py-2 text-xs font-mono">
+                        LP {nroLP(liq.ptoVenta, liq.nroComprobante)}
+                        {liq.saldoPendiente < liq.total && (
+                          <span className="ml-1 text-amber-600 font-sans">(parcial)</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right text-xs font-mono">
+                        {ars(liq.saldoPendiente)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* Medios de pago */}

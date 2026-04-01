@@ -133,26 +133,40 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
   const facturas = Array.from(liquidacionesUnicas.values())
   const totalFacturas = facturas.reduce((s, f) => s + f.total, 0)
 
-  // Cheques propios
-  const chequesPropios = op.pagos
-    .filter((p) => p.tipoPago === "CHEQUE_PROPIO" && p.chequeEmitido)
-    .map((p) => ({
-      cuenta: p.chequeEmitido!.cuenta?.nombre ?? p.chequeEmitido!.cuenta?.bancoOEntidad ?? "-",
-      vencimiento: p.chequeEmitido!.fechaPago,
-      nro: p.chequeEmitido!.nroCheque ?? "-",
-      monto: p.monto,
-    }))
+  // Cheques propios — deduplicar por chequeEmitidoId (un cheque puede cubrir varios LPs)
+  type ChequePropioRow = { cuenta: string; vencimiento: Date; nro: string; monto: number }
+  const chequesPropiosMap = new Map<string, ChequePropioRow>()
+  for (const p of op.pagos) {
+    if (p.tipoPago === "CHEQUE_PROPIO" && p.chequeEmitido && p.chequeEmitidoId) {
+      if (!chequesPropiosMap.has(p.chequeEmitidoId)) {
+        chequesPropiosMap.set(p.chequeEmitidoId, {
+          cuenta: p.chequeEmitido.cuenta?.nombre ?? p.chequeEmitido.cuenta?.bancoOEntidad ?? "-",
+          vencimiento: p.chequeEmitido.fechaPago,
+          nro: p.chequeEmitido.nroCheque ?? "-",
+          monto: p.chequeEmitido.monto,
+        })
+      }
+    }
+  }
+  const chequesPropios = Array.from(chequesPropiosMap.values())
   const totalChequesPropios = chequesPropios.reduce((s, c) => s + c.monto, 0)
 
-  // Cheques de tercero
-  const chequesTercero = op.pagos
-    .filter((p) => p.tipoPago === "CHEQUE_TERCERO" && p.chequeRecibido)
-    .map((p) => ({
-      banco: p.chequeRecibido!.bancoEmisor,
-      vencimiento: p.chequeRecibido!.fechaCobro,
-      nro: p.chequeRecibido!.nroCheque,
-      monto: p.monto,
-    }))
+  // Cheques de tercero — deduplicar por chequeRecibidoId
+  type ChequeTerceroRow = { banco: string; vencimiento: Date; nro: string; monto: number }
+  const chequesTerceroMap = new Map<string, ChequeTerceroRow>()
+  for (const p of op.pagos) {
+    if (p.tipoPago === "CHEQUE_TERCERO" && p.chequeRecibido && p.chequeRecibidoId) {
+      if (!chequesTerceroMap.has(p.chequeRecibidoId)) {
+        chequesTerceroMap.set(p.chequeRecibidoId, {
+          banco: p.chequeRecibido.bancoEmisor,
+          vencimiento: p.chequeRecibido.fechaCobro,
+          nro: p.chequeRecibido.nroCheque,
+          monto: p.chequeRecibido.monto,
+        })
+      }
+    }
+  }
+  const chequesTercero = Array.from(chequesTerceroMap.values())
   const totalChequesTercero = chequesTercero.reduce((s, c) => s + c.monto, 0)
 
   // Transferencias y efectivo

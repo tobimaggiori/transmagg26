@@ -2,7 +2,7 @@
 
 /**
  * Propósito: Componente cliente para la página Orden de Pago (/fleteros/pago).
- * Flujo: combobox de fletero → tabla de LPs pendientes → RegistrarPagoFleteroModal → éxito.
+ * Flujo: combobox de fletero → tabla de LPs con checkboxes → seleccionar varios → formulario de pago.
  */
 
 import { useState, useCallback } from "react"
@@ -83,8 +83,11 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera }: Reg
   const [saldoAFavorCC, setSaldoAFavorCC] = useState(0)
   const [loadingFletero, setLoadingFletero] = useState(false)
 
-  const [pagandoLP, setPagandoLP] = useState<LiquidacionPendiente | null>(null)
-  const [loadingPago, setLoadingPago] = useState(false)
+  // Checkboxes — IDs de LPs seleccionados
+  const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
+
+  // Paso actual: "select" (tabla con checkboxes) o "pay" (formulario de pago)
+  const [pagando, setPagando] = useState(false)
 
   const [ultimaOP, setUltimaOP] = useState<{ nro: number } | null>(null)
 
@@ -95,6 +98,7 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera }: Reg
     setLiquidaciones([])
     setGastosPendientes([])
     setSaldoAFavorCC(0)
+    setSeleccionados(new Set())
     setUltimaOP(null)
     if (!id) return
 
@@ -113,21 +117,44 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera }: Reg
     }
   }, [])
 
-  async function abrirPago(liq: LiquidacionPendiente) {
-    setLoadingPago(true)
-    try {
-      // Refrescar saldo CC al momento de abrir el modal
-      const res = await fetch(`/api/fleteros/${fleteroId}/saldo-cc`)
-      if (res.ok) setSaldoAFavorCC((await res.json()).saldoAFavor ?? 0)
-    } finally {
-      setLoadingPago(false)
-    }
-    setPagandoLP(liq)
+  // ── Gestión de checkboxes ──────────────────────────────────────────────────
+  const todosSeleccionados = liquidaciones.length > 0 && liquidaciones.every((l) => seleccionados.has(l.id))
+  const algunoSeleccionado = liquidaciones.some((l) => seleccionados.has(l.id))
+
+  function toggleLp(id: string) {
+    setSeleccionados((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
-  function onSuccess() {
-    setPagandoLP(null)
-    // Recargar lista de LPs pendientes
+  function toggleTodos() {
+    if (todosSeleccionados) {
+      setSeleccionados(new Set())
+    } else {
+      setSeleccionados(new Set(liquidaciones.map((l) => l.id)))
+    }
+  }
+
+  const lpsSeleccionados = liquidaciones.filter((l) => seleccionados.has(l.id))
+  const saldoTotalSeleccionado = lpsSeleccionados.reduce((s, l) => s + l.saldoPendiente, 0)
+
+  // ── Abrir formulario de pago ───────────────────────────────────────────────
+  async function abrirPago() {
+    // Refrescar saldo CC antes de abrir
+    try {
+      const res = await fetch(`/api/fleteros/${fleteroId}/saldo-cc`)
+      if (res.ok) setSaldoAFavorCC((await res.json()).saldoAFavor ?? 0)
+    } catch { /* silencioso */ }
+    setPagando(true)
+  }
+
+  function onSuccess(nroOP: number) {
+    setPagando(false)
+    setSeleccionados(new Set())
+    setUltimaOP({ nro: nroOP })
     onSelectFletero(fleteroId)
   }
 
@@ -136,7 +163,7 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera }: Reg
       <div>
         <h1 className="text-2xl font-bold">Orden de Pago</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Seleccioná un fletero para ver sus liquidaciones pendientes de pago.
+          Seleccioná un fletero y los LPs que querés pagar con una misma Orden de Pago.
         </p>
       </div>
 
@@ -158,7 +185,7 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera }: Reg
         </div>
       )}
 
-      {/* Tabla de LPs pendientes */}
+      {/* Tabla de LPs pendientes con checkboxes */}
       {fleteroId && (
         <div className="space-y-3">
           <h2 className="text-base font-semibold">
@@ -173,67 +200,105 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera }: Reg
               No hay liquidaciones pendientes de pago para este fletero.
             </div>
           ) : (
-            <div className="rounded-lg border overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50">
-                  <tr>
-                    <th className="px-4 py-2.5 text-left font-medium">Nro LP</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Fecha</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Total</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Saldo pend.</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Estado</th>
-                    <th className="px-4 py-2.5" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {liquidaciones.map((liq) => (
-                    <tr key={liq.id} className="hover:bg-muted/20">
-                      <td className="px-4 py-3 font-mono text-xs">{nroLP(liq.ptoVenta, liq.nroComprobante)}</td>
-                      <td className="px-4 py-3">{formatearFecha(new Date(liq.grabadaEn))}</td>
-                      <td className="px-4 py-3 text-right">{formatearMoneda(liq.total)}</td>
-                      <td className="px-4 py-3 text-right font-semibold">{formatearMoneda(liq.saldoPendiente)}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                          liq.estado === "EMITIDA" ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800"
-                        }`}>
-                          {estadoLabel[liq.estado] ?? liq.estado}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={() => abrirPago(liq)}
-                          disabled={loadingPago}
-                          className="h-7 px-3 rounded-md border text-xs font-medium hover:bg-accent disabled:opacity-50"
-                        >
-                          Registrar pago &rarr;
-                        </button>
-                      </td>
+            <>
+              <div className="rounded-lg border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="px-3 py-2.5 w-10">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 cursor-pointer"
+                          checked={todosSeleccionados}
+                          onChange={toggleTodos}
+                          title={todosSeleccionados ? "Deseleccionar todos" : "Seleccionar todos"}
+                        />
+                      </th>
+                      <th className="px-4 py-2.5 text-left font-medium">Nro LP</th>
+                      <th className="px-4 py-2.5 text-left font-medium">Fecha</th>
+                      <th className="px-4 py-2.5 text-right font-medium">Total</th>
+                      <th className="px-4 py-2.5 text-right font-medium">Saldo pend.</th>
+                      <th className="px-4 py-2.5 text-left font-medium">Estado</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y">
+                    {liquidaciones.map((liq) => {
+                      const checked = seleccionados.has(liq.id)
+                      return (
+                        <tr
+                          key={liq.id}
+                          className={`cursor-pointer ${checked ? "bg-primary/5" : "hover:bg-muted/20"}`}
+                          onClick={() => toggleLp(liq.id)}
+                        >
+                          <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 cursor-pointer"
+                              checked={checked}
+                              onChange={() => toggleLp(liq.id)}
+                            />
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs">{nroLP(liq.ptoVenta, liq.nroComprobante)}</td>
+                          <td className="px-4 py-3">{formatearFecha(new Date(liq.grabadaEn))}</td>
+                          <td className="px-4 py-3 text-right">{formatearMoneda(liq.total)}</td>
+                          <td className="px-4 py-3 text-right font-semibold">{formatearMoneda(liq.saldoPendiente)}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                              liq.estado === "EMITIDA" ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800"
+                            }`}>
+                              {estadoLabel[liq.estado] ?? liq.estado}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Footer de selección */}
+              <div className="flex items-center justify-between px-1">
+                <p className="text-sm text-muted-foreground">
+                  {algunoSeleccionado
+                    ? <>
+                        <span className="font-medium text-foreground">{lpsSeleccionados.length} LP{lpsSeleccionados.length !== 1 ? "s" : ""}</span>
+                        {" "}seleccionado{lpsSeleccionados.length !== 1 ? "s" : ""} · Saldo total:{" "}
+                        <span className="font-semibold text-foreground">{formatearMoneda(saldoTotalSeleccionado)}</span>
+                      </>
+                    : "Seleccioná uno o más LPs para continuar"
+                  }
+                </p>
+                <button
+                  onClick={abrirPago}
+                  disabled={!algunoSeleccionado}
+                  className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Continuar con el pago &rarr;
+                </button>
+              </div>
+            </>
           )}
         </div>
       )}
 
-      {/* Modal de pago */}
-      {pagandoLP && fletero && (
+      {/* Formulario de pago multi-LP */}
+      {pagando && fletero && lpsSeleccionados.length > 0 && (
         <RegistrarPagoFleteroModal
-          liquidacion={{
-            id: pagandoLP.id,
-            nroComprobante: pagandoLP.nroComprobante,
-            ptoVenta: pagandoLP.ptoVenta,
-            total: pagandoLP.total,
-            pagosExistentes: pagandoLP.totalPagado,
-            fletero: { id: fletero.id, razonSocial: fletero.razonSocial, cuit: fletero.cuit },
-          }}
+          liquidaciones={lpsSeleccionados.map((liq) => ({
+            id: liq.id,
+            nroComprobante: liq.nroComprobante,
+            ptoVenta: liq.ptoVenta,
+            total: liq.total,
+            saldoPendiente: liq.saldoPendiente,
+            grabadaEn: liq.grabadaEn,
+          }))}
+          fletero={{ id: fletero.id, razonSocial: fletero.razonSocial, cuit: fletero.cuit }}
           cuentasBancarias={cuentas}
           chequesEnCartera={chequesEnCartera}
           saldoAFavorCC={saldoAFavorCC}
           gastosPendientes={gastosPendientes.filter((g) => g.estado !== "DESCONTADO_TOTAL")}
           onSuccess={onSuccess}
-          onClose={() => setPagandoLP(null)}
+          onClose={() => setPagando(false)}
         />
       )}
     </div>
