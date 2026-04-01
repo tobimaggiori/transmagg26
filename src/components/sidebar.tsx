@@ -37,6 +37,8 @@ interface SidebarProps {
   nombreUsuario?: string
   /** Email del usuario autenticado */
   emailUsuario?: string
+  /** Cuando es true, muestra solo "Mi Panel" (chofer empleado de Transmagg) */
+  esChoferTransmagg?: boolean
 }
 
 /**
@@ -174,7 +176,7 @@ function NavSimpleItem({
  * <Sidebar rol="ADMIN_EMPRESA" emailUsuario="empresa@x.com" />
  * // => sidebar con Dashboard, grupo Empresas
  */
-export function Sidebar({ rol, nombreUsuario, emailUsuario }: SidebarProps) {
+export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg }: SidebarProps) {
   const pathname = usePathname()
 
   // Determine which group (if any) is currently active based on pathname
@@ -201,6 +203,16 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario }: SidebarProps) {
       {/* Navegación principal */}
       <nav className="flex-1 overflow-auto px-3 py-4">
         <div className="space-y-1">
+          {/* Sidebar minimalista para chofer empleado de Transmagg */}
+          {esChoferTransmagg ? (
+            <NavSimpleItem
+              href="/dashboard"
+              label="Mi Panel"
+              icon={LayoutDashboard}
+              pathname={pathname}
+            />
+          ) : (
+          <>
           {/* Dashboard — siempre visible */}
           {puedeAcceder(rol, "dashboard") && (
             <NavSimpleItem
@@ -279,7 +291,7 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario }: SidebarProps) {
             />
           )}
 
-          {/* Mi Flota — solo FLETERO */}
+          {/* Mi Flota — roles internos y FLETERO */}
           {puedeAcceder(rol, "mi_flota") && (
             <NavSimpleItem
               href="/mi-flota"
@@ -287,6 +299,8 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario }: SidebarProps) {
               icon={Warehouse}
               pathname={pathname}
             />
+          )}
+          </>
           )}
         </div>
       </nav>

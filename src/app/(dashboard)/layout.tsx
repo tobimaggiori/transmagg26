@@ -6,6 +6,7 @@
 
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
+import { prisma } from "@/lib/prisma"
 import { Sidebar } from "@/components/sidebar"
 import type { Rol } from "@/types"
 
@@ -25,6 +26,8 @@ import type { Rol } from "@/types"
  * <DashboardLayout><LiquidacionesPage /></DashboardLayout>
  * // Sin sesión → redirect /login (children nunca se renderiza)
  * <DashboardLayout><AdminPage /></DashboardLayout>
+ * // Sesión CHOFER empleado de Transmagg → sidebar minimalista con solo "Mi Panel"
+ * <DashboardLayout><DashboardChoferPage /></DashboardLayout>
  */
 export default async function DashboardLayout({
   children,
@@ -41,9 +44,19 @@ export default async function DashboardLayout({
   const nombre = session.user.name ?? undefined
   const email = session.user.email ?? undefined
 
+  // Para CHOFER: detectar si es empleado de Transmagg (tiene Empleado asociado y no tiene fleteroId)
+  let esChoferTransmagg = false
+  if (rol === "CHOFER") {
+    const usuario = await prisma.usuario.findFirst({
+      where: { email: session.user.email ?? "" },
+      select: { fleteroId: true, empleado: { select: { id: true } } },
+    })
+    esChoferTransmagg = !!usuario?.empleado && !usuario.fleteroId
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar rol={rol} nombreUsuario={nombre} emailUsuario={email} />
+      <Sidebar rol={rol} nombreUsuario={nombre} emailUsuario={email} esChoferTransmagg={esChoferTransmagg} />
       <main className="flex-1 overflow-auto">
         <div className="h-full p-6">{children}</div>
       </main>
