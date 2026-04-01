@@ -1,36 +1,131 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Transmagg — Sistema de Gestión de Transporte
 
-## Getting Started
+Sistema de gestión operativa y financiera para una empresa de transporte de cargas. Desarrollado con Next.js 14 App Router, TypeScript, Prisma 7 + LibSQL/SQLite y shadcn/ui.
 
-First, run the development server:
+## Módulos implementados
+
+### Transporte y operaciones
+- **Viajes** — CRUD completo con estados de liquidación y facturación independientes, carta de porte obligatoria, cupo, provincias canónicas
+- **Fleteros** — CRUD con usuario asociado, condición IVA, gestión de flota (camiones + choferes)
+- **Flota propia** — Camiones propios de Transmagg con pólizas de seguro y alertas de vencimiento, asignación de choferes empleados
+
+### Documentos financieros
+- **Liquidaciones (LP)** — "Cuenta de Venta y Líquido Producto" con estados, numeración ARCA, asientos IIBB
+- **Facturas emitidas** — A empresas clientes, tipos A/B/C/M/X, asientos IVA e IIBB
+- **Notas de Crédito/Débito** — NC/ND emitidas y recibidas (4 tipos, 10 subtipos), integradas en CC
+- **Facturas de proveedores** — Ítems con alícuota IVA, pago integrado o diferido
+
+### Cobros y pagos
+- **Pagos a fleteros** — Multi-liquidación, multi-medio, pago parcial, historial
+- **Pagos a proveedores** — 8 tipos de pago, comprobante PDF, efectos secundarios atómicos
+- **Cheques** — ECheq emitidos + cartera recibida, endoso, descuento, broker
+- **Adelantos a fleteros** — Con descuento automático en liquidaciones
+
+### Contabilidad
+- **Cuentas bancarias** — Saldos, FCI, movimientos sin factura, resúmenes bancarios
+- **Tarjetas** — Corporativas y prepagas con control de gastos
+- **IVA** — Libro IVA Compras/Ventas con exportación PDF/Excel
+- **IIBB** — Por provincia y período con exportación
+- **Chequeras** — ECheq emitidos y cartera recibida con flujo completo
+- **Reportes** — Gastos por concepto, LP vs Facturas, Viajes sin LP, Movimientos
+
+### Configuración
+- **ABM** — Alta, baja, modificación de todas las entidades (solo ADMIN_TRANSMAGG)
+- **ARCA** — Configuración del emisor, certificado digital, puntos de venta, ambiente (homologación/producción)
+
+### Usuarios y roles
+- Autenticación passwordless con OTP por email
+- Roles: ADMIN_TRANSMAGG, OPERADOR_TRANSMAGG, FLETERO, CHOFER, ADMIN_EMPRESA, OPERADOR_EMPRESA
+- Panel personalizado para CHOFER empleado de Transmagg (solo lectura, sin tarifas)
+
+---
+
+## Setup de desarrollo
+
+### Requisitos
+- Node.js 20+
+- npm
+
+### Instalación
+
+```bash
+npm install
+```
+
+### Variables de entorno
+
+Copiar `.env.example` a `.env` y completar:
+
+```bash
+cp .env.example .env
+```
+
+Las variables mínimas para desarrollo:
+- `DATABASE_URL` — ruta al archivo SQLite (por defecto `file:./prisma/dev.db`)
+- `NEXTAUTH_SECRET` — clave secreta para NextAuth (cualquier string en desarrollo)
+- `NEXTAUTH_URL` — URL base (por defecto `http://localhost:3000`)
+- `EMAIL_*` — configuración SMTP (usar Ethereal.email para desarrollo)
+
+Las variables de R2 (Cloudflare) son necesarias para subir/bajar archivos PDF. Sin ellas el sistema funciona pero las funciones de archivos fallan.
+
+### Base de datos y seed
+
+```bash
+# Aplicar migraciones
+npx prisma migrate dev
+
+# Cargar datos de prueba
+npx ts-node --compiler-options '{"module":"CommonJS"}' prisma/seed.ts
+```
+
+Usuarios de prueba creados por el seed:
+| Email | Rol |
+|-------|-----|
+| admin@transmagg.com.ar | ADMIN_TRANSMAGG |
+| operador@transmagg.com.ar | OPERADOR_TRANSMAGG |
+| juan.perez@fletero.com | FLETERO |
+| garcia.cargas@fletero.com | FLETERO |
+| admin@alimentosdelsur.com.ar | ADMIN_EMPRESA |
+| chofer.rodriguez@transmagg.com.ar | CHOFER |
+
+El login usa OTP por email. En desarrollo, el código OTP se loguea en la consola del servidor.
+
+### Desarrollo
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Verificación
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run lint       # ESLint
+npx tsc --noEmit   # TypeScript
+npm test           # Jest (251 tests)
+npm run build      # Build de producción
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## Stack técnico
 
-To learn more about Next.js, take a look at the following resources:
+- **Framework**: Next.js 14 App Router (SSR + Server Actions)
+- **Lenguaje**: TypeScript strict
+- **Base de datos**: SQLite en desarrollo, Turso/LibSQL en producción
+- **ORM**: Prisma 7 con adaptador LibSQL
+- **UI**: shadcn/ui + Tailwind CSS
+- **Autenticación**: NextAuth v5 con OTP personalizado
+- **Almacenamiento**: Cloudflare R2 (PDFs y comprobantes)
+- **Tests**: Jest con ts-jest
+- **Excel**: exceljs
+- **Validación**: Zod
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Lo que falta
 
-## Deploy on Vercel
+Ver `PENDIENTE.md` para el detalle completo. En resumen:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Integración ARCA real**: WSAA (autenticación con certificado), FECAESolicitar (obtención de CAE), QR RG 4291
+- **Generación de PDFs**: las liquidaciones y facturas tienen preview en UI pero la generación del archivo PDF no está implementada
+- **Deploy a producción**: configurar Turso, dominio, variables de entorno de producción

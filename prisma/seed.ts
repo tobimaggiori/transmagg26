@@ -16,13 +16,17 @@ async function main() {
   console.log("🌱 Iniciando seed de Transmagg...")
 
   // Limpiar modelos nuevos ANTES del deleteMany original (FK enforcement en LibSQL)
+  // Orden: hijos antes que padres para evitar FK violations
   await prisma.gastoDescuento.deleteMany()
   await prisma.gastoFletero.deleteMany()
   await prisma.gastoTarjeta.deleteMany()
   await prisma.resumenTarjeta.deleteMany()
   await prisma.tarjeta.deleteMany()
+  await prisma.resumenBancario.deleteMany() // cuentaId → Cuenta (faltaba)
+  await prisma.polizaSeguro.deleteMany()    // camionId → Camion
 
   await prisma.$transaction([
+    prisma.historialPago.deleteMany(),       // pagoFleteroId + pagoProveedorId (faltaba, debe ir antes que pagos)
     prisma.adelantoDescuento.deleteMany(),
     prisma.adelantoFletero.deleteMany(),
     prisma.gastoTarjetaPrepaga.deleteMany(),
@@ -41,6 +45,7 @@ async function main() {
     prisma.pagoProveedor.deleteMany(),
     prisma.asientoIva.deleteMany(),
     prisma.asientoIibb.deleteMany(),
+    prisma.notaCreditoDebito.deleteMany(), // cascade → ViajeEnNotaCD (faltaba, debe ir antes que viaje)
     prisma.viajeEnFactura.deleteMany(),
     prisma.viajeEnLiquidacion.deleteMany(),
     prisma.liquidacion.deleteMany(),
