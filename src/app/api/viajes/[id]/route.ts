@@ -120,16 +120,38 @@ export async function PATCH(
     if (!viaje) return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 })
 
     const { fechaViaje, ...resto } = parsed.data
-    const actualizado = await prisma.viaje.update({
-      where: { id: params.id },
-      data: {
-        ...resto,
-        ...(fechaViaje ? { fechaViaje: new Date(fechaViaje) } : {}),
-      },
-      include: {
-        fletero: { select: { razonSocial: true } },
-        empresa: { select: { razonSocial: true } },
-      },
+    const actualizado = await prisma.$transaction(async (tx) => {
+      const updated = await tx.viaje.update({
+        where: { id: params.id },
+        data: {
+          ...resto,
+          ...(fechaViaje ? { fechaViaje: new Date(fechaViaje) } : {}),
+        },
+        include: {
+          fletero: { select: { razonSocial: true } },
+          empresa: { select: { razonSocial: true } },
+        },
+      })
+
+      if (parsed.data.provinciaOrigen && parsed.data.provinciaOrigen !== viaje.provinciaOrigen) {
+        const nuevaProv = parsed.data.provinciaOrigen
+        const [velIds, vefIds] = await Promise.all([
+          tx.viajeEnLiquidacion.findMany({ where: { viajeId: viaje.id }, select: { id: true } }),
+          tx.viajeEnFactura.findMany({ where: { viajeId: viaje.id }, select: { id: true } }),
+        ])
+        await Promise.all([
+          tx.asientoIibb.updateMany({
+            where: { viajeEnLiqId: { in: velIds.map((r) => r.id) } },
+            data: { provincia: nuevaProv },
+          }),
+          tx.asientoIibb.updateMany({
+            where: { viajeEnFactId: { in: vefIds.map((r) => r.id) } },
+            data: { provincia: nuevaProv },
+          }),
+        ])
+      }
+
+      return updated
     })
 
     const avisos = construirAvisosEdicionViaje(viaje.estadoLiquidacion, viaje.estadoFactura)
