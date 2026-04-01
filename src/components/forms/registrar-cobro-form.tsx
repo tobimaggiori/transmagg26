@@ -37,6 +37,7 @@ type Props = {
 type PagoItemCheque = {
   tipoPago: "CHEQUE"
   monto: string
+  esElectronico: boolean
   nroCheque: string
   bancoEmisor: string
   fechaEmision: string
@@ -100,7 +101,7 @@ export function RegistrarCobroModal({
     const monto = pagos[index].monto
     let next: PagoItem
     if (tipo === "CHEQUE") {
-      next = { tipoPago: "CHEQUE", monto, nroCheque: "", bancoEmisor: "", fechaEmision: "", fechaCobro: "", cuitLibrador: "" }
+      next = { tipoPago: "CHEQUE", monto, esElectronico: false, nroCheque: "", bancoEmisor: "", fechaEmision: "", fechaCobro: "", cuitLibrador: "" }
     } else if (tipo === "TRANSFERENCIA") {
       next = { tipoPago: "TRANSFERENCIA", monto, cuentaBancariaId: "", referencia: "" }
     } else if (tipo === "EFECTIVO") {
@@ -138,7 +139,7 @@ export function RegistrarCobroModal({
         pagos: pagos.map((p) => {
           const monto = parseFloat(p.monto)
           if (p.tipoPago === "CHEQUE") {
-            return { tipoPago: p.tipoPago, monto, nroCheque: p.nroCheque, bancoEmisor: p.bancoEmisor, fechaEmision: p.fechaEmision, fechaCobro: p.fechaCobro, cuitLibrador: p.cuitLibrador || undefined }
+            return { tipoPago: p.tipoPago, monto, esElectronico: p.esElectronico, nroCheque: p.nroCheque, bancoEmisor: p.bancoEmisor, fechaEmision: p.fechaEmision, fechaCobro: p.fechaCobro, cuitLibrador: p.cuitLibrador || undefined }
           } else if (p.tipoPago === "TRANSFERENCIA") {
             return { tipoPago: p.tipoPago, monto, cuentaBancariaId: p.cuentaBancariaId, referencia: p.referencia || undefined }
           } else if (p.tipoPago === "EFECTIVO") {
@@ -237,6 +238,15 @@ export function RegistrarCobroModal({
 
               {pago.tipoPago === "CHEQUE" && (
                 <div className="space-y-3">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={pago.esElectronico}
+                      onChange={(e) => updatePago(i, { esElectronico: e.target.checked } as Partial<PagoItem>)}
+                      className="h-4 w-4 rounded border-input"
+                    />
+                    Cheque electrónico (ECheq)
+                  </label>
                   <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-1">
                       <Label>Nro cheque</Label>

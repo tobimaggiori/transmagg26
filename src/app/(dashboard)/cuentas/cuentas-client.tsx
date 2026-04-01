@@ -2,8 +2,9 @@
 
 /**
  * Propósito: Componente client para gestión de cuentas bancarias.
- * Muestra lista de cuentas y detalle con tabs: Movimientos, Cheques Recibidos,
- * Cheques Emitidos, Planillas Galicia, FCI Propios, Tarjetas Prepagas.
+ * Muestra lista de cuentas y detalle con tabs: Movimientos (CRUD inline),
+ * Resúmenes Bancarios, Broker Pendiente, Planillas Galicia, FCI Propios,
+ * Tarjetas Prepagas, Configuración.
  */
 
 import { useState, useEffect, useCallback } from "react"
@@ -14,8 +15,10 @@ import { Select } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { FormError } from "@/components/ui/form-error"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { UploadPDF } from "@/components/upload-pdf"
+import { ViewPDF } from "@/components/view-pdf"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
-import { Plus, RefreshCw } from "lucide-react"
+import { Plus, RefreshCw, Download, Trash2, Pencil } from "lucide-react"
 import { diasHabilesDesde } from "@/lib/financial"
 
 // --- Tipos ---
@@ -50,27 +53,38 @@ interface FciItem {
   saldos: Array<{ id: string; saldoInformado: number; fechaActualizacion: string }>
 }
 
-
-interface ChequeRecibido {
+interface Movimiento {
   id: string
-  empresa: { razonSocial: string }
-  nroCheque: string
-  bancoEmisor: string
+  tipo: string
+  categoria: string
   monto: number
-  fechaCobro: string
-  estado: string
-  esElectronico: boolean
+  fecha: string
+  descripcion: string
+  referencia: string | null
+  comprobanteS3Key: string | null
+  saldoDespues: number | null
+  operador: { nombre: string; apellido: string }
 }
 
-interface ChequeEmitido {
+interface ResumenBancario {
   id: string
-  nroCheque: string | null
-  nroDocBeneficiario: string
-  monto: number
-  fechaPago: string
+  mes: number
+  anio: number
   estado: string
-  planillaGaliciaId: string | null
-  esElectronico: boolean
+  pdfS3Key: string | null
+  creadoEn: string
+  operador: { nombre: string; apellido: string }
+}
+
+interface ChequeRecibidoBroker {
+  id: string
+  nroCheque: string
+  monto: number
+  fechaCobro: string
+  creadoEn: string
+  empresa: { razonSocial: string }
+  endosadoABrokerId: string | null
+  fechaDepositoBroker: string | null
 }
 
 interface PlanillaGalicia {
@@ -82,326 +96,601 @@ interface PlanillaGalicia {
   creadaEn: string
 }
 
-type TabId = "movimientos" | "cheques-recibidos" | "cheques-emitidos" | "planillas-galicia" | "fci" | "tarjetas"
+type TabId =
+  | "movimientos"
+  | "resumenes-bancarios"
+  | "broker-pendiente"
+  | "planillas-galicia"
+  | "fci"
+  | "tarjetas"
+  | "configuracion"
 
 interface CuentasClientProps {
   cuentaInicialId?: string
   tabInicial?: string
+  esAdmin?: boolean
 }
 
-// --- Sub-componente: Tab Movimientos ---
+const CATEGORIAS = [
+  "CHEQUE_DEPOSITADO",
+  "CHEQUE_EMITIDO_DEBITADO",
+  "TRANSFERENCIA_RECIBIDA",
+  "TRANSFERENCIA_ENVIADA",
+  "TRANSFERENCIA_ENTRE_CUENTAS_PROPIAS",
+  "ENVIO_A_BROKER",
+  "RESCATE_DE_BROKER",
+  "INTERES_CUENTA_REMUNERADA",
+  "PAGO_SERVICIO",
+  "MANTENIMIENTO_CUENTA",
+  "PAGO_TARJETA",
+  "DESCUENTO_CHEQUE_BANCO",
+  "PAGO_SUELDO",
+  "OTRO",
+]
 
-function TabMovimientos({ cuenta }: { cuenta: Cuenta }) {
-  return (
-    <div className="space-y-4">
-      <div className="rounded-lg border bg-muted/30 p-5 text-sm text-muted-foreground">
-        <p className="font-medium text-foreground mb-1">Los movimientos de esta cuenta se gestionan en Contabilidad → Movimientos.</p>
-        <p className="mb-4">Podés registrar ingresos y egresos, filtrar por período, cuenta y categoría, y exportar a Excel.</p>
-        <a
-          href={`/contabilidad/movimientos?cuentaId=${cuenta.id}`}
-          className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-        >
-          Ver movimientos de {cuenta.nombre}
-        </a>
-      </div>
-    </div>
-  )
-}
+const MESES = [
+  "Enero","Febrero","Marzo","Abril","Mayo","Junio",
+  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
+]
 
-// --- Sub-componente: Tab Cheques Recibidos ---
+// --- Sub-componente: Tab Movimientos (CRUD inline) ---
 
-function TabChequesRecibidos({ cuenta }: { cuenta: Cuenta }) {
-  const [cheques, setCheques] = useState<ChequeRecibido[]>([])
+function TabMovimientos({ cuenta, esAdmin }: { cuenta: Cuenta; esAdmin: boolean }) {
+  const [movimientos, setMovimientos] = useState<Movimiento[]>([])
+  const [total, setTotal] = useState(0)
+  const [totalCreditos, setTotalCreditos] = useState(0)
+  const [totalDebitos, setTotalDebitos] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [modalAlta, setModalAlta] = useState(false)
-  const [form, setForm] = useState({ empresaId: "", nroCheque: "", bancoEmisor: "", monto: "", fechaEmision: new Date().toISOString().slice(0,10), fechaCobro: new Date().toISOString().slice(0,10), esElectronico: false })
-  const [empresas, setEmpresas] = useState<Array<{ id: string; razonSocial: string }>>([])
-  const [error, setError] = useState("")
+  const [page, setPage] = useState(1)
+  const limit = 50
+
+  const [filtroTipo, setFiltroTipo] = useState("")
+  const [filtroCategoria, setFiltroCategoria] = useState("")
+  const [filtroDesde, setFiltroDesde] = useState("")
+  const [filtroHasta, setFiltroHasta] = useState("")
+
+  const [modalNuevo, setModalNuevo] = useState(false)
+  const [form, setForm] = useState({
+    tipo: "INGRESO", categoria: "OTRO", monto: "", fecha: new Date().toISOString().slice(0, 10),
+    descripcion: "", referencia: "",
+  })
   const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState("")
 
-  const cargar = useCallback(() => {
+  const [editando, setEditando] = useState<Movimiento | null>(null)
+  const [formEdit, setFormEdit] = useState({ descripcion: "", referencia: "" })
+  const [guardandoEdit, setGuardandoEdit] = useState(false)
+  const [errorEdit, setErrorEdit] = useState("")
+
+  const buildQuery = useCallback((p: number) => {
+    const params = new URLSearchParams()
+    params.set("page", String(p))
+    params.set("limit", String(limit))
+    if (filtroTipo) params.set("tipo", filtroTipo)
+    if (filtroCategoria) params.set("categoria", filtroCategoria)
+    if (filtroDesde) params.set("desde", filtroDesde)
+    if (filtroHasta) params.set("hasta", filtroHasta)
+    return params.toString()
+  }, [filtroTipo, filtroCategoria, filtroDesde, filtroHasta])
+
+  const cargar = useCallback((p = 1) => {
     setLoading(true)
-    fetch(`/api/cheques-recibidos?cuentaId=${cuenta.id}`)
+    fetch(`/api/cuentas/${cuenta.id}/movimientos?${buildQuery(p)}`)
       .then(r => r.json())
-      .then(d => { setCheques(Array.isArray(d) ? d : []); setLoading(false) })
+      .then(d => {
+        setMovimientos(Array.isArray(d.movimientos) ? d.movimientos : [])
+        setTotal(d.total ?? 0)
+        setTotalCreditos(d.totalCreditos ?? 0)
+        setTotalDebitos(d.totalDebitos ?? 0)
+        setLoading(false)
+      })
       .catch(() => setLoading(false))
-  }, [cuenta.id])
+  }, [cuenta.id, buildQuery])
 
-  useEffect(() => { cargar() }, [cargar])
+  useEffect(() => { setPage(1); cargar(1) }, [cargar])
 
-  function abrirModal() {
-    fetch("/api/empresas").then(r => r.json()).then(setEmpresas)
-    setModalAlta(true)
+  function aplicarFiltros() { setPage(1); cargar(1) }
+  function limpiarFiltros() {
+    setFiltroTipo(""); setFiltroCategoria(""); setFiltroDesde(""); setFiltroHasta("")
+    setPage(1)
   }
 
-  async function guardar() {
+  async function guardarNuevo() {
     setError("")
+    if (!form.monto || !form.fecha || !form.descripcion) { setError("Completá todos los campos obligatorios"); return }
     setGuardando(true)
-    const res = await fetch("/api/cheques-recibidos", {
+    const res = await fetch(`/api/cuentas/${cuenta.id}/movimientos`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ...form,
+        tipo: form.tipo,
+        categoria: form.categoria,
         monto: parseFloat(form.monto),
-        cuentaDepositoId: cuenta.id,
-        estado: "EN_CARTERA",
+        fecha: form.fecha,
+        descripcion: form.descripcion,
+        referencia: form.referencia || null,
       }),
     })
     setGuardando(false)
-    if (res.ok) { setModalAlta(false); cargar() }
-    else { const d = await res.json(); setError(d.error ?? "Error al guardar") }
+    if (res.ok) {
+      setModalNuevo(false)
+      setForm({ tipo: "INGRESO", categoria: "OTRO", monto: "", fecha: new Date().toISOString().slice(0, 10), descripcion: "", referencia: "" })
+      cargar(1)
+    } else {
+      const d = await res.json()
+      setError(d.error ?? "Error al guardar")
+    }
   }
 
-  async function cambiarEstado(id: string, estado: string, extra: Record<string, unknown> = {}) {
-    await fetch(`/api/cheques-recibidos/${id}`, {
+  function abrirEditar(m: Movimiento) {
+    setEditando(m)
+    setFormEdit({ descripcion: m.descripcion, referencia: m.referencia ?? "" })
+    setErrorEdit("")
+  }
+
+  async function guardarEdit() {
+    if (!editando) return
+    setErrorEdit("")
+    setGuardandoEdit(true)
+    const res = await fetch(`/api/cuentas/${cuenta.id}/movimientos/${editando.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ estado, ...extra }),
+      body: JSON.stringify({
+        descripcion: formEdit.descripcion,
+        referencia: formEdit.referencia || null,
+      }),
     })
-    cargar()
+    setGuardandoEdit(false)
+    if (res.ok) { setEditando(null); cargar(page) }
+    else { const d = await res.json(); setErrorEdit(d.error ?? "Error al actualizar") }
   }
 
-  const chequesFisicos = cheques.filter((c) => !c.esElectronico)
-  const chequesElectronicos = cheques.filter((c) => c.esElectronico)
-
-  function FilaChequeRecibido({ c }: { c: ChequeRecibido }) {
-    return (
-      <tr key={c.id} className="border-t hover:bg-muted/20">
-        <td className="px-3 py-2">{c.empresa.razonSocial}</td>
-        <td className="px-3 py-2">
-          <span>{c.nroCheque}</span>
-          {c.esElectronico && <span className="ml-1.5 text-xs bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded font-medium">ECheq</span>}
-        </td>
-        <td className="px-3 py-2">{c.bancoEmisor}</td>
-        <td className="px-3 py-2 text-right">{formatearMoneda(c.monto)}</td>
-        <td className="px-3 py-2 text-right">{formatearFecha(c.fechaCobro)}</td>
-        <td className="px-3 py-2"><span className="text-xs bg-muted px-1.5 py-0.5 rounded">{c.estado}</span></td>
-        <td className="px-3 py-2">
-          {c.estado === "EN_CARTERA" && (
-            <div className="flex flex-wrap gap-1">
-              <button onClick={() => cambiarEstado(c.id, "DEPOSITADO")} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded hover:bg-blue-100">Depositar</button>
-              <button onClick={() => cambiarEstado(c.id, "ENDOSADO_FLETERO")} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded hover:bg-green-100">Endosar</button>
-              <button onClick={() => cambiarEstado(c.id, "DESCONTADO_BANCO")} className="text-xs bg-orange-50 text-orange-700 px-2 py-0.5 rounded hover:bg-orange-100">Descontar</button>
-              <button onClick={() => cambiarEstado(c.id, "RECHAZADO")} className="text-xs bg-red-50 text-red-700 px-2 py-0.5 rounded hover:bg-red-100">Rechazar</button>
-            </div>
-          )}
-        </td>
-      </tr>
-    )
+  async function eliminar(id: string) {
+    if (!confirm("¿Eliminar este movimiento?")) return
+    await fetch(`/api/cuentas/${cuenta.id}/movimientos/${id}`, { method: "DELETE" })
+    cargar(page)
   }
 
-  function TablaGrupoCheques({ titulo, lista }: { titulo: string; lista: ChequeRecibido[] }) {
-    if (lista.length === 0) return null
-    return (
-      <div className="border rounded overflow-auto">
-        <div className="bg-muted/30 px-3 py-1.5 flex items-center justify-between text-xs font-medium text-muted-foreground">
-          <span>{titulo}</span>
-          <span>{lista.length} cheque(s) — {formatearMoneda(lista.reduce((acc, c) => acc + c.monto, 0))}</span>
-        </div>
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="text-left px-3 py-2">Empresa</th>
-              <th className="text-left px-3 py-2">Nro. Cheque</th>
-              <th className="text-left px-3 py-2">Banco</th>
-              <th className="text-right px-3 py-2">Monto</th>
-              <th className="text-right px-3 py-2">Fecha cobro</th>
-              <th className="text-left px-3 py-2">Estado</th>
-              <th className="text-left px-3 py-2">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lista.map((c) => <FilaChequeRecibido key={c.id} c={c} />)}
-          </tbody>
-          <tfoot>
-            <tr className="border-t font-semibold">
-              <td colSpan={3} className="px-3 py-2">Total {titulo}</td>
-              <td className="px-3 py-2 text-right">{formatearMoneda(lista.reduce((acc, c) => acc + c.monto, 0))}</td>
-              <td colSpan={3}></td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    )
+  function descargarExcel() {
+    const params = new URLSearchParams()
+    if (filtroTipo) params.set("tipo", filtroTipo)
+    if (filtroCategoria) params.set("categoria", filtroCategoria)
+    if (filtroDesde) params.set("desde", filtroDesde)
+    if (filtroHasta) params.set("hasta", filtroHasta)
+    window.open(`/api/cuentas/${cuenta.id}/movimientos/excel?${params.toString()}`)
   }
+
+  const totalPages = Math.ceil(total / limit)
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button size="sm" onClick={abrirModal}><Plus className="h-4 w-4 mr-1" /> Registrar cheque</Button>
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2 items-end border rounded p-3 bg-muted/20">
+        <div>
+          <Label className="text-xs">Tipo</Label>
+          <Select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} className="h-8 text-xs w-28">
+            <option value="">Todos</option>
+            <option value="INGRESO">INGRESO</option>
+            <option value="EGRESO">EGRESO</option>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs">Categoría</Label>
+          <Select value={filtroCategoria} onChange={e => setFiltroCategoria(e.target.value)} className="h-8 text-xs w-44">
+            <option value="">Todas</option>
+            {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs">Desde</Label>
+          <Input type="date" value={filtroDesde} onChange={e => setFiltroDesde(e.target.value)} className="h-8 text-xs w-36" />
+        </div>
+        <div>
+          <Label className="text-xs">Hasta</Label>
+          <Input type="date" value={filtroHasta} onChange={e => setFiltroHasta(e.target.value)} className="h-8 text-xs w-36" />
+        </div>
+        <Button size="sm" onClick={aplicarFiltros} className="h-8">Filtrar</Button>
+        <Button size="sm" variant="outline" onClick={limpiarFiltros} className="h-8">Limpiar</Button>
+        <Button size="sm" variant="outline" onClick={descargarExcel} className="h-8 ml-auto">
+          <Download className="h-3 w-3 mr-1" /> Excel
+        </Button>
+        <Button size="sm" onClick={() => setModalNuevo(true)} className="h-8">
+          <Plus className="h-3 w-3 mr-1" /> Nuevo
+        </Button>
       </div>
-      {loading ? <p className="text-muted-foreground text-sm">Cargando...</p> : (
-        cheques.length === 0 ? (
-          <div className="border rounded p-6 text-center text-muted-foreground text-sm">Sin cheques registrados.</div>
-        ) : (
-          <div className="space-y-3">
-            <TablaGrupoCheques titulo="Cheques físicos en cartera" lista={chequesFisicos} />
-            <TablaGrupoCheques titulo="Cheques electrónicos (ECheq)" lista={chequesElectronicos} />
-            {chequesFisicos.length > 0 && chequesElectronicos.length > 0 && (
-              <div className="border rounded px-3 py-2 bg-muted/20 flex justify-between text-sm font-semibold">
-                <span>Total en cartera</span>
-                <span>{formatearMoneda(cheques.reduce((acc, c) => acc + c.monto, 0))}</span>
-              </div>
-            )}
+
+      {!loading && (
+        <div className="grid grid-cols-3 gap-2 text-sm">
+          <div className="border rounded px-3 py-2 bg-green-50">
+            <p className="text-xs text-muted-foreground">Ingresos período</p>
+            <p className="font-semibold text-green-700">{formatearMoneda(totalCreditos)}</p>
           </div>
-        )
+          <div className="border rounded px-3 py-2 bg-red-50">
+            <p className="text-xs text-muted-foreground">Egresos período</p>
+            <p className="font-semibold text-red-700">{formatearMoneda(totalDebitos)}</p>
+          </div>
+          <div className="border rounded px-3 py-2 bg-muted/30">
+            <p className="text-xs text-muted-foreground">Neto período</p>
+            <p className={`font-semibold ${totalCreditos - totalDebitos < 0 ? "text-destructive" : ""}`}>
+              {formatearMoneda(totalCreditos - totalDebitos)}
+            </p>
+          </div>
+        </div>
       )}
 
-      <Dialog open={modalAlta} onOpenChange={setModalAlta}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Registrar cheque recibido</DialogTitle>
-            <DialogDescription>Ingresar los datos del cheque recibido</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label>Empresa</Label>
-              <Select value={form.empresaId} onChange={(e) => setForm(f => ({ ...f, empresaId: e.target.value }))}>
-                <option value="">Seleccionar...</option>
-                {empresas.map(e => <option key={e.id} value={e.id}>{e.razonSocial}</option>)}
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>Nro. Cheque</Label><Input value={form.nroCheque} onChange={(e) => setForm(f => ({ ...f, nroCheque: e.target.value }))} /></div>
-              <div><Label>Banco emisor</Label><Input value={form.bancoEmisor} onChange={(e) => setForm(f => ({ ...f, bancoEmisor: e.target.value }))} /></div>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div><Label>Monto</Label><Input type="number" value={form.monto} onChange={(e) => setForm(f => ({ ...f, monto: e.target.value }))} /></div>
-              <div><Label>Fecha emisión</Label><Input type="date" value={form.fechaEmision} onChange={(e) => setForm(f => ({ ...f, fechaEmision: e.target.value }))} /></div>
-              <div><Label>Fecha cobro</Label><Input type="date" value={form.fechaCobro} onChange={(e) => setForm(f => ({ ...f, fechaCobro: e.target.value }))} /></div>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                id="esElectronico"
-                type="checkbox"
-                checked={form.esElectronico}
-                onChange={(e) => setForm(f => ({ ...f, esElectronico: e.target.checked }))}
-                className="h-4 w-4 rounded border-input"
-              />
-              <Label htmlFor="esElectronico" className="cursor-pointer">¿Es cheque electrónico (ECheq)?</Label>
-            </div>
-            {error && <FormError message={error} />}
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setModalAlta(false)}>Cancelar</Button>
-            <Button onClick={guardar} disabled={guardando}>{guardando ? "Guardando..." : "Guardar"}</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
-}
-
-// --- Sub-componente: Tab Cheques Emitidos ---
-
-function TabChequesEmitidos({ cuenta }: { cuenta: Cuenta }) {
-  const [cheques, setCheques] = useState<ChequeEmitido[]>([])
-  const [loading, setLoading] = useState(true)
-  const [modalDeposito, setModalDeposito] = useState(false)
-  const [modalPlanilla, setModalPlanilla] = useState(false)
-  const [formDeposito, setFormDeposito] = useState({ nroCheque: "", monto: "", descripcion: "Débito por cheque emitido depositado" })
-  const [formPlanilla, setFormPlanilla] = useState({ nombre: "" })
-  const [error, setError] = useState("")
-  const [guardando, setGuardando] = useState(false)
-
-  const cargar = useCallback(() => {
-    setLoading(true)
-    fetch(`/api/cheques-emitidos?cuentaId=${cuenta.id}`)
-      .then(r => r.json())
-      .then(d => { setCheques(Array.isArray(d) ? d : []); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [cuenta.id])
-
-  useEffect(() => { cargar() }, [cargar])
-
-  async function guardarDeposito() {
-    setError("")
-    setGuardando(true)
-    const res = await fetch("/api/cheques-emitidos/registrar-deposito", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...formDeposito, monto: parseFloat(formDeposito.monto), cuentaId: cuenta.id }),
-    })
-    setGuardando(false)
-    if (res.ok) { setModalDeposito(false); cargar() }
-    else { const d = await res.json(); setError(d.error ?? "Error al guardar") }
-  }
-
-  async function guardarPlanilla() {
-    setError("")
-    setGuardando(true)
-    const res = await fetch("/api/planillas-galicia", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nombre: formPlanilla.nombre, cuentaId: cuenta.id, totalMonto: 0, cantidadCheques: 0 }),
-    })
-    setGuardando(false)
-    if (res.ok) { setModalPlanilla(false) }
-    else { const d = await res.json(); setError(d.error ?? "Error al guardar") }
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex gap-2 justify-end">
-        <Button size="sm" variant="outline" onClick={() => setModalPlanilla(true)}>Nueva planilla Galicia</Button>
-        <Button size="sm" onClick={() => setModalDeposito(true)}><Plus className="h-4 w-4 mr-1" /> Registrar depósito</Button>
-      </div>
-      {loading ? <p className="text-muted-foreground text-sm">Cargando...</p> : (
+      {loading ? (
+        <p className="text-muted-foreground text-sm">Cargando...</p>
+      ) : movimientos.length === 0 ? (
+        <div className="border rounded p-6 text-center text-muted-foreground text-sm">Sin movimientos para los filtros seleccionados.</div>
+      ) : (
         <div className="border rounded overflow-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-xs">
             <thead className="bg-muted/50">
               <tr>
-                <th className="text-left px-3 py-2">Beneficiario (doc)</th>
-                <th className="text-left px-3 py-2">Nro. Cheque</th>
-                <th className="text-right px-3 py-2">Monto</th>
-                <th className="text-right px-3 py-2">Fecha pago</th>
-                <th className="text-left px-3 py-2">Estado</th>
-                <th className="text-left px-3 py-2">Planilla</th>
+                <th className="text-left px-2 py-2">Fecha</th>
+                <th className="text-left px-2 py-2">Categoría</th>
+                <th className="text-left px-2 py-2">Descripción</th>
+                <th className="text-right px-2 py-2">Ingreso</th>
+                <th className="text-right px-2 py-2">Egreso</th>
+                <th className="text-right px-2 py-2">Saldo</th>
+                <th className="text-left px-2 py-2">Operador</th>
+                <th className="px-2 py-2"></th>
               </tr>
             </thead>
             <tbody>
-              {cheques.map((c) => (
-                <tr key={c.id} className="border-t hover:bg-muted/20">
-                  <td className="px-3 py-2">{c.nroDocBeneficiario}</td>
-                  <td className="px-3 py-2">
-                    <span>{c.nroCheque ?? "-"}</span>
-                    <span className="ml-1.5 text-xs bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded font-medium">ECheq</span>
+              {movimientos.map((m) => (
+                <tr key={m.id} className="border-t hover:bg-muted/20">
+                  <td className="px-2 py-1.5 whitespace-nowrap">{formatearFecha(m.fecha)}</td>
+                  <td className="px-2 py-1.5 text-muted-foreground">{m.categoria}</td>
+                  <td className="px-2 py-1.5">
+                    <div>{m.descripcion}</div>
+                    {m.referencia && <div className="text-muted-foreground text-xs">{m.referencia}</div>}
                   </td>
-                  <td className="px-3 py-2 text-right">{formatearMoneda(c.monto)}</td>
-                  <td className="px-3 py-2 text-right">{formatearFecha(c.fechaPago)}</td>
-                  <td className="px-3 py-2"><span className="text-xs bg-muted px-1.5 py-0.5 rounded">{c.estado}</span></td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">{c.planillaGaliciaId ?? "-"}</td>
+                  <td className="px-2 py-1.5 text-right">
+                    {m.tipo === "INGRESO" && <span className="text-green-700 font-medium">{formatearMoneda(m.monto)}</span>}
+                  </td>
+                  <td className="px-2 py-1.5 text-right">
+                    {m.tipo === "EGRESO" && <span className="text-red-700 font-medium">{formatearMoneda(m.monto)}</span>}
+                  </td>
+                  <td className="px-2 py-1.5 text-right whitespace-nowrap font-medium">
+                    {m.saldoDespues != null ? formatearMoneda(m.saldoDespues) : "-"}
+                  </td>
+                  <td className="px-2 py-1.5 text-muted-foreground whitespace-nowrap">
+                    {m.operador.nombre} {m.operador.apellido}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <div className="flex gap-1">
+                      <button onClick={() => abrirEditar(m)} className="text-muted-foreground hover:text-foreground" title="Editar">
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      {esAdmin && (
+                        <button onClick={() => eliminar(m.id)} className="text-muted-foreground hover:text-destructive" title="Eliminar">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {m.comprobanteS3Key && <ViewPDF s3Key={m.comprobanteS3Key} label="PDF" />}
+                    </div>
+                  </td>
                 </tr>
               ))}
-              {cheques.length === 0 && (
-                <tr><td colSpan={6} className="px-3 py-4 text-center text-muted-foreground">Sin cheques emitidos.</td></tr>
-              )}
             </tbody>
           </table>
         </div>
       )}
 
-      <Dialog open={modalDeposito} onOpenChange={setModalDeposito}>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>{total} movimientos — página {page} de {totalPages}</span>
+          <div className="flex gap-1">
+            <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => { setPage(p => p - 1); cargar(page - 1) }} className="h-7 text-xs">Anterior</Button>
+            <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => { setPage(p => p + 1); cargar(page + 1) }} className="h-7 text-xs">Siguiente</Button>
+          </div>
+        </div>
+      )}
+
+      <Dialog open={modalNuevo} onOpenChange={setModalNuevo}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Registrar depósito diario</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Nuevo movimiento</DialogTitle>
+            <DialogDescription>Registrar un ingreso o egreso en {cuenta.nombre}</DialogDescription>
+          </DialogHeader>
           <div className="space-y-3">
-            <div><Label>Nro. Cheque</Label><Input value={formDeposito.nroCheque} onChange={(e) => setFormDeposito(f => ({ ...f, nroCheque: e.target.value }))} /></div>
-            <div><Label>Monto</Label><Input type="number" value={formDeposito.monto} onChange={(e) => setFormDeposito(f => ({ ...f, monto: e.target.value }))} /></div>
-            <div><Label>Descripción</Label><Input value={formDeposito.descripcion} onChange={(e) => setFormDeposito(f => ({ ...f, descripcion: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Tipo</Label>
+                <Select value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))}>
+                  <option value="INGRESO">INGRESO</option>
+                  <option value="EGRESO">EGRESO</option>
+                </Select>
+              </div>
+              <div>
+                <Label>Categoría</Label>
+                <Select value={form.categoria} onChange={e => setForm(f => ({ ...f, categoria: e.target.value }))}>
+                  {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Monto</Label><Input type="number" step="0.01" value={form.monto} onChange={e => setForm(f => ({ ...f, monto: e.target.value }))} /></div>
+              <div><Label>Fecha</Label><Input type="date" value={form.fecha} onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))} /></div>
+            </div>
+            <div><Label>Descripción</Label><Input value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} /></div>
+            <div><Label>Referencia (opcional)</Label><Input value={form.referencia} onChange={e => setForm(f => ({ ...f, referencia: e.target.value }))} /></div>
             {error && <FormError message={error} />}
           </div>
-          <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setModalDeposito(false)}>Cancelar</Button><Button onClick={guardarDeposito} disabled={guardando}>Guardar</Button></div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setModalNuevo(false)}>Cancelar</Button>
+            <Button onClick={guardarNuevo} disabled={guardando}>{guardando ? "Guardando..." : "Guardar"}</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={modalPlanilla} onOpenChange={setModalPlanilla}>
+      <Dialog open={!!editando} onOpenChange={() => setEditando(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Nueva planilla Galicia</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Editar movimiento</DialogTitle>
+            <DialogDescription>Solo se pueden modificar descripción y referencia</DialogDescription>
+          </DialogHeader>
           <div className="space-y-3">
-            <div><Label>Nombre</Label><Input value={formPlanilla.nombre} onChange={(e) => setFormPlanilla({ nombre: e.target.value })} /></div>
+            <div><Label>Descripción</Label><Input value={formEdit.descripcion} onChange={e => setFormEdit(f => ({ ...f, descripcion: e.target.value }))} /></div>
+            <div><Label>Referencia</Label><Input value={formEdit.referencia} onChange={e => setFormEdit(f => ({ ...f, referencia: e.target.value }))} /></div>
+            {errorEdit && <FormError message={errorEdit} />}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setEditando(null)}>Cancelar</Button>
+            <Button onClick={guardarEdit} disabled={guardandoEdit}>{guardandoEdit ? "Guardando..." : "Guardar"}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+// --- Sub-componente: Tab Resúmenes Bancarios ---
+
+function TabResumenesBancarios({ cuenta }: { cuenta: Cuenta }) {
+  const [resumenes, setResumenes] = useState<ResumenBancario[]>([])
+  const [loading, setLoading] = useState(true)
+  const [modalNuevo, setModalNuevo] = useState(false)
+  const [formNuevo, setFormNuevo] = useState({
+    mes: new Date().getMonth() + 1,
+    anio: new Date().getFullYear(),
+  })
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState("")
+
+  const cargar = useCallback(() => {
+    setLoading(true)
+    fetch(`/api/cuentas/${cuenta.id}/resumenes-bancarios`)
+      .then(r => r.json())
+      .then(d => { setResumenes(Array.isArray(d.resumenes) ? d.resumenes : []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [cuenta.id])
+
+  useEffect(() => { cargar() }, [cargar])
+
+  async function crearResumen() {
+    setError("")
+    setGuardando(true)
+    const res = await fetch(`/api/cuentas/${cuenta.id}/resumenes-bancarios`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(formNuevo),
+    })
+    setGuardando(false)
+    if (res.ok) { setModalNuevo(false); cargar() }
+    else { const d = await res.json(); setError(d.error ?? "Error al crear") }
+  }
+
+  async function subirPdf(resId: string, s3Key: string) {
+    await fetch(`/api/cuentas/${cuenta.id}/resumenes-bancarios/${resId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pdfS3Key: s3Key, estado: "CARGADO" }),
+    })
+    cargar()
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <Button size="sm" onClick={() => setModalNuevo(true)}><Plus className="h-4 w-4 mr-1" /> Nuevo mes</Button>
+      </div>
+
+      {loading ? (
+        <p className="text-muted-foreground text-sm">Cargando...</p>
+      ) : resumenes.length === 0 ? (
+        <div className="border rounded p-6 text-center text-muted-foreground text-sm">Sin resúmenes cargados.</div>
+      ) : (
+        <div className="space-y-2">
+          {resumenes.map((r) => (
+            <div key={r.id} className="border rounded p-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="font-medium text-sm">{MESES[r.mes - 1]} {r.anio}</p>
+                <p className="text-xs text-muted-foreground">
+                  {r.operador.nombre} {r.operador.apellido} — {formatearFecha(r.creadoEn)}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs px-2 py-0.5 rounded ${r.estado === "CARGADO" ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>
+                  {r.estado}
+                </span>
+                {r.pdfS3Key ? (
+                  <ViewPDF s3Key={r.pdfS3Key} label="Ver PDF" />
+                ) : (
+                  <UploadPDF
+                    prefijo="resumenes-bancarios"
+                    onUpload={(key: string) => subirPdf(r.id, key)}
+                  />
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={modalNuevo} onOpenChange={setModalNuevo}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nuevo resumen bancario</DialogTitle>
+            <DialogDescription>Crear un registro para un mes/año de esta cuenta</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Mes</Label>
+                <Select value={String(formNuevo.mes)} onChange={e => setFormNuevo(f => ({ ...f, mes: parseInt(e.target.value) }))}>
+                  {MESES.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+                </Select>
+              </div>
+              <div>
+                <Label>Año</Label>
+                <Input type="number" value={formNuevo.anio} onChange={e => setFormNuevo(f => ({ ...f, anio: parseInt(e.target.value) }))} />
+              </div>
+            </div>
             {error && <FormError message={error} />}
           </div>
-          <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setModalPlanilla(false)}>Cancelar</Button><Button onClick={guardarPlanilla} disabled={guardando}>Crear</Button></div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setModalNuevo(false)}>Cancelar</Button>
+            <Button onClick={crearResumen} disabled={guardando}>{guardando ? "Creando..." : "Crear"}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+// --- Sub-componente: Tab Broker Pendiente ---
+
+function TabBrokerPendiente({ cuenta }: { cuenta: Cuenta }) {
+  const [cheques, setCheques] = useState<ChequeRecibidoBroker[]>([])
+  const [loading, setLoading] = useState(true)
+  const [modalConfirmar, setModalConfirmar] = useState(false)
+  const [chequeSeleccionado, setChequeSeleccionado] = useState<ChequeRecibidoBroker | null>(null)
+  const [fechaDeposito, setFechaDeposito] = useState(new Date().toISOString().slice(0, 10))
+  const [error, setError] = useState("")
+  const [guardando, setGuardando] = useState(false)
+
+  const cargar = useCallback(() => {
+    setLoading(true)
+    fetch(`/api/cheques-recibidos?estado=ENDOSADO_BROKER&limit=200`)
+      .then(r => r.json())
+      .then(d => {
+        const todos = Array.isArray(d.cheques) ? d.cheques : []
+        setCheques(todos.filter((c: ChequeRecibidoBroker) => c.endosadoABrokerId === cuenta.id && !c.fechaDepositoBroker))
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [cuenta.id])
+
+  useEffect(() => { cargar() }, [cargar])
+
+  function diasDesde(fechaStr: string): number {
+    const ahora = new Date()
+    ahora.setHours(0, 0, 0, 0)
+    const fecha = new Date(fechaStr)
+    fecha.setHours(0, 0, 0, 0)
+    return Math.round((ahora.getTime() - fecha.getTime()) / 86400000)
+  }
+
+  async function confirmarDeposito() {
+    if (!chequeSeleccionado) return
+    setError("")
+    setGuardando(true)
+    const res = await fetch(`/api/cheques-recibidos/${chequeSeleccionado.id}/confirmar-deposito-broker`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fechaDepositoBroker: fechaDeposito }),
+    })
+    setGuardando(false)
+    if (res.ok) {
+      setModalConfirmar(false)
+      setChequeSeleccionado(null)
+      cargar()
+    } else {
+      const d = await res.json()
+      setError(d.error ?? "Error al confirmar")
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        Cheques endosados a esta cuenta de broker pendientes de confirmación de depósito.
+      </p>
+
+      {loading ? (
+        <p className="text-muted-foreground text-sm">Cargando...</p>
+      ) : cheques.length === 0 ? (
+        <div className="border rounded p-6 text-center text-muted-foreground text-sm">
+          Sin cheques pendientes de depósito.
+        </div>
+      ) : (
+        <div className="border rounded overflow-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="text-left px-3 py-2">Nro. Cheque</th>
+                <th className="text-left px-3 py-2">Empresa</th>
+                <th className="text-right px-3 py-2">Monto</th>
+                <th className="text-left px-3 py-2">F. Cobro</th>
+                <th className="text-left px-3 py-2">Días endosado</th>
+                <th className="text-left px-3 py-2">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cheques.map(c => {
+                const dias = diasDesde(c.creadoEn)
+                const esVencido = dias > 30
+                return (
+                  <tr key={c.id} className={`border-t ${esVencido ? "bg-red-50 hover:bg-red-100/50" : "hover:bg-muted/20"}`}>
+                    <td className="px-3 py-2 font-mono">{c.nroCheque}</td>
+                    <td className="px-3 py-2">{c.empresa.razonSocial}</td>
+                    <td className="px-3 py-2 text-right">{formatearMoneda(c.monto)}</td>
+                    <td className="px-3 py-2">{formatearFecha(c.fechaCobro)}</td>
+                    <td className={`px-3 py-2 ${esVencido ? "text-red-600 font-semibold" : ""}`}>{dias}d</td>
+                    <td className="px-3 py-2">
+                      <button
+                        type="button"
+                        className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded hover:bg-blue-100"
+                        onClick={() => {
+                          setChequeSeleccionado(c)
+                          setFechaDeposito(new Date().toISOString().slice(0, 10))
+                          setError("")
+                          setModalConfirmar(true)
+                        }}
+                      >
+                        Confirmar depósito
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Dialog open={modalConfirmar} onOpenChange={o => { if (!o) setModalConfirmar(false) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar depósito broker</DialogTitle>
+            <DialogDescription>
+              Cheque {chequeSeleccionado?.nroCheque} — {chequeSeleccionado ? formatearMoneda(chequeSeleccionado.monto) : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Fecha de depósito</Label>
+              <Input type="date" value={fechaDeposito} onChange={e => setFechaDeposito(e.target.value)} />
+            </div>
+            {error && <FormError message={error} />}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setModalConfirmar(false)}>Cancelar</Button>
+            <Button onClick={confirmarDeposito} disabled={guardando}>
+              {guardando ? "Guardando..." : "Confirmar"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
@@ -578,6 +867,7 @@ function TabFCI({ cuenta }: { cuenta: Cuenta }) {
 
 // --- Sub-componente: Tab Tarjetas Prepagas (movido a /contabilidad/tarjetas) ---
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function TabTarjetasPrepagas(_props: { cuenta: Cuenta }) {
   return (
     <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
@@ -594,20 +884,116 @@ function TabTarjetasPrepagas(_props: { cuenta: Cuenta }) {
   )
 }
 
+// --- Sub-componente: Tab Configuración ---
+
+function TabConfiguracion({ cuenta, onCuentaActualizada }: { cuenta: Cuenta; onCuentaActualizada: () => void }) {
+  const [form, setForm] = useState({
+    nombre: cuenta.nombre,
+    bancoOEntidad: cuenta.bancoOEntidad,
+    tieneImpuestoDebcred: cuenta.tieneImpuestoDebcred,
+    alicuotaImpuesto: String(cuenta.alicuotaImpuesto),
+    tieneChequera: cuenta.tieneChequera,
+    tienePlanillaEmisionMasiva: cuenta.tienePlanillaEmisionMasiva,
+    tieneCuentaRemunerada: cuenta.tieneCuentaRemunerada,
+    tieneTarjetasPrepagasChoferes: cuenta.tieneTarjetasPrepagasChoferes,
+  })
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState("")
+  const [exito, setExito] = useState(false)
+  const [confirmandoBaja, setConfirmandoBaja] = useState(false)
+
+  async function guardar() {
+    setError(""); setExito(false)
+    setGuardando(true)
+    const res = await fetch(`/api/cuentas/${cuenta.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...form, alicuotaImpuesto: parseFloat(form.alicuotaImpuesto) }),
+    })
+    setGuardando(false)
+    if (res.ok) { setExito(true); onCuentaActualizada() }
+    else { const d = await res.json(); setError(d.error ?? "Error al guardar") }
+  }
+
+  async function darDeBaja() {
+    const res = await fetch(`/api/cuentas/${cuenta.id}`, { method: "DELETE" })
+    if (res.ok) { setConfirmandoBaja(false); onCuentaActualizada() }
+  }
+
+  return (
+    <div className="space-y-4 max-w-lg">
+      <div className="space-y-3">
+        <div><Label>Nombre</Label><Input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} /></div>
+        <div><Label>Entidad / Banco</Label><Input value={form.bancoOEntidad} onChange={e => setForm(f => ({ ...f, bancoOEntidad: e.target.value }))} /></div>
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" checked={form.tieneImpuestoDebcred} onChange={e => setForm(f => ({ ...f, tieneImpuestoDebcred: e.target.checked }))} />
+            Impuesto débito/crédito
+          </label>
+          {form.tieneImpuestoDebcred && (
+            <div><Label>Alícuota impuesto</Label><Input type="number" step="0.001" value={form.alicuotaImpuesto} onChange={e => setForm(f => ({ ...f, alicuotaImpuesto: e.target.value }))} /></div>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { key: "tieneChequera", label: "Tiene chequera" },
+            { key: "tienePlanillaEmisionMasiva", label: "Planilla emisión masiva" },
+            { key: "tieneCuentaRemunerada", label: "Cuenta remunerada (FCI)" },
+            { key: "tieneTarjetasPrepagasChoferes", label: "Tarjetas prepagas" },
+          ].map(({ key, label }) => (
+            <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form[key as keyof typeof form] as boolean}
+                onChange={e => setForm(f => ({ ...f, [key]: e.target.checked }))}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+        {error && <FormError message={error} />}
+        {exito && <p className="text-sm text-green-700">Guardado correctamente.</p>}
+      </div>
+      <div className="flex items-center justify-between pt-2">
+        <Button onClick={guardar} disabled={guardando}>{guardando ? "Guardando..." : "Guardar cambios"}</Button>
+        <Button variant="outline" onClick={() => setConfirmandoBaja(true)} className="text-destructive border-destructive hover:bg-destructive/5">
+          Dar de baja cuenta
+        </Button>
+      </div>
+
+      <Dialog open={confirmandoBaja} onOpenChange={setConfirmandoBaja}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Dar de baja la cuenta?</DialogTitle>
+            <DialogDescription>
+              La cuenta quedará inactiva. El historial se conserva. Esta acción no se puede deshacer fácilmente.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setConfirmandoBaja(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={darDeBaja} className="text-destructive border-destructive">Confirmar baja</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
 // --- Componente principal ---
 
 /**
  * CuentasClient: CuentasClientProps -> JSX.Element
  *
- * Dado [los parámetros iniciales de cuenta y tab], renderiza la lista de cuentas y el detalle con tabs.
- * Existe para gestionar la selección de cuenta y el tab activo como estado local del cliente.
+ * Dado [los parámetros iniciales de cuenta, tab y flag de admin], renderiza la lista de cuentas
+ * y el detalle con tabs: Movimientos (CRUD inline), Resúmenes Bancarios, Cheques Recibidos,
+ * Cheques Emitidos, Planillas Galicia, FCI Propios, Tarjetas Prepagas, Configuración.
  *
  * Ejemplos:
  * <CuentasClient /> // lista de cuentas vacía + placeholder de selección
- * <CuentasClient cuentaInicialId="xxx" /> // cuenta pre-seleccionada
- * <CuentasClient cuentaInicialId="xxx" tabInicial="fci" /> // cuenta y tab pre-seleccionados
+ * <CuentasClient cuentaInicialId="xxx" esAdmin /> // cuenta pre-seleccionada con botones de admin
+ * <CuentasClient cuentaInicialId="xxx" tabInicial="resumenes-bancarios" /> // tab pre-seleccionado
  */
-export function CuentasClient({ cuentaInicialId, tabInicial }: CuentasClientProps) {
+export function CuentasClient({ cuentaInicialId, tabInicial, esAdmin = false }: CuentasClientProps) {
   const router = useRouter()
   const [cuentas, setCuentas] = useState<Cuenta[]>([])
   const [loading, setLoading] = useState(true)
@@ -637,13 +1023,13 @@ export function CuentasClient({ cuentaInicialId, tabInicial }: CuentasClientProp
   function seleccionarCuenta(id: string) {
     setCuentaSeleccionada(id)
     setTabActivo("movimientos")
-    router.push(`/cuentas?cuenta=${id}`, { scroll: false })
+    router.push(`/contabilidad/cuentas?cuenta=${id}`, { scroll: false })
   }
 
   function seleccionarTab(tab: TabId) {
     setTabActivo(tab)
     if (cuentaSeleccionada) {
-      router.push(`/cuentas?cuenta=${cuentaSeleccionada}&tab=${tab}`, { scroll: false })
+      router.push(`/contabilidad/cuentas?cuenta=${cuentaSeleccionada}&tab=${tab}`, { scroll: false })
     }
   }
 
@@ -667,12 +1053,13 @@ export function CuentasClient({ cuentaInicialId, tabInicial }: CuentasClientProp
   const getTabs = (c: Cuenta): Array<{ id: TabId; label: string }> => {
     const tabs: Array<{ id: TabId; label: string }> = [
       { id: "movimientos", label: "Movimientos" },
-      { id: "cheques-recibidos", label: "Cheques Recibidos" },
+      { id: "resumenes-bancarios", label: "Resúmenes" },
+      { id: "broker-pendiente", label: "Broker Pendiente" },
     ]
-    if (c.tieneChequera) tabs.push({ id: "cheques-emitidos", label: "Cheques Emitidos" })
     if (c.tienePlanillaEmisionMasiva) tabs.push({ id: "planillas-galicia", label: "Planillas Galicia" })
     if (c.tieneCuentaRemunerada) tabs.push({ id: "fci", label: "FCI Propios" })
     if (c.tieneTarjetasPrepagasChoferes) tabs.push({ id: "tarjetas", label: "Tarjetas Prepagas" })
+    tabs.push({ id: "configuracion", label: "Configuración" })
     return tabs
   }
 
@@ -757,12 +1144,13 @@ export function CuentasClient({ cuentaInicialId, tabInicial }: CuentasClientProp
 
               {/* Contenido tab */}
               <div className="flex-1 overflow-auto p-4">
-                {tabActivo === "movimientos" && <TabMovimientos cuenta={cuenta} />}
-                {tabActivo === "cheques-recibidos" && <TabChequesRecibidos cuenta={cuenta} />}
-                {tabActivo === "cheques-emitidos" && cuenta.tieneChequera && <TabChequesEmitidos cuenta={cuenta} />}
+                {tabActivo === "movimientos" && <TabMovimientos cuenta={cuenta} esAdmin={esAdmin} />}
+                {tabActivo === "resumenes-bancarios" && <TabResumenesBancarios cuenta={cuenta} />}
+                {tabActivo === "broker-pendiente" && <TabBrokerPendiente cuenta={cuenta} />}
                 {tabActivo === "planillas-galicia" && cuenta.tienePlanillaEmisionMasiva && <TabPlanillasGalicia cuenta={cuenta} />}
                 {tabActivo === "fci" && cuenta.tieneCuentaRemunerada && <TabFCI cuenta={cuenta} />}
                 {tabActivo === "tarjetas" && cuenta.tieneTarjetasPrepagasChoferes && <TabTarjetasPrepagas cuenta={cuenta} />}
+                {tabActivo === "configuracion" && <TabConfiguracion cuenta={cuenta} onCuentaActualizada={cargarCuentas} />}
               </div>
             </div>
           )}

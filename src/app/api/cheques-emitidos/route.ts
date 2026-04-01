@@ -27,22 +27,51 @@ export async function GET(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url)
-    const cuentaId = searchParams.get("cuentaId")
+    const cuentaId = searchParams.get("cuentaId") ?? undefined
+    const estado = searchParams.get("estado") ?? undefined
+    const desde = searchParams.get("desde") ?? undefined
+    const hasta = searchParams.get("hasta") ?? undefined
+    const beneficiario = searchParams.get("beneficiario") ?? undefined
+    const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10))
+    const limit = Math.min(200, Math.max(1, parseInt(searchParams.get("limit") ?? "100", 10)))
 
-    const cheques = await prisma.chequeEmitido.findMany({
-      where: cuentaId ? { cuentaId } : undefined,
-      include: {
-        fletero: { select: { id: true, razonSocial: true } },
-        proveedor: { select: { id: true, razonSocial: true } },
-        cuenta: { select: { id: true, nombre: true } },
-        liquidacion: { select: { id: true, estado: true, total: true } },
-        planillaGalicia: { select: { id: true, nombre: true, estado: true } },
-        operador: { select: { id: true, nombre: true, apellido: true } },
-      },
-      orderBy: [{ fechaPago: "asc" }, { creadoEn: "desc" }],
-    })
+    const where = {
+      ...(cuentaId ? { cuentaId } : {}),
+      ...(estado ? { estado } : {}),
+      ...(desde || hasta
+        ? { fechaPago: { ...(desde ? { gte: new Date(desde) } : {}), ...(hasta ? { lte: new Date(hasta + "T23:59:59.999Z") } : {}) } }
+        : {}),
+      ...(beneficiario
+        ? {
+            OR: [
+              { nroDocBeneficiario: { contains: beneficiario } },
+              { mailBeneficiario: { contains: beneficiario } },
+              { fletero: { razonSocial: { contains: beneficiario } } },
+              { proveedor: { razonSocial: { contains: beneficiario } } },
+            ],
+          }
+        : {}),
+    }
 
-    return NextResponse.json(cheques)
+    const [total, cheques] = await Promise.all([
+      prisma.chequeEmitido.count({ where }),
+      prisma.chequeEmitido.findMany({
+        where,
+        include: {
+          fletero: { select: { id: true, razonSocial: true, cuit: true } },
+          proveedor: { select: { id: true, razonSocial: true, cuit: true } },
+          cuenta: { select: { id: true, nombre: true } },
+          liquidacion: { select: { id: true, estado: true, total: true } },
+          planillaGalicia: { select: { id: true, nombre: true, estado: true } },
+          operador: { select: { id: true, nombre: true, apellido: true } },
+        },
+        orderBy: [{ fechaPago: "asc" }, { creadoEn: "desc" }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+    ])
+
+    return NextResponse.json({ cheques, total, page, limit })
   } catch (error) {
     return serverErrorResponse("GET /api/cheques-emitidos", error)
   }

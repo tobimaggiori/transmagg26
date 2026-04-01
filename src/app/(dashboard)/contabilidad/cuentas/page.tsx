@@ -36,6 +36,7 @@ export default async function ContabilidadCuentasPage({
     <CuentasClient
       cuentaInicialId={searchParams.cuenta}
       tabInicial={searchParams.tab}
+      esAdmin={rol === "ADMIN_TRANSMAGG"}
     />
   )
 }

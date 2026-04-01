@@ -111,11 +111,11 @@ const NAV_GROUPS: NavGroup[] = [
     pathPrefix: "/contabilidad",
     items: [
       { href: "/contabilidad/cuentas", label: "Cuentas" },
+      { href: "/contabilidad/chequeras", label: "Chequeras" },
       { href: "/contabilidad/tarjetas", label: "Tarjetas" },
       { href: "/contabilidad/iva", label: "IVA" },
       { href: "/contabilidad/iibb", label: "IIBB" },
       { href: "/contabilidad/gastos", label: "Gastos" },
-      { href: "/contabilidad/movimientos", label: "Movimientos" },
       { href: "/contabilidad/lp-vs-facturas", label: "LP vs Facturas" },
       { href: "/contabilidad/viajes-sin-lp", label: "Viajes sin LP" },
       { href: "/contabilidad/notas-credito-debito", label: "Notas C/D" },

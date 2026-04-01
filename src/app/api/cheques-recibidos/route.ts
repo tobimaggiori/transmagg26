@@ -28,22 +28,48 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const cuentaId = searchParams.get("cuentaId")
+    const estado = searchParams.get("estado") ?? undefined
+    const esElectronicoParam = searchParams.get("esElectronico")
+    const empresaId = searchParams.get("empresaId") ?? undefined
+    const tieneFacturaParam = searchParams.get("tieneFactura")
+    const desde = searchParams.get("desde") ?? undefined
+    const hasta = searchParams.get("hasta") ?? undefined
+    const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10))
+    const limit = Math.min(200, Math.max(1, parseInt(searchParams.get("limit") ?? "100", 10)))
 
-    const cheques = await prisma.chequeRecibido.findMany({
-      where: cuentaId ? { cuentaDepositoId: cuentaId } : undefined,
-      include: {
-        empresa: { select: { id: true, razonSocial: true } },
-        factura: { select: { id: true, nroComprobante: true } },
-        cuentaDeposito: { select: { id: true, nombre: true } },
-        endosadoAFletero: { select: { id: true, razonSocial: true } },
-        endosadoAProveedor: { select: { id: true, razonSocial: true } },
-        endosadoABroker: { select: { id: true, nombre: true } },
-        operador: { select: { id: true, nombre: true, apellido: true } },
-      },
-      orderBy: { fechaCobro: "asc" },
-    })
+    const where = {
+      ...(cuentaId ? { cuentaDepositoId: cuentaId } : {}),
+      ...(estado ? { estado } : {}),
+      ...(esElectronicoParam !== null ? { esElectronico: esElectronicoParam === "true" } : {}),
+      ...(empresaId ? { empresaId } : {}),
+      ...(tieneFacturaParam !== null
+        ? tieneFacturaParam === "true" ? { facturaId: { not: null } } : { facturaId: null }
+        : {}),
+      ...(desde || hasta
+        ? { fechaCobro: { ...(desde ? { gte: new Date(desde) } : {}), ...(hasta ? { lte: new Date(hasta + "T23:59:59.999Z") } : {}) } }
+        : {}),
+    }
 
-    return NextResponse.json(cheques)
+    const [total, cheques] = await Promise.all([
+      prisma.chequeRecibido.count({ where }),
+      prisma.chequeRecibido.findMany({
+        where,
+        include: {
+          empresa: { select: { id: true, razonSocial: true } },
+          factura: { select: { id: true, nroComprobante: true, tipoCbte: true } },
+          cuentaDeposito: { select: { id: true, nombre: true } },
+          endosadoAFletero: { select: { id: true, razonSocial: true } },
+          endosadoAProveedor: { select: { id: true, razonSocial: true } },
+          endosadoABroker: { select: { id: true, nombre: true } },
+          operador: { select: { id: true, nombre: true, apellido: true } },
+        },
+        orderBy: { fechaCobro: "asc" },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+    ])
+
+    return NextResponse.json({ cheques, total, page, limit })
   } catch (error) {
     return serverErrorResponse("GET /api/cheques-recibidos", error)
   }
