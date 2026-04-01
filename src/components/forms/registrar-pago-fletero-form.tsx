@@ -1,18 +1,19 @@
 "use client"
 
+/**
+ * Propósito: Formulario de dos paneles para registrar pago a fletero.
+ * Panel izquierdo fijo: resumen del LP, gastos a descontar, botones de acción.
+ * Panel derecho con scroll interno: tabla de medios de pago + formulario inline de alta.
+ */
+
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import { Select } from "@/components/ui/select"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
+
+// ─── Tipos ────────────────────────────────────────────────────────────────────
 
 type CuentaBancaria = {
   id: string
@@ -60,6 +61,8 @@ type Props = {
   onClose: () => void
 }
 
+// ─── Tipos de ítems de pago ───────────────────────────────────────────────────
+
 type PagoItemTransferencia = {
   tipoPago: "TRANSFERENCIA"
   monto: string
@@ -101,12 +104,56 @@ type PagoItem =
   | PagoItemEfectivo
   | PagoItemSaldoAFavor
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 const ars = (n: number) =>
   new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(n)
 
-function defaultPago(): PagoItem {
-  return { tipoPago: "TRANSFERENCIA", monto: "", cuentaBancariaId: "", referencia: "" }
+function defaultDraft(
+  tipo: PagoItem["tipoPago"],
+  cuit: string,
+): PagoItem {
+  const today = new Date().toISOString().slice(0, 10)
+  if (tipo === "TRANSFERENCIA") return { tipoPago: "TRANSFERENCIA", monto: "", cuentaBancariaId: "", referencia: "" }
+  if (tipo === "CHEQUE_PROPIO") return {
+    tipoPago: "CHEQUE_PROPIO", monto: "", cuentaId: "", nroCheque: "",
+    tipoDocBeneficiario: "CUIT", nroDocBeneficiario: cuit,
+    mailBeneficiario: "", fechaEmision: today, fechaPago: "", clausula: "NO_A_LA_ORDEN",
+    descripcion1: "", descripcion2: "",
+  }
+  if (tipo === "CHEQUE_TERCERO") return { tipoPago: "CHEQUE_TERCERO", monto: "", chequeRecibidoId: "" }
+  if (tipo === "EFECTIVO") return { tipoPago: "EFECTIVO", monto: "" }
+  return { tipoPago: "SALDO_A_FAVOR", monto: "" }
 }
+
+function tipoBadge(p: PagoItem): string {
+  const labels: Record<string, string> = {
+    TRANSFERENCIA: "Transferencia",
+    CHEQUE_PROPIO: "Cheque propio",
+    CHEQUE_TERCERO: "Cheque tercero",
+    EFECTIVO: "Efectivo",
+    SALDO_A_FAVOR: "Saldo a favor",
+  }
+  return labels[p.tipoPago] ?? p.tipoPago
+}
+
+function resumenItem(p: PagoItem, cuentas: CuentaBancaria[], cheques: ChequeEnCartera[]): string {
+  if (p.tipoPago === "TRANSFERENCIA") {
+    const cta = cuentas.find((c) => c.id === p.cuentaBancariaId)
+    return cta ? `${cta.nombre}${p.referencia ? ` · Ref: ${p.referencia}` : ""}` : "—"
+  }
+  if (p.tipoPago === "CHEQUE_PROPIO") {
+    const vto = p.fechaPago ? formatearFecha(new Date(p.fechaPago)) : "s/vto"
+    return `Nro ${p.nroCheque} — Vto ${vto}`
+  }
+  if (p.tipoPago === "CHEQUE_TERCERO") {
+    const ch = cheques.find((c) => c.id === p.chequeRecibidoId)
+    return ch ? `${ch.bancoEmisor} — Nro ${ch.nroCheque} — Vto ${ch.fechaCobro}` : "—"
+  }
+  return "—"
+}
+
+// ─── Componente principal ─────────────────────────────────────────────────────
 
 export function RegistrarPagoFleteroModal({
   liquidacion,
@@ -117,94 +164,114 @@ export function RegistrarPagoFleteroModal({
   onSuccess,
   onClose,
 }: Props) {
-  const [pagos, setPagos] = useState<PagoItem[]>([defaultPago()])
+  const [pagos, setPagos] = useState<PagoItem[]>([])
+  const [draft, setDraft] = useState<PagoItem | null>(null)
+  const [draftError, setDraftError] = useState<string | null>(null)
+
+  const [gastosSeleccionados, setGastosSeleccionados] = useState<Record<string, boolean>>({})
+  const [gastosMontos, setGastosMontos] = useState<Record<string, string>>({})
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // mapa gastoId → monto a descontar (string para el input)
-  const [gastosDescontar, setGastosDescontar] = useState<Record<string, string>>({})
 
+  // ── Cálculos ────────────────────────────────────────────────────────────────
   const saldoPendiente = liquidacion.total - liquidacion.pagosExistentes
-  const totalActual = pagos.reduce((sum, p) => sum + (parseFloat(p.monto) || 0), 0)
-  const despuesPago = saldoPendiente - totalActual
-  const excedente = Math.max(0, totalActual - saldoPendiente)
 
-  function updatePago(index: number, updates: Partial<PagoItem>) {
-    setPagos((prev) =>
-      prev.map((p, i) => (i === index ? ({ ...p, ...updates } as PagoItem) : p))
-    )
-  }
+  const totalGastosDescontados = gastosPendientes.reduce((sum, g) => {
+    if (!gastosSeleccionados[g.id]) return sum
+    return sum + (parseFloat(gastosMontos[g.id] ?? "0") || 0)
+  }, 0)
 
-  function changeTipo(index: number, tipo: PagoItem["tipoPago"]) {
-    const monto = pagos[index].monto
-    let next: PagoItem
-    if (tipo === "TRANSFERENCIA") {
-      next = { tipoPago: "TRANSFERENCIA", monto, cuentaBancariaId: "", referencia: "" }
-    } else if (tipo === "CHEQUE_PROPIO") {
-      const today = new Date().toISOString().slice(0, 10)
-      next = {
-        tipoPago: "CHEQUE_PROPIO",
-        monto,
-        cuentaId: "",
-        nroCheque: "",
-        tipoDocBeneficiario: "CUIT",
-        nroDocBeneficiario: liquidacion.fletero.cuit,
-        mailBeneficiario: "",
-        fechaEmision: today,
-        fechaPago: "",
-        clausula: "NO_A_LA_ORDEN",
-        descripcion1: "",
-        descripcion2: "",
-      }
-    } else if (tipo === "CHEQUE_TERCERO") {
-      next = { tipoPago: "CHEQUE_TERCERO", monto, chequeRecibidoId: "" }
-    } else if (tipo === "EFECTIVO") {
-      next = { tipoPago: "EFECTIVO", monto }
+  const saldoAjustado = Math.max(0, saldoPendiente - totalGastosDescontados)
+
+  const totalMedios = pagos.reduce((sum, p) => sum + (parseFloat(p.monto) || 0), 0)
+  const diferencia = totalMedios - saldoAjustado
+
+  // ── Gestión de gastos ────────────────────────────────────────────────────────
+  function toggleGasto(gastoId: string, saldoGasto: number) {
+    const ahora = !gastosSeleccionados[gastoId]
+    setGastosSeleccionados((prev) => ({ ...prev, [gastoId]: ahora }))
+    if (ahora) {
+      setGastosMontos((prev) => ({ ...prev, [gastoId]: String(saldoGasto) }))
     } else {
-      next = { tipoPago: "SALDO_A_FAVOR", monto }
+      setGastosMontos((prev) => ({ ...prev, [gastoId]: "" }))
     }
-    setPagos((prev) => prev.map((p, i) => (i === index ? next : p)))
   }
 
+  // ── Gestión de ítems de pago ─────────────────────────────────────────────────
   function removePago(index: number) {
     setPagos((prev) => prev.filter((_, i) => i !== index))
   }
 
-  function addPago() {
-    setPagos((prev) => [...prev, defaultPago()])
+  function iniciarDraft(tipo: PagoItem["tipoPago"]) {
+    setDraft(defaultDraft(tipo, liquidacion.fletero.cuit))
+    setDraftError(null)
   }
 
-  function getStatusMessage() {
-    if (totalActual === 0) return null
-    if (excedente > 0) {
-      return `Excedente de ${ars(excedente)} irá como saldo a favor`
-    }
-    if (totalActual >= saldoPendiente) {
-      return "La liquidación pasará a PAGADA"
-    }
-    return "La liquidación pasará a PARCIALMENTE PAGADA"
+  function updateDraft(updates: Partial<PagoItem>) {
+    setDraft((prev) => prev ? ({ ...prev, ...updates } as PagoItem) : prev)
   }
 
+  function changeDraftTipo(tipo: PagoItem["tipoPago"]) {
+    setDraft(defaultDraft(tipo, liquidacion.fletero.cuit))
+    setDraftError(null)
+  }
+
+  function confirmarDraft() {
+    if (!draft) return
+    const monto = parseFloat(draft.monto)
+    if (!monto || monto <= 0) { setDraftError("Ingresá un monto válido"); return }
+    if (draft.tipoPago === "TRANSFERENCIA" && !draft.cuentaBancariaId) {
+      setDraftError("Seleccioná una cuenta bancaria"); return
+    }
+    if (draft.tipoPago === "CHEQUE_PROPIO") {
+      if (!draft.nroCheque.trim()) { setDraftError("El número de cheque es obligatorio"); return }
+      if (!draft.cuentaId) { setDraftError("Seleccioná una cuenta (chequera)"); return }
+      if (!draft.fechaPago) { setDraftError("Ingresá la fecha de pago"); return }
+    }
+    if (draft.tipoPago === "CHEQUE_TERCERO" && !draft.chequeRecibidoId) {
+      setDraftError("Seleccioná un cheque en cartera"); return
+    }
+    if (draft.tipoPago === "SALDO_A_FAVOR" && monto > saldoAFavorCC) {
+      setDraftError(`Saldo a favor disponible: ${ars(saldoAFavorCC)}`); return
+    }
+    setPagos((prev) => [...prev, draft])
+    setDraft(null)
+    setDraftError(null)
+  }
+
+  function cancelarDraft() {
+    setDraft(null)
+    setDraftError(null)
+  }
+
+  // ── Submit ───────────────────────────────────────────────────────────────────
   async function handleSubmit() {
+    if (pagos.length === 0 && totalGastosDescontados === 0) {
+      setError("Agregá al menos un medio de pago o gasto a descontar"); return
+    }
     setError(null)
     setLoading(true)
     try {
       const today = new Date().toISOString().split("T")[0]
-      const gastosPayload = Object.entries(gastosDescontar)
-        .map(([gastoId, montoStr]) => ({ gastoId, montoDescontar: parseFloat(montoStr) }))
-        .filter((g) => !isNaN(g.montoDescontar) && g.montoDescontar > 0)
+      const gastosPayload = gastosPendientes
+        .filter((g) => gastosSeleccionados[g.id])
+        .map((g) => ({ gastoId: g.id, montoDescontar: parseFloat(gastosMontos[g.id] ?? "0") || 0 }))
+        .filter((g) => g.montoDescontar > 0)
 
       const body = {
         pagos: pagos.map((p) => {
           const monto = parseFloat(p.monto)
           if (p.tipoPago === "TRANSFERENCIA") {
             return { tipoPago: p.tipoPago, monto, cuentaBancariaId: p.cuentaBancariaId, referencia: p.referencia || undefined }
-          } else if (p.tipoPago === "CHEQUE_PROPIO") {
+          }
+          if (p.tipoPago === "CHEQUE_PROPIO") {
             return {
               tipoPago: p.tipoPago,
               monto,
               chequePropio: {
                 cuentaId: p.cuentaId,
-                nroCheque: p.nroCheque || null,
+                nroCheque: p.nroCheque,
                 tipoDocBeneficiario: p.tipoDocBeneficiario,
                 nroDocBeneficiario: p.nroDocBeneficiario,
                 mailBeneficiario: p.mailBeneficiario || null,
@@ -215,27 +282,26 @@ export function RegistrarPagoFleteroModal({
                 descripcion2: p.descripcion2 || null,
               },
             }
-          } else if (p.tipoPago === "CHEQUE_TERCERO") {
-            return { tipoPago: p.tipoPago, monto, chequeRecibidoId: p.chequeRecibidoId }
-          } else if (p.tipoPago === "EFECTIVO") {
-            return { tipoPago: p.tipoPago, monto }
-          } else {
-            return { tipoPago: p.tipoPago, monto }
           }
+          if (p.tipoPago === "CHEQUE_TERCERO") return { tipoPago: p.tipoPago, monto, chequeRecibidoId: p.chequeRecibidoId }
+          return { tipoPago: p.tipoPago, monto }
         }),
         fecha: today,
         gastos: gastosPayload.length > 0 ? gastosPayload : undefined,
       }
+
+      // Allow pagos array to be empty if only gastos are being discounted
+      if (body.pagos.length === 0 && gastosPayload.length > 0) {
+        body.pagos = []
+      }
+
       const res = await fetch(`/api/liquidaciones/${liquidacion.id}/pago`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       })
       const data = await res.json()
-      if (!res.ok) {
-        setError(data.error ?? "Error al registrar pago")
-        return
-      }
+      if (!res.ok) { setError(data.error ?? "Error al registrar pago"); return }
       onSuccess()
     } catch {
       setError("Error de red al registrar pago")
@@ -245,301 +311,440 @@ export function RegistrarPagoFleteroModal({
   }
 
   const nroLabel = liquidacion.ptoVenta != null && liquidacion.nroComprobante != null
-    ? `${liquidacion.ptoVenta.toString().padStart(4, "0")}-${liquidacion.nroComprobante.toString().padStart(8, "0")}`
-    : "(sin número)"
+    ? `LP ${String(liquidacion.ptoVenta).padStart(4, "0")}-${String(liquidacion.nroComprobante).padStart(8, "0")}`
+    : "LP (sin número)"
 
-  const statusMsg = getStatusMessage()
+  const puedeConfirmar = !loading && (pagos.length > 0 || totalGastosDescontados > 0) && !draft
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            Registrar pago — Liquidación {nroLabel}
-          </DialogTitle>
-          <p className="text-sm text-muted-foreground">{liquidacion.fletero.razonSocial}</p>
-          <div className="flex gap-4 text-sm mt-1">
-            <span>Total: {ars(liquidacion.total)}</span>
-            <span>Pagado: {ars(liquidacion.pagosExistentes)}</span>
-            <span className="font-medium">Pendiente: {ars(saldoPendiente)}</span>
-          </div>
-          {saldoAFavorCC > 0 && (
-            <p className="text-sm text-green-600">
-              Saldo a favor disponible: {ars(saldoAFavorCC)}
-            </p>
-          )}
-        </DialogHeader>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 md:p-4">
+      <div
+        className="bg-background rounded-lg shadow-xl w-full max-w-5xl flex flex-col md:flex-row overflow-hidden"
+        style={{ height: "min(92vh, 720px)" }}
+      >
+        {/* ── Panel izquierdo ─────────────────────────────────────────────── */}
+        <div className="md:w-[340px] flex-shrink-0 border-b md:border-b-0 md:border-r flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            {/* Header LP */}
+            <div>
+              <h2 className="text-base font-semibold">Registrar pago</h2>
+              <p className="text-sm font-medium mt-0.5">{nroLabel}</p>
+              <p className="text-xs text-muted-foreground">{liquidacion.fletero.razonSocial}</p>
+            </div>
 
-        <div className="space-y-4 py-2">
-          {pagos.map((pago, i) => (
-            <div key={i} className="border rounded-md p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Pago {i + 1}</span>
-                {pagos.length > 1 && (
-                  <Button variant="ghost" size="sm" onClick={() => removePago(i)}>
-                    Eliminar
-                  </Button>
-                )}
+            {/* Resumen financiero */}
+            <div className="rounded-md border p-3 space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total LP</span>
+                <span>{ars(liquidacion.total)}</span>
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label>Tipo de pago</Label>
-                  <Select
-                    value={pago.tipoPago}
-                    onChange={(e) => changeTipo(i, e.target.value as PagoItem["tipoPago"])}
-                  >
-                    <option value="TRANSFERENCIA">Transferencia</option>
-                    <option value="CHEQUE_PROPIO">Cheque propio</option>
-                    <option value="CHEQUE_TERCERO" disabled={chequesEnCartera.length === 0}>
-                      {chequesEnCartera.length === 0 ? "Cheque de tercero (sin cheques)" : "Cheque de tercero"}
-                    </option>
-                    <option value="EFECTIVO">Efectivo</option>
-                    <option value="SALDO_A_FAVOR" disabled={saldoAFavorCC <= 0}>
-                      Saldo a favor {saldoAFavorCC > 0 ? `(${ars(saldoAFavorCC)})` : "(sin saldo)"}
-                    </option>
-                  </Select>
+              {liquidacion.pagosExistentes > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Ya pagado</span>
+                  <span className="text-green-600">- {ars(liquidacion.pagosExistentes)}</span>
                 </div>
+              )}
+              {totalGastosDescontados > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Gastos a descontar</span>
+                  <span className="text-orange-600">- {ars(totalGastosDescontados)}</span>
+                </div>
+              )}
+              <div className="flex justify-between font-semibold border-t pt-1 mt-1">
+                <span>Saldo a cubrir</span>
+                <span>{ars(saldoAjustado)}</span>
+              </div>
+              {saldoAFavorCC > 0 && (
+                <p className="text-xs text-green-600 pt-0.5">
+                  Saldo a favor disponible: {ars(saldoAFavorCC)}
+                </p>
+              )}
+            </div>
 
-                <div className="space-y-1">
-                  <Label>Monto</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={pago.monto}
-                    onChange={(e) => updatePago(i, { monto: e.target.value } as Partial<PagoItem>)}
-                    placeholder="0.00"
-                  />
+            {/* Gastos a descontar */}
+            {gastosPendientes.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Gastos a descontar
+                </p>
+                <div className="space-y-2">
+                  {gastosPendientes.map((g) => {
+                    const saldoGasto = g.montoPagado - g.montoDescontado
+                    const checked = gastosSeleccionados[g.id] ?? false
+                    return (
+                      <div key={g.id} className="flex items-start gap-2 rounded border p-2 text-xs">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 cursor-pointer"
+                          checked={checked}
+                          onChange={() => toggleGasto(g.id, saldoGasto)}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{g.facturaProveedor.proveedor.razonSocial}</p>
+                          <p className="text-muted-foreground">
+                            {g.facturaProveedor.tipoCbte} {g.facturaProveedor.nroComprobante ?? "s/n"} ·{" "}
+                            {formatearFecha(new Date(g.facturaProveedor.fechaCbte))}
+                          </p>
+                          <p className="text-muted-foreground">Saldo: {formatearMoneda(saldoGasto)}</p>
+                        </div>
+                        <Input
+                          type="number"
+                          min="0"
+                          max={saldoGasto}
+                          step="0.01"
+                          disabled={!checked}
+                          value={gastosMontos[g.id] ?? ""}
+                          onChange={(e) => {
+                            const v = Math.min(parseFloat(e.target.value) || 0, saldoGasto)
+                            setGastosMontos((prev) => ({ ...prev, [g.id]: String(v) }))
+                          }}
+                          className="w-24 h-6 text-xs text-right px-1"
+                        />
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
-
-              {pago.tipoPago === "TRANSFERENCIA" && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label>Cuenta bancaria</Label>
-                    <Select
-                      value={pago.cuentaBancariaId}
-                      onChange={(e) => updatePago(i, { cuentaBancariaId: e.target.value } as Partial<PagoItem>)}
-                    >
-                      <option value="">Seleccionar cuenta...</option>
-                      {cuentasBancarias.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.nombre} — {c.bancoOEntidad}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label>Referencia (opcional)</Label>
-                    <Input
-                      value={pago.referencia}
-                      onChange={(e) => updatePago(i, { referencia: e.target.value } as Partial<PagoItem>)}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {pago.tipoPago === "CHEQUE_PROPIO" && (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label>Cuenta (chequera)</Label>
-                      <Select
-                        value={pago.cuentaId}
-                        onChange={(e) => updatePago(i, { cuentaId: e.target.value } as Partial<PagoItem>)}
-                      >
-                        <option value="">Seleccionar cuenta...</option>
-                        {cuentasBancarias.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.nombre} — {c.bancoOEntidad}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Nro cheque (opcional)</Label>
-                      <Input
-                        value={pago.nroCheque}
-                        onChange={(e) => updatePago(i, { nroCheque: e.target.value } as Partial<PagoItem>)}
-                        placeholder="Asignado al emitir"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label>Fecha emisión</Label>
-                      <Input
-                        type="date"
-                        value={pago.fechaEmision}
-                        onChange={(e) => updatePago(i, { fechaEmision: e.target.value } as Partial<PagoItem>)}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Fecha de pago</Label>
-                      <Input
-                        type="date"
-                        value={pago.fechaPago}
-                        onChange={(e) => updatePago(i, { fechaPago: e.target.value } as Partial<PagoItem>)}
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label>Tipo doc beneficiario</Label>
-                      <Select
-                        value={pago.tipoDocBeneficiario}
-                        onChange={(e) => updatePago(i, { tipoDocBeneficiario: e.target.value } as Partial<PagoItem>)}
-                      >
-                        <option value="CUIT">CUIT</option>
-                        <option value="CUIL">CUIL</option>
-                        <option value="CDI">CDI</option>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Nro doc beneficiario</Label>
-                      <Input
-                        value={pago.nroDocBeneficiario}
-                        onChange={(e) => updatePago(i, { nroDocBeneficiario: e.target.value } as Partial<PagoItem>)}
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label>Cláusula</Label>
-                      <Select
-                        value={pago.clausula}
-                        onChange={(e) => updatePago(i, { clausula: e.target.value } as Partial<PagoItem>)}
-                      >
-                        <option value="NO_A_LA_ORDEN">No a la orden</option>
-                        <option value="AL_DIA">Al día</option>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Mail beneficiario (opcional)</Label>
-                      <Input
-                        type="email"
-                        value={pago.mailBeneficiario}
-                        onChange={(e) => updatePago(i, { mailBeneficiario: e.target.value } as Partial<PagoItem>)}
-                        placeholder="email@ejemplo.com"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label>Descripción 1 (opcional)</Label>
-                      <Input
-                        value={pago.descripcion1}
-                        onChange={(e) => updatePago(i, { descripcion1: e.target.value } as Partial<PagoItem>)}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Descripción 2 (opcional)</Label>
-                      <Input
-                        value={pago.descripcion2}
-                        onChange={(e) => updatePago(i, { descripcion2: e.target.value } as Partial<PagoItem>)}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {pago.tipoPago === "CHEQUE_TERCERO" && (
-                <div className="space-y-1">
-                  <Label>Cheque en cartera</Label>
-                  <Select
-                    value={pago.chequeRecibidoId}
-                    onChange={(e) => {
-                      const cheque = chequesEnCartera.find((c) => c.id === e.target.value)
-                      updatePago(i, {
-                        chequeRecibidoId: e.target.value,
-                        monto: cheque ? String(cheque.monto) : pago.monto,
-                      } as Partial<PagoItem>)
-                    }}
-                  >
-                    <option value="">Seleccionar cheque...</option>
-                    {chequesEnCartera.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.nroCheque} — {c.bancoEmisor} — {ars(c.monto)} — vence {c.fechaCobro}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-              )}
-            </div>
-          ))}
-
-          <Button variant="outline" onClick={addPago} className="w-full">
-            + Agregar medio de pago
-          </Button>
-
-          {gastosPendientes.length > 0 && (
-            <div className="border rounded-md p-3 space-y-2">
-              <p className="text-sm font-medium text-blue-800">Gastos por cuenta del fletero a descontar</p>
-              <p className="text-xs text-muted-foreground">Ingresá el monto a descontar de cada gasto en este pago (opcional).</p>
-              {gastosPendientes.map((g) => {
-                const saldoGasto = g.montoPagado - g.montoDescontado
-                return (
-                  <div key={g.id} className="grid grid-cols-[1fr_auto] gap-3 items-center border-t pt-2">
-                    <div>
-                      <p className="text-xs font-medium">
-                        {g.tipo} — {g.facturaProveedor.proveedor.razonSocial}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {g.facturaProveedor.tipoCbte} {g.facturaProveedor.nroComprobante ?? "s/n"} · {formatearFecha(g.facturaProveedor.fechaCbte)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Saldo: {formatearMoneda(saldoGasto)}
-                        {g.montoDescontado > 0 && ` (pagado: ${formatearMoneda(g.montoPagado)}, ya descontado: ${formatearMoneda(g.montoDescontado)})`}
-                      </p>
-                    </div>
-                    <div className="w-32">
-                      <Input
-                        type="number"
-                        min="0"
-                        max={saldoGasto}
-                        step="0.01"
-                        placeholder="0.00"
-                        value={gastosDescontar[g.id] ?? ""}
-                        onChange={(e) => setGastosDescontar((prev) => ({ ...prev, [g.id]: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          <div className="border rounded-md p-3 space-y-1 bg-muted/30">
-            <div className="flex justify-between text-sm">
-              <span>Total a pagar</span>
-              <span className="font-medium">{ars(totalActual)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span>Pendiente después del pago</span>
-              <span className={despuesPago < 0 ? "text-green-600 font-medium" : "font-medium"}>
-                {ars(Math.max(0, despuesPago))}
-              </span>
-            </div>
-            {statusMsg && (
-              <p className="text-sm font-medium text-blue-600 pt-1">{statusMsg}</p>
             )}
           </div>
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {/* Error + Botones (fijos al fondo del panel izquierdo) */}
+          <div className="border-t p-4 space-y-2 flex-shrink-0">
+            {error && <p className="text-xs text-destructive">{error}</p>}
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={onClose} disabled={loading} className="flex-1">
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleSubmit}
+                disabled={!puedeConfirmar}
+                className="flex-1"
+              >
+                {loading ? "Registrando..." : "Confirmar ✓"}
+              </Button>
+            </div>
+          </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={loading}>
-            Cancelar
-          </Button>
-          <Button onClick={handleSubmit} disabled={loading || totalActual <= 0}>
-            {loading ? "Registrando..." : "Confirmar pago"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        {/* ── Panel derecho ────────────────────────────────────────────────── */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="p-5 pb-2 flex-shrink-0">
+            <p className="text-sm font-semibold">Medios de pago</p>
+          </div>
+
+          {/* Tabla de ítems — scroll interno */}
+          <div className="flex-1 overflow-y-auto px-5">
+            {pagos.length === 0 && !draft ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                Sin medios de pago. Agregá uno con el botón de abajo.
+              </p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left font-medium text-xs">Tipo</th>
+                    <th className="px-2 py-1.5 text-left font-medium text-xs">Detalle</th>
+                    <th className="px-2 py-1.5 text-right font-medium text-xs">Monto</th>
+                    <th className="w-6" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {pagos.map((p, i) => (
+                    <tr key={i} className="hover:bg-muted/20">
+                      <td className="px-2 py-2 text-xs">{tipoBadge(p)}</td>
+                      <td className="px-2 py-2 text-xs text-muted-foreground max-w-[200px] truncate">
+                        {resumenItem(p, cuentasBancarias, chequesEnCartera)}
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono text-xs">
+                        {ars(parseFloat(p.monto) || 0)}
+                      </td>
+                      <td className="px-1 py-2">
+                        <button
+                          onClick={() => removePago(i)}
+                          className="h-5 w-5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex items-center justify-center text-xs"
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {/* Formulario inline de alta */}
+            {draft && (
+              <DraftForm
+                draft={draft}
+                draftError={draftError}
+                cuentasBancarias={cuentasBancarias}
+                chequesEnCartera={chequesEnCartera}
+                saldoAFavorCC={saldoAFavorCC}
+                onChangeTipo={changeDraftTipo}
+                onUpdate={updateDraft}
+                onConfirm={confirmarDraft}
+                onCancel={cancelarDraft}
+              />
+            )}
+          </div>
+
+          {/* Agregar + totales (fijos al fondo del panel derecho) */}
+          <div className="flex-shrink-0 px-5 pb-5 pt-2 space-y-2 border-t mt-2">
+            {!draft && (
+              <div className="flex gap-2 flex-wrap">
+                <span className="text-xs text-muted-foreground self-center">Agregar:</span>
+                {(["TRANSFERENCIA", "CHEQUE_PROPIO", "CHEQUE_TERCERO", "EFECTIVO", "SALDO_A_FAVOR"] as const).map((tipo) => (
+                  <button
+                    key={tipo}
+                    onClick={() => iniciarDraft(tipo)}
+                    disabled={(tipo === "CHEQUE_TERCERO" && chequesEnCartera.length === 0) || (tipo === "SALDO_A_FAVOR" && saldoAFavorCC <= 0)}
+                    className="h-6 px-2 rounded border text-xs font-medium hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {tipoBadge({ tipoPago: tipo } as PagoItem)}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total medios de pago</span>
+                <span className="font-medium">{ars(totalMedios)}</span>
+              </div>
+              <div className={`flex justify-between font-semibold ${Math.abs(diferencia) < 0.01 ? "text-green-600" : "text-red-600"}`}>
+                <span>Diferencia</span>
+                <span>{ars(diferencia)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Formulario inline de alta de ítem ───────────────────────────────────────
+
+function DraftForm({
+  draft,
+  draftError,
+  cuentasBancarias,
+  chequesEnCartera,
+  saldoAFavorCC,
+  onChangeTipo,
+  onUpdate,
+  onConfirm,
+  onCancel,
+}: {
+  draft: PagoItem
+  draftError: string | null
+  cuentasBancarias: CuentaBancaria[]
+  chequesEnCartera: ChequeEnCartera[]
+  saldoAFavorCC: number
+  onChangeTipo: (tipo: PagoItem["tipoPago"]) => void
+  onUpdate: (updates: Partial<PagoItem>) => void
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div className="border rounded-md p-3 mt-3 bg-muted/20 space-y-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Select
+          value={draft.tipoPago}
+          onChange={(e) => onChangeTipo(e.target.value as PagoItem["tipoPago"])}
+          className="h-8 text-xs"
+        >
+          <option value="TRANSFERENCIA">Transferencia</option>
+          <option value="CHEQUE_PROPIO">Cheque propio</option>
+          <option value="CHEQUE_TERCERO" disabled={chequesEnCartera.length === 0}>
+            Cheque de tercero{chequesEnCartera.length === 0 ? " (sin cheques)" : ""}
+          </option>
+          <option value="EFECTIVO">Efectivo</option>
+          <option value="SALDO_A_FAVOR" disabled={saldoAFavorCC <= 0}>
+            Saldo a favor{saldoAFavorCC > 0 ? ` (${new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(saldoAFavorCC)})` : " (sin saldo)"}
+          </option>
+        </Select>
+
+        <div className="flex items-center gap-1">
+          <Label className="text-xs shrink-0">Monto</Label>
+          <Input
+            type="number"
+            min="0"
+            step="0.01"
+            value={draft.monto}
+            onChange={(e) => onUpdate({ monto: e.target.value } as Partial<PagoItem>)}
+            placeholder="0,00"
+            className="w-32 h-8 text-xs"
+          />
+        </div>
+      </div>
+
+      {/* Campos específicos por tipo */}
+      {draft.tipoPago === "TRANSFERENCIA" && (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <Label className="text-xs">Cuenta</Label>
+            <Select
+              value={draft.cuentaBancariaId}
+              onChange={(e) => onUpdate({ cuentaBancariaId: e.target.value } as Partial<PagoItem>)}
+              className="h-8 text-xs mt-0.5"
+            >
+              <option value="">Seleccionar...</option>
+              {cuentasBancarias.map((c) => (
+                <option key={c.id} value={c.id}>{c.nombre} — {c.bancoOEntidad}</option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Referencia (opcional)</Label>
+            <Input
+              value={draft.referencia}
+              onChange={(e) => onUpdate({ referencia: e.target.value } as Partial<PagoItem>)}
+              className="h-8 text-xs mt-0.5"
+            />
+          </div>
+        </div>
+      )}
+
+      {draft.tipoPago === "CHEQUE_PROPIO" && (
+        <div className="space-y-2">
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <Label className="text-xs">Nro. de cheque <span className="text-destructive">*</span></Label>
+              <Input
+                value={draft.nroCheque}
+                onChange={(e) => onUpdate({ nroCheque: e.target.value } as Partial<PagoItem>)}
+                placeholder="obligatorio"
+                className={`h-8 text-xs mt-0.5 ${!draft.nroCheque.trim() ? "border-orange-400" : ""}`}
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Cuenta (chequera)</Label>
+              <Select
+                value={draft.cuentaId}
+                onChange={(e) => onUpdate({ cuentaId: e.target.value } as Partial<PagoItem>)}
+                className="h-8 text-xs mt-0.5"
+              >
+                <option value="">Seleccionar...</option>
+                {cuentasBancarias.map((c) => (
+                  <option key={c.id} value={c.id}>{c.nombre}</option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Fecha de pago</Label>
+              <Input
+                type="date"
+                value={draft.fechaPago}
+                onChange={(e) => onUpdate({ fechaPago: e.target.value } as Partial<PagoItem>)}
+                className="h-8 text-xs mt-0.5"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <Label className="text-xs">Fecha emisión</Label>
+              <Input
+                type="date"
+                value={draft.fechaEmision}
+                onChange={(e) => onUpdate({ fechaEmision: e.target.value } as Partial<PagoItem>)}
+                className="h-8 text-xs mt-0.5"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Tipo doc. beneficiario</Label>
+              <Select
+                value={draft.tipoDocBeneficiario}
+                onChange={(e) => onUpdate({ tipoDocBeneficiario: e.target.value } as Partial<PagoItem>)}
+                className="h-8 text-xs mt-0.5"
+              >
+                <option value="CUIT">CUIT</option>
+                <option value="CUIL">CUIL</option>
+                <option value="CDI">CDI</option>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Nro. doc. beneficiario</Label>
+              <Input
+                value={draft.nroDocBeneficiario}
+                onChange={(e) => onUpdate({ nroDocBeneficiario: e.target.value } as Partial<PagoItem>)}
+                className="h-8 text-xs mt-0.5"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <Label className="text-xs">Cláusula</Label>
+              <Select
+                value={draft.clausula}
+                onChange={(e) => onUpdate({ clausula: e.target.value } as Partial<PagoItem>)}
+                className="h-8 text-xs mt-0.5"
+              >
+                <option value="NO_A_LA_ORDEN">No a la orden</option>
+                <option value="AL_DIA">Al día</option>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Mail beneficiario (opcional)</Label>
+              <Input
+                type="email"
+                value={draft.mailBeneficiario}
+                onChange={(e) => onUpdate({ mailBeneficiario: e.target.value } as Partial<PagoItem>)}
+                className="h-8 text-xs mt-0.5"
+                placeholder="email@ejemplo.com"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Descripción (opcional)</Label>
+              <Input
+                value={draft.descripcion1}
+                onChange={(e) => onUpdate({ descripcion1: e.target.value } as Partial<PagoItem>)}
+                className="h-8 text-xs mt-0.5"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {draft.tipoPago === "CHEQUE_TERCERO" && (
+        <div>
+          <Label className="text-xs">Cheque en cartera</Label>
+          <Select
+            value={draft.chequeRecibidoId}
+            onChange={(e) => {
+              const ch = chequesEnCartera.find((c) => c.id === e.target.value)
+              onUpdate({ chequeRecibidoId: e.target.value, monto: ch ? String(ch.monto) : draft.monto } as Partial<PagoItem>)
+            }}
+            className="h-8 text-xs mt-0.5"
+          >
+            <option value="">Seleccionar cheque...</option>
+            {chequesEnCartera.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nroCheque} — {c.bancoEmisor} — {new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(c.monto)} — vence {c.fechaCobro}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
+
+      {draftError && (
+        <p className="text-xs text-destructive">{draftError}</p>
+      )}
+
+      <div className="flex gap-2 justify-end pt-1">
+        <button
+          onClick={onCancel}
+          className="h-7 px-3 rounded border text-xs font-medium hover:bg-accent"
+        >
+          Cancelar
+        </button>
+        <button
+          onClick={onConfirm}
+          className="h-7 px-3 rounded bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90"
+        >
+          Agregar ✓
+        </button>
+      </div>
+    </div>
   )
 }

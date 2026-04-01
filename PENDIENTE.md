@@ -11,6 +11,7 @@
 4. Configuración ARCA en ABM (modelo singleton, APIs GET/PATCH/verificar, UI con 5 cards)
 5. Revisión general: seed corregido, sidebar actualizado, README actualizado
 6. Orden de Pago a Fleteros (modelo OrdenPago, auto-creación en pago de LP, HTML imprimible, APIs pdf/email, UI en modal y tabla)
+7. Pago a fleteros: gastos disponibles como medio de pago, UI con dos paneles fijos, nro de cheque obligatorio
 
 **Estado actual del build:**
 - `npm run build` ✅ sin errores

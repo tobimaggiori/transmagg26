@@ -23,7 +23,7 @@ const pagoFleteroItemSchema = z.discriminatedUnion("tipoPago", [
     monto: z.number().positive(),
     chequePropio: z.object({
       cuentaId: z.string().uuid(),
-      nroCheque: z.string().optional().nullable(),
+      nroCheque: z.string().min(1, "El número de cheque es obligatorio"),
       tipoDocBeneficiario: z.string().min(1),
       nroDocBeneficiario: z.string().min(1),
       mailBeneficiario: z.string().optional().nullable(),
@@ -50,7 +50,7 @@ const pagoFleteroItemSchema = z.discriminatedUnion("tipoPago", [
 ])
 
 const pagoLiqSchema = z.object({
-  pagos: z.array(pagoFleteroItemSchema).min(1),
+  pagos: z.array(pagoFleteroItemSchema),
   fecha: z.string(),
   gastos: z
     .array(
@@ -113,6 +113,11 @@ export async function POST(
     const totalYaPagado = liquidacion.pagos.reduce((sum, p) => sum + p.monto, 0)
     const saldoPendiente = liquidacion.total - totalYaPagado
     const totalPagoActual = pagos.reduce((sum, p) => sum + p.monto, 0)
+    const totalGastosRequest = gastos ? gastos.reduce((s, g) => s + g.montoDescontar, 0) : 0
+
+    if (pagos.length === 0 && totalGastosRequest === 0) {
+      return badRequestResponse("Debe ingresar al menos un medio de pago o gasto a descontar")
+    }
 
     // Validate SALDO_A_FAVOR
     const pagoSaldoAFavor = pagos.find((p) => p.tipoPago === "SALDO_A_FAVOR")
@@ -125,8 +130,9 @@ export async function POST(
 
     const fechaPago = new Date(fecha)
 
+    // Los gastos descontados cuentan como cobertura del saldo pendiente
     const nuevoEstado =
-      totalPagoActual >= saldoPendiente ? "PAGADA" : "PARCIALMENTE_PAGADA"
+      totalPagoActual + totalGastosRequest >= saldoPendiente ? "PAGADA" : "PARCIALMENTE_PAGADA"
 
     const { ordenPagoId, nroOrdenPago } = await prisma.$transaction(async (tx) => {
       // Coleccionar IDs de pagos reales (no el excedente) para la Orden de Pago
@@ -171,18 +177,16 @@ export async function POST(
           })
         } else if (pago.tipoPago === "CHEQUE_PROPIO") {
           const ch = pago.chequePropio
-          if (ch.nroCheque) {
-            const existing = await tx.chequeEmitido.findFirst({
-              where: { nroCheque: ch.nroCheque, cuentaId: ch.cuentaId },
-              select: { id: true },
-            })
-            if (existing) throw new Error(`DUPLICATE_CHEQUE:${ch.nroCheque}`)
-          }
+          const existing = await tx.chequeEmitido.findFirst({
+            where: { nroCheque: ch.nroCheque, cuentaId: ch.cuentaId },
+            select: { id: true },
+          })
+          if (existing) throw new Error(`DUPLICATE_CHEQUE:${ch.nroCheque}`)
           const nuevoCheque = await tx.chequeEmitido.create({
             data: {
               fleteroId: liquidacion.fleteroId,
               cuentaId: ch.cuentaId,
-              nroCheque: ch.nroCheque ?? null,
+              nroCheque: ch.nroCheque,
               tipoDocBeneficiario: ch.tipoDocBeneficiario,
               nroDocBeneficiario: ch.nroDocBeneficiario,
               mailBeneficiario: ch.mailBeneficiario ?? null,
@@ -301,7 +305,7 @@ export async function POST(
         data: { estado: nuevoEstado },
       })
 
-      const excedente = totalPagoActual - saldoPendiente
+      const excedente = (totalPagoActual + totalGastosRequest) - saldoPendiente
       if (excedente > 0) {
         // El excedente es un pago de saldo a favor que NO va en la Orden de Pago
         await tx.pagoAFletero.create({
