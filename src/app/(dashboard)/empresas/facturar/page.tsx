@@ -41,7 +41,7 @@ export default async function EmpresasFacturarPage() {
       orderBy: { razonSocial: "asc" },
     }),
     prisma.camion.findMany({
-      where: { activo: true },
+      where: { activo: true, esPropio: false },
       select: { id: true, patenteChasis: true, fleteroId: true },
       orderBy: { patenteChasis: "asc" },
     }),
@@ -55,7 +55,7 @@ export default async function EmpresasFacturarPage() {
   return (
     <FacturarEmpresaClient
       empresas={empresas}
-      camiones={camiones}
+      camiones={camiones.filter((c) => c.fleteroId !== null) as { id: string; patenteChasis: string; fleteroId: string }[]}
       choferes={choferes}
     />
   )

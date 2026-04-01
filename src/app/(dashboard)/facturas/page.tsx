@@ -36,7 +36,7 @@ export default async function FacturasPage() {
 
   let empresas: { id: string; razonSocial: string }[] = []
   let empresaIdPropia: string | null = null
-  let camiones: { id: string; patenteChasis: string; fleteroId: string }[] = []
+  let camiones: { id: string; patenteChasis: string; fleteroId: string | null }[] = []
   let choferes: { id: string; nombre: string; apellido: string }[] = []
 
   let cuentasBancarias: { id: string; nombre: string; bancoOEntidad: string }[] = []
@@ -55,7 +55,7 @@ export default async function FacturasPage() {
         orderBy: { razonSocial: "asc" },
       }),
       prisma.camion.findMany({
-        where: { activo: true },
+        where: { activo: true, esPropio: false },
         select: { id: true, patenteChasis: true, fleteroId: true },
         orderBy: { patenteChasis: "asc" },
       }),
@@ -77,7 +77,7 @@ export default async function FacturasPage() {
     <FacturasClient
       rol={rol}
       empresas={empresas}
-      camiones={camiones}
+      camiones={camiones.filter((c) => c.fleteroId !== null) as { id: string; patenteChasis: string; fleteroId: string }[]}
       choferes={choferes}
       empresaIdPropia={empresaIdPropia}
       cuentasBancarias={cuentasBancarias}

@@ -54,7 +54,7 @@ export async function PATCH(
     // FLETERO solo puede modificar sus propios camiones
     if (rol === "FLETERO") {
       const fleteroPropio = await prisma.fletero.findFirst({
-        where: { id: camion.fleteroId, usuario: { email: session.user.email } },
+        where: { id: camion.fleteroId ?? undefined, usuario: { email: session.user.email } },
       })
       if (!fleteroPropio) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
     } else if (!esRolInterno(rol)) {

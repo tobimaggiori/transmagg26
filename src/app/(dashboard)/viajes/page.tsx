@@ -57,7 +57,7 @@ export default async function ViajesPage({
     esInterno
       ? prisma.camion.findMany({
           where: { activo: true },
-          select: { id: true, patenteChasis: true, fleteroId: true },
+          select: { id: true, patenteChasis: true, fleteroId: true, esPropio: true },
           orderBy: { patenteChasis: "asc" },
         })
       : [],

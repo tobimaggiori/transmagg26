@@ -79,7 +79,7 @@ export async function GET(
   const filasViajes = factura.viajes.map((v) => `
     <tr>
       <td>${fmtFecha(v.viaje.fechaViaje)}</td>
-      <td>${v.viaje.fletero.razonSocial}</td>
+      <td>${v.viaje.fletero?.razonSocial ?? "Propio"}</td>
       <td>${v.viaje.camion.patenteChasis}</td>
       <td>${v.viaje.chofer.nombre} ${v.viaje.chofer.apellido}</td>
       <td class="right">${fmt(v.tarifaEmpresa)}</td>

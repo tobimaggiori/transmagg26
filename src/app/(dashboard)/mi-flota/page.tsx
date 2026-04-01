@@ -1,39 +1,99 @@
 /**
- * Propósito: Página de Mi Flota para el rol FLETERO.
- * Server component que verifica auth, carga la flota del fletero autenticado
- * y renderiza MiFlotaClient con los datos.
+ * Propósito: Página de Mi Flota — bifurca por rol.
+ * FLETERO → MiFlotaClient (su propia flota).
+ * Roles internos → FlotaPropiaClient (camiones propios de Transmagg).
  */
 
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { puedeGestionarFlota } from "@/lib/permissions"
+import { esRolInterno, puedeAcceder } from "@/lib/permissions"
 import type { Rol } from "@/types"
 import { MiFlotaClient } from "./mi-flota-client"
+import { FlotaPropiaClient } from "./flota-propia-client"
 
-/**
- * MiFlotaPage: () -> Promise<JSX.Element>
- *
- * Verifica que el usuario autenticado tenga rol FLETERO, carga su fletero
- * con camiones (y chofer actual por camión) y choferes sin camión asignado,
- * y renderiza MiFlotaClient con esos datos.
- * Existe para que el rol FLETERO pueda ver el estado de su flota sin acceder al ABM.
- *
- * Ejemplos:
- * // Sesión FLETERO → MiFlotaClient con su flota completa
- * <MiFlotaPage />
- * // Sesión ADMIN_TRANSMAGG → redirect /dashboard
- * <MiFlotaPage />
- * // Sesión FLETERO sin fletero vinculado → redirect /dashboard
- * <MiFlotaPage />
- */
 export default async function MiFlotaPage() {
   const session = await auth()
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
-  if (!puedeGestionarFlota(rol)) redirect("/dashboard")
+  if (!puedeAcceder(rol, "mi_flota")) redirect("/dashboard")
 
+  // ── Roles internos: gestión de flota propia de Transmagg ──────────────────
+  if (esRolInterno(rol)) {
+    const now = new Date()
+    const camiones = await prisma.camion.findMany({
+      where: { esPropio: true, activo: true },
+      include: {
+        choferHistorial: {
+          where: { hasta: null },
+          include: {
+            chofer: {
+              select: {
+                id: true,
+                nombre: true,
+                apellido: true,
+                email: true,
+                empleado: { select: { id: true, nombre: true, apellido: true } },
+              },
+            },
+          },
+          take: 1,
+        },
+        polizas: { orderBy: { vigenciaHasta: "desc" } },
+      },
+      orderBy: { patenteChasis: "asc" },
+    })
+
+    const camionesEnriquecidos = camiones.map((c) => {
+      const polizasConEstado = c.polizas.map((p) => ({
+        ...p,
+        estadoPoliza: (
+          p.vigenciaHasta < now
+            ? "VENCIDA"
+            : p.vigenciaHasta <= new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+            ? "POR_VENCER"
+            : "VIGENTE"
+        ) as "VENCIDA" | "POR_VENCER" | "VIGENTE",
+        vigenciaDesde: p.vigenciaDesde.toISOString(),
+        vigenciaHasta: p.vigenciaHasta.toISOString(),
+        creadoEn: p.creadoEn.toISOString(),
+      }))
+      const polizaVigente = polizasConEstado.find((p) => p.estadoPoliza !== "VENCIDA")
+      return {
+        id: c.id,
+        patenteChasis: c.patenteChasis,
+        patenteAcoplado: c.patenteAcoplado,
+        tipoCamion: c.tipoCamion,
+        activo: c.activo,
+        esPropio: c.esPropio,
+        choferActual: c.choferHistorial[0]?.chofer ?? null,
+        polizas: polizasConEstado,
+        alertaPoliza: (!polizaVigente
+          ? "SIN_COBERTURA"
+          : polizaVigente.estadoPoliza === "POR_VENCER"
+          ? "POR_VENCER"
+          : null) as "SIN_COBERTURA" | "POR_VENCER" | null,
+      }
+    })
+
+    // Choferes empleados de Transmagg con rol CHOFER
+    const choferes = await prisma.usuario.findMany({
+      where: { rol: "CHOFER", activo: true, fleteroId: null },
+      select: {
+        id: true,
+        nombre: true,
+        apellido: true,
+        email: true,
+        empleado: { select: { id: true, nombre: true, apellido: true } },
+      },
+      orderBy: [{ apellido: "asc" }, { nombre: "asc" }],
+    })
+
+    return <FlotaPropiaClient camiones={camionesEnriquecidos} choferes={choferes} />
+  }
+
+  // ── FLETERO: su propia flota ───────────────────────────────────────────────
   const fletero = await prisma.fletero.findFirst({
     where: { usuario: { email: session.user.email ?? "" } },
     select: {
@@ -64,7 +124,6 @@ export default async function MiFlotaPage() {
 
   if (!fletero) redirect("/dashboard")
 
-  // IDs de choferes con camión activo
   const choferesConCamion = new Set(
     fletero.camiones.flatMap((c) => c.choferHistorial.map((h) => h.chofer.id))
   )

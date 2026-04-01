@@ -169,17 +169,36 @@ model Fletero {
 
 model Camion {
   id              String  @id @default(uuid())
-  fleteroId       String  @map("fletero_id")
+  fleteroId       String? @map("fletero_id")
+  esPropio        Boolean @default(false) @map("es_propio")
   patenteChasis   String  @unique @map("patente_chasis")
   patenteAcoplado String? @map("patente_acoplado")
   tipoCamion      String  @map("tipo_camion")
   activo          Boolean @default(true)
 
-  fletero         Fletero       @relation(fields: [fleteroId], references: [id])
+  fletero         Fletero?       @relation(fields: [fleteroId], references: [id])
   choferHistorial CamionChofer[]
   viajes          Viaje[]
+  polizas         PolizaSeguro[]
 
   @@map("camiones")
+}
+
+model PolizaSeguro {
+  id            String   @id @default(uuid())
+  camionId      String   @map("camion_id")
+  aseguradora   String
+  nroPoliza     String   @map("nro_poliza")
+  cobertura     String?
+  montoMensual  Float?   @map("monto_mensual")
+  vigenciaDesde DateTime @map("vigencia_desde")
+  vigenciaHasta DateTime @map("vigencia_hasta")
+  archivos      String?
+  creadoEn      DateTime @default(now()) @map("creado_en")
+
+  camion Camion @relation(fields: [camionId], references: [id], onDelete: Cascade)
+
+  @@map("polizas_seguro")
 }
 
 model CamionChofer {
@@ -199,7 +218,8 @@ model CamionChofer {
 
 model Viaje {
   id                  String   @id @default(uuid())
-  fleteroId           String   @map("fletero_id")
+  fleteroId           String?  @map("fletero_id")
+  esCamionPropio      Boolean  @default(false) @map("es_camion_propio")
   camionId            String   @map("camion_id")
   choferId            String   @map("chofer_id")
   empresaId           String   @map("empresa_id")
@@ -222,7 +242,7 @@ model Viaje {
   cartaPorteS3Key     String?  @map("carta_porte_s3_key")
   creadoEn            DateTime @default(now()) @map("creado_en")
 
-  fletero  Fletero @relation("FleteroViajes", fields: [fleteroId], references: [id])
+  fletero  Fletero? @relation("FleteroViajes", fields: [fleteroId], references: [id])
   camion   Camion  @relation(fields: [camionId], references: [id])
   chofer   Usuario @relation("ChoferViajes", fields: [choferId], references: [id])
   empresa  Empresa @relation("EmpresaViajes", fields: [empresaId], references: [id])

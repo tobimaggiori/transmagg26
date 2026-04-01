@@ -23,13 +23,14 @@ import type { Rol } from "@/types"
 
 type Fletero = { id: string; razonSocial: string; cuit: string; comisionDefault?: number }
 type Empresa = { id: string; razonSocial: string; cuit: string }
-type Camion = { id: string; patenteChasis: string; fleteroId: string }
+type Camion = { id: string; patenteChasis: string; fleteroId: string | null; esPropio?: boolean }
 type Chofer = { id: string; nombre: string; apellido: string; fleteroId: string | null }
 
 type ViajeAPI = {
   id: string
   fechaViaje: string
-  fleteroId: string
+  fleteroId: string | null
+  esCamionPropio: boolean
   empresaId: string
   remito: string | null
   tieneCupo: boolean | null
@@ -50,7 +51,7 @@ type ViajeAPI = {
   }>
   toneladas?: number | null
   total?: number | null
-  fletero: { razonSocial: string }
+  fletero: { razonSocial: string } | null
   empresa: { razonSocial: string }
   camion: { patenteChasis: string }
   chofer: { nombre: string; apellido: string }
@@ -162,6 +163,7 @@ function ModalViaje({
   cargando: boolean
   error: string | null
 }) {
+  const [esCamionPropio, setEsCamionPropio] = useState(viaje?.esCamionPropio ?? false)
   const [fleteroId, setFleteroId] = useState(viaje?.fleteroId ?? "")
   const [camionId, setCamionId] = useState(viaje?.camionId ?? "")
   const [choferId, setChoferId] = useState(viaje?.choferId ?? "")
@@ -182,8 +184,12 @@ function ModalViaje({
   const [nroCartaPorte, setNroCartaPorte] = useState(viaje?.nroCartaPorte ?? "")
   const [cartaPorteS3Key, setCartaPorteS3Key] = useState(viaje?.cartaPorteS3Key ?? "")
 
-  const camionesDelFletero = camiones.filter((c) => c.fleteroId === fleteroId)
-  const choferesDelFletero = fleteroId
+  const camionesDelFletero = esCamionPropio
+    ? camiones.filter((c) => c.esPropio)
+    : camiones.filter((c) => c.fleteroId === fleteroId)
+  const choferesDelFletero = esCamionPropio
+    ? choferes.filter((c) => !c.fleteroId)
+    : fleteroId
     ? choferes.filter((c) => c.fleteroId === fleteroId)
     : choferes
 
@@ -197,7 +203,7 @@ function ModalViaje({
 
   const esNuevo = modo === "nuevo"
   const puedeGuardar =
-    fleteroId && camionId && choferId && empresaId && fechaViaje &&
+    (esCamionPropio || fleteroId) && camionId && choferId && empresaId && fechaViaje &&
     provinciaOrigen && provinciaDestino && tarifaNum > 0 &&
     (!esNuevo || (nroCartaPorte.trim() !== "" && cartaPorteS3Key !== ""))
 
@@ -213,7 +219,7 @@ function ModalViaje({
     e.preventDefault()
     if (!puedeGuardar) return
     onGuardar({
-      fleteroId,
+      ...(esCamionPropio ? { esCamionPropio: true } : { fleteroId }),
       camionId,
       choferId,
       empresaId,
@@ -256,7 +262,35 @@ function ModalViaje({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Toggle camión propio (solo al crear) */}
+          {esNuevo && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Tipo de viaje</label>
+              <div className="flex rounded-md border overflow-hidden h-9 w-fit">
+                <button
+                  type="button"
+                  onClick={() => { setEsCamionPropio(false); setCamionId(""); setChoferId("") }}
+                  className={`px-4 text-xs font-medium border-r ${!esCamionPropio ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                >
+                  Con fletero externo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setEsCamionPropio(true); setFleteroId(""); setCamionId(""); setChoferId("") }}
+                  className={`px-4 text-xs font-medium ${esCamionPropio ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                >
+                  Camión propio Transmagg
+                </button>
+              </div>
+            </div>
+          )}
+          {esCamionPropio && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-800">
+              Este viaje usa un camión propio de Transmagg. No genera liquidación al fletero.
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
+            {!esCamionPropio && (
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Fletero *</label>
               <SearchCombobox
@@ -264,10 +298,11 @@ function ModalViaje({
                 value={fleteroId}
                 onChange={(id) => { setFleteroId(id); setCamionId("") }}
                 placeholder="Buscar por nombre o CUIT..."
-                required
+                required={!esCamionPropio}
                 disabled={modo === "editar"}
               />
             </div>
+            )}
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Empresa *</label>
               <SearchCombobox
@@ -583,9 +618,9 @@ export function ViajesClient({
 
   // Filtrar viajes según la vista y búsqueda por carta de porte
   const viajesFiltrados = viajes.filter((v) => {
-    if (vista === "pend_liquidar") return v.estadoLiquidacion === "PENDIENTE_LIQUIDAR"
+    if (vista === "pend_liquidar") return v.estadoLiquidacion === "PENDIENTE_LIQUIDAR" && !v.esCamionPropio
     if (vista === "pend_facturar") return v.estadoFactura === "PENDIENTE_FACTURAR"
-    if (vista === "pend_ambos") return v.estadoLiquidacion === "PENDIENTE_LIQUIDAR" && v.estadoFactura === "PENDIENTE_FACTURAR"
+    if (vista === "pend_ambos") return v.estadoLiquidacion === "PENDIENTE_LIQUIDAR" && v.estadoFactura === "PENDIENTE_FACTURAR" && !v.esCamionPropio
     return true
   }).filter((v) => {
     if (!buscarCarta.trim()) return true
@@ -798,7 +833,9 @@ export function ViajesClient({
                           <td className="px-3 py-2">
                             <div className="space-y-0.5">
                               <p className="font-medium">{v.empresa.razonSocial}</p>
-                              <p className="text-xs text-muted-foreground">{v.fletero.razonSocial}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {v.esCamionPropio ? "🏠 Camión propio" : v.fletero?.razonSocial ?? "-"}
+                              </p>
                               <p className="text-xs text-muted-foreground">
                                 Remito {v.remito ?? "-"} · Cupo {v.tieneCupo ? (v.cupo ?? "-") : "—"}
                               </p>

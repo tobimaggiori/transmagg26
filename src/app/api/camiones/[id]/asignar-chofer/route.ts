@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { esAdmin } from "@/lib/permissions"
+import { esAdmin, esRolInterno } from "@/lib/permissions"
 import type { Rol } from "@/types"
 
 const asignarChoferSchema = z.object({
@@ -40,7 +40,7 @@ export async function POST(
 ) {
   const session = await auth()
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
-  if (!esAdmin(session.user.rol as Rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
+  if (!esRolInterno(session.user.rol as Rol) && !esAdmin(session.user.rol as Rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
 
   try {
     const body = await request.json()
@@ -58,9 +58,12 @@ export async function POST(
     if (!chofer) return NextResponse.json({ error: "Chofer no encontrado" }, { status: 404 })
     if (chofer.rol !== "CHOFER") return NextResponse.json({ error: "El usuario no tiene rol CHOFER" }, { status: 400 })
 
-    // El chofer debe pertenecer al mismo fletero que el camión (o no tener fletero asignado aún)
-    if (chofer.fleteroId && chofer.fleteroId !== camion.fleteroId) {
-      return NextResponse.json({ error: "El chofer no pertenece al mismo fletero que el camión" }, { status: 400 })
+    // Para camiones propios (esPropio=true, fleteroId=null), cualquier chofer sin fletero es válido.
+    // Para camiones de fletero, el chofer debe pertenecer al mismo fletero (o no tener fletero asignado aún).
+    if (!camion.esPropio) {
+      if (chofer.fleteroId && chofer.fleteroId !== camion.fleteroId) {
+        return NextResponse.json({ error: "El chofer no pertenece al mismo fletero que el camión" }, { status: 400 })
+      }
     }
 
     const ahora = new Date()

@@ -21,7 +21,8 @@ import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 import type { Rol } from "@/types"
 
 const crearViajeSchema = z.object({
-  fleteroId: z.string().uuid(),
+  esCamionPropio: z.boolean().default(false),
+  fleteroId: z.string().uuid().optional(),
   camionId: z.string().uuid(),
   choferId: z.string().uuid(),
   empresaId: z.string().uuid(),
@@ -41,6 +42,9 @@ const crearViajeSchema = z.object({
   nroCartaPorte: z.string().min(1, "El número de carta de porte es obligatorio"),
   cartaPorteS3Key: z.string().min(1, "El PDF de la carta de porte es obligatorio"),
 }).refine(
+  (data) => data.esCamionPropio || !!data.fleteroId,
+  { message: "El fletero es obligatorio para viajes con transportista externo", path: ["fleteroId"] }
+).refine(
   (data) => !data.tieneCupo || (data.cupo != null && data.cupo.trim().length > 0),
   { message: "El número de cupo es obligatorio cuando el viaje lleva cupo", path: ["cupo"] }
 )
@@ -184,10 +188,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { fleteroId, camionId, choferId, empresaId, fechaViaje, tarifaOperativaInicial, estadoLiquidacion, estadoFactura, ...resto } = parsed.data
+    const { esCamionPropio, fleteroId, camionId, choferId, empresaId, fechaViaje, tarifaOperativaInicial, estadoLiquidacion, estadoFactura, ...resto } = parsed.data
 
     const [fletero, camion, chofer, empresa] = await Promise.all([
-      prisma.fletero.findUnique({ where: { id: fleteroId, activo: true } }),
+      fleteroId ? prisma.fletero.findUnique({ where: { id: fleteroId, activo: true } }) : Promise.resolve(esCamionPropio ? true : null),
       prisma.camion.findUnique({ where: { id: camionId, activo: true } }),
       prisma.usuario.findUnique({ where: { id: choferId, activo: true } }),
       prisma.empresa.findUnique({ where: { id: empresaId, activa: true } }),
@@ -195,6 +199,7 @@ export async function POST(request: NextRequest) {
 
     if (!fletero) return NextResponse.json({ error: "Fletero no encontrado" }, { status: 404 })
     if (!camion) return NextResponse.json({ error: "Camión no encontrado" }, { status: 404 })
+    if (esCamionPropio && !camion.esPropio) return NextResponse.json({ error: "El camión no pertenece a la flota propia de Transmagg" }, { status: 400 })
     if (!chofer) return NextResponse.json({ error: "Chofer no encontrado" }, { status: 404 })
     if (!empresa) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 })
 
@@ -209,7 +214,8 @@ export async function POST(request: NextRequest) {
 
     const viaje = await prisma.viaje.create({
       data: {
-        fleteroId,
+        esCamionPropio,
+        fleteroId: esCamionPropio ? null : fleteroId,
         camionId,
         choferId,
         empresaId,
