@@ -5,7 +5,7 @@
  * Filtros por fletero, estado y período → tabla con detalle y modal de pago.
  */
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, Fragment } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas } from "@/lib/viajes"
 import { formatearNroComprobante } from "@/lib/liquidacion-utils"
@@ -199,21 +199,28 @@ function ModalDetalleLiquidacion({
                 </thead>
                 <tbody className="divide-y">
                   {liq.pagos.map((p) => (
-                    <tr key={p.id} className={p.anulado ? "opacity-50 line-through" : ""}>
-                      <td className="px-3 py-2">{formatearFecha(new Date(p.fechaPago))}</td>
-                      <td className="px-3 py-2 capitalize">{p.tipoPago.replace(/_/g, " ").toLowerCase()}</td>
-                      <td className="px-3 py-2 text-right">{formatearMoneda(p.monto)}</td>
-                      <td className="px-3 py-2">
-                        {!p.anulado && onAnularPago && (
-                          <button
-                            onClick={() => onAnularPago(p.id)}
-                            className="h-6 px-2 rounded border text-xs font-medium text-red-600 hover:bg-red-50 float-right"
-                          >
-                            Anular
-                          </button>
-                        )}
-                      </td>
-                    </tr>
+                    <Fragment key={p.id}>
+                      <tr className={p.anulado ? "opacity-50 line-through" : ""}>
+                        <td className="px-3 py-2">{formatearFecha(new Date(p.fechaPago))}</td>
+                        <td className="px-3 py-2 capitalize">{p.tipoPago.replace(/_/g, " ").toLowerCase()}</td>
+                        <td className="px-3 py-2 text-right">{formatearMoneda(p.monto)}</td>
+                        <td className="px-3 py-2">
+                          {!p.anulado && onAnularPago && (
+                            <button
+                              onClick={() => onAnularPago(p.id)}
+                              className="h-6 px-2 rounded border text-xs font-medium text-red-600 hover:bg-red-50 float-right"
+                            >
+                              Anular
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td colSpan={4} className="px-3 pb-2">
+                          <HistorialPagoFletero pagoId={p.id} />
+                        </td>
+                      </tr>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -703,6 +710,71 @@ function TablaLiquidaciones({
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// ─── Historial de pagos ───────────────────────────────────────────────────────
+
+type EntradaHistorial = {
+  id: string
+  tipoEvento: string
+  justificacion: string
+  estadoAnterior: string | null
+  creadoEn: string
+  operador: { nombre: string; apellido: string }
+}
+
+function HistorialPagoFletero({ pagoId }: { pagoId: string }) {
+  const [historial, setHistorial] = useState<EntradaHistorial[]>([])
+  const [cargando, setCargando] = useState(false)
+  const [abierto, setAbierto] = useState(false)
+
+  function cargar() {
+    if (abierto) { setAbierto(false); return }
+    setCargando(true)
+    fetch(`/api/pagos-fletero/${pagoId}/historial`)
+      .then((r) => r.json())
+      .then((data) => setHistorial(data ?? []))
+      .catch(() => setHistorial([]))
+      .finally(() => { setCargando(false); setAbierto(true) })
+  }
+
+  const BADGE_EVENTO: Record<string, string> = {
+    CREACION: "bg-green-100 text-green-800",
+    MODIFICACION: "bg-blue-100 text-blue-800",
+    ANULACION: "bg-red-100 text-red-800",
+  }
+
+  return (
+    <div className="mt-1">
+      <button
+        onClick={cargar}
+        className="text-xs text-primary underline underline-offset-2"
+      >
+        {cargando ? "Cargando..." : abierto ? "Ocultar historial" : "Ver historial"}
+      </button>
+      {abierto && (
+        <div className="mt-2 space-y-2 border-l-2 border-muted pl-3">
+          {historial.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Sin historial registrado.</p>
+          ) : (
+            historial.map((h) => (
+              <div key={h.id}>
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${BADGE_EVENTO[h.tipoEvento] ?? "bg-gray-100 text-gray-800"}`}>
+                    {h.tipoEvento}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatearFecha(new Date(h.creadoEn))} — {h.operador.apellido}, {h.operador.nombre}
+                  </span>
+                </div>
+                <p className="text-xs mt-0.5 text-muted-foreground">{h.justificacion}</p>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   )
 }

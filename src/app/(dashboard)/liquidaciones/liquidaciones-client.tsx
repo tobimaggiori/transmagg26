@@ -6,7 +6,7 @@
  * También muestra liquidaciones emitidas con detalle y cambio de estado.
  */
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, Fragment } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
 import { labelCondicionIva, formatearNroComprobante } from "@/lib/liquidacion-utils"
@@ -238,23 +238,30 @@ function ModalDetalleLiquidacion({
                 </thead>
                 <tbody className="divide-y">
                   {liq.pagos.map((p) => (
-                    <tr key={p.id} className={p.anulado ? "opacity-50 line-through" : ""}>
-                      <td className="px-3 py-2">{formatearFecha(new Date(p.fechaPago))}</td>
-                      <td className="px-3 py-2 capitalize">{p.tipoPago.replace(/_/g, " ").toLowerCase()}</td>
-                      <td className="px-3 py-2 text-right">{formatearMoneda(p.monto)}</td>
-                      <td className="px-3 py-2">
-                        {!p.anulado && (
-                          <div className="flex gap-1 justify-end">
-                            <button
-                              onClick={() => onAnularPago?.(p.id)}
-                              className="h-6 px-2 rounded border text-xs font-medium text-red-600 hover:bg-red-50"
-                            >
-                              Anular
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
+                    <Fragment key={p.id}>
+                      <tr className={p.anulado ? "opacity-50 line-through" : ""}>
+                        <td className="px-3 py-2">{formatearFecha(new Date(p.fechaPago))}</td>
+                        <td className="px-3 py-2 capitalize">{p.tipoPago.replace(/_/g, " ").toLowerCase()}</td>
+                        <td className="px-3 py-2 text-right">{formatearMoneda(p.monto)}</td>
+                        <td className="px-3 py-2">
+                          {!p.anulado && (
+                            <div className="flex gap-1 justify-end">
+                              <button
+                                onClick={() => onAnularPago?.(p.id)}
+                                className="h-6 px-2 rounded border text-xs font-medium text-red-600 hover:bg-red-50"
+                              >
+                                Anular
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td colSpan={4} className="px-3 pb-2">
+                          <HistorialPagoFletero pagoId={p.id} />
+                        </td>
+                      </tr>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

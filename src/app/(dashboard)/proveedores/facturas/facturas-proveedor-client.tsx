@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, Fragment } from "react"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
@@ -376,29 +376,36 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
                         {facturaDetalle.pagos.map((p) => {
                           const compKey = p.comprobantePdfS3Key ?? p.resumenTarjeta?.s3Key ?? null
                           return (
-                            <tr key={p.id} className={`border-t${p.anulado ? " opacity-50 line-through" : ""}`}>
-                              <td className="px-3 py-2 whitespace-nowrap">{formatearFecha(p.fecha)}</td>
-                              <td className="px-3 py-2">
-                                {LABEL_TIPO_PAGO[p.tipo] ?? p.tipo}
-                                {p.resumenTarjeta && (
-                                  <span className="ml-1 text-xs text-muted-foreground">({p.resumenTarjeta.periodo})</span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2 text-right font-medium">{formatearMoneda(p.monto)}</td>
-                              <td className="px-3 py-2 text-center">
-                                <ViewPDF s3Key={compKey} size="sm" label="Ver" />
-                              </td>
-                              <td className="px-3 py-2">
-                                {!p.anulado && (
-                                  <button
-                                    onClick={() => setAnulandoPago({ pagoId: p.id, pagoMonto: p.monto, pagoTipo: p.tipo, pagoFecha: p.fecha })}
-                                    className="h-6 px-2 rounded border text-xs font-medium text-red-600 hover:bg-red-50"
-                                  >
-                                    Anular
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
+                            <Fragment key={p.id}>
+                              <tr className={`border-t${p.anulado ? " opacity-50 line-through" : ""}`}>
+                                <td className="px-3 py-2 whitespace-nowrap">{formatearFecha(p.fecha)}</td>
+                                <td className="px-3 py-2">
+                                  {LABEL_TIPO_PAGO[p.tipo] ?? p.tipo}
+                                  {p.resumenTarjeta && (
+                                    <span className="ml-1 text-xs text-muted-foreground">({p.resumenTarjeta.periodo})</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-right font-medium">{formatearMoneda(p.monto)}</td>
+                                <td className="px-3 py-2 text-center">
+                                  <ViewPDF s3Key={compKey} size="sm" label="Ver" />
+                                </td>
+                                <td className="px-3 py-2">
+                                  {!p.anulado && (
+                                    <button
+                                      onClick={() => setAnulandoPago({ pagoId: p.id, pagoMonto: p.monto, pagoTipo: p.tipo, pagoFecha: p.fecha })}
+                                      className="h-6 px-2 rounded border text-xs font-medium text-red-600 hover:bg-red-50"
+                                    >
+                                      Anular
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                              <tr className="border-t">
+                                <td colSpan={5} className="px-3 pb-2">
+                                  <HistorialPagoProveedor pagoId={p.id} />
+                                </td>
+                              </tr>
+                            </Fragment>
                           )
                         })}
                       </tbody>
@@ -549,6 +556,71 @@ function ModalAnularPagoProveedor({
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Historial de pagos ───────────────────────────────────────────────────────
+
+type EntradaHistorial = {
+  id: string
+  tipoEvento: string
+  justificacion: string
+  estadoAnterior: string | null
+  creadoEn: string
+  operador: { nombre: string; apellido: string }
+}
+
+function HistorialPagoProveedor({ pagoId }: { pagoId: string }) {
+  const [historial, setHistorial] = useState<EntradaHistorial[]>([])
+  const [cargando, setCargando] = useState(false)
+  const [abierto, setAbierto] = useState(false)
+
+  function cargar() {
+    if (abierto) { setAbierto(false); return }
+    setCargando(true)
+    fetch(`/api/pagos-proveedor/${pagoId}/historial`)
+      .then((r) => r.json())
+      .then((data) => setHistorial(data ?? []))
+      .catch(() => setHistorial([]))
+      .finally(() => { setCargando(false); setAbierto(true) })
+  }
+
+  const BADGE_EVENTO: Record<string, string> = {
+    CREACION: "bg-green-100 text-green-800",
+    MODIFICACION: "bg-blue-100 text-blue-800",
+    ANULACION: "bg-red-100 text-red-800",
+  }
+
+  return (
+    <div className="mt-1">
+      <button
+        onClick={cargar}
+        className="text-xs text-primary underline underline-offset-2"
+      >
+        {cargando ? "Cargando..." : abierto ? "Ocultar historial" : "Ver historial"}
+      </button>
+      {abierto && (
+        <div className="mt-2 space-y-2 border-l-2 border-muted pl-3">
+          {historial.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Sin historial registrado.</p>
+          ) : (
+            historial.map((h) => (
+              <div key={h.id}>
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${BADGE_EVENTO[h.tipoEvento] ?? "bg-gray-100 text-gray-800"}`}>
+                    {h.tipoEvento}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatearFecha(new Date(h.creadoEn))} — {h.operador.apellido}, {h.operador.nombre}
+                  </span>
+                </div>
+                <p className="text-xs mt-0.5 text-muted-foreground">{h.justificacion}</p>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   )
 }
