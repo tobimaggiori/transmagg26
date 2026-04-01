@@ -97,7 +97,7 @@ type Liquidacion = {
   fleteroId: string
   fletero: { razonSocial: string }
   viajes: ViajeEnLiquidacion[]
-  pagos: { id: string; monto: number; tipoPago: string; fechaPago: string; anulado: boolean }[]
+  pagos: { id: string; monto: number; tipoPago: string; fechaPago: string; anulado: boolean; ordenPago?: { id: string; nro: number; fecha: string } | null }[]
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -146,6 +146,88 @@ function EstadoBadge({ estado }: { estado: string }) {
   )
 }
 
+// ─── Modal enviar Orden de Pago por email ─────────────────────────────────────
+
+function ModalEnviarEmailOP({
+  opId,
+  opNro,
+  emailDefault,
+  onCerrar,
+}: {
+  opId: string
+  opNro: number
+  emailDefault: string
+  onCerrar: () => void
+}) {
+  const [email, setEmail] = useState(emailDefault)
+  const [enviando, setEnviando] = useState(false)
+  const [resultado, setResultado] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function enviar() {
+    setEnviando(true)
+    setError(null)
+    setResultado(null)
+    try {
+      const res = await fetch(`/api/ordenes-pago/${opId}/enviar-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(email ? { emailDestino: email } : {}),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        setError(err.error ?? "Error al enviar el email")
+        return
+      }
+      setResultado(`Email enviado a ${email}`)
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+      <div className="bg-background rounded-lg shadow-xl w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold">Enviar OP Nro {opNro.toLocaleString("es-AR")}</h2>
+          <button onClick={onCerrar} className="text-muted-foreground hover:text-foreground text-xl leading-none">&times;</button>
+        </div>
+        {resultado ? (
+          <div className="space-y-4">
+            <p className="text-sm text-green-700">{resultado}</p>
+            <div className="flex justify-end">
+              <button onClick={onCerrar} className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent">Cerrar</button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium mb-1 block">Email destino</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded border bg-background px-3 py-2 text-sm"
+              />
+            </div>
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <div className="flex justify-end gap-2">
+              <button onClick={onCerrar} className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent">Cancelar</button>
+              <button
+                onClick={enviar}
+                disabled={enviando || !email}
+                className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+              >
+                {enviando ? "Enviando..." : "Enviar"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Modal detalle liquidación ────────────────────────────────────────────────
 
 /**
@@ -159,6 +241,7 @@ function EstadoBadge({ estado }: { estado: string }) {
  */
 function ModalDetalleLiquidacion({
   liq,
+  emailFletero,
   onCambiarEstado,
   onRegistrarPago,
   onAnularPago,
@@ -167,6 +250,7 @@ function ModalDetalleLiquidacion({
   cargando,
 }: {
   liq: Liquidacion
+  emailFletero?: string
   onCambiarEstado: (estado: string) => void
   onRegistrarPago: () => void
   onAnularPago?: (pagoId: string) => void
@@ -174,6 +258,11 @@ function ModalDetalleLiquidacion({
   onCerrar: () => void
   cargando: boolean
 }) {
+  const [modalEmail, setModalEmail] = useState<{ opId: string; opNro: number } | null>(null)
+
+  // Obtener la Orden de Pago del primer pago no anulado que la tenga
+  const ordenPago = liq.pagos.find((p) => !p.anulado && p.ordenPago)?.ordenPago ?? null
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="bg-background rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6">
@@ -281,6 +370,44 @@ function ModalDetalleLiquidacion({
               </table>
             </div>
           </div>
+        )}
+
+        {/* Orden de Pago */}
+        {ordenPago && (
+          <div className="mb-4 pt-4 border-t">
+            <p className="text-sm font-medium mb-2">
+              Orden de Pago Nro {ordenPago.nro.toLocaleString("es-AR")}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => window.open(`/api/ordenes-pago/${ordenPago.id}/pdf`, "_blank")}
+                className="h-8 px-3 rounded-md border text-xs font-medium hover:bg-accent"
+              >
+                Ver PDF
+              </button>
+              <button
+                onClick={() => window.open(`/api/ordenes-pago/${ordenPago.id}/pdf?print=true`, "_blank")}
+                className="h-8 px-3 rounded-md border text-xs font-medium hover:bg-accent"
+              >
+                Imprimir
+              </button>
+              <button
+                onClick={() => setModalEmail({ opId: ordenPago.id, opNro: ordenPago.nro })}
+                className="h-8 px-3 rounded-md border text-xs font-medium hover:bg-accent"
+              >
+                Enviar por email
+              </button>
+            </div>
+          </div>
+        )}
+
+        {modalEmail && (
+          <ModalEnviarEmailOP
+            opId={modalEmail.opId}
+            opNro={modalEmail.opNro}
+            emailDefault={emailFletero ?? ""}
+            onCerrar={() => setModalEmail(null)}
+          />
         )}
 
         {/* Acciones */}
@@ -1542,6 +1669,7 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
       {liquidacionDetalle && (
         <ModalDetalleLiquidacion
           liq={liquidacionDetalle}
+          emailFletero=""
           onCambiarEstado={(estado) => cambiarEstadoLiquidacion(liquidacionDetalle.id, estado)}
           onRegistrarPago={async () => {
             try {
