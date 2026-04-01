@@ -93,7 +93,7 @@ type Liquidacion = {
   fleteroId: string
   fletero: { razonSocial: string }
   viajes: ViajeEnLiquidacion[]
-  pagos: { monto: number }[]
+  pagos: { id: string; monto: number; tipoPago: string; fechaPago: string; anulado: boolean }[]
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -157,12 +157,14 @@ function ModalDetalleLiquidacion({
   liq,
   onCambiarEstado,
   onRegistrarPago,
+  onAnularPago,
   onCerrar,
   cargando,
 }: {
   liq: Liquidacion
   onCambiarEstado: (estado: string) => void
   onRegistrarPago: () => void
+  onAnularPago?: (pagoId: string) => void
   onCerrar: () => void
   cargando: boolean
 }) {
@@ -220,6 +222,46 @@ function ModalDetalleLiquidacion({
           <div className="flex justify-between font-bold text-base border-t pt-1"><span>TOTAL FINAL:</span><span>{formatearMoneda(liq.total)}</span></div>
         </div>
 
+        {/* Pagos registrados */}
+        {liq.pagos.length > 0 && (
+          <div className="mb-4">
+            <p className="text-sm font-medium mb-2">Pagos registrados</p>
+            <div className="rounded border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Fecha</th>
+                    <th className="px-3 py-2 text-left">Tipo</th>
+                    <th className="px-3 py-2 text-right">Monto</th>
+                    <th className="px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {liq.pagos.map((p) => (
+                    <tr key={p.id} className={p.anulado ? "opacity-50 line-through" : ""}>
+                      <td className="px-3 py-2">{formatearFecha(new Date(p.fechaPago))}</td>
+                      <td className="px-3 py-2 capitalize">{p.tipoPago.replace(/_/g, " ").toLowerCase()}</td>
+                      <td className="px-3 py-2 text-right">{formatearMoneda(p.monto)}</td>
+                      <td className="px-3 py-2">
+                        {!p.anulado && (
+                          <div className="flex gap-1 justify-end">
+                            <button
+                              onClick={() => onAnularPago?.(p.id)}
+                              className="h-6 px-2 rounded border text-xs font-medium text-red-600 hover:bg-red-50"
+                            >
+                              Anular
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* Acciones */}
         <div className="flex justify-between items-center">
           <button
@@ -259,6 +301,208 @@ function ModalDetalleLiquidacion({
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Modal anular pago fletero ────────────────────────────────────────────────
+
+type ImpactoItem = {
+  tipo: string
+  descripcion: string
+  detalle: string
+  estadoActual: string
+  nuevoEstado: string
+}
+
+type EntradaHistorial = {
+  id: string
+  tipoEvento: string
+  justificacion: string
+  estadoAnterior: string | null
+  creadoEn: string
+  operador: { nombre: string; apellido: string }
+}
+
+function ModalAnularPagoFletero({
+  pagoId,
+  pagoMonto,
+  pagoTipo,
+  pagoFecha,
+  onConfirmar,
+  onCerrar,
+}: {
+  pagoId: string
+  pagoMonto: number
+  pagoTipo: string
+  pagoFecha: string
+  onConfirmar: () => void
+  onCerrar: () => void
+}) {
+  const [justificacion, setJustificacion] = useState("")
+  const [impactos, setImpactos] = useState<ImpactoItem[]>([])
+  const [cargandoPreview, setCargandoPreview] = useState(true)
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setCargandoPreview(true)
+    fetch(`/api/pagos-fletero/${pagoId}/impacto-modificacion`)
+      .then((r) => r.json())
+      .then((data) => setImpactos(data.impactos ?? []))
+      .catch(() => setImpactos([]))
+      .finally(() => setCargandoPreview(false))
+  }, [pagoId])
+
+  async function confirmar() {
+    if (justificacion.trim().length < 10) {
+      setError("La justificación debe tener al menos 10 caracteres")
+      return
+    }
+    setEnviando(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/pagos-fletero/${pagoId}/anular`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ justificacion }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        setError(err.error ?? "Error al anular el pago")
+        return
+      }
+      onConfirmar()
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+      <div className="bg-background rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-red-600">
+            Anular pago de {formatearMoneda(pagoMonto)} — {pagoTipo.replace(/_/g, " ")} — {formatearFecha(new Date(pagoFecha))}
+          </h2>
+          <button onClick={onCerrar} className="text-muted-foreground hover:text-foreground text-xl leading-none">&times;</button>
+        </div>
+
+        <div className="mb-4">
+          <label className="text-sm font-medium mb-1 block">Justificación (obligatoria)</label>
+          <textarea
+            value={justificacion}
+            onChange={(e) => setJustificacion(e.target.value)}
+            rows={3}
+            placeholder="Mínimo 10 caracteres..."
+            className="w-full rounded border bg-background px-3 py-2 text-sm resize-none"
+          />
+          {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+        </div>
+
+        <div className="mb-4">
+          <p className="text-sm font-medium mb-2">Registros afectados</p>
+          {cargandoPreview ? (
+            <p className="text-sm text-muted-foreground">Calculando impacto...</p>
+          ) : impactos.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Sin impacto adicional detectado.</p>
+          ) : (
+            <div className="rounded border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Documento</th>
+                    <th className="px-3 py-2 text-left">Estado actual</th>
+                    <th className="px-3 py-2 text-left">Nuevo estado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {impactos.map((imp, i) => (
+                    <tr key={i} className={imp.tipo.startsWith("CC") ? "bg-blue-50/50" : ""}>
+                      <td className="px-3 py-2">
+                        <p className="font-medium">{imp.descripcion}</p>
+                        <p className="text-xs text-muted-foreground">{imp.detalle}</p>
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">{imp.estadoActual}</td>
+                      <td className="px-3 py-2 font-medium">{imp.nuevoEstado}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onCerrar}
+            className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={confirmar}
+            disabled={enviando || justificacion.trim().length < 10}
+            className="h-9 px-4 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+          >
+            {enviando ? "Anulando..." : "Confirmar anulación"}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function HistorialPagoFletero({ pagoId }: { pagoId: string }) {
+  const [historial, setHistorial] = useState<EntradaHistorial[]>([])
+  const [cargando, setCargando] = useState(false)
+  const [abierto, setAbierto] = useState(false)
+
+  function cargar() {
+    if (abierto) { setAbierto(false); return }
+    setCargando(true)
+    fetch(`/api/pagos-fletero/${pagoId}/historial`)
+      .then((r) => r.json())
+      .then((data) => setHistorial(data ?? []))
+      .catch(() => setHistorial([]))
+      .finally(() => { setCargando(false); setAbierto(true) })
+  }
+
+  const BADGE_EVENTO: Record<string, string> = {
+    CREACION: "bg-green-100 text-green-800",
+    MODIFICACION: "bg-blue-100 text-blue-800",
+    ANULACION: "bg-red-100 text-red-800",
+  }
+
+  return (
+    <div className="mt-1">
+      <button
+        onClick={cargar}
+        className="text-xs text-primary underline underline-offset-2"
+      >
+        {cargando ? "Cargando..." : abierto ? "Ocultar historial" : "Ver historial"}
+      </button>
+      {abierto && (
+        <div className="mt-2 space-y-2 border-l-2 border-muted pl-3">
+          {historial.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Sin historial registrado.</p>
+          ) : (
+            historial.map((h) => (
+              <div key={h.id}>
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${BADGE_EVENTO[h.tipoEvento] ?? "bg-gray-100 text-gray-800"}`}>
+                    {h.tipoEvento}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatearFecha(new Date(h.creadoEn))} — {h.operador.apellido}, {h.operador.nombre}
+                  </span>
+                </div>
+                <p className="text-xs mt-0.5 text-muted-foreground">{h.justificacion}</p>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -738,6 +982,7 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
   const [pagandoLiquidacion, setPagandoLiquidacion] = useState<Liquidacion | null>(null)
   const [saldoAFavorCC, setSaldoAFavorCC] = useState(0)
   const [gastosPendientes, setGastosPendientes] = useState<GastoPendiente[]>([])
+  const [anulando, setAnulando] = useState<{ pagoId: string; pagoMonto: number; pagoTipo: string; pagoFecha: string } | null>(null)
 
   /**
    * cargarDatos: () -> Promise<void>
@@ -1071,8 +1316,28 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
             setPagandoLiquidacion(liquidacionDetalle)
             setLiquidacionDetalle(null)
           }}
+          onAnularPago={(pagoId) => {
+            const pago = liquidacionDetalle.pagos.find((p) => p.id === pagoId)
+            if (pago) setAnulando({ pagoId, pagoMonto: pago.monto, pagoTipo: pago.tipoPago, pagoFecha: pago.fechaPago })
+          }}
           onCerrar={() => setLiquidacionDetalle(null)}
           cargando={cambioEstadoCargando}
+        />
+      )}
+
+      {/* Modal anular pago fletero */}
+      {anulando && (
+        <ModalAnularPagoFletero
+          pagoId={anulando.pagoId}
+          pagoMonto={anulando.pagoMonto}
+          pagoTipo={anulando.pagoTipo}
+          pagoFecha={anulando.pagoFecha}
+          onConfirmar={() => {
+            setAnulando(null)
+            setLiquidacionDetalle(null)
+            cargarDatos()
+          }}
+          onCerrar={() => setAnulando(null)}
         />
       )}
 

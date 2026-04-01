@@ -149,7 +149,10 @@ export async function GET(request: NextRequest) {
         include: {
           fletero: { select: { razonSocial: true } },
           viajes: true,
-          pagos: { select: { monto: true } },
+          pagos: {
+            where: { anulado: false },
+            select: { id: true, monto: true, tipoPago: true, fechaPago: true, anulado: true },
+          },
         },
         orderBy: { grabadaEn: "desc" },
         take: 100,

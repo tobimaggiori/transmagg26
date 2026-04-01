@@ -121,6 +121,8 @@ Tests: 237 passed, 237 total (as of 2026-03-31 — Refactorización Cuentas fusi
 - [x] Reporte Viajes Facturados sin LP — página /contabilidad/viajes-sin-lp con viajes que tienen factura emitida pero no tienen liquidación activa, agrupado por provincia, con exportación PDF y Excel.
 - [x] Módulo de Contabilidad completo: IVA (4 tabs), IIBB, Gastos, LP vs Facturas, Viajes sin LP — con exportación PDF/Excel en todas las secciones, página índice /contabilidad, componente FiltroPeriodo compartido, sidebar con 7 ítems.
 
+- [x] Anular/modificar pagos: preview de impacto (`GET /api/pagos-fletero/[id]/impacto-modificacion`, `GET /api/pagos-proveedor/[id]/impacto-modificacion`), anulación atómica con reversión de estado LP/factura y CC (`POST /api/pagos-fletero/[id]/anular`, `POST /api/pagos-proveedor/[id]/anular`), edición con reasignación (`PATCH /api/pagos-fletero/[id]`, `PATCH /api/pagos-proveedor/[id]`), historial inmutable de cambios (`HistorialPago` model + endpoints GET), botón Anular en modal de detalle LP y factura proveedor con modal de preview
+
 ## Pendiente general
 
 - [ ] Envío real de emails OTP (actualmente el flujo OTP está implementado pero el transporte de email puede necesitar configuración en producción)

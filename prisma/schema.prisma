@@ -86,6 +86,7 @@ model Usuario {
   pagosFleterosOpera         PagoAFletero[]          @relation("OperadorPagoFletero")
   pagosProveedorOpera        PagoProveedor[]         @relation("OperadorPagoProveedor")
   resumenesBancariosOpera    ResumenBancario[]        @relation("OperadorResumenBancario")
+  historialPagosOpera        HistorialPago[]          @relation("OperadorHistorialPago")
 
   @@map("usuarios")
 }
@@ -804,6 +805,7 @@ model PagoAFletero {
   chequeRecibido ChequeRecibido? @relation(fields: [chequeRecibidoId], references: [id], onDelete: SetNull)
   cuenta         Cuenta?         @relation("CuentaPagoAFletero", fields: [cuentaId], references: [id], onDelete: SetNull)
   operador       Usuario         @relation("OperadorPagoFletero", fields: [operadorId], references: [id])
+  historial      HistorialPago[]
 
   @@map("pagos_a_fleteros")
 }
@@ -922,6 +924,7 @@ model PagoProveedor {
   tarjeta           Tarjeta?         @relation("TarjetaPagoProveedor", fields: [tarjetaId], references: [id])
   resumenTarjeta    ResumenTarjeta?  @relation("ResumenTarjetaPagoProveedor", fields: [resumenTarjetaId], references: [id])
   operador          Usuario?         @relation("OperadorPagoProveedor", fields: [operadorId], references: [id])
+  historial         HistorialPago[]
 
   @@map("pagos_proveedor")
 }
@@ -1081,4 +1084,24 @@ model VerificationToken {
 
   @@unique([identifier, token])
   @@map("verification_tokens")
+}
+
+// ─── HISTORIAL DE PAGOS ───────────────────────────────────────────────────────
+// tipoEvento: CREACION | MODIFICACION | ANULACION
+
+model HistorialPago {
+  id                String    @id @default(uuid())
+  pagoFleteroId     String?   @map("pago_fletero_id")
+  pagoProveedorId   String?   @map("pago_proveedor_id")
+  tipoEvento        String    @map("tipo_evento")   // CREACION | MODIFICACION | ANULACION
+  justificacion     String
+  estadoAnterior    String?   @map("estado_anterior") // JSON con los campos que cambiaron
+  operadorId        String    @map("operador_id")
+  creadoEn          DateTime  @default(now()) @map("creado_en")
+
+  pagoFletero   PagoAFletero?  @relation(fields: [pagoFleteroId], references: [id])
+  pagoProveedor PagoProveedor? @relation(fields: [pagoProveedorId], references: [id])
+  operador      Usuario        @relation("OperadorHistorialPago", fields: [operadorId], references: [id])
+
+  @@map("historial_pagos")
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
@@ -33,6 +33,7 @@ type PagoFactura = {
   observaciones: string | null
   comprobantePdfS3Key: string | null
   resumenTarjeta: { id: string; periodo: string; s3Key: string | null } | null
+  anulado?: boolean
 }
 
 type FacturaProveedor = {
@@ -94,6 +95,7 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
   const [loading, setLoading] = useState(false)
   const [buscado, setBuscado] = useState(false)
   const [facturaDetalle, setFacturaDetalle] = useState<FacturaProveedor | null>(null)
+  const [anulandoPago, setAnulandoPago] = useState<{ pagoId: string; pagoMonto: number; pagoTipo: string; pagoFecha: string } | null>(null)
 
   const buscar = useCallback(async () => {
     setLoading(true)
@@ -367,13 +369,14 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
                           <th className="text-left px-3 py-2">Tipo</th>
                           <th className="text-right px-3 py-2">Monto</th>
                           <th className="text-center px-3 py-2">Comprobante</th>
+                          <th className="px-3 py-2" />
                         </tr>
                       </thead>
                       <tbody>
                         {facturaDetalle.pagos.map((p) => {
                           const compKey = p.comprobantePdfS3Key ?? p.resumenTarjeta?.s3Key ?? null
                           return (
-                            <tr key={p.id} className="border-t">
+                            <tr key={p.id} className={`border-t${p.anulado ? " opacity-50 line-through" : ""}`}>
                               <td className="px-3 py-2 whitespace-nowrap">{formatearFecha(p.fecha)}</td>
                               <td className="px-3 py-2">
                                 {LABEL_TIPO_PAGO[p.tipo] ?? p.tipo}
@@ -384,6 +387,16 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
                               <td className="px-3 py-2 text-right font-medium">{formatearMoneda(p.monto)}</td>
                               <td className="px-3 py-2 text-center">
                                 <ViewPDF s3Key={compKey} size="sm" label="Ver" />
+                              </td>
+                              <td className="px-3 py-2">
+                                {!p.anulado && (
+                                  <button
+                                    onClick={() => setAnulandoPago({ pagoId: p.id, pagoMonto: p.monto, pagoTipo: p.tipo, pagoFecha: p.fecha })}
+                                    className="h-6 px-2 rounded border text-xs font-medium text-red-600 hover:bg-red-50"
+                                  >
+                                    Anular
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           )
@@ -397,6 +410,145 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
           </DialogContent>
         )}
       </Dialog>
+
+      {/* Modal anular pago proveedor */}
+      {anulandoPago && (
+        <ModalAnularPagoProveedor
+          pagoId={anulandoPago.pagoId}
+          pagoMonto={anulandoPago.pagoMonto}
+          pagoTipo={anulandoPago.pagoTipo}
+          pagoFecha={anulandoPago.pagoFecha}
+          onConfirmar={() => {
+            setAnulandoPago(null)
+            setFacturaDetalle(null)
+            buscar()
+          }}
+          onCerrar={() => setAnulandoPago(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Modal anular pago proveedor ──────────────────────────────────────────────
+
+function ModalAnularPagoProveedor({
+  pagoId,
+  pagoMonto,
+  pagoTipo,
+  pagoFecha,
+  onConfirmar,
+  onCerrar,
+}: {
+  pagoId: string
+  pagoMonto: number
+  pagoTipo: string
+  pagoFecha: string
+  onConfirmar: () => void
+  onCerrar: () => void
+}) {
+  const [justificacion, setJustificacion] = useState("")
+  const [impactos, setImpactos] = useState<{ tipo: string; descripcion: string; detalle: string; estadoActual: string; nuevoEstado: string }[]>([])
+  const [cargandoPreview, setCargandoPreview] = useState(true)
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setCargandoPreview(true)
+    fetch(`/api/pagos-proveedor/${pagoId}/impacto-modificacion`)
+      .then((r) => r.json())
+      .then((data) => setImpactos(data.impactos ?? []))
+      .catch(() => setImpactos([]))
+      .finally(() => setCargandoPreview(false))
+  }, [pagoId])
+
+  async function confirmar() {
+    if (justificacion.trim().length < 10) {
+      setError("La justificación debe tener al menos 10 caracteres")
+      return
+    }
+    setEnviando(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/pagos-proveedor/${pagoId}/anular`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ justificacion }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        setError(err.error ?? "Error al anular el pago")
+        return
+      }
+      onConfirmar()
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+      <div className="bg-background rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-red-600">
+            Anular pago de {formatearMoneda(pagoMonto)} — {LABEL_TIPO_PAGO[pagoTipo] ?? pagoTipo} — {formatearFecha(pagoFecha)}
+          </h2>
+          <button onClick={onCerrar} className="text-muted-foreground hover:text-foreground text-xl leading-none">&times;</button>
+        </div>
+        <div className="mb-4">
+          <label className="text-sm font-medium mb-1 block">Justificación (obligatoria)</label>
+          <textarea
+            value={justificacion}
+            onChange={(e) => setJustificacion(e.target.value)}
+            rows={3}
+            placeholder="Mínimo 10 caracteres..."
+            className="w-full rounded border bg-background px-3 py-2 text-sm resize-none"
+          />
+          {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+        </div>
+        <div className="mb-4">
+          <p className="text-sm font-medium mb-2">Registros afectados</p>
+          {cargandoPreview ? (
+            <p className="text-sm text-muted-foreground">Calculando impacto...</p>
+          ) : (
+            <div className="rounded border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Documento</th>
+                    <th className="px-3 py-2 text-left">Estado actual</th>
+                    <th className="px-3 py-2 text-left">Nuevo estado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {impactos.map((imp, i) => (
+                    <tr key={i} className={imp.tipo.startsWith("CC") ? "bg-blue-50/50" : ""}>
+                      <td className="px-3 py-2">
+                        <p className="font-medium">{imp.descripcion}</p>
+                        <p className="text-xs text-muted-foreground">{imp.detalle}</p>
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">{imp.estadoActual}</td>
+                      <td className="px-3 py-2 font-medium">{imp.nuevoEstado}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2">
+          <button onClick={onCerrar} className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent">
+            Cancelar
+          </button>
+          <button
+            onClick={confirmar}
+            disabled={enviando || justificacion.trim().length < 10}
+            className="h-9 px-4 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+          >
+            {enviando ? "Anulando..." : "Confirmar anulación"}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
