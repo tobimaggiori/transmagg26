@@ -75,6 +75,22 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
                   },
                 },
               },
+              gastoDescuentos: {
+                include: {
+                  gasto: {
+                    select: {
+                      montoPagado: true,
+                      facturaProveedor: {
+                        select: {
+                          tipoCbte: true,
+                          nroComprobante: true,
+                          proveedor: { select: { razonSocial: true } },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
           chequeEmitido: {
@@ -171,6 +187,23 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
   const totalAdelantosFaltante = adelantos.reduce((s, a) => s + a.faltante, 0)
   const totalAdelantosGeneral = totalAdelantosEfectivo + totalAdelantosGasOil + totalAdelantosFaltante
 
+  // Gastos descontados (deduplicados por gastoId × liquidacion)
+  type GastoRow = { proveedor: string; cbte: string; montoDescontado: number }
+  const gastosMap = new Map<string, GastoRow>()
+  for (const pago of op.pagos) {
+    if (!pago.liquidacion) continue
+    for (const desc of pago.liquidacion.gastoDescuentos) {
+      const key = `${desc.gastoId}-${desc.liquidacionId}`
+      if (!gastosMap.has(key)) {
+        const fp = desc.gasto.facturaProveedor
+        const cbte = [fp.tipoCbte, fp.nroComprobante ?? "s/n"].filter(Boolean).join(" ")
+        gastosMap.set(key, { proveedor: fp.proveedor.razonSocial, cbte, montoDescontado: desc.montoDescontado })
+      }
+    }
+  }
+  const gastos = Array.from(gastosMap.values())
+  const totalGastosDescontados = gastos.reduce((s, g) => s + g.montoDescontado, 0)
+
   // Formatear condición IVA
   const condicionIvaLabel: Record<string, string> = {
     RESPONSABLE_INSCRIPTO: "Responsable Inscripto",
@@ -230,6 +263,16 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
       </tr>
     `).join("")
     : `<tr><td colspan="4" class="center muted">— Sin adelantos descontados —</td></tr>`
+
+  const filasGastos = gastos.length > 0
+    ? gastos.map((g) => `
+      <tr>
+        <td>${g.proveedor}</td>
+        <td>${g.cbte}</td>
+        <td class="right">${fmt(g.montoDescontado)}</td>
+      </tr>
+    `).join("")
+    : `<tr><td colspan="3" class="center muted">— Sin gastos descontados —</td></tr>`
 
   const html = `<!DOCTYPE html>
 <html lang="es">
@@ -391,6 +434,25 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
     </table>
   </div>
 
+  <!-- Gastos descontados -->
+  <div class="seccion">
+    <div class="seccion-titulo">Gastos Descontados</div>
+    <table>
+      <thead><tr>
+        <th>Proveedor</th>
+        <th>Comprobante</th>
+        <th class="right">Monto Descontado</th>
+      </tr></thead>
+      <tbody>
+        ${filasGastos}
+        <tr class="subtotal">
+          <td colspan="2">Total Gastos Descontados</td>
+          <td class="right">${fmt(totalGastosDescontados)}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
   <!-- Totales del pago -->
   <div class="seccion">
     <table class="totales-finales">
@@ -402,6 +464,7 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
         <th class="right">Adelantos</th>
         <th class="right">Gas-Oil</th>
         <th class="right">Faltantes</th>
+        <th class="right">Gastos Desc.</th>
       </tr></thead>
       <tbody><tr>
         <td class="right">${fmt(totalEfectivo)}</td>
@@ -411,6 +474,7 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
         <td class="right">${fmt(totalAdelantosGeneral)}</td>
         <td class="right">${fmt(totalAdelantosGasOil)}</td>
         <td class="right">${fmt(totalAdelantosFaltante)}</td>
+        <td class="right">${fmt(totalGastosDescontados)}</td>
       </tr></tbody>
     </table>
   </div>
