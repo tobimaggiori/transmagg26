@@ -1,6 +1,6 @@
 /**
- * Propósito: Página de liquidaciones (ruta /fleteros/liquidaciones).
- * Reutiliza LiquidacionesClient — misma lógica que /liquidaciones.
+ * Propósito: Página de consulta de Líquidos Producto (ruta /fleteros/liquidaciones).
+ * Usa ConsultarLPClient — solo consulta con filtros.
  */
 
 import { auth } from "@/lib/auth"
@@ -8,16 +8,16 @@ import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder, esRolInterno } from "@/lib/permissions"
 import type { Rol } from "@/types"
-import { LiquidacionesClient } from "../../liquidaciones/liquidaciones-client"
+import { ConsultarLPClient } from "./consultar-lp-client"
 
 /**
  * FleterosLiquidacionesPage: () -> Promise<JSX.Element>
  *
- * Verifica autenticación y permisos, carga lista de fleteros, y renderiza LiquidacionesClient.
- * Existe como alias de /liquidaciones bajo la ruta /fleteros/liquidaciones.
+ * Verifica autenticación y permisos, carga fleteros y cuentas bancarias,
+ * y renderiza ConsultarLPClient (consulta de LPs con filtros y detalle).
  *
  * Ejemplos:
- * // Sesión ADMIN_TRANSMAGG → LiquidacionesClient con selector de fletero completo
+ * // Sesión ADMIN_TRANSMAGG → ConsultarLPClient con selector de fletero + tabla
  * <FleterosLiquidacionesPage />
  * // Sin sesión → redirect /login
  * <FleterosLiquidacionesPage />
@@ -31,22 +31,12 @@ export default async function FleterosLiquidacionesPage() {
 
   const esInterno = esRolInterno(rol)
 
-  const [fleteros, camiones, choferes, cuentasBancarias] = esInterno
+  const [fleteros, cuentasBancarias] = esInterno
     ? await Promise.all([
         prisma.fletero.findMany({
           where: { activo: true },
-          select: { id: true, razonSocial: true, comisionDefault: true },
+          select: { id: true, razonSocial: true },
           orderBy: { razonSocial: "asc" },
-        }),
-        prisma.camion.findMany({
-          where: { activo: true },
-          select: { id: true, patenteChasis: true, fleteroId: true },
-          orderBy: { patenteChasis: "asc" },
-        }),
-        prisma.usuario.findMany({
-          where: { rol: "CHOFER", activo: true },
-          select: { id: true, nombre: true, apellido: true },
-          orderBy: { apellido: "asc" },
         }),
         prisma.cuenta.findMany({
           where: { activa: true },
@@ -54,7 +44,7 @@ export default async function FleterosLiquidacionesPage() {
           orderBy: { nombre: "asc" },
         }),
       ])
-    : [[], [], [], []]
+    : [[], []]
 
   let fleteroIdPropio: string | null = null
   if (rol === "FLETERO") {
@@ -66,14 +56,11 @@ export default async function FleterosLiquidacionesPage() {
   }
 
   return (
-    <LiquidacionesClient
+    <ConsultarLPClient
       rol={rol}
       fleteros={fleteros}
-      camiones={camiones}
-      choferes={choferes}
-      fleteroIdPropio={fleteroIdPropio}
       cuentasBancarias={cuentasBancarias}
-      titulo="Consultar Liq. Prod."
+      fleteroIdPropio={fleteroIdPropio}
     />
   )
 }

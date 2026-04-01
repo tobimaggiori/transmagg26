@@ -1,6 +1,6 @@
 /**
- * Propósito: Página de liquidación rápida (ruta /fleteros/liquidar).
- * Reutiliza LiquidacionesClient — misma lógica que /liquidaciones.
+ * Propósito: Página de creación de Líquido Producto (ruta /fleteros/liquidar).
+ * Usa LiquidarClient — solo el flujo de creación.
  */
 
 import { auth } from "@/lib/auth"
@@ -8,16 +8,16 @@ import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder, esRolInterno } from "@/lib/permissions"
 import type { Rol } from "@/types"
-import { LiquidacionesClient } from "../../liquidaciones/liquidaciones-client"
+import { LiquidarClient } from "./liquidar-client"
 
 /**
  * FleterosLiquidarPage: () -> Promise<JSX.Element>
  *
- * Verifica autenticación y permisos, carga lista de fleteros, y renderiza LiquidacionesClient.
- * Existe como entry point de creación de liquidaciones bajo /fleteros/liquidar.
+ * Verifica autenticación y permisos, carga fleteros/camiones/choferes,
+ * y renderiza LiquidarClient (solo creación de LP).
  *
  * Ejemplos:
- * // Sesión ADMIN_TRANSMAGG → LiquidacionesClient con selector de fletero
+ * // Sesión ADMIN_TRANSMAGG → LiquidarClient con selector de fletero
  * <FleterosLiquidarPage />
  * // Sin sesión → redirect /login
  * <FleterosLiquidarPage />
@@ -31,7 +31,7 @@ export default async function FleterosLiquidarPage() {
 
   const esInterno = esRolInterno(rol)
 
-  const [fleteros, camiones, choferes, cuentasBancarias] = esInterno
+  const [fleteros, camiones, choferes] = esInterno
     ? await Promise.all([
         prisma.fletero.findMany({
           where: { activo: true },
@@ -48,13 +48,8 @@ export default async function FleterosLiquidarPage() {
           select: { id: true, nombre: true, apellido: true },
           orderBy: { apellido: "asc" },
         }),
-        prisma.cuenta.findMany({
-          where: { activa: true },
-          select: { id: true, nombre: true, bancoOEntidad: true },
-          orderBy: { nombre: "asc" },
-        }),
       ])
-    : [[], [], [], []]
+    : [[], [], []]
 
   let fleteroIdPropio: string | null = null
   if (rol === "FLETERO") {
@@ -66,14 +61,12 @@ export default async function FleterosLiquidarPage() {
   }
 
   return (
-    <LiquidacionesClient
+    <LiquidarClient
       rol={rol}
       fleteros={fleteros}
       camiones={camiones}
       choferes={choferes}
       fleteroIdPropio={fleteroIdPropio}
-      cuentasBancarias={cuentasBancarias}
-      titulo="Líquido Producto"
     />
   )
 }
