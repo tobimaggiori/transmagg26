@@ -15,13 +15,15 @@ const schema = z.object({
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth()
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
   if (session.user.rol !== "ADMIN_TRANSMAGG") {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
+
+  const { id } = await params
 
   const body = await req.json()
   const parsed = schema.safeParse(body)
@@ -37,7 +39,7 @@ export async function POST(
     password = smtpPassword
   } else {
     const usuario = await prisma.usuario.findUnique({
-      where: { id: params.id },
+      where: { id },
       select: { smtpPassword: true },
     })
     if (!usuario?.smtpPassword) {

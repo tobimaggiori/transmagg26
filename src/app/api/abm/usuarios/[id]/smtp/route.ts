@@ -15,7 +15,7 @@ const schema = z.object({
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth()
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
@@ -23,7 +23,15 @@ export async function PUT(
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 
-  const body = await req.json()
+  const { id } = await params
+
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: "Body inválido" }, { status: 400 })
+  }
+
   const parsed = schema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: "Datos inválidos", issues: parsed.error.issues }, { status: 400 })
@@ -32,21 +40,25 @@ export async function PUT(
   const { smtpHost, smtpPuerto, smtpUsuario, smtpPassword, smtpSsl, smtpActivo } = parsed.data
 
   const existente = await prisma.usuario.findUnique({
-    where: { id: params.id },
+    where: { id },
     select: { id: true, smtpPassword: true },
   })
   if (!existente) return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 })
 
   let passwordCifrada: string | undefined
-  if (smtpPassword && smtpPassword.trim() !== "") {
-    passwordCifrada = encrypt(smtpPassword)
-  } else {
-    // Keep existing password if not provided
-    passwordCifrada = existente.smtpPassword ?? undefined
+  try {
+    if (smtpPassword && smtpPassword.trim() !== "") {
+      passwordCifrada = encrypt(smtpPassword)
+    } else {
+      passwordCifrada = existente.smtpPassword ?? undefined
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Error al cifrar contraseña"
+    return NextResponse.json({ error: `Error de configuración del servidor: ${msg}` }, { status: 500 })
   }
 
   await prisma.usuario.update({
-    where: { id: params.id },
+    where: { id },
     data: {
       smtpHost,
       smtpPuerto,
@@ -62,7 +74,7 @@ export async function PUT(
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth()
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
@@ -70,8 +82,10 @@ export async function DELETE(
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 
+  const { id } = await params
+
   await prisma.usuario.update({
-    where: { id: params.id },
+    where: { id },
     data: {
       smtpHost: null,
       smtpPuerto: null,

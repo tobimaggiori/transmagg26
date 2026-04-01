@@ -155,12 +155,12 @@ function SmtpModal({
           smtpActivo: form.smtpActivo,
         }),
       })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error ?? "Error al guardar"); return }
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setError((data as { error?: string }).error ?? `Error ${res.status} al guardar`); return }
       router.refresh()
       onClose()
     } catch {
-      setError("Error de conexión.")
+      setError("Error de red al guardar.")
     } finally {
       setLoading(false)
     }
