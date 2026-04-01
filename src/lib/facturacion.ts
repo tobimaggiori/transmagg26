@@ -12,6 +12,18 @@ export type ViajeParaFacturabilidad = {
   }>
 }
 
+/**
+ * viajeEsFacturable: ViajeParaFacturabilidad -> boolean
+ *
+ * Dado un viaje con su estado de factura y sus liquidaciones asociadas,
+ * devuelve true si el viaje cumple todas las condiciones para ser facturado a la empresa.
+ * Existe para centralizar la lógica de elegibilidad y evitar duplicarla en la UI y en la API.
+ *
+ * Ejemplos:
+ * viajeEsFacturable({ estadoFactura: "PENDIENTE_FACTURAR", enLiquidaciones: [{ liquidacion: { estado: "EMITIDA", cae: "123", arcaEstado: "ACEPTADA" } }] }) === true
+ * viajeEsFacturable({ estadoFactura: "FACTURADO", enLiquidaciones: [] }) === false
+ * viajeEsFacturable({ estadoFactura: "PENDIENTE_FACTURAR", enLiquidaciones: [] }) === false
+ */
 export function viajeEsFacturable(viaje: ViajeParaFacturabilidad): boolean {
   if (viaje.estadoFactura !== "PENDIENTE_FACTURAR") return false
   return viaje.enLiquidaciones.some(
@@ -22,6 +34,18 @@ export function viajeEsFacturable(viaje: ViajeParaFacturabilidad): boolean {
   )
 }
 
+/**
+ * razonNoFacturable: ViajeParaFacturabilidad -> string
+ *
+ * Dado un viaje que no es facturable, devuelve el motivo específico por el que no cumple
+ * los requisitos, siguiendo el orden de validación de condiciones.
+ * Existe para mostrar al operador un mensaje claro sobre qué falta para poder facturar.
+ *
+ * Ejemplos:
+ * razonNoFacturable({ estadoFactura: "FACTURADO", enLiquidaciones: [] }) === "El viaje no está pendiente de facturar"
+ * razonNoFacturable({ estadoFactura: "PENDIENTE_FACTURAR", enLiquidaciones: [] }) === "No tiene liquidación asignada"
+ * razonNoFacturable({ estadoFactura: "PENDIENTE_FACTURAR", enLiquidaciones: [{ liquidacion: { estado: "BORRADOR", cae: null, arcaEstado: null } }] }) === "La LP no está emitida"
+ */
 export function razonNoFacturable(viaje: ViajeParaFacturabilidad): string {
   if (viaje.estadoFactura !== "PENDIENTE_FACTURAR") {
     return "El viaje no está pendiente de facturar"
