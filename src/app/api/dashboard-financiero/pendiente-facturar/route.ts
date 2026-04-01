@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
+import { viajeEsFacturable } from "@/lib/facturacion"
 
 /**
  * GET: -> Promise<NextResponse>
@@ -28,24 +29,34 @@ export async function GET() {
       where: { estadoFactura: "PENDIENTE_FACTURAR" },
       include: {
         empresa: { select: { id: true, razonSocial: true } },
+        enLiquidaciones: {
+          select: {
+            liquidacion: { select: { estado: true, cae: true, arcaEstado: true } },
+          },
+        },
       },
       orderBy: { fechaViaje: "desc" },
     })
 
-    // Agrupar por empresa
-    const porEmpresa = new Map<string, {
+    type ViajeEntry = {
+      id: string
+      fechaViaje: string
+      procedencia: string | null
+      destino: string | null
+      tarifaOperativaInicial: number
+    }
+    type EmpresaEntry = {
       empresaId: string
       razonSocial: string
       totalTarifaBase: number
       cantidadViajes: number
-      viajes: Array<{
-        id: string
-        fechaViaje: string
-        procedencia: string | null
-        destino: string | null
-        tarifaOperativaInicial: number
-      }>
-    }>()
+      listosParaFacturar: number
+      bloqueados: number
+      viajes: ViajeEntry[]
+    }
+
+    // Agrupar por empresa
+    const porEmpresa = new Map<string, EmpresaEntry>()
 
     for (const v of viajes) {
       const key = v.empresaId
@@ -55,6 +66,8 @@ export async function GET() {
           razonSocial: v.empresa.razonSocial,
           totalTarifaBase: 0,
           cantidadViajes: 0,
+          listosParaFacturar: 0,
+          bloqueados: 0,
           viajes: [],
         })
       }
@@ -62,6 +75,11 @@ export async function GET() {
       const tarifaOperativaInicial = v.tarifaOperativaInicial ?? 0
       entry.totalTarifaBase += tarifaOperativaInicial
       entry.cantidadViajes += 1
+      if (viajeEsFacturable(v)) {
+        entry.listosParaFacturar += 1
+      } else {
+        entry.bloqueados += 1
+      }
       entry.viajes.push({
         id: v.id,
         fechaViaje: v.fechaViaje.toISOString(),

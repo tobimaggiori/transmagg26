@@ -14,6 +14,7 @@ import { WorkflowSummaryCard } from "@/components/workflow/workflow-summary-card
 import { CircuitBadge } from "@/components/workflow/circuit-badge"
 import { WorkflowNote } from "@/components/workflow/workflow-note"
 import { SearchCombobox } from "@/components/ui/search-combobox"
+import { viajeEsFacturable, razonNoFacturable } from "@/lib/facturacion"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -39,6 +40,9 @@ type ViajeAPI = {
   tarifaOperativaInicial?: number | null
   estadoLiquidacion: string
   estadoFactura: string
+  enLiquidaciones?: Array<{
+    liquidacion: { estado: string; cae: string | null; arcaEstado: string | null }
+  }>
   toneladas?: number | null
   total?: number | null
   fletero: { razonSocial: string }
@@ -626,6 +630,21 @@ export function ViajesClient({
                               <div className="flex flex-wrap gap-1.5">
                                 <CircuitBadge etiqueta="Fletero" estado={v.estadoLiquidacion} />
                                 <CircuitBadge etiqueta="Empresa" estado={v.estadoFactura} />
+                                {v.estadoFactura === "PENDIENTE_FACTURAR" && v.enLiquidaciones != null && (
+                                  viajeEsFacturable(v as { estadoFactura: string; enLiquidaciones: Array<{ liquidacion: { estado: string; cae: string | null; arcaEstado: string | null } }> })
+                                    ? (
+                                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800">
+                                        LP con CAE
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800"
+                                        title={razonNoFacturable(v as { estadoFactura: string; enLiquidaciones: Array<{ liquidacion: { estado: string; cae: string | null; arcaEstado: string | null } }> })}
+                                      >
+                                        Sin CAE ARCA
+                                      </span>
+                                    )
+                                )}
                               </div>
                               <p className="text-xs text-muted-foreground">
                                 {describirCircuitoViaje(v.estadoLiquidacion, v.estadoFactura)}

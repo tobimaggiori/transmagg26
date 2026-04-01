@@ -10,6 +10,7 @@ import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje, calcularFactura } from "@/lib/viajes"
 import { WorkflowNote } from "@/components/workflow/workflow-note"
 import { SearchCombobox } from "@/components/ui/search-combobox"
+import { viajeEsFacturable, razonNoFacturable } from "@/lib/facturacion"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,10 @@ type ViajeParaFacturar = {
   kilos: number | null
   tarifaOperativaInicial: number
   estadoLiquidacion: string
+  estadoFactura: string
+  enLiquidaciones: Array<{
+    liquidacion: { estado: string; cae: string | null; arcaEstado: string | null }
+  }>
   // editados localmente
   kilosEdit?: number
   tarifaEmpresaEdit?: number
@@ -128,10 +133,10 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
   }
 
   function toggleTodos() {
-    if (seleccionados.size === viajesPendientes.length) {
+    if (seleccionados.size === viajesFacturables.length) {
       setSeleccionados(new Set())
     } else {
-      setSeleccionados(new Set(viajesPendientes.map((v) => v.id)))
+      setSeleccionados(new Set(viajesFacturables.map((v) => v.id)))
     }
   }
 
@@ -141,7 +146,9 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
     )
   }
 
-  const viajesSeleccionados = viajesPendientes.filter((v) => seleccionados.has(v.id))
+  const viajesFacturables = viajesPendientes.filter((v) => viajeEsFacturable(v))
+  const viajesBloqueados = viajesPendientes.filter((v) => !viajeEsFacturable(v))
+  const viajesSeleccionados = viajesFacturables.filter((v) => seleccionados.has(v.id))
 
   const viajesParaCalc = viajesSeleccionados.map((v) => ({
     kilos: v.kilosEdit ?? v.kilos ?? 0,
@@ -273,10 +280,15 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <h3 className="text-base font-semibold">Viajes pendientes de facturación</h3>
+                <h3 className="text-base font-semibold">Viajes listos para facturar</h3>
                 <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800">
-                  {viajesPendientes.length}
+                  {viajesFacturables.length}
                 </span>
+                {viajesBloqueados.length > 0 && (
+                  <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-red-100 text-red-800">
+                    {viajesBloqueados.length} bloqueado(s)
+                  </span>
+                )}
               </div>
               {seleccionados.size > 0 && !enPreview && (
                 <button
@@ -290,8 +302,10 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
 
             {cargando ? (
               <div className="text-center py-6 text-muted-foreground">Cargando...</div>
-            ) : viajesPendientes.length === 0 ? (
+            ) : viajesFacturables.length === 0 && viajesBloqueados.length === 0 ? (
               <div className="text-center py-6 text-muted-foreground">Sin viajes pendientes de facturación.</div>
+            ) : viajesFacturables.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground">Todos los viajes pendientes están bloqueados por falta de CAE en ARCA.</div>
             ) : (
               <div className="overflow-x-auto rounded-lg border">
                 <table className="w-full text-sm">
@@ -300,7 +314,7 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
                       <th className="px-3 py-2">
                         <input
                           type="checkbox"
-                          checked={seleccionados.size === viajesPendientes.length && viajesPendientes.length > 0}
+                          checked={seleccionados.size === viajesFacturables.length && viajesFacturables.length > 0}
                           onChange={toggleTodos}
                         />
                       </th>
@@ -318,7 +332,7 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {viajesPendientes.map((v) => {
+                    {viajesFacturables.map((v) => {
                       const kilos = v.kilosEdit ?? v.kilos ?? 0
                       const tarifa = v.tarifaEmpresaEdit ?? v.tarifaOperativaInicial
                       const ton = kilos > 0 ? calcularToneladas(kilos) : null
@@ -430,6 +444,35 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
               </div>
             )}
           </div>
+
+          {/* Viajes bloqueados */}
+          {viajesBloqueados.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-base font-semibold text-red-700">Viajes bloqueados (sin CAE en ARCA)</h3>
+              <div className="overflow-x-auto rounded-lg border border-red-200">
+                <table className="w-full text-sm">
+                  <thead className="bg-red-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Fecha</th>
+                      <th className="px-3 py-2 text-left">Fletero</th>
+                      <th className="px-3 py-2 text-left">Remito</th>
+                      <th className="px-3 py-2 text-left">Motivo del bloqueo</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {viajesBloqueados.map((v) => (
+                      <tr key={v.id} className="bg-red-50/40">
+                        <td className="px-3 py-2">{formatearFecha(new Date(v.fechaViaje))}</td>
+                        <td className="px-3 py-2">{v.fletero.razonSocial}</td>
+                        <td className="px-3 py-2">{v.remito ?? "-"}</td>
+                        <td className="px-3 py-2 text-red-700 font-medium">{razonNoFacturable(v)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Preview de factura */}
           {enPreview && preview && (

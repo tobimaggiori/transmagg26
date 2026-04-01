@@ -113,6 +113,11 @@ export async function GET(request: NextRequest) {
         chofer: { select: { nombre: true, apellido: true } },
         empresa: { select: { razonSocial: true } },
         operador: { select: { nombre: true, apellido: true } },
+        enLiquidaciones: {
+          select: {
+            liquidacion: { select: { estado: true, cae: true, arcaEstado: true } },
+          },
+        },
       },
       orderBy: { fechaViaje: "desc" },
       take: 200,

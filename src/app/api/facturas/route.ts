@@ -17,6 +17,7 @@ import { calcularToneladas, calcularTotalViaje, calcularFactura } from "@/lib/vi
 import { obtenerTarifaOperativaInicial } from "@/lib/viaje-serialization"
 import { EstadoFacturaDocumento, EstadoFacturaViaje } from "@/lib/viaje-workflow"
 import { resolverOperadorId } from "@/lib/session-utils"
+import { viajeEsFacturable } from "@/lib/facturacion"
 import type { Rol } from "@/types"
 
 const viajeEnFactSchema = z.object({
@@ -116,6 +117,13 @@ export async function GET(request: NextRequest) {
           tarifaOperativaInicial: true,
           estadoLiquidacion: true,
           estadoFactura: true,
+          enLiquidaciones: {
+            select: {
+              liquidacion: {
+                select: { estado: true, cae: true, arcaEstado: true },
+              },
+            },
+          },
         },
         orderBy: { fechaViaje: "desc" },
         take: 200,
@@ -197,12 +205,28 @@ export async function POST(request: NextRequest) {
     const viajeIds = viajes.map((v) => v.viajeId)
     const viajesExistentes = await prisma.viaje.findMany({
       where: { id: { in: viajeIds }, empresaId, estadoFactura: EstadoFacturaViaje.PENDIENTE_FACTURAR },
+      include: {
+        enLiquidaciones: {
+          select: {
+            liquidacion: { select: { estado: true, cae: true, arcaEstado: true } },
+          },
+        },
+      },
     })
 
     if (viajesExistentes.length !== viajes.length) {
       return NextResponse.json(
         { error: "Uno o más viajes no existen, no pertenecen a la empresa o ya están facturados" },
         { status: 400 }
+      )
+    }
+
+    // Verificar que todos los viajes tienen LP con CAE aceptado en ARCA
+    const noFacturables = viajesExistentes.filter((v) => !viajeEsFacturable(v))
+    if (noFacturables.length > 0) {
+      return NextResponse.json(
+        { error: "Uno o más viajes no tienen LP con CAE aceptado en ARCA y no pueden facturarse" },
+        { status: 422 }
       )
     }
 

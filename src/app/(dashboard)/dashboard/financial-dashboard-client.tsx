@@ -104,6 +104,8 @@ interface GrupoPendiente {
   razonSocial: string
   totalTarifaBase: number
   cantidadViajes: number
+  listosParaFacturar?: number
+  bloqueados?: number
   viajes: Array<{ id: string; fechaViaje: string; procedencia: string | null; destino: string | null; tarifaOperativaInicial: number }>
 }
 
@@ -404,6 +406,18 @@ function PendienteModal({ url }: { url: string; titulo: string }) {
             <div className="text-right">
               <p className="font-bold">{formatearMoneda(grupo.totalTarifaBase)}</p>
               <p className="text-xs text-muted-foreground">{grupo.cantidadViajes} viaje(s)</p>
+              {grupo.listosParaFacturar != null && (
+                <div className="flex gap-1 justify-end mt-0.5">
+                  <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-800">
+                    {grupo.listosParaFacturar} listos
+                  </span>
+                  {(grupo.bloqueados ?? 0) > 0 && (
+                    <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-800">
+                      {grupo.bloqueados} bloqueados
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           <table className="w-full text-sm">
