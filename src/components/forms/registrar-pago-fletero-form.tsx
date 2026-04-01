@@ -60,7 +60,7 @@ type Props = {
   chequesEnCartera: ChequeEnCartera[]
   saldoAFavorCC: number
   gastosPendientes?: GastoPendiente[]
-  onSuccess: (nroOP: number) => void
+  onSuccess: (nroOP: number, opId: string) => void
   onClose: () => void
 }
 
@@ -303,7 +303,7 @@ export function RegistrarPagoFleteroModal({
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error ?? "Error al registrar pago"); return }
-      onSuccess(data.ordenPago.nro)
+      onSuccess(data.ordenPago.nro, data.ordenPago.id)
     } catch {
       setError("Error de red al registrar pago")
     } finally {

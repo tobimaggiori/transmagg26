@@ -20,9 +20,9 @@ export default async function OrdenDePagoPage() {
   const [fleteros, cuentas, chequesEnCartera] = await Promise.all([
     prisma.fletero.findMany({
       where: { activo: true },
-      select: { id: true, razonSocial: true, cuit: true },
+      select: { id: true, razonSocial: true, cuit: true, usuario: { select: { email: true } } },
       orderBy: { razonSocial: "asc" },
-    }),
+    }).then((rows) => rows.map((r) => ({ ...r, email: r.usuario?.email ?? null }))),
     prisma.cuenta.findMany({
       where: { activa: true },
       select: { id: true, nombre: true, bancoOEntidad: true },

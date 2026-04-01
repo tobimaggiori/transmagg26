@@ -16,6 +16,7 @@ interface Fletero {
   id: string
   razonSocial: string
   cuit: string
+  email: string | null
 }
 
 interface CuentaBancaria {
@@ -64,6 +65,13 @@ interface RegistrarPagoClientProps {
   chequesEnCartera: ChequeEnCartera[]
 }
 
+interface ConfirmacionOP {
+  opNro: number
+  opId: string
+  fleteroNombre: string
+  fleteroEmail: string | null
+}
+
 function nroLP(ptoVenta: number | null, nro: number | null): string {
   if (ptoVenta == null || nro == null) return "s/n"
   return `${String(ptoVenta).padStart(4, "0")}-${String(nro).padStart(8, "0")}`
@@ -72,6 +80,144 @@ function nroLP(ptoVenta: number | null, nro: number | null): string {
 const estadoLabel: Record<string, string> = {
   EMITIDA: "Emitida",
   PARCIALMENTE_PAGADA: "Parcial",
+}
+
+// ─── Modal de confirmación post-OP ───────────────────────────────────────────
+
+function ModalConfirmacionOP({
+  confirmacion,
+  onClose,
+}: {
+  confirmacion: ConfirmacionOP
+  onClose: () => void
+}) {
+  const { opId, opNro, fleteroNombre, fleteroEmail } = confirmacion
+  const [mostrarEmail, setMostrarEmail] = useState(false)
+  const [emailDestino, setEmailDestino] = useState(fleteroEmail ?? "")
+  const [mensajeAdicional, setMensajeAdicional] = useState("")
+  const [enviando, setEnviando] = useState(false)
+  const [enviado, setEnviado] = useState(false)
+  const [errorEmail, setErrorEmail] = useState<string | null>(null)
+
+  async function enviarEmail() {
+    setEnviando(true)
+    setErrorEmail(null)
+    try {
+      const res = await fetch(`/api/ordenes-pago/${opId}/enviar-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emailDestino: emailDestino || undefined, mensajeAdicional: mensajeAdicional || undefined }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setErrorEmail(data.error ?? "Error al enviar"); return }
+      setEnviado(true)
+    } catch {
+      setErrorEmail("Error de red al enviar el mail")
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-background rounded-xl shadow-lg w-full max-w-md space-y-5 p-6">
+        {/* Encabezado */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold">Orden de Pago generada</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              OP Nro {opNro.toLocaleString("es-AR")} — {fleteroNombre}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-muted-foreground hover:text-foreground rounded-md p-1"
+            aria-label="Cerrar"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Acciones principales */}
+        <div className="flex flex-wrap gap-2">
+          <a
+            href={`/api/ordenes-pago/${opId}/pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 inline-flex items-center gap-1.5"
+          >
+            Ver PDF
+          </a>
+          <a
+            href={`/api/ordenes-pago/${opId}/pdf?print=true`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-muted inline-flex items-center gap-1.5"
+          >
+            Imprimir
+          </a>
+          <button
+            onClick={() => setMostrarEmail((v) => !v)}
+            className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-muted"
+          >
+            {mostrarEmail ? "Ocultar formulario" : "Enviar por mail"}
+          </button>
+        </div>
+
+        {/* Sub-formulario de email */}
+        {mostrarEmail && (
+          <div className="space-y-3 border rounded-lg p-4">
+            {enviado ? (
+              <p className="text-sm text-green-700">
+                Mail enviado exitosamente a {emailDestino || "destinatario"}.
+              </p>
+            ) : (
+              <>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Email destinatario</label>
+                  <input
+                    type="email"
+                    value={emailDestino}
+                    onChange={(e) => setEmailDestino(e.target.value)}
+                    className="w-full h-8 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    placeholder="email@ejemplo.com"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Mensaje adicional (opcional)</label>
+                  <textarea
+                    value={mensajeAdicional}
+                    onChange={(e) => setMensajeAdicional(e.target.value)}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                    rows={2}
+                    placeholder="Adjunto la Orden de Pago..."
+                  />
+                </div>
+                {errorEmail && <p className="text-sm text-destructive">{errorEmail}</p>}
+                <button
+                  onClick={enviarEmail}
+                  disabled={enviando || !emailDestino}
+                  className="h-8 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {enviando ? "Enviando…" : "Enviar"}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Botón cerrar */}
+        <div className="flex justify-end">
+          <button
+            onClick={onClose}
+            className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-muted"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -89,7 +235,7 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera }: Reg
   // Paso actual: "select" (tabla con checkboxes) o "pay" (formulario de pago)
   const [pagando, setPagando] = useState(false)
 
-  const [ultimaOP, setUltimaOP] = useState<{ nro: number } | null>(null)
+  const [confirmacionOP, setConfirmacionOP] = useState<ConfirmacionOP | null>(null)
 
   const fletero = fleteros.find((f) => f.id === fleteroId) ?? null
 
@@ -99,7 +245,6 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera }: Reg
     setGastosPendientes([])
     setSaldoAFavorCC(0)
     setSeleccionados(new Set())
-    setUltimaOP(null)
     if (!id) return
 
     setLoadingFletero(true)
@@ -151,11 +296,20 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera }: Reg
     setPagando(true)
   }
 
-  function onSuccess(nroOP: number) {
+  function onSuccess(nroOP: number, opId: string) {
     setPagando(false)
     setSeleccionados(new Set())
-    setUltimaOP({ nro: nroOP })
+    setConfirmacionOP({
+      opNro: nroOP,
+      opId,
+      fleteroNombre: fletero?.razonSocial ?? "",
+      fleteroEmail: fletero?.email ?? null,
+    })
     onSelectFletero(fleteroId)
+  }
+
+  function cerrarConfirmacion() {
+    setConfirmacionOP(null)
   }
 
   return (
@@ -177,13 +331,6 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera }: Reg
           placeholder="Buscar fletero..."
         />
       </div>
-
-      {/* Éxito */}
-      {ultimaOP && (
-        <div className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-          Orden de Pago Nro {ultimaOP.nro.toLocaleString("es-AR")} generada exitosamente.
-        </div>
-      )}
 
       {/* Tabla de LPs pendientes con checkboxes */}
       {fleteroId && (
@@ -299,6 +446,14 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera }: Reg
           gastosPendientes={gastosPendientes.filter((g) => g.estado !== "DESCONTADO_TOTAL")}
           onSuccess={onSuccess}
           onClose={() => setPagando(false)}
+        />
+      )}
+
+      {/* Modal de confirmación post-OP */}
+      {confirmacionOP && (
+        <ModalConfirmacionOP
+          confirmacion={confirmacionOP}
+          onClose={cerrarConfirmacion}
         />
       )}
     </div>

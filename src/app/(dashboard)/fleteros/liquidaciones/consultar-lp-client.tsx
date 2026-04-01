@@ -9,13 +9,11 @@ import React, { useState, useCallback, useEffect, Fragment } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas } from "@/lib/viajes"
 import { formatearNroComprobante } from "@/lib/liquidacion-utils"
-import { RegistrarPagoFleteroModal } from "@/components/forms/registrar-pago-fletero-form"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 type Fletero = { id: string; razonSocial: string }
-type CuentaBancaria = { id: string; nombre: string; bancoOEntidad: string }
 
 type ViajeEnLiquidacion = {
   id: string
@@ -30,21 +28,6 @@ type ViajeEnLiquidacion = {
   kilos: number | null
   tarifaFletero: number
   subtotal: number
-}
-
-type GastoPendiente = {
-  id: string
-  tipo: string
-  montoPagado: number
-  montoDescontado: number
-  estado: string
-  facturaProveedor: {
-    id: string
-    tipoCbte: string
-    nroComprobante: string | null
-    fechaCbte: string
-    proveedor: { razonSocial: string }
-  }
 }
 
 type Liquidacion = {
@@ -71,7 +54,6 @@ type Liquidacion = {
 type ConsultarLPClientProps = {
   rol: Rol
   fleteros: Fletero[]
-  cuentasBancarias: CuentaBancaria[]
   fleteroIdPropio: string | null
 }
 
@@ -177,7 +159,6 @@ function EnviarEmailOP({ ordenPagoId, nro }: { ordenPagoId: string; nro: number 
 function ModalDetalleLiquidacion({
   liq,
   onCambiarEstado,
-  onRegistrarPago,
   onAnularPago,
   onEditarPago,
   onCerrar,
@@ -185,7 +166,6 @@ function ModalDetalleLiquidacion({
 }: {
   liq: Liquidacion
   onCambiarEstado: (estado: string) => void
-  onRegistrarPago: () => void
   onAnularPago?: (pagoId: string) => void
   onEditarPago?: (pagoId: string) => void
   onCerrar: () => void
@@ -358,15 +338,6 @@ function ModalDetalleLiquidacion({
                 Marcar como emitida en ARCA
               </button>
             )}
-            {(liq.estado === "EMITIDA" || liq.estado === "PARCIALMENTE_PAGADA") && (
-              <button
-                onClick={onRegistrarPago}
-                disabled={cargando}
-                className="h-9 px-4 rounded-md bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50"
-              >
-                Registrar pago
-              </button>
-            )}
             {(liq.estado === "BORRADOR" || liq.estado === "EMITIDA") && (
               <button
                 onClick={() => onCambiarEstado("ANULADA")}
@@ -399,18 +370,14 @@ function ModalDetalleLiquidacion({
  * // Rol FLETERO → carga automáticamente sus LPs sin selector de fletero
  * <ConsultarLPClient rol="FLETERO" fleteros={[]} cuentasBancarias={[]} fleteroIdPropio="f1" />
  */
-export function ConsultarLPClient({ rol, fleteros, cuentasBancarias, fleteroIdPropio }: ConsultarLPClientProps) {
+export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarLPClientProps) {
   const esInterno = rol === "ADMIN_TRANSMAGG" || rol === "OPERADOR_TRANSMAGG"
 
   const [fleteroId, setFleteroId] = useState<string>(fleteroIdPropio ?? "")
   const [liquidaciones, setLiquidaciones] = useState<Liquidacion[]>([])
-  const [gastosPendientes, setGastosPendientes] = useState<GastoPendiente[]>([])
   const [cargando, setCargando] = useState(false)
   const [liquidacionDetalle, setLiquidacionDetalle] = useState<Liquidacion | null>(null)
   const [cambioEstadoCargando, setCambioEstadoCargando] = useState(false)
-  const [pagandoLiquidacion, setPagandoLiquidacion] = useState<Liquidacion | null>(null)
-  const [saldoAFavorCC, setSaldoAFavorCC] = useState(0)
-  const [fleteroInfo, setFleteroInfo] = useState<{ cuit: string } | null>(null)
 
   // Filtros
   const [filtroEstado, setFiltroEstado] = useState<string>("")
@@ -429,10 +396,6 @@ export function ConsultarLPClient({ rol, fleteros, cuentasBancarias, fleteroIdPr
       if (res.ok) {
         const data = await res.json()
         setLiquidaciones(data.liquidaciones ?? [])
-        setGastosPendientes(data.gastosPendientes ?? [])
-        if (data.fletero) {
-          setFleteroInfo({ cuit: data.fletero.cuit ?? "" })
-        }
       }
     } finally {
       setCargando(false)
@@ -574,17 +537,6 @@ export function ConsultarLPClient({ rol, fleteros, cuentasBancarias, fleteroIdPr
         <ModalDetalleLiquidacion
           liq={liquidacionDetalle}
           onCambiarEstado={(estado) => cambiarEstadoLiquidacion(liquidacionDetalle.id, estado)}
-          onRegistrarPago={async () => {
-            try {
-              const res = await fetch(`/api/fleteros/${liquidacionDetalle.fleteroId}/saldo-cc`)
-              if (res.ok) {
-                const data = await res.json()
-                setSaldoAFavorCC(data.saldoAFavor ?? 0)
-              }
-            } catch { /* silencioso */ }
-            setPagandoLiquidacion(liquidacionDetalle)
-            setLiquidacionDetalle(null)
-          }}
           onAnularPago={(pagoId) => {
             const pago = liquidacionDetalle.pagos.find((p) => p.id === pagoId)
             if (pago) setAnulando({ pagoId, pagoMonto: pago.monto, pagoTipo: pago.tipoPago, pagoFecha: pago.fechaPago })
@@ -632,33 +584,6 @@ export function ConsultarLPClient({ rol, fleteros, cuentasBancarias, fleteroIdPr
         />
       )}
 
-      {/* Modal pago */}
-      {pagandoLiquidacion && (
-        <RegistrarPagoFleteroModal
-          liquidaciones={[{
-            id: pagandoLiquidacion.id,
-            nroComprobante: pagandoLiquidacion.nroComprobante,
-            ptoVenta: pagandoLiquidacion.ptoVenta,
-            total: pagandoLiquidacion.total,
-            saldoPendiente: Math.max(0, pagandoLiquidacion.total - pagandoLiquidacion.pagos.reduce((s, p) => s + p.monto, 0)),
-            grabadaEn: pagandoLiquidacion.grabadaEn,
-          }]}
-          fletero={{
-            id: pagandoLiquidacion.fleteroId,
-            razonSocial: pagandoLiquidacion.fletero.razonSocial,
-            cuit: fleteroInfo?.cuit ?? "",
-          }}
-          cuentasBancarias={cuentasBancarias}
-          chequesEnCartera={[]}
-          saldoAFavorCC={saldoAFavorCC}
-          gastosPendientes={gastosPendientes.filter((g) => g.estado !== "DESCONTADO_TOTAL")}
-          onSuccess={() => {
-            setPagandoLiquidacion(null)
-            cargarDatos()
-          }}
-          onClose={() => setPagandoLiquidacion(null)}
-        />
-      )}
     </div>
   )
 }

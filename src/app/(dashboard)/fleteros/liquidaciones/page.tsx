@@ -31,20 +31,13 @@ export default async function FleterosLiquidacionesPage() {
 
   const esInterno = esRolInterno(rol)
 
-  const [fleteros, cuentasBancarias] = esInterno
-    ? await Promise.all([
-        prisma.fletero.findMany({
-          where: { activo: true },
-          select: { id: true, razonSocial: true },
-          orderBy: { razonSocial: "asc" },
-        }),
-        prisma.cuenta.findMany({
-          where: { activa: true },
-          select: { id: true, nombre: true, bancoOEntidad: true },
-          orderBy: { nombre: "asc" },
-        }),
-      ])
-    : [[], []]
+  const fleteros = esInterno
+    ? await prisma.fletero.findMany({
+        where: { activo: true },
+        select: { id: true, razonSocial: true },
+        orderBy: { razonSocial: "asc" },
+      })
+    : []
 
   let fleteroIdPropio: string | null = null
   if (rol === "FLETERO") {
@@ -59,7 +52,6 @@ export default async function FleterosLiquidacionesPage() {
     <ConsultarLPClient
       rol={rol}
       fleteros={fleteros}
-      cuentasBancarias={cuentasBancarias}
       fleteroIdPropio={fleteroIdPropio}
     />
   )
