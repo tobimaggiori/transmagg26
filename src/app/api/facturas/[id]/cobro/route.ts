@@ -15,6 +15,7 @@ const pagoItemSchema = z.discriminatedUnion("tipoPago", [
   z.object({
     tipoPago: z.literal("CHEQUE"),
     monto: z.number().positive(),
+    esElectronico: z.boolean().default(false),
     nroCheque: z.string().min(1),
     bancoEmisor: z.string().min(1),
     fechaEmision: z.string(),
@@ -116,6 +117,7 @@ export async function POST(
             data: {
               empresaId: factura.empresaId,
               facturaId,
+              esElectronico: pago.esElectronico,
               nroCheque: pago.nroCheque,
               bancoEmisor: pago.bancoEmisor,
               monto: pago.monto,
@@ -151,7 +153,7 @@ export async function POST(
             },
           })
           // Registrar movimiento bancario: TRANSFERENCIA_RECIBIDA
-          const cuenta = await tx.cuenta.findUnique({
+          await tx.cuenta.findUnique({
             where: { id: pago.cuentaBancariaId },
             select: { tieneImpuestoDebcred: true, alicuotaImpuesto: true },
           })

@@ -43,10 +43,17 @@ const pagoSchema = z.object({
   cuentaId: z.string().optional().nullable(),
   chequeRecibidoId: z.string().optional().nullable(),
   tarjetaId: z.string().optional().nullable(),
-  chequeNro: z.string().optional().nullable(),
-  chequeFechaPago: z.string().optional().nullable(),
-  chequeTipoDocBeneficiario: z.string().optional().nullable(),
-  chequeNroDocBeneficiario: z.string().optional().nullable(),
+  chequePropio: z.object({
+    nroCheque: z.string().optional().nullable(),
+    tipoDocBeneficiario: z.string().min(1),
+    nroDocBeneficiario: z.string().min(1),
+    mailBeneficiario: z.string().optional().nullable(),
+    fechaEmision: z.string().min(1),
+    fechaPago: z.string().min(1),
+    clausula: z.string().optional().nullable(),
+    descripcion1: z.string().optional().nullable(),
+    descripcion2: z.string().optional().nullable(),
+  }).optional().nullable(),
 })
 
 /**
@@ -130,16 +137,20 @@ export async function POST(
           cuentaId: data.cuentaId,
           chequeRecibidoId: data.chequeRecibidoId,
           tarjetaId: data.tarjetaId,
-          chequeNro: data.chequeNro,
-          chequeFechaPago: data.chequeFechaPago,
-          chequeTipoDocBeneficiario: data.chequeTipoDocBeneficiario,
-          chequeNroDocBeneficiario: data.chequeNroDocBeneficiario,
+          chequePropio: data.chequePropio ?? null,
         }
       )
     })
 
     return NextResponse.json(result, { status: 201 })
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith("DUPLICATE_CHEQUE:")) {
+      const nro = error.message.split(":")[1]
+      return NextResponse.json(
+        { error: `El cheque N° ${nro} ya existe para esa cuenta. Verificá el número.` },
+        { status: 409 }
+      )
+    }
     console.error(`POST /api/proveedores/${proveedorId}/pago error:`, error)
     return NextResponse.json({ error: "Error al registrar pago", detail: String(error) }, { status: 500 })
   }

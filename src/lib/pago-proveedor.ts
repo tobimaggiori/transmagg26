@@ -9,6 +9,18 @@ import { prisma } from "@/lib/prisma"
 // Tipo del cliente de transacción de Prisma (extraído de la firma de $transaction)
 type TxClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
 
+export type ChequePropioDatos = {
+  nroCheque?: string | null
+  tipoDocBeneficiario: string
+  nroDocBeneficiario: string
+  mailBeneficiario?: string | null
+  fechaEmision: string
+  fechaPago: string
+  clausula?: string | null
+  descripcion1?: string | null
+  descripcion2?: string | null
+}
+
 export type PagoProveedorInput = {
   fecha: Date
   monto: number
@@ -18,10 +30,7 @@ export type PagoProveedorInput = {
   cuentaId?: string | null
   chequeRecibidoId?: string | null
   tarjetaId?: string | null
-  chequeNro?: string | null
-  chequeFechaPago?: string | null
-  chequeTipoDocBeneficiario?: string | null
-  chequeNroDocBeneficiario?: string | null
+  chequePropio?: ChequePropioDatos | null
 }
 
 export type PagoProveedorCtx = {
@@ -143,6 +152,20 @@ export async function procesarPagoProveedor(
     data: { estadoPago: nuevoEstado },
   })
 
+  // ── 3b. Si la factura es por cuenta de fletero y queda PAGADA, actualizar GastoFletero ──
+  if (nuevoEstado === "PAGADA") {
+    const gasto = await tx.gastoFletero.findUnique({
+      where: { facturaProveedorId: facturaId },
+      select: { id: true, estado: true },
+    })
+    if (gasto && gasto.estado === "PENDIENTE_PAGO") {
+      await tx.gastoFletero.update({
+        where: { id: gasto.id },
+        data: { estado: "PAGADO" },
+      })
+    }
+  }
+
   // ── 4. Efectos secundarios por tipo ────────────────────────────────────────
 
   // TRANSFERENCIA → MovimientoSinFactura EGRESO
@@ -162,19 +185,30 @@ export async function procesarPagoProveedor(
   }
 
   // CHEQUE_PROPIO → ChequeEmitido
-  if (input.tipo === "CHEQUE_PROPIO" && input.cuentaId && operadorId) {
+  if (input.tipo === "CHEQUE_PROPIO" && input.cuentaId && input.chequePropio && operadorId) {
+    const ch = input.chequePropio
+    if (ch.nroCheque) {
+      const existing = await tx.chequeEmitido.findFirst({
+        where: { nroCheque: ch.nroCheque, cuentaId: input.cuentaId },
+        select: { id: true },
+      })
+      if (existing) throw new Error(`DUPLICATE_CHEQUE:${ch.nroCheque}`)
+    }
     const chequeEmitido = await tx.chequeEmitido.create({
       data: {
         proveedorId,
         cuentaId: input.cuentaId,
-        nroCheque: input.chequeNro ?? null,
-        tipoDocBeneficiario: input.chequeTipoDocBeneficiario ?? "CUIT",
-        nroDocBeneficiario: input.chequeNroDocBeneficiario ?? proveedorRazonSocial,
+        nroCheque: ch.nroCheque ?? null,
+        tipoDocBeneficiario: ch.tipoDocBeneficiario,
+        nroDocBeneficiario: ch.nroDocBeneficiario,
+        mailBeneficiario: ch.mailBeneficiario ?? null,
         monto: input.monto,
-        fechaEmision: fechaPago,
-        fechaPago: input.chequeFechaPago ? new Date(input.chequeFechaPago) : fechaPago,
+        fechaEmision: new Date(ch.fechaEmision),
+        fechaPago: new Date(ch.fechaPago),
         motivoPago: "FACTURA",
-        clausula: "NO_A_LA_ORDEN",
+        clausula: ch.clausula ?? "NO_A_LA_ORDEN",
+        descripcion1: ch.descripcion1 ?? null,
+        descripcion2: ch.descripcion2 ?? null,
         estado: "EMITIDO",
         esElectronico: true,
         operadorId,

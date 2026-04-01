@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
   if (fleteroIdReal) whereLiquidaciones.fleteroId = fleteroIdReal
 
   try {
-    const [viajesRaw, liquidaciones, fleteroData, nroProximoComprobante] = await Promise.all([
+    const [viajesRaw, liquidaciones, fleteroData, nroProximoComprobante, gastosPendientes] = await Promise.all([
       prisma.viaje.findMany({
         where: whereViajes,
         select: {
@@ -161,6 +161,31 @@ export async function GET(request: NextRequest) {
           })
         : Promise.resolve(null),
       calcularProximoNroComprobante(prisma),
+      fleteroIdReal
+        ? prisma.gastoFletero.findMany({
+            where: {
+              fleteroId: fleteroIdReal,
+              estado: { in: ["PENDIENTE_PAGO", "PAGADO", "DESCONTADO_PARCIAL"] },
+            },
+            select: {
+              id: true,
+              tipo: true,
+              montoPagado: true,
+              montoDescontado: true,
+              estado: true,
+              facturaProveedor: {
+                select: {
+                  id: true,
+                  tipoCbte: true,
+                  nroComprobante: true,
+                  fechaCbte: true,
+                  proveedor: { select: { razonSocial: true } },
+                },
+              },
+            },
+            orderBy: { creadoEn: "asc" },
+          })
+        : Promise.resolve([]),
     ])
 
     // Calcular toneladas y total en los viajes pendientes
@@ -171,7 +196,7 @@ export async function GET(request: NextRequest) {
       total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaOperativaInicial) : null,
     }))
 
-    return NextResponse.json({ viajesPendientes, liquidaciones, fletero: fleteroData, nroProximoComprobante })
+    return NextResponse.json({ viajesPendientes, liquidaciones, fletero: fleteroData, nroProximoComprobante, gastosPendientes })
   } catch (error) {
     console.error("[GET /api/liquidaciones]", error)
     return NextResponse.json(

@@ -30,8 +30,13 @@ export default async function ProveedoresFacturaPage() {
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
   if (!esRolInterno(rol)) redirect("/dashboard")
 
-  const [proveedores, cuentas, tarjetas, chequesRaw] = await Promise.all([
+  const [proveedores, fleteros, cuentas, tarjetas, chequesRaw] = await Promise.all([
     prisma.proveedor.findMany({
+      where: { activo: true },
+      select: { id: true, razonSocial: true, cuit: true },
+      orderBy: { razonSocial: "asc" },
+    }),
+    prisma.fletero.findMany({
       where: { activo: true },
       select: { id: true, razonSocial: true, cuit: true },
       orderBy: { razonSocial: "asc" },
@@ -68,6 +73,7 @@ export default async function ProveedoresFacturaPage() {
   return (
     <FacturaProveedorIngresoClient
       proveedores={proveedores}
+      fleteros={fleteros}
       cuentas={cuentas}
       tarjetas={tarjetas}
       chequesEnCartera={chequesEnCartera}

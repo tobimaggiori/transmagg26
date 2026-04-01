@@ -58,6 +58,9 @@ export async function GET(
         saldoPendiente,
         estadoPago: f.estadoPago,
         pdfS3Key: f.pdfS3Key,
+        esPorCuentaDeFletero: f.esPorCuentaDeFletero,
+        tipoGastoFletero: f.tipoGastoFletero,
+        fleteroId: f.fleteroId,
       }
     })
 

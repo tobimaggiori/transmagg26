@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Select } from "@/components/ui/select"
+import { formatearMoneda, formatearFecha } from "@/lib/utils"
 
 type CuentaBancaria = {
   id: string
@@ -27,6 +28,21 @@ type ChequeEnCartera = {
   fechaCobro: string
 }
 
+type GastoPendiente = {
+  id: string
+  tipo: string
+  montoPagado: number
+  montoDescontado: number
+  estado: string
+  facturaProveedor: {
+    id: string
+    tipoCbte: string
+    nroComprobante: string | null
+    fechaCbte: string
+    proveedor: { razonSocial: string }
+  }
+}
+
 type Props = {
   liquidacion: {
     id: string
@@ -34,11 +50,12 @@ type Props = {
     ptoVenta: number | null
     total: number
     pagosExistentes: number
-    fletero: { id: string; razonSocial: string }
+    fletero: { id: string; razonSocial: string; cuit: string }
   }
   cuentasBancarias: CuentaBancaria[]
   chequesEnCartera: ChequeEnCartera[]
   saldoAFavorCC: number
+  gastosPendientes?: GastoPendiente[]
   onSuccess: () => void
   onClose: () => void
 }
@@ -54,8 +71,14 @@ type PagoItemChequePropio = {
   monto: string
   cuentaId: string
   nroCheque: string
-  nroDocBeneficiario: string
   tipoDocBeneficiario: string
+  nroDocBeneficiario: string
+  mailBeneficiario: string
+  fechaEmision: string
+  fechaPago: string
+  clausula: string
+  descripcion1: string
+  descripcion2: string
 }
 type PagoItemChequeTercero = {
   tipoPago: "CHEQUE_TERCERO"
@@ -90,12 +113,15 @@ export function RegistrarPagoFleteroModal({
   cuentasBancarias,
   chequesEnCartera,
   saldoAFavorCC,
+  gastosPendientes = [],
   onSuccess,
   onClose,
 }: Props) {
   const [pagos, setPagos] = useState<PagoItem[]>([defaultPago()])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // mapa gastoId → monto a descontar (string para el input)
+  const [gastosDescontar, setGastosDescontar] = useState<Record<string, string>>({})
 
   const saldoPendiente = liquidacion.total - liquidacion.pagosExistentes
   const totalActual = pagos.reduce((sum, p) => sum + (parseFloat(p.monto) || 0), 0)
@@ -114,7 +140,21 @@ export function RegistrarPagoFleteroModal({
     if (tipo === "TRANSFERENCIA") {
       next = { tipoPago: "TRANSFERENCIA", monto, cuentaBancariaId: "", referencia: "" }
     } else if (tipo === "CHEQUE_PROPIO") {
-      next = { tipoPago: "CHEQUE_PROPIO", monto, cuentaId: "", nroCheque: "", nroDocBeneficiario: "", tipoDocBeneficiario: "CUIT" }
+      const today = new Date().toISOString().slice(0, 10)
+      next = {
+        tipoPago: "CHEQUE_PROPIO",
+        monto,
+        cuentaId: "",
+        nroCheque: "",
+        tipoDocBeneficiario: "CUIT",
+        nroDocBeneficiario: liquidacion.fletero.cuit,
+        mailBeneficiario: "",
+        fechaEmision: today,
+        fechaPago: "",
+        clausula: "NO_A_LA_ORDEN",
+        descripcion1: "",
+        descripcion2: "",
+      }
     } else if (tipo === "CHEQUE_TERCERO") {
       next = { tipoPago: "CHEQUE_TERCERO", monto, chequeRecibidoId: "" }
     } else if (tipo === "EFECTIVO") {
@@ -149,13 +189,32 @@ export function RegistrarPagoFleteroModal({
     setLoading(true)
     try {
       const today = new Date().toISOString().split("T")[0]
+      const gastosPayload = Object.entries(gastosDescontar)
+        .map(([gastoId, montoStr]) => ({ gastoId, montoDescontar: parseFloat(montoStr) }))
+        .filter((g) => !isNaN(g.montoDescontar) && g.montoDescontar > 0)
+
       const body = {
         pagos: pagos.map((p) => {
           const monto = parseFloat(p.monto)
           if (p.tipoPago === "TRANSFERENCIA") {
             return { tipoPago: p.tipoPago, monto, cuentaBancariaId: p.cuentaBancariaId, referencia: p.referencia || undefined }
           } else if (p.tipoPago === "CHEQUE_PROPIO") {
-            return { tipoPago: p.tipoPago, monto, cuentaId: p.cuentaId, nroCheque: p.nroCheque || undefined, nroDocBeneficiario: p.nroDocBeneficiario, tipoDocBeneficiario: p.tipoDocBeneficiario }
+            return {
+              tipoPago: p.tipoPago,
+              monto,
+              chequePropio: {
+                cuentaId: p.cuentaId,
+                nroCheque: p.nroCheque || null,
+                tipoDocBeneficiario: p.tipoDocBeneficiario,
+                nroDocBeneficiario: p.nroDocBeneficiario,
+                mailBeneficiario: p.mailBeneficiario || null,
+                fechaEmision: p.fechaEmision,
+                fechaPago: p.fechaPago,
+                clausula: p.clausula || "NO_A_LA_ORDEN",
+                descripcion1: p.descripcion1 || null,
+                descripcion2: p.descripcion2 || null,
+              },
+            }
           } else if (p.tipoPago === "CHEQUE_TERCERO") {
             return { tipoPago: p.tipoPago, monto, chequeRecibidoId: p.chequeRecibidoId }
           } else if (p.tipoPago === "EFECTIVO") {
@@ -165,6 +224,7 @@ export function RegistrarPagoFleteroModal({
           }
         }),
         fecha: today,
+        gastos: gastosPayload.length > 0 ? gastosPayload : undefined,
       }
       const res = await fetch(`/api/liquidaciones/${liquidacion.id}/pago`, {
         method: "POST",
@@ -302,6 +362,25 @@ export function RegistrarPagoFleteroModal({
                       <Input
                         value={pago.nroCheque}
                         onChange={(e) => updatePago(i, { nroCheque: e.target.value } as Partial<PagoItem>)}
+                        placeholder="Asignado al emitir"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label>Fecha emisión</Label>
+                      <Input
+                        type="date"
+                        value={pago.fechaEmision}
+                        onChange={(e) => updatePago(i, { fechaEmision: e.target.value } as Partial<PagoItem>)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Fecha de pago</Label>
+                      <Input
+                        type="date"
+                        value={pago.fechaPago}
+                        onChange={(e) => updatePago(i, { fechaPago: e.target.value } as Partial<PagoItem>)}
                       />
                     </div>
                   </div>
@@ -322,6 +401,43 @@ export function RegistrarPagoFleteroModal({
                       <Input
                         value={pago.nroDocBeneficiario}
                         onChange={(e) => updatePago(i, { nroDocBeneficiario: e.target.value } as Partial<PagoItem>)}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label>Cláusula</Label>
+                      <Select
+                        value={pago.clausula}
+                        onChange={(e) => updatePago(i, { clausula: e.target.value } as Partial<PagoItem>)}
+                      >
+                        <option value="NO_A_LA_ORDEN">No a la orden</option>
+                        <option value="AL_DIA">Al día</option>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Mail beneficiario (opcional)</Label>
+                      <Input
+                        type="email"
+                        value={pago.mailBeneficiario}
+                        onChange={(e) => updatePago(i, { mailBeneficiario: e.target.value } as Partial<PagoItem>)}
+                        placeholder="email@ejemplo.com"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label>Descripción 1 (opcional)</Label>
+                      <Input
+                        value={pago.descripcion1}
+                        onChange={(e) => updatePago(i, { descripcion1: e.target.value } as Partial<PagoItem>)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Descripción 2 (opcional)</Label>
+                      <Input
+                        value={pago.descripcion2}
+                        onChange={(e) => updatePago(i, { descripcion2: e.target.value } as Partial<PagoItem>)}
                       />
                     </div>
                   </div>
@@ -356,6 +472,43 @@ export function RegistrarPagoFleteroModal({
           <Button variant="outline" onClick={addPago} className="w-full">
             + Agregar medio de pago
           </Button>
+
+          {gastosPendientes.length > 0 && (
+            <div className="border rounded-md p-3 space-y-2">
+              <p className="text-sm font-medium text-blue-800">Gastos por cuenta del fletero a descontar</p>
+              <p className="text-xs text-muted-foreground">Ingresá el monto a descontar de cada gasto en este pago (opcional).</p>
+              {gastosPendientes.map((g) => {
+                const saldoGasto = g.montoPagado - g.montoDescontado
+                return (
+                  <div key={g.id} className="grid grid-cols-[1fr_auto] gap-3 items-center border-t pt-2">
+                    <div>
+                      <p className="text-xs font-medium">
+                        {g.tipo} — {g.facturaProveedor.proveedor.razonSocial}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {g.facturaProveedor.tipoCbte} {g.facturaProveedor.nroComprobante ?? "s/n"} · {formatearFecha(g.facturaProveedor.fechaCbte)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Saldo: {formatearMoneda(saldoGasto)}
+                        {g.montoDescontado > 0 && ` (pagado: ${formatearMoneda(g.montoPagado)}, ya descontado: ${formatearMoneda(g.montoDescontado)})`}
+                      </p>
+                    </div>
+                    <div className="w-32">
+                      <Input
+                        type="number"
+                        min="0"
+                        max={saldoGasto}
+                        step="0.01"
+                        placeholder="0.00"
+                        value={gastosDescontar[g.id] ?? ""}
+                        onChange={(e) => setGastosDescontar((prev) => ({ ...prev, [g.id]: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
           <div className="border rounded-md p-3 space-y-1 bg-muted/30">
             <div className="flex justify-between text-sm">

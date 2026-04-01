@@ -42,6 +42,9 @@ interface FacturaPendiente {
   saldoPendiente: number
   estadoPago: string
   pdfS3Key: string | null
+  esPorCuentaDeFletero: boolean
+  tipoGastoFletero: string | null
+  fleteroId: string | null
 }
 
 interface ResumenInfo {
@@ -106,8 +109,14 @@ export function RegistrarPagoProveedorClient({
   const [tarjetaId, setTarjetaId] = useState("")
   const [comprobantePdfS3Key, setComprobantePdfS3Key] = useState("")
   const [chequeNro, setChequeNro] = useState("")
+  const [chequeFechaEmision, setChequeFechaEmision] = useState(new Date().toISOString().slice(0, 10))
   const [chequeFechaPago, setChequeFechaPago] = useState("")
+  const [chequeTipoDoc, setChequeTipoDoc] = useState("CUIT")
   const [chequeNroDoc, setChequeNroDoc] = useState("")
+  const [chequeMailBeneficiario, setChequeMailBeneficiario] = useState("")
+  const [chequeClausula, setChequeClausula] = useState("NO_A_LA_ORDEN")
+  const [chequeDescripcion1, setChequeDescripcion1] = useState("")
+  const [chequeDescripcion2, setChequeDescripcion2] = useState("")
   // Resumen tarjeta info
   const [resumenInfo, setResumenInfo] = useState<ResumenInfo | null>(null)
   const [cargandoResumen, setCargandoResumen] = useState(false)
@@ -172,8 +181,14 @@ export function RegistrarPagoProveedorClient({
     setTarjetaId("")
     setComprobantePdfS3Key("")
     setChequeNro("")
+    setChequeFechaEmision(new Date().toISOString().slice(0, 10))
     setChequeFechaPago("")
+    setChequeTipoDoc("CUIT")
     setChequeNroDoc("")
+    setChequeMailBeneficiario("")
+    setChequeClausula("NO_A_LA_ORDEN")
+    setChequeDescripcion1("")
+    setChequeDescripcion2("")
     setResumenInfo(null)
     setError("")
   }
@@ -225,9 +240,17 @@ export function RegistrarPagoProveedorClient({
       cuentaId: cuentaId || null,
       chequeRecibidoId: chequeRecibidoId || null,
       tarjetaId: tarjetaId || null,
-      chequeNro: chequeNro || null,
-      chequeFechaPago: chequeFechaPago ? new Date(chequeFechaPago + "T12:00:00Z").toISOString() : null,
-      chequeNroDocBeneficiario: chequeNroDoc || null,
+      chequePropio: tipoPago === "CHEQUE_PROPIO" ? {
+        nroCheque: chequeNro || null,
+        tipoDocBeneficiario: chequeTipoDoc,
+        nroDocBeneficiario: chequeNroDoc,
+        mailBeneficiario: chequeMailBeneficiario || null,
+        fechaEmision: chequeFechaEmision,
+        fechaPago: chequeFechaPago,
+        clausula: chequeClausula,
+        descripcion1: chequeDescripcion1 || null,
+        descripcion2: chequeDescripcion2 || null,
+      } : null,
     }
     const res = await fetch(`/api/proveedores/${proveedorId}/pago`, {
       method: "POST",
@@ -315,46 +338,68 @@ export function RegistrarPagoProveedorClient({
             <p className="text-muted-foreground text-sm">Cargando facturas...</p>
           ) : facturasPendientes && facturasPendientes.length === 0 ? (
             <p className="text-muted-foreground text-sm">Sin facturas pendientes de pago.</p>
-          ) : (
-            <div className="border rounded overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50">
-                  <tr>
-                    <th className="text-left px-3 py-2">Fecha</th>
-                    <th className="text-left px-3 py-2">Comprobante</th>
-                    <th className="text-left px-3 py-2">Concepto</th>
-                    <th className="text-right px-3 py-2">Total</th>
-                    <th className="text-right px-3 py-2">Pagado</th>
-                    <th className="text-right px-3 py-2">Saldo</th>
-                    <th className="text-center px-3 py-2">PDF</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(facturasPendientes ?? []).map((f) => (
-                    <tr
-                      key={f.id}
-                      onClick={() => seleccionarFactura(f)}
-                      className={`border-t cursor-pointer hover:bg-muted/50 ${
-                        facturaSeleccionada?.id === f.id ? "bg-primary/5 border-l-2 border-l-primary" : ""
-                      }`}
-                    >
-                      <td className="px-3 py-2 whitespace-nowrap">{formatearFecha(f.fechaCbte)}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{f.tipoCbte} {f.nroComprobante}</td>
-                      <td className="px-3 py-2 text-muted-foreground text-xs">{f.concepto ?? "-"}</td>
-                      <td className="px-3 py-2 text-right">{formatearMoneda(f.total)}</td>
-                      <td className="px-3 py-2 text-right text-muted-foreground">{formatearMoneda(f.totalPagado)}</td>
-                      <td className="px-3 py-2 text-right font-semibold text-destructive">
-                        {formatearMoneda(f.saldoPendiente)}
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        <ViewPDF s3Key={f.pdfS3Key} size="sm" label="Ver" />
-                      </td>
+          ) : (() => {
+            const propias = (facturasPendientes ?? []).filter((f) => !f.esPorCuentaDeFletero)
+            const fletero = (facturasPendientes ?? []).filter((f) => f.esPorCuentaDeFletero)
+            const renderTabla = (lista: FacturaPendiente[], colorHeader?: string) => (
+              <div className="border rounded overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className={colorHeader ?? "bg-muted/50"}>
+                    <tr>
+                      <th className="text-left px-3 py-2">Fecha</th>
+                      <th className="text-left px-3 py-2">Comprobante</th>
+                      <th className="text-left px-3 py-2">Concepto</th>
+                      <th className="text-right px-3 py-2">Total</th>
+                      <th className="text-right px-3 py-2">Pagado</th>
+                      <th className="text-right px-3 py-2">Saldo</th>
+                      <th className="text-center px-3 py-2">PDF</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody>
+                    {lista.map((f) => (
+                      <tr
+                        key={f.id}
+                        onClick={() => seleccionarFactura(f)}
+                        className={`border-t cursor-pointer hover:bg-muted/50 ${
+                          facturaSeleccionada?.id === f.id ? "bg-primary/5 border-l-2 border-l-primary" : ""
+                        }`}
+                      >
+                        <td className="px-3 py-2 whitespace-nowrap">{formatearFecha(f.fechaCbte)}</td>
+                        <td className="px-3 py-2 font-mono text-xs">{f.tipoCbte} {f.nroComprobante}</td>
+                        <td className="px-3 py-2 text-muted-foreground text-xs">{f.concepto ?? "-"}</td>
+                        <td className="px-3 py-2 text-right">{formatearMoneda(f.total)}</td>
+                        <td className="px-3 py-2 text-right text-muted-foreground">{formatearMoneda(f.totalPagado)}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-destructive">
+                          {formatearMoneda(f.saldoPendiente)}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <ViewPDF s3Key={f.pdfS3Key} size="sm" label="Ver" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+            return (
+              <div className="space-y-4">
+                {propias.length > 0 && (
+                  <div className="space-y-1">
+                    {fletero.length > 0 && (
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Facturas propias</p>
+                    )}
+                    {renderTabla(propias)}
+                  </div>
+                )}
+                {fletero.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-blue-700 uppercase tracking-wide">Por cuenta de fletero</p>
+                    {renderTabla(fletero, "bg-blue-50/80")}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </section>
       )}
 
@@ -391,7 +436,18 @@ export function RegistrarPagoProveedorClient({
             <Label>Método de pago</Label>
             <Select
               value={tipoPago}
-              onChange={(e) => { setTipoPago(e.target.value); setChequeRecibidoId(""); setTarjetaId(""); setCuentaId(""); setComprobantePdfS3Key(""); setResumenInfo(null) }}
+              onChange={(e) => {
+                const nuevoTipo = e.target.value
+                setTipoPago(nuevoTipo)
+                setChequeRecibidoId("")
+                setTarjetaId("")
+                setCuentaId("")
+                setComprobantePdfS3Key("")
+                setResumenInfo(null)
+                if (nuevoTipo === "CHEQUE_PROPIO" && proveedor?.cuit) {
+                  setChequeNroDoc(proveedor.cuit)
+                }
+              }}
             >
               {TIPOS_PAGO.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
@@ -423,16 +479,58 @@ export function RegistrarPagoProveedorClient({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>Nro. cheque (opcional)</Label>
-                  <Input value={chequeNro} onChange={(e) => setChequeNro(e.target.value)} placeholder="000123" />
+                  <Input value={chequeNro} onChange={(e) => setChequeNro(e.target.value)} placeholder="Asignado al emitir" />
+                </div>
+                <div>
+                  <Label>Cláusula</Label>
+                  <Select value={chequeClausula} onChange={(e) => setChequeClausula(e.target.value)}>
+                    <option value="NO_A_LA_ORDEN">No a la orden</option>
+                    <option value="AL_DIA">Al día</option>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Fecha emisión</Label>
+                  <Input type="date" value={chequeFechaEmision} onChange={(e) => setChequeFechaEmision(e.target.value)} />
                 </div>
                 <div>
                   <Label>Fecha de pago del cheque</Label>
                   <Input type="date" value={chequeFechaPago} onChange={(e) => setChequeFechaPago(e.target.value)} />
                 </div>
               </div>
-              <div>
-                <Label>CUIT/CUIL beneficiario (opcional)</Label>
-                <Input value={chequeNroDoc} onChange={(e) => setChequeNroDoc(e.target.value)} placeholder="30-12345678-9" />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Tipo doc beneficiario</Label>
+                  <Select value={chequeTipoDoc} onChange={(e) => setChequeTipoDoc(e.target.value)}>
+                    <option value="CUIT">CUIT</option>
+                    <option value="CUIL">CUIL</option>
+                    <option value="CDI">CDI</option>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Nro doc beneficiario</Label>
+                  <Input value={chequeNroDoc} onChange={(e) => setChequeNroDoc(e.target.value)} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Mail beneficiario (opcional)</Label>
+                  <Input type="email" value={chequeMailBeneficiario} onChange={(e) => setChequeMailBeneficiario(e.target.value)} placeholder="email@ejemplo.com" />
+                </div>
+                <div className="space-y-1">
+                  {/* spacer */}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Descripción 1 (opcional)</Label>
+                  <Input value={chequeDescripcion1} onChange={(e) => setChequeDescripcion1(e.target.value)} />
+                </div>
+                <div>
+                  <Label>Descripción 2 (opcional)</Label>
+                  <Input value={chequeDescripcion2} onChange={(e) => setChequeDescripcion2(e.target.value)} />
+                </div>
               </div>
             </>
           )}

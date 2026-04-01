@@ -15,6 +15,8 @@ type FacturaImpaga = {
   total: number
   fechaCbte: string | Date
   saldo: number
+  esPorCuentaDeFletero?: boolean
+  fleteroId?: string | null
 }
 
 type SaldoProveedor = {
@@ -23,6 +25,7 @@ type SaldoProveedor = {
   totalFacturado: number
   totalPagado: number
   facturasImpagas: FacturaImpaga[]
+  facturasFletero: FacturaImpaga[]
 }
 
 type ProveedoresCCClientProps = {
@@ -189,23 +192,44 @@ export function ProveedoresCCClient({ saldos: saldosIniciales }: ProveedoresCCCl
                 </div>
               </div>
 
-              {seleccionado.facturasImpagas.length === 0 ? (
+              {seleccionado.facturasImpagas.length === 0 && seleccionado.facturasFletero.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-2">Sin facturas impagas.</p>
               ) : (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Facturas impagas</p>
-                  {seleccionado.facturasImpagas.map((f) => (
-                    <div key={f.id} className="flex items-center justify-between rounded border p-2 text-sm">
-                      <div>
-                        <p className="font-mono text-xs">{f.tipoCbte} {f.nroComprobante}</p>
-                        <p className="text-xs text-muted-foreground">{formatearFecha(String(f.fechaCbte))}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-muted-foreground">Total: {formatearMoneda(f.total)}</p>
-                        <p className="font-semibold text-destructive">{formatearMoneda(f.saldo)}</p>
-                      </div>
+                <div className="space-y-3">
+                  {seleccionado.facturasImpagas.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Facturas propias impagas</p>
+                      {seleccionado.facturasImpagas.map((f) => (
+                        <div key={f.id} className="flex items-center justify-between rounded border p-2 text-sm">
+                          <div>
+                            <p className="font-mono text-xs">{f.tipoCbte} {f.nroComprobante}</p>
+                            <p className="text-xs text-muted-foreground">{formatearFecha(String(f.fechaCbte))}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-muted-foreground">Total: {formatearMoneda(f.total)}</p>
+                            <p className="font-semibold text-destructive">{formatearMoneda(f.saldo)}</p>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+                  {seleccionado.facturasFletero.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-blue-700">Por cuenta de fletero</p>
+                      {seleccionado.facturasFletero.map((f) => (
+                        <div key={f.id} className="flex items-center justify-between rounded border border-blue-200 bg-blue-50/50 p-2 text-sm">
+                          <div>
+                            <p className="font-mono text-xs">{f.tipoCbte} {f.nroComprobante}</p>
+                            <p className="text-xs text-muted-foreground">{formatearFecha(String(f.fechaCbte))}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-muted-foreground">Total: {formatearMoneda(f.total)}</p>
+                            <p className="font-semibold text-destructive">{formatearMoneda(f.saldo)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>

@@ -37,7 +37,8 @@
 - CRUD de Saldos FCI (actualizaciones periódicas)
 - CRUD de Brokers
 - CRUD de Empleados
-- CRUD de Movimientos sin factura (tipo INGRESO/EGRESO + categoria; reemplaza MovimientoBancario)
+- CRUD de Movimientos sin factura (tipo INGRESO/EGRESO + categoria; reemplaza MovimientoBancario) — inline en tab Movimientos de /contabilidad/cuentas con saldo running, filtros, paginación y export Excel
+- ResumenBancario por cuenta: modelo + API CRUD + tab Resúmenes en /contabilidad/cuentas con UploadPDF/ViewPDF
 - CRUD de Cheques recibidos (de clientes)
 - CRUD de Cheques emitidos (a fleteros/proveedores) + registro de depósito
 - Planillas de emisión masiva Banco Galicia (generación Excel con exceljs)
@@ -83,7 +84,15 @@
 - Componente compartido FiltroPeriodo para todas las páginas de contabilidad
 
 ## Estado de tests
-Tests: 237 passed, 237 total (as of 2026-03-31)
+Tests: 237 passed, 237 total (as of 2026-03-31 — Refactorización Cuentas fusionada con Movimientos)
+
+## Módulo Chequeras (implementado 2026-03-31)
+- [x] Chequeras: consulta ECheq emitidos (generados desde pagos), cartera recibidos con flujo correcto, endoso a brokers con seguimiento de depósito
+- [x] Página /contabilidad/chequeras con tabs "ECheq Emitidos" y "Cartera Recibidos"
+- [x] Tab Emitidos: alertas vencimiento, filtros (estado/cuenta/beneficiario/período), tabla completa con CUIT/motivo/vinculado a, acciones PATCH (depositar/rechazar), modal detalle
+- [x] Tab Recibidos: 3 alertas (próximos a cobrar/vencidos/broker pendientes), alta de adelantos sin factura, filtros (tipo/estado/empresa/factura/período), tabla con Tipo badge + Factura, acciones depositar/endosar/descontar/confirmar broker
+- [x] APIs: adelanto, depositar, endosar-broker, confirmar-deposito-broker, endosar-proveedor, endosar-fletero, descontar-banco
+- [x] Integración Cuentas: tab "Broker Pendiente" con cheques endosados pendientes de confirmación, filas rojas >30 días, modal confirmar depósito
 
 ## Pendiente ARCA
 

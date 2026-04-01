@@ -17,6 +17,8 @@ interface Movimiento {
   debe: number
   haber: number
   saldo: number
+  esPorCuentaDeFletero?: boolean
+  fleteroRazonSocial?: string | null
 }
 
 /**
@@ -86,6 +88,8 @@ export async function GET(
           total: true,
           nroComprobante: true,
           tipoCbte: true,
+          esPorCuentaDeFletero: true,
+          fletero: { select: { razonSocial: true } },
         },
       }),
       prisma.pagoProveedor.findMany({
@@ -109,10 +113,12 @@ export async function GET(
       movimientos.push({
         fechaRaw: f.fechaCbte,
         fecha: f.fechaCbte.toISOString(),
-        concepto: "Factura Proveedor",
+        concepto: f.esPorCuentaDeFletero ? "Factura Proveedor (x cuenta fletero)" : "Factura Proveedor",
         comprobante: `${f.tipoCbte} ${f.nroComprobante ?? "s/n"}`,
         debe: f.total,
         haber: 0,
+        esPorCuentaDeFletero: f.esPorCuentaDeFletero,
+        fleteroRazonSocial: f.fletero?.razonSocial ?? null,
       })
     }
 
@@ -141,6 +147,8 @@ export async function GET(
         debe: m.debe,
         haber: m.haber,
         saldo,
+        esPorCuentaDeFletero: m.esPorCuentaDeFletero,
+        fleteroRazonSocial: m.fleteroRazonSocial,
       }
     })
 

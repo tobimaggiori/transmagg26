@@ -75,7 +75,7 @@ export async function GET(
     const desdeDate = desdeParam ? new Date(desdeParam) : noventa
     const hastaDate = hastaParam ? new Date(hastaParam + "T23:59:59") : hoy
 
-    const [liquidaciones, pagos, notasCreditoDebito] = await Promise.all([
+    const [liquidaciones, pagos, notasCreditoDebito, gastosFletero, gastoDescuentos] = await Promise.all([
       prisma.liquidacion.findMany({
         where: {
           fleteroId: params.id,
@@ -115,6 +115,37 @@ export async function GET(
           tipo: true,
           montoTotal: true,
           nroComprobanteExterno: true,
+        },
+      }),
+      prisma.gastoFletero.findMany({
+        where: {
+          fleteroId: params.id,
+          facturaProveedor: { fechaCbte: { gte: desdeDate, lte: hastaDate } },
+        },
+        select: {
+          id: true,
+          montoPagado: true,
+          tipo: true,
+          facturaProveedor: {
+            select: {
+              fechaCbte: true,
+              tipoCbte: true,
+              nroComprobante: true,
+              proveedor: { select: { razonSocial: true } },
+            },
+          },
+        },
+      }),
+      prisma.gastoDescuento.findMany({
+        where: {
+          gasto: { fleteroId: params.id },
+          fecha: { gte: desdeDate, lte: hastaDate },
+        },
+        select: {
+          id: true,
+          montoDescontado: true,
+          fecha: true,
+          liquidacion: { select: { nroComprobante: true, ptoVenta: true } },
         },
       }),
     ])
@@ -183,6 +214,32 @@ export async function GET(
           haber: 0,
         })
       }
+    }
+
+    for (const g of gastosFletero) {
+      movimientos.push({
+        fechaRaw: g.facturaProveedor.fechaCbte,
+        fecha: g.facturaProveedor.fechaCbte.toISOString(),
+        concepto: `Gasto ${g.tipo} — ${g.facturaProveedor.proveedor.razonSocial}`,
+        comprobante: `${g.facturaProveedor.tipoCbte} ${g.facturaProveedor.nroComprobante ?? "s/n"}`,
+        debe: g.montoPagado,
+        haber: 0,
+      })
+    }
+
+    for (const d of gastoDescuentos) {
+      const nroLiq =
+        d.liquidacion.ptoVenta != null && d.liquidacion.nroComprobante != null
+          ? `Liq. ${String(d.liquidacion.ptoVenta).padStart(4, "0")}-${String(d.liquidacion.nroComprobante).padStart(8, "0")}`
+          : "Liquidación s/n"
+      movimientos.push({
+        fechaRaw: d.fecha,
+        fecha: d.fecha.toISOString(),
+        concepto: "Descuento gasto",
+        comprobante: nroLiq,
+        debe: 0,
+        haber: d.montoDescontado,
+      })
     }
 
     // Sort by fecha ascending

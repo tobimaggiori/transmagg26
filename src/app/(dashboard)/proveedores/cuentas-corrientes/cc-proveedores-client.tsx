@@ -17,6 +17,8 @@ type Movimiento = {
   debe: number
   haber: number
   saldo: number
+  esPorCuentaDeFletero?: boolean
+  fleteroRazonSocial?: string | null
 }
 type CCData = {
   proveedor: Proveedor
@@ -181,7 +183,14 @@ export function CCProveedoresClient({ proveedores }: CCProveedoresClientProps) {
                     data.movimientos.map((mov, i) => (
                       <tr key={i} className="border-b hover:bg-muted/30">
                         <td className="px-4 py-2 text-muted-foreground">{formatearFecha(mov.fecha)}</td>
-                        <td className="px-4 py-2">{mov.concepto}</td>
+                        <td className="px-4 py-2">
+                          <span>{mov.concepto}</span>
+                          {mov.esPorCuentaDeFletero && mov.fleteroRazonSocial && (
+                            <span className="ml-2 inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800">
+                              {mov.fleteroRazonSocial}
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-2 text-muted-foreground text-xs">{mov.comprobante}</td>
                         <td className="px-4 py-2 text-right">
                           {mov.debe > 0 ? formatearMoneda(mov.debe) : ""}

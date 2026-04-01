@@ -98,6 +98,21 @@ type Liquidacion = {
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
+type GastoPendiente = {
+  id: string
+  tipo: string
+  montoPagado: number
+  montoDescontado: number
+  estado: string
+  facturaProveedor: {
+    id: string
+    tipoCbte: string
+    nroComprobante: string | null
+    fechaCbte: string
+    proveedor: { razonSocial: string }
+  }
+}
+
 type LiquidacionesClientProps = {
   rol: Rol
   fleteros: Fletero[]
@@ -722,6 +737,7 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
   const [fleteroInfo, setFleteroInfo] = useState<FleteroInfo | null>(null)
   const [pagandoLiquidacion, setPagandoLiquidacion] = useState<Liquidacion | null>(null)
   const [saldoAFavorCC, setSaldoAFavorCC] = useState(0)
+  const [gastosPendientes, setGastosPendientes] = useState<GastoPendiente[]>([])
 
   /**
    * cargarDatos: () -> Promise<void>
@@ -761,6 +777,7 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
         }))
         setViajesPendientes(viajesConEdit)
         setLiquidaciones(data.liquidaciones ?? [])
+        setGastosPendientes(data.gastosPendientes ?? [])
         const fleteroEncontrado = fleteros.find((f) => f.id === fleteroId)
         if (fleteroEncontrado) {
           if (esInterno && fleteroEncontrado.comisionDefault != null) setComisionPct(fleteroEncontrado.comisionDefault)
@@ -1068,11 +1085,12 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
             ptoVenta: pagandoLiquidacion.ptoVenta,
             total: pagandoLiquidacion.total,
             pagosExistentes: pagandoLiquidacion.pagos.reduce((s, p) => s + p.monto, 0),
-            fletero: { id: pagandoLiquidacion.fleteroId, razonSocial: pagandoLiquidacion.fletero.razonSocial },
+            fletero: { id: pagandoLiquidacion.fleteroId, razonSocial: pagandoLiquidacion.fletero.razonSocial, cuit: fleteroInfo?.cuit ?? "" },
           }}
           cuentasBancarias={cuentasBancarias}
           chequesEnCartera={[]}
           saldoAFavorCC={saldoAFavorCC}
+          gastosPendientes={gastosPendientes.filter((g) => g.estado !== "DESCONTADO_TOTAL")}
           onSuccess={() => {
             setPagandoLiquidacion(null)
             cargarDatos()

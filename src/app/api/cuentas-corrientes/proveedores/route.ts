@@ -63,12 +63,16 @@ export async function GET(request: NextRequest) {
           })
           .filter((f) => f.saldo > 0.01)
 
+        const facturasPropias = facturasImpagas.filter((f) => !f.esPorCuentaDeFletero)
+        const facturasFletero = facturasImpagas.filter((f) => f.esPorCuentaDeFletero)
+
         return {
           proveedor: { id: prov.id, razonSocial: prov.razonSocial, cuit: prov.cuit },
           saldoAPagar,
           totalFacturado,
           totalPagado,
-          facturasImpagas,
+          facturasImpagas: facturasPropias,
+          facturasFletero,
         }
       })
       .filter((p) => p.totalFacturado > 0)

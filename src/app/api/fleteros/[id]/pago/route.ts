@@ -197,7 +197,7 @@ export async function POST(
         const item = items[idx]
 
         if (item.tipo === "TRANSFERENCIA") {
-          const cuenta = await tx.cuenta.findUnique({
+          await tx.cuenta.findUnique({
             where: { id: item.cuentaId },
             select: { tieneImpuestoDebcred: true, alicuotaImpuesto: true },
           })

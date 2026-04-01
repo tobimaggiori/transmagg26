@@ -7,6 +7,8 @@ datasource db {
 }
 
 // ─── ENUMS (documentados como String en SQLite) ────────────────────────────────
+// GastoFletero.estado:         PENDIENTE_PAGO | PAGADO | DESCONTADO_PARCIAL | DESCONTADO_TOTAL
+// GastoFletero.tipo:           COMBUSTIBLE | OTRO
 // Rol:                         ADMIN_TRANSMAGG | OPERADOR_TRANSMAGG | FLETERO | CHOFER | ADMIN_EMPRESA | OPERADOR_EMPRESA
 // Canal OTP:                   EMAIL | SMS
 // Estado viaje:                PENDIENTE | EN_LIQUIDACION | EN_FACTURA | COMPLETO
@@ -83,6 +85,7 @@ model Usuario {
   pagosEmpresaOpera          PagoDeEmpresa[]         @relation("OperadorPagoEmpresa")
   pagosFleterosOpera         PagoAFletero[]          @relation("OperadorPagoFletero")
   pagosProveedorOpera        PagoProveedor[]         @relation("OperadorPagoProveedor")
+  resumenesBancariosOpera    ResumenBancario[]        @relation("OperadorResumenBancario")
 
   @@map("usuarios")
 }
@@ -155,6 +158,8 @@ model Fletero {
   chequesRecibidosEndoso   ChequeRecibido[]   @relation("FleteroEndosoChequeRecibido")
   chequesEmitidos          ChequeEmitido[]    @relation("FleteroChequeEmitido")
   adelantos                AdelantoFletero[]
+  gastosFletero            GastoFletero[]
+  facturasPorCuenta        FacturaProveedor[]  @relation("FacturaPorCuentaDeFletero")
 
   @@map("fleteros")
 }
@@ -308,6 +313,7 @@ model Liquidacion {
   pagos                PagoAFletero[]
   chequesEmitidos      ChequeEmitido[]
   adelantoDescuentos   AdelantoDescuento[]
+  gastoDescuentos      GastoDescuento[]
   notasCreditoDebito   NotaCreditoDebito[]
 
   @@map("liquidaciones")
@@ -366,6 +372,7 @@ model Cuenta {
   fci                            Fci[]
   movimientosSinFactura          MovimientoSinFactura[] @relation("CuentaMovimientoSinFactura")
   movimientosComoDestino         MovimientoSinFactura[] @relation("CuentaDestinoMovimientoSinFactura")
+  resumenesBancarios             ResumenBancario[]
   movimientosFciOrigenDestino    MovimientoFci[]      @relation("CuentaOrigenDestinoMovimientoFci")
   chequesRecibidosDepositados    ChequeRecibido[]     @relation("CuentaDepositaChequeRecibido")
   chequesRecibidosBroker         ChequeRecibido[]     @relation("CuentaBrokerChequeRecibido")
@@ -379,6 +386,24 @@ model Cuenta {
   pagosDeEmpresa                 PagoDeEmpresa[]      @relation("CuentaPagoDeEmpresa")
 
   @@map("cuentas")
+}
+
+// EstadoResumenBancario: PENDIENTE | CARGADO
+model ResumenBancario {
+  id         String   @id @default(uuid())
+  cuentaId   String   @map("cuenta_id")
+  mes        Int
+  anio       Int
+  pdfS3Key   String?  @map("pdf_s3_key")
+  estado     String   @default("PENDIENTE")
+  operadorId String   @map("operador_id")
+  creadoEn   DateTime @default(now()) @map("creado_en")
+
+  cuenta   Cuenta  @relation(fields: [cuentaId], references: [id])
+  operador Usuario @relation("OperadorResumenBancario", fields: [operadorId], references: [id])
+
+  @@unique([cuentaId, mes, anio])
+  @@map("resumenes_bancarios")
 }
 
 model Fci {
@@ -487,6 +512,7 @@ model ChequeRecibido {
   fechaAcreditacion   DateTime?       @map("fecha_acreditacion")
   cuitLibrador        String?         @map("cuit_librador")
   tasaDescuento       Float?          @map("tasa_descuento")
+  fechaDepositoBroker DateTime?       @map("fecha_deposito_broker")
   operadorId          String          @map("operador_id")
   creadoEn            DateTime        @default(now()) @map("creado_en")
   // false = cheque físico recibido de empresa cliente; true = ECheq electrónico recibido
@@ -708,6 +734,47 @@ model AdelantoDescuento {
   @@map("adelanto_descuentos")
 }
 
+// ─── GASTOS POR CUENTA DE FLETERO ─────────────────────────────────────────────
+// Decisión de modelo: Opción B (nuevo modelo GastoFletero separado de AdelantoFletero).
+// AdelantoFletero = dinero anticipado AL fletero.
+// GastoFletero = Transmagg paga AL proveedor POR CUENTA del fletero (factura a nombre del fletero).
+// Semánticas distintas: diferente origen (proveedor vs Transmagg), diferente deuda (proveedor vs fletero),
+// diferentes estados y flujos de descuento. Mezclarlos en AdelantoFletero crearía condicionales y nulos innecesarios.
+
+model GastoFletero {
+  id                 String   @id @default(uuid())
+  fleteroId          String   @map("fletero_id")
+  facturaProveedorId String   @unique @map("factura_proveedor_id")
+  tipo               String   // COMBUSTIBLE | OTRO
+  montoPagado        Float    @map("monto_pagado")
+  montoDescontado    Float    @default(0) @map("monto_descontado")
+  // PENDIENTE_PAGO: factura ingresada, proveedor no cobró aún
+  // PAGADO: proveedor cobró; deuda del fletero confirmada
+  // DESCONTADO_PARCIAL: algo fue descontado en LP pero queda saldo
+  // DESCONTADO_TOTAL: completamente saldado en LPs
+  estado             String   @default("PENDIENTE_PAGO")
+  creadoEn           DateTime @default(now()) @map("creado_en")
+
+  fletero          Fletero          @relation(fields: [fleteroId], references: [id])
+  facturaProveedor FacturaProveedor @relation(fields: [facturaProveedorId], references: [id])
+  descuentos       GastoDescuento[]
+
+  @@map("gastos_fleteros")
+}
+
+model GastoDescuento {
+  id              String       @id @default(uuid())
+  gastoId         String       @map("gasto_id")
+  liquidacionId   String       @map("liquidacion_id")
+  montoDescontado Float        @map("monto_descontado")
+  fecha           DateTime
+
+  gasto       GastoFletero @relation(fields: [gastoId], references: [id], onDelete: Cascade)
+  liquidacion Liquidacion  @relation(fields: [liquidacionId], references: [id], onDelete: Cascade)
+
+  @@map("gasto_descuentos")
+}
+
 // ─── PAGOS ────────────────────────────────────────────────────────────────────
 
 model PagoAFletero {
@@ -776,26 +843,32 @@ model Proveedor {
 }
 
 model FacturaProveedor {
-  id                  String   @id @default(uuid())
-  proveedorId         String   @map("proveedor_id")
-  nroComprobante      String   @map("nro_comprobante")
-  ptoVenta            String?  @map("pto_venta")
-  tipoCbte            String   @map("tipo_cbte")
-  neto                Float
-  ivaMonto            Float    @map("iva_monto")
-  total               Float
-  fechaCbte           DateTime @map("fecha_cbte")
-  concepto            String?  @map("concepto")
-  pdfS3Key            String?  @map("pdf_s3_key")
-  estadoPago          String   @default("PENDIENTE") @map("estado_pago")
-  percepcionIIBB      Float?   @map("percepcion_iibb")
-  percepcionIVA       Float?   @map("percepcion_iva")
-  percepcionGanancias Float?   @map("percepcion_ganancias")
+  id                   String   @id @default(uuid())
+  proveedorId          String   @map("proveedor_id")
+  nroComprobante       String   @map("nro_comprobante")
+  ptoVenta             String?  @map("pto_venta")
+  tipoCbte             String   @map("tipo_cbte")
+  neto                 Float
+  ivaMonto             Float    @map("iva_monto")
+  total                Float
+  fechaCbte            DateTime @map("fecha_cbte")
+  concepto             String?  @map("concepto")
+  pdfS3Key             String?  @map("pdf_s3_key")
+  estadoPago           String   @default("PENDIENTE") @map("estado_pago")
+  percepcionIIBB       Float?   @map("percepcion_iibb")
+  percepcionIVA        Float?   @map("percepcion_iva")
+  percepcionGanancias  Float?   @map("percepcion_ganancias")
+  // Gasto por cuenta de fletero: la factura es del fletero, Transmagg la paga
+  esPorCuentaDeFletero Boolean  @default(false) @map("es_por_cuenta_de_fletero")
+  fleteroId            String?  @map("fletero_id")
+  tipoGastoFletero     String?  @map("tipo_gasto_fletero")  // COMBUSTIBLE | OTRO
 
-  proveedor   Proveedor              @relation(fields: [proveedorId], references: [id])
-  pagos       PagoProveedor[]
-  asientosIva AsientoIva[]
-  items       ItemFacturaProveedor[]
+  proveedor    Proveedor              @relation(fields: [proveedorId], references: [id])
+  fletero      Fletero?               @relation("FacturaPorCuentaDeFletero", fields: [fleteroId], references: [id])
+  pagos        PagoProveedor[]
+  asientosIva  AsientoIva[]
+  items        ItemFacturaProveedor[]
+  gastoFletero GastoFletero?
 
   @@map("facturas_proveedor")
 }

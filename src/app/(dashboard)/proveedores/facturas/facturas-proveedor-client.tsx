@@ -46,6 +46,9 @@ type FacturaProveedor = {
   concepto: string | null
   pdfS3Key: string | null
   estadoPago: string
+  esPorCuentaDeFletero: boolean
+  tipoGastoFletero: string | null
+  fletero: { id: string; razonSocial: string } | null
   proveedor: { id: string; razonSocial: string; cuit: string }
   saldoPendiente: number
   pagos: PagoFactura[]
@@ -90,6 +93,7 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
   const [proveedorId, setProveedorId] = useState("")
   const [nroComprobante, setNroComprobante] = useState("")
   const [estadoPago, setEstadoPago] = useState("")
+  const [tipoFactura, setTipoFactura] = useState("")  // "" = todas | "false" = propias | "true" = fletero
   const [facturas, setFacturas] = useState<FacturaProveedor[]>([])
   const [loading, setLoading] = useState(false)
   const [buscado, setBuscado] = useState(false)
@@ -104,6 +108,7 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
       if (proveedorId) params.set("proveedorId", proveedorId)
       if (nroComprobante) params.set("nroComprobante", nroComprobante)
       if (estadoPago) params.set("estadoPago", estadoPago)
+      if (tipoFactura) params.set("esPorCuentaDeFletero", tipoFactura)
 
       const res = await fetch(`/api/facturas-proveedor?${params.toString()}`)
       if (res.ok) {
@@ -114,7 +119,7 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
       setLoading(false)
       setBuscado(true)
     }
-  }, [desde, hasta, proveedorId, nroComprobante, estadoPago])
+  }, [desde, hasta, proveedorId, nroComprobante, estadoPago, tipoFactura])
 
   const totalGeneral = facturas.reduce((acc, f) => acc + f.total, 0)
   const totalPendiente = facturas.reduce((acc, f) => acc + f.saldoPendiente, 0)
@@ -150,7 +155,7 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
               placeholder="Todos los proveedores..."
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="nroComprobante">Número de comprobante</Label>
               <Input
@@ -167,6 +172,14 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
                 <option value="PENDIENTE">Pendiente</option>
                 <option value="PARCIALMENTE_PAGADA">Parcialmente pagada</option>
                 <option value="PAGADA">Pagada</option>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Tipo de factura</Label>
+              <Select value={tipoFactura} onChange={(e) => setTipoFactura(e.target.value)}>
+                <option value="">Todas</option>
+                <option value="false">Propias</option>
+                <option value="true">Por cuenta de fletero</option>
               </Select>
             </div>
           </div>
@@ -226,7 +239,14 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
                           >
                             <td className="py-2 pr-3 whitespace-nowrap">{formatearFecha(f.fechaCbte)}</td>
                             <td className="py-2 pr-3 font-mono text-xs">{f.tipoCbte} {f.nroComprobante}</td>
-                            <td className="py-2 pr-3">{f.proveedor.razonSocial}</td>
+                            <td className="py-2 pr-3">
+                              <span>{f.proveedor.razonSocial}</span>
+                              {f.esPorCuentaDeFletero && (
+                                <span className="ml-2 inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800">
+                                  Fletero: {f.fletero?.razonSocial ?? "—"}
+                                </span>
+                              )}
+                            </td>
                             <td className="py-2 pr-3 text-right font-semibold">{formatearMoneda(f.total)}</td>
                             <td className="py-2 pr-3 text-right text-destructive">
                               {f.saldoPendiente > 0.01 ? formatearMoneda(f.saldoPendiente) : "—"}

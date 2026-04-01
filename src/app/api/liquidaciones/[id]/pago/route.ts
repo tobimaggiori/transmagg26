@@ -21,10 +21,18 @@ const pagoFleteroItemSchema = z.discriminatedUnion("tipoPago", [
   z.object({
     tipoPago: z.literal("CHEQUE_PROPIO"),
     monto: z.number().positive(),
-    cuentaId: z.string().uuid(),
-    nroCheque: z.string().optional(),
-    nroDocBeneficiario: z.string().min(1),
-    tipoDocBeneficiario: z.string().min(1),
+    chequePropio: z.object({
+      cuentaId: z.string().uuid(),
+      nroCheque: z.string().optional().nullable(),
+      tipoDocBeneficiario: z.string().min(1),
+      nroDocBeneficiario: z.string().min(1),
+      mailBeneficiario: z.string().optional().nullable(),
+      fechaEmision: z.string().min(1),
+      fechaPago: z.string().min(1),
+      clausula: z.string().optional().nullable(),
+      descripcion1: z.string().optional().nullable(),
+      descripcion2: z.string().optional().nullable(),
+    }),
   }),
   z.object({
     tipoPago: z.literal("CHEQUE_TERCERO"),
@@ -44,6 +52,14 @@ const pagoFleteroItemSchema = z.discriminatedUnion("tipoPago", [
 const pagoLiqSchema = z.object({
   pagos: z.array(pagoFleteroItemSchema).min(1),
   fecha: z.string(),
+  gastos: z
+    .array(
+      z.object({
+        gastoId: z.string().uuid(),
+        montoDescontar: z.number().positive(),
+      })
+    )
+    .optional(),
 })
 
 export async function POST(
@@ -71,7 +87,7 @@ export async function POST(
   const parsed = pagoLiqSchema.safeParse(body)
   if (!parsed.success) return invalidDataResponse(parsed.error.flatten())
 
-  const { pagos, fecha } = parsed.data
+  const { pagos, fecha, gastos } = parsed.data
 
   try {
     const liquidacion = await prisma.liquidacion.findUnique({
@@ -128,7 +144,7 @@ export async function POST(
             },
           })
           // Registrar movimiento bancario: TRANSFERENCIA_ENVIADA
-          const cuenta = await tx.cuenta.findUnique({
+          await tx.cuenta.findUnique({
             where: { id: pago.cuentaBancariaId },
             select: { tieneImpuestoDebcred: true, alicuotaImpuesto: true },
           })
@@ -150,18 +166,30 @@ export async function POST(
             },
           })
         } else if (pago.tipoPago === "CHEQUE_PROPIO") {
+          const ch = pago.chequePropio
+          if (ch.nroCheque) {
+            const existing = await tx.chequeEmitido.findFirst({
+              where: { nroCheque: ch.nroCheque, cuentaId: ch.cuentaId },
+              select: { id: true },
+            })
+            if (existing) throw new Error(`DUPLICATE_CHEQUE:${ch.nroCheque}`)
+          }
           const nuevoCheque = await tx.chequeEmitido.create({
             data: {
               fleteroId: liquidacion.fleteroId,
-              cuentaId: pago.cuentaId,
-              nroCheque: pago.nroCheque,
-              tipoDocBeneficiario: pago.tipoDocBeneficiario,
-              nroDocBeneficiario: pago.nroDocBeneficiario,
+              cuentaId: ch.cuentaId,
+              nroCheque: ch.nroCheque ?? null,
+              tipoDocBeneficiario: ch.tipoDocBeneficiario,
+              nroDocBeneficiario: ch.nroDocBeneficiario,
+              mailBeneficiario: ch.mailBeneficiario ?? null,
               monto: pago.monto,
-              fechaEmision: fechaPago,
-              fechaPago: fechaPago,
-              motivoPago: "FACTURA",
-              clausula: "NO_A_LA_ORDEN",
+              fechaEmision: new Date(ch.fechaEmision),
+              fechaPago: new Date(ch.fechaPago),
+              motivoPago: "ORDEN_DE_PAGO",
+              clausula: ch.clausula ?? "NO_A_LA_ORDEN",
+              descripcion1: ch.descripcion1 ?? null,
+              descripcion2: ch.descripcion2 ?? null,
+              esElectronico: true,
               estado: "EMITIDO",
               liquidacionId,
               operadorId,
@@ -223,6 +251,43 @@ export async function POST(
         }
       }
 
+      // ── Procesar descuentos de gastos de fletero ────────────────────────────
+      if (gastos && gastos.length > 0) {
+        for (const g of gastos) {
+          const gasto = await tx.gastoFletero.findUnique({
+            where: { id: g.gastoId },
+            select: { id: true, montoPagado: true, montoDescontado: true, estado: true, fleteroId: true },
+          })
+          if (!gasto || gasto.fleteroId !== liquidacion.fleteroId) continue
+          if (gasto.estado === "DESCONTADO_TOTAL") continue
+
+          const saldoGasto = gasto.montoPagado - gasto.montoDescontado
+          const efectivoDescontar = Math.min(g.montoDescontar, saldoGasto)
+          if (efectivoDescontar <= 0) continue
+
+          await tx.gastoDescuento.create({
+            data: {
+              gastoId: g.gastoId,
+              liquidacionId,
+              montoDescontado: efectivoDescontar,
+              fecha: fechaPago,
+            },
+          })
+
+          const nuevoMontoDescontado = gasto.montoDescontado + efectivoDescontar
+          const nuevoEstadoGasto =
+            nuevoMontoDescontado >= gasto.montoPagado - 0.01 ? "DESCONTADO_TOTAL" : "DESCONTADO_PARCIAL"
+
+          await tx.gastoFletero.update({
+            where: { id: g.gastoId },
+            data: {
+              montoDescontado: nuevoMontoDescontado,
+              estado: nuevoEstadoGasto,
+            },
+          })
+        }
+      }
+
       await tx.liquidacion.update({
         where: { id: liquidacionId },
         data: { estado: nuevoEstado },
@@ -250,6 +315,13 @@ export async function POST(
       saldoAFavorGenerado: Math.max(0, totalPagoActual - saldoPendiente),
     })
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith("DUPLICATE_CHEQUE:")) {
+      const nro = error.message.split(":")[1]
+      return NextResponse.json(
+        { error: `El cheque N° ${nro} ya existe para esa cuenta. Verificá el número.` },
+        { status: 409 }
+      )
+    }
     return serverErrorResponse("POST /api/liquidaciones/[id]/pago", error)
   }
 }

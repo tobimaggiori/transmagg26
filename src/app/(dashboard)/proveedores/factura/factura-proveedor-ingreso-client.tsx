@@ -11,6 +11,7 @@ import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { Plus, Trash2 } from "lucide-react"
 
 type Proveedor = { id: string; razonSocial: string; cuit: string }
+type Fletero = { id: string; razonSocial: string; cuit: string }
 type Cuenta = { id: string; nombre: string; tipo: string; tieneChequera: boolean }
 type Tarjeta = { id: string; nombre: string; tipo: string; banco: string; ultimos4: string }
 type ChequeEnCartera = {
@@ -24,6 +25,7 @@ type ChequeEnCartera = {
 
 type FacturaProveedorIngresoClientProps = {
   proveedores: Proveedor[]
+  fleteros: Fletero[]
   cuentas: Cuenta[]
   tarjetas: Tarjeta[]
   chequesEnCartera: ChequeEnCartera[]
@@ -109,6 +111,7 @@ const todayStr = () => new Date().toISOString().slice(0, 10)
  */
 export function FacturaProveedorIngresoClient({
   proveedores,
+  fleteros,
   cuentas,
   tarjetas,
   chequesEnCartera,
@@ -123,6 +126,11 @@ export function FacturaProveedorIngresoClient({
   const [percepcionIIBB, setPercepcionIIBB] = useState("")
   const [percepcionIVA, setPercepcionIVA] = useState("")
   const [percepcionGanancias, setPercepcionGanancias] = useState("")
+
+  // ── Gasto por cuenta de fletero ───────────────────────────────────────────
+  const [esPorCuentaDeFletero, setEsPorCuentaDeFletero] = useState(false)
+  const [gastoFleteroId, setGastoFleteroId] = useState("")
+  const [gastoFleteroTipo, setGastoFleteroTipo] = useState("COMBUSTIBLE")
 
   // ── Ítems ─────────────────────────────────────────────────────────────────
   const [items, setItems] = useState<ItemForm[]>([nuevoItem()])
@@ -141,8 +149,14 @@ export function FacturaProveedorIngresoClient({
   const [pagoChequeRecibidoId, setPagoChequeRecibidoId] = useState("")
   const [pagoTarjetaId, setPagoTarjetaId] = useState("")
   const [pagoChequeNro, setPagoChequeNro] = useState("")
+  const [pagoChequeFechaEmision, setPagoChequeFechaEmision] = useState(todayStr())
   const [pagoChequeFechaPago, setPagoChequeFechaPago] = useState("")
+  const [pagoChequeClausula, setPagoChequeClausula] = useState("NO_A_LA_ORDEN")
+  const [pagoChequeTipoDoc, setPagoChequeTipoDoc] = useState("CUIT")
   const [pagoChequeDocBeneficiario, setPagoChequeDocBeneficiario] = useState("")
+  const [pagoChequeMailBeneficiario, setPagoChequeMailBeneficiario] = useState("")
+  const [pagoChequeDescripcion1, setPagoChequeDescripcion1] = useState("")
+  const [pagoChequeDescripcion2, setPagoChequeDescripcion2] = useState("")
 
   // ── Estado UI ─────────────────────────────────────────────────────────────
   const [loading, setLoading] = useState(false)
@@ -186,7 +200,8 @@ export function FacturaProveedorIngresoClient({
       (!REQUIERE_TARJETA.has(pagoTipo) || pagoTarjetaId !== "") &&
       (!REQUIERE_COMPROBANTE.has(pagoTipo) || pagoComprobantePdfS3Key !== ""))
 
-  const puedeRegistrar = cabeceraCompleta && tieneItemValido && tienePdf && pagoValido
+  const gastoFleteroValido = !esPorCuentaDeFletero || gastoFleteroId !== ""
+  const puedeRegistrar = cabeceraCompleta && tieneItemValido && tienePdf && pagoValido && gastoFleteroValido
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const agregarItem = () => setItems((prev) => [...prev, nuevoItem()])
@@ -200,6 +215,9 @@ export function FacturaProveedorIngresoClient({
     setPagoChequeRecibidoId("")
     setPagoTarjetaId("")
     setPagoComprobantePdfS3Key("")
+    if (tipo === "CHEQUE_PROPIO" && proveedor?.cuit) {
+      setPagoChequeDocBeneficiario(proveedor.cuit)
+    }
   }
 
   const handleRegistrarPagoChange = (checked: boolean) => {
@@ -234,6 +252,9 @@ export function FacturaProveedorIngresoClient({
     setPercepcionGanancias("")
     setItems([nuevoItem()])
     setPdfS3Key("")
+    setEsPorCuentaDeFletero(false)
+    setGastoFleteroId("")
+    setGastoFleteroTipo("COMBUSTIBLE")
     handleRegistrarPagoChange(false)
     setRegistrarPago(false)
   }
@@ -271,9 +292,17 @@ export function FacturaProveedorIngresoClient({
           cuentaId: pagoCuentaId || undefined,
           chequeRecibidoId: pagoChequeRecibidoId || undefined,
           tarjetaId: pagoTarjetaId || undefined,
-          chequeNro: pagoChequeNro || undefined,
-          chequeFechaPago: pagoChequeFechaPago || undefined,
-          chequeNroDocBeneficiario: pagoChequeDocBeneficiario || undefined,
+          chequePropio: pagoTipo === "CHEQUE_PROPIO" ? {
+            nroCheque: pagoChequeNro || null,
+            tipoDocBeneficiario: pagoChequeTipoDoc,
+            nroDocBeneficiario: pagoChequeDocBeneficiario,
+            mailBeneficiario: pagoChequeMailBeneficiario || null,
+            fechaEmision: pagoChequeFechaEmision,
+            fechaPago: pagoChequeFechaPago,
+            clausula: pagoChequeClausula,
+            descripcion1: pagoChequeDescripcion1 || null,
+            descripcion2: pagoChequeDescripcion2 || null,
+          } : undefined,
         }
       : undefined
 
@@ -295,6 +324,9 @@ export function FacturaProveedorIngresoClient({
           pdfS3Key,
           items: itemsPayload,
           pago: pagoPayload,
+          gastoFletero: esPorCuentaDeFletero
+            ? { fleteroId: gastoFleteroId, tipo: gastoFleteroTipo }
+            : undefined,
         }),
       })
 
@@ -414,7 +446,55 @@ export function FacturaProveedorIngresoClient({
               </div>
             </div>
 
-            {discriminaIVA && (
+            {/* ── Gasto por cuenta de fletero ─────────────────────────────── */}
+            <div className="border rounded-md p-3 space-y-3">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={esPorCuentaDeFletero}
+                  onChange={(e) => {
+                    setEsPorCuentaDeFletero(e.target.checked)
+                    if (!e.target.checked) {
+                      setGastoFleteroId("")
+                      setGastoFleteroTipo("COMBUSTIBLE")
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-input accent-primary"
+                />
+                <span className="text-sm font-medium">Esta factura es por cuenta de un fletero</span>
+              </label>
+
+              {esPorCuentaDeFletero && (
+                <div className="space-y-3 pl-7">
+                  <div className="space-y-1.5">
+                    <Label>Fletero *</Label>
+                    <SearchCombobox
+                      items={fleteros.map((f) => ({ id: f.id, label: f.razonSocial, sublabel: f.cuit }))}
+                      value={gastoFleteroId}
+                      onChange={setGastoFleteroId}
+                      placeholder="Buscar fletero..."
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="gastoFleteroTipo">Tipo de gasto *</Label>
+                    <select
+                      id="gastoFleteroTipo"
+                      value={gastoFleteroTipo}
+                      onChange={(e) => setGastoFleteroTipo(e.target.value)}
+                      className={SELECT_CLS}
+                    >
+                      <option value="COMBUSTIBLE">Combustible</option>
+                      <option value="OTRO">Otro</option>
+                    </select>
+                  </div>
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    Esta factura NO generará crédito fiscal de IVA para Transmagg.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {discriminaIVA && !esPorCuentaDeFletero && (
               <div>
                 <p className="text-sm font-medium mb-2">Percepciones (opcional)</p>
                 <div className="grid grid-cols-3 gap-3">
@@ -723,12 +803,35 @@ export function FacturaProveedorIngresoClient({
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label htmlFor="pagoChequeNro">Nro. de cheque</Label>
+                      <Label htmlFor="pagoChequeNro">Nro. de cheque (opcional)</Label>
                       <Input
                         id="pagoChequeNro"
                         value={pagoChequeNro}
                         onChange={(e) => setPagoChequeNro(e.target.value)}
-                        placeholder="00000001"
+                        placeholder="Asignado al emitir"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pagoChequeClausula">Cláusula</Label>
+                      <select
+                        id="pagoChequeClausula"
+                        value={pagoChequeClausula}
+                        onChange={(e) => setPagoChequeClausula(e.target.value)}
+                        className={SELECT_CLS}
+                      >
+                        <option value="NO_A_LA_ORDEN">No a la orden</option>
+                        <option value="AL_DIA">Al día</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pagoChequeFechaEmision">Fecha emisión</Label>
+                      <Input
+                        id="pagoChequeFechaEmision"
+                        type="date"
+                        value={pagoChequeFechaEmision}
+                        onChange={(e) => setPagoChequeFechaEmision(e.target.value)}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -741,14 +844,56 @@ export function FacturaProveedorIngresoClient({
                       />
                     </div>
                   </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pagoChequeTipoDoc">Tipo doc beneficiario</Label>
+                      <select
+                        id="pagoChequeTipoDoc"
+                        value={pagoChequeTipoDoc}
+                        onChange={(e) => setPagoChequeTipoDoc(e.target.value)}
+                        className={SELECT_CLS}
+                      >
+                        <option value="CUIT">CUIT</option>
+                        <option value="CUIL">CUIL</option>
+                        <option value="CDI">CDI</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pagoChequeDocBenef">Nro doc beneficiario</Label>
+                      <Input
+                        id="pagoChequeDocBenef"
+                        value={pagoChequeDocBeneficiario}
+                        onChange={(e) => setPagoChequeDocBeneficiario(e.target.value)}
+                      />
+                    </div>
+                  </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="pagoChequeDocBenef">CUIL/CUIT del beneficiario</Label>
+                    <Label htmlFor="pagoChequeMailBenef">Mail beneficiario (opcional)</Label>
                     <Input
-                      id="pagoChequeDocBenef"
-                      value={pagoChequeDocBeneficiario}
-                      onChange={(e) => setPagoChequeDocBeneficiario(e.target.value)}
-                      placeholder={proveedor?.cuit ?? "30-00000000-0"}
+                      id="pagoChequeMailBenef"
+                      type="email"
+                      value={pagoChequeMailBeneficiario}
+                      onChange={(e) => setPagoChequeMailBeneficiario(e.target.value)}
+                      placeholder="email@ejemplo.com"
                     />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pagoChequeDesc1">Descripción 1 (opcional)</Label>
+                      <Input
+                        id="pagoChequeDesc1"
+                        value={pagoChequeDescripcion1}
+                        onChange={(e) => setPagoChequeDescripcion1(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pagoChequeDesc2">Descripción 2 (opcional)</Label>
+                      <Input
+                        id="pagoChequeDesc2"
+                        value={pagoChequeDescripcion2}
+                        onChange={(e) => setPagoChequeDescripcion2(e.target.value)}
+                      />
+                    </div>
                   </div>
                 </>
               )}
