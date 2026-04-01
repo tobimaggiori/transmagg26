@@ -5,7 +5,7 @@
  * Filtros por fletero, estado y período → tabla con detalle y modal de pago.
  */
 
-import { useState, useCallback, useEffect, Fragment } from "react"
+import React, { useState, useCallback, useEffect, Fragment } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas } from "@/lib/viajes"
 import { formatearNroComprobante } from "@/lib/liquidacion-utils"
@@ -65,7 +65,7 @@ type Liquidacion = {
   fleteroId: string
   fletero: { razonSocial: string }
   viajes: ViajeEnLiquidacion[]
-  pagos: { id: string; monto: number; tipoPago: string; fechaPago: string; anulado: boolean }[]
+  pagos: { id: string; monto: number; tipoPago: string; fechaPago: string; anulado: boolean; ordenPago: { id: string; nro: number; fecha: string } | null }[]
 }
 
 type ConsultarLPClientProps = {
@@ -92,6 +92,77 @@ function EstadoBadge({ estado }: { estado: string }) {
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilos[estado] ?? "bg-gray-100 text-gray-800"}`}>
       {labels[estado] ?? estado}
     </span>
+  )
+}
+
+// ─── Enviar email Orden de Pago ───────────────────────────────────────────────
+
+function EnviarEmailOP({ ordenPagoId, nro }: { ordenPagoId: string; nro: number }) {
+  const [abierto, setAbierto] = React.useState(false)
+  const [email, setEmail] = React.useState("")
+  const [enviando, setEnviando] = React.useState(false)
+  const [resultado, setResultado] = React.useState<string | null>(null)
+
+  async function enviar() {
+    setEnviando(true)
+    setResultado(null)
+    try {
+      const res = await fetch(`/api/ordenes-pago/${ordenPagoId}/enviar-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(email ? { emailDestino: email } : {}),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setResultado(`Enviado a ${data.emailDestino}`)
+        setTimeout(() => { setAbierto(false); setResultado(null) }, 2000)
+      } else {
+        setResultado(data.error ?? "Error al enviar")
+      }
+    } catch {
+      setResultado("Error de red")
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => { setAbierto(true); setResultado(null) }}
+        className="h-5 px-1.5 rounded border text-xs font-medium hover:bg-accent inline-flex items-center"
+      >
+        Email
+      </button>
+      {abierto && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50" onClick={() => setAbierto(false)}>
+          <div className="bg-background rounded-lg shadow-xl p-5 w-80" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold mb-1">Enviar OP Nro {String(nro).padStart(8, "0")}</h3>
+            <p className="text-xs text-muted-foreground mb-3">Dejá vacío para usar el email del fletero.</p>
+            <input
+              type="email"
+              placeholder="email@destino.com (opcional)"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full h-9 px-3 rounded-md border text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            {resultado && (
+              <p className={`text-xs mb-2 ${resultado.startsWith("Enviado") ? "text-green-600" : "text-red-600"}`}>{resultado}</p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setAbierto(false)} className="h-8 px-3 rounded-md border text-sm hover:bg-accent">Cancelar</button>
+              <button
+                onClick={enviar}
+                disabled={enviando}
+                className="h-8 px-3 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50"
+              >
+                {enviando ? "Enviando..." : "Enviar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -196,6 +267,7 @@ function ModalDetalleLiquidacion({
                     <th className="px-3 py-2 text-left">Fecha</th>
                     <th className="px-3 py-2 text-left">Tipo</th>
                     <th className="px-3 py-2 text-right">Monto</th>
+                    <th className="px-3 py-2 text-left">Orden de Pago</th>
                     <th className="px-3 py-2" />
                   </tr>
                 </thead>
@@ -206,6 +278,32 @@ function ModalDetalleLiquidacion({
                         <td className="px-3 py-2">{formatearFecha(new Date(p.fechaPago))}</td>
                         <td className="px-3 py-2 capitalize">{p.tipoPago.replace(/_/g, " ").toLowerCase()}</td>
                         <td className="px-3 py-2 text-right">{formatearMoneda(p.monto)}</td>
+                        <td className="px-3 py-2">
+                          {p.ordenPago && (
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                OP Nro {String(p.ordenPago.nro).padStart(8, "0")} — {formatearFecha(new Date(p.ordenPago.fecha))}
+                              </span>
+                              <a
+                                href={`/api/ordenes-pago/${p.ordenPago.id}/pdf`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="h-5 px-1.5 rounded border text-xs font-medium hover:bg-accent inline-flex items-center"
+                              >
+                                Ver
+                              </a>
+                              <a
+                                href={`/api/ordenes-pago/${p.ordenPago.id}/pdf?print=true`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="h-5 px-1.5 rounded border text-xs font-medium hover:bg-accent inline-flex items-center"
+                              >
+                                Imprimir
+                              </a>
+                              <EnviarEmailOP ordenPagoId={p.ordenPago.id} nro={p.ordenPago.nro} />
+                            </div>
+                          )}
+                        </td>
                         <td className="px-3 py-2">
                           {!p.anulado && (
                             <div className="flex gap-1 justify-end">
@@ -230,7 +328,7 @@ function ModalDetalleLiquidacion({
                         </td>
                       </tr>
                       <tr>
-                        <td colSpan={4} className="px-3 pb-2">
+                        <td colSpan={5} className="px-3 pb-2">
                           <HistorialPagoFletero pagoId={p.id} />
                         </td>
                       </tr>
@@ -879,6 +977,7 @@ function TablaLiquidaciones({
             <th className="px-3 py-2 text-right">Total</th>
             <th className="px-3 py-2 text-center">Estado</th>
             <th className="px-3 py-2 text-center">CAE</th>
+            <th className="px-3 py-2 text-center">OP Nro</th>
             <th className="px-3 py-2" />
           </tr>
         </thead>
@@ -906,6 +1005,14 @@ function TablaLiquidaciones({
                     Sin CAE
                   </span>
                 )}
+              </td>
+              <td className="px-3 py-2 text-center font-mono text-xs">
+                {(() => {
+                  const op = liq.pagos.find((p) => !p.anulado && p.ordenPago)?.ordenPago
+                  return op
+                    ? <span className="text-muted-foreground">{String(op.nro).padStart(8, "0")}</span>
+                    : <span className="text-muted-foreground">—</span>
+                })()}
               </td>
               <td className="px-3 py-2">
                 <button

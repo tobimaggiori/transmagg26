@@ -87,6 +87,7 @@ model Usuario {
   pagosProveedorOpera        PagoProveedor[]         @relation("OperadorPagoProveedor")
   resumenesBancariosOpera    ResumenBancario[]        @relation("OperadorResumenBancario")
   historialPagosOpera        HistorialPago[]          @relation("OperadorHistorialPago")
+  ordenesPagoOpera           OrdenPago[]              @relation("OperadorOrdenPago")
 
   @@map("usuarios")
 }
@@ -161,6 +162,7 @@ model Fletero {
   adelantos                AdelantoFletero[]
   gastosFletero            GastoFletero[]
   facturasPorCuenta        FacturaProveedor[]  @relation("FacturaPorCuentaDeFletero")
+  ordenesPago              OrdenPago[]
 
   @@map("fleteros")
 }
@@ -820,6 +822,8 @@ model PagoAFletero {
   anulado          Boolean         @default(false)
   motivoAnulacion  String?         @map("motivo_anulacion")
 
+  ordenPagoId    String?         @map("orden_pago_id")
+
   fletero        Fletero         @relation(fields: [fleteroId], references: [id])
   liquidacion    Liquidacion?    @relation(fields: [liquidacionId], references: [id])
   chequeEmitido  ChequeEmitido?  @relation(fields: [chequeEmitidoId], references: [id], onDelete: SetNull)
@@ -827,6 +831,7 @@ model PagoAFletero {
   cuenta         Cuenta?         @relation("CuentaPagoAFletero", fields: [cuentaId], references: [id], onDelete: SetNull)
   operador       Usuario         @relation("OperadorPagoFletero", fields: [operadorId], references: [id])
   historial      HistorialPago[]
+  ordenPago      OrdenPago?      @relation(fields: [ordenPagoId], references: [id], onDelete: SetNull)
 
   @@map("pagos_a_fleteros")
 }
@@ -1105,6 +1110,24 @@ model VerificationToken {
 
   @@unique([identifier, token])
   @@map("verification_tokens")
+}
+
+// ─── ORDEN DE PAGO ────────────────────────────────────────────────────────────
+
+model OrdenPago {
+  id         String   @id @default(uuid())
+  nro        Int      @unique                 // correlativo global: 1, 2, 3...
+  fecha      DateTime @default(now())
+  fleteroId  String   @map("fletero_id")
+  pdfS3Key   String?  @map("pdf_s3_key")     // reservado para futura generación binaria en R2
+  operadorId String   @map("operador_id")
+  creadoEn   DateTime @default(now()) @map("creado_en")
+
+  fletero  Fletero        @relation(fields: [fleteroId], references: [id])
+  operador Usuario        @relation("OperadorOrdenPago", fields: [operadorId], references: [id])
+  pagos    PagoAFletero[]
+
+  @@map("ordenes_pago")
 }
 
 // ─── HISTORIAL DE PAGOS ───────────────────────────────────────────────────────

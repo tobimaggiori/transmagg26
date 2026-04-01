@@ -128,10 +128,13 @@ export async function POST(
     const nuevoEstado =
       totalPagoActual >= saldoPendiente ? "PAGADA" : "PARCIALMENTE_PAGADA"
 
-    await prisma.$transaction(async (tx) => {
+    const { ordenPagoId, nroOrdenPago } = await prisma.$transaction(async (tx) => {
+      // Coleccionar IDs de pagos reales (no el excedente) para la Orden de Pago
+      const pagoIdsParaOP: string[] = []
+
       for (const pago of pagos) {
         if (pago.tipoPago === "TRANSFERENCIA") {
-          await tx.pagoAFletero.create({
+          const nuevoPago = await tx.pagoAFletero.create({
             data: {
               fleteroId: liquidacion.fleteroId,
               liquidacionId,
@@ -143,6 +146,7 @@ export async function POST(
               operadorId,
             },
           })
+          pagoIdsParaOP.push(nuevoPago.id)
           // Registrar movimiento bancario: TRANSFERENCIA_ENVIADA
           await tx.cuenta.findUnique({
             where: { id: pago.cuentaBancariaId },
@@ -195,7 +199,7 @@ export async function POST(
               operadorId,
             },
           })
-          await tx.pagoAFletero.create({
+          const nuevoPago = await tx.pagoAFletero.create({
             data: {
               fleteroId: liquidacion.fleteroId,
               liquidacionId,
@@ -206,6 +210,7 @@ export async function POST(
               operadorId,
             },
           })
+          pagoIdsParaOP.push(nuevoPago.id)
         } else if (pago.tipoPago === "CHEQUE_TERCERO") {
           await tx.chequeRecibido.update({
             where: { id: pago.chequeRecibidoId },
@@ -215,7 +220,7 @@ export async function POST(
               endosadoAFleteroId: liquidacion.fleteroId,
             },
           })
-          await tx.pagoAFletero.create({
+          const nuevoPago = await tx.pagoAFletero.create({
             data: {
               fleteroId: liquidacion.fleteroId,
               liquidacionId,
@@ -226,8 +231,9 @@ export async function POST(
               operadorId,
             },
           })
+          pagoIdsParaOP.push(nuevoPago.id)
         } else if (pago.tipoPago === "EFECTIVO") {
-          await tx.pagoAFletero.create({
+          const nuevoPago = await tx.pagoAFletero.create({
             data: {
               fleteroId: liquidacion.fleteroId,
               liquidacionId,
@@ -237,8 +243,9 @@ export async function POST(
               operadorId,
             },
           })
+          pagoIdsParaOP.push(nuevoPago.id)
         } else if (pago.tipoPago === "SALDO_A_FAVOR") {
-          await tx.pagoAFletero.create({
+          const nuevoPago = await tx.pagoAFletero.create({
             data: {
               fleteroId: liquidacion.fleteroId,
               liquidacionId,
@@ -248,6 +255,7 @@ export async function POST(
               operadorId,
             },
           })
+          pagoIdsParaOP.push(nuevoPago.id)
         }
       }
 
@@ -295,6 +303,7 @@ export async function POST(
 
       const excedente = totalPagoActual - saldoPendiente
       if (excedente > 0) {
+        // El excedente es un pago de saldo a favor que NO va en la Orden de Pago
         await tx.pagoAFletero.create({
           data: {
             fleteroId: liquidacion.fleteroId,
@@ -306,6 +315,21 @@ export async function POST(
           },
         })
       }
+
+      // ── Crear la Orden de Pago ────────────────────────────────────────────
+      const ultimaOP = await tx.ordenPago.findFirst({ orderBy: { nro: "desc" } })
+      const nroOP = (ultimaOP?.nro ?? 0) + 1
+      const op = await tx.ordenPago.create({
+        data: {
+          nro: nroOP,
+          fecha: fechaPago,
+          fleteroId: liquidacion.fleteroId,
+          operadorId,
+          pagos: { connect: pagoIdsParaOP.map((id) => ({ id })) },
+        },
+      })
+
+      return { ordenPagoId: op.id, nroOrdenPago: nroOP }
     })
 
     return NextResponse.json({
@@ -313,6 +337,7 @@ export async function POST(
       nuevoEstado,
       saldoRestante: Math.max(0, saldoPendiente - totalPagoActual),
       saldoAFavorGenerado: Math.max(0, totalPagoActual - saldoPendiente),
+      ordenPago: { id: ordenPagoId, nro: nroOrdenPago },
     })
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("DUPLICATE_CHEQUE:")) {

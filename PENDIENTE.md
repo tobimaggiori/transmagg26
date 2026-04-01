@@ -10,6 +10,7 @@
 3. Panel del chofer de Transmagg (dashboard personal solo lectura)
 4. Configuración ARCA en ABM (modelo singleton, APIs GET/PATCH/verificar, UI con 5 cards)
 5. Revisión general: seed corregido, sidebar actualizado, README actualizado
+6. Orden de Pago a Fleteros (modelo OrdenPago, auto-creación en pago de LP, HTML imprimible, APIs pdf/email, UI en modal y tabla)
 
 **Estado actual del build:**
 - `npm run build` ✅ sin errores
@@ -17,7 +18,7 @@
 - `npx tsc --noEmit` ✅ sin errores de tipos
 - `npm test` ✅ 251 tests pasando en 15 suites
 - `npx prisma validate` ✅ schema válido
-- `npx prisma migrate status` ✅ 20 migraciones aplicadas
+- `npx prisma migrate status` ✅ 21 migraciones aplicadas
 - Seed idempotente ✅ (corregido cleanup de ResumenBancario, HistorialPago, NotaCreditoDebito)
 
 **Falta implementar (próximas sesiones):**

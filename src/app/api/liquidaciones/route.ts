@@ -152,7 +152,7 @@ export async function GET(request: NextRequest) {
           viajes: true,
           pagos: {
             where: { anulado: false },
-            select: { id: true, monto: true, tipoPago: true, fechaPago: true, anulado: true },
+            select: { id: true, monto: true, tipoPago: true, fechaPago: true, anulado: true, ordenPago: { select: { id: true, nro: true, fecha: true } } },
           },
         },
         orderBy: { grabadaEn: "desc" },
