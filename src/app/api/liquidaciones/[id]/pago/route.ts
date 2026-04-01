@@ -10,6 +10,8 @@ import {
 } from "@/lib/financial-api"
 import { calcularSaldoCCFletero } from "@/lib/cuenta-corriente"
 import { resolverOperadorId } from "@/lib/session-utils"
+import { generarHTMLOrdenPago } from "@/lib/pdf-orden-pago"
+import { subirPDF, storageConfigurado } from "@/lib/storage"
 
 const pagoFleteroItemSchema = z.discriminatedUnion("tipoPago", [
   z.object({
@@ -335,6 +337,18 @@ export async function POST(
 
       return { ordenPagoId: op.id, nroOrdenPago: nroOP }
     })
+
+    // ── Generar HTML y subir a R2 (no fatal si falla) ────────────────────────
+    if (storageConfigurado()) {
+      try {
+        const html = await generarHTMLOrdenPago(ordenPagoId)
+        const buffer = Buffer.from(html, "utf-8")
+        const key = await subirPDF(buffer, "comprobantes-pago-fletero", `OP-${nroOrdenPago}.html`)
+        await prisma.ordenPago.update({ where: { id: ordenPagoId }, data: { pdfS3Key: key } })
+      } catch {
+        // No bloquear la respuesta si el storage falla
+      }
+    }
 
     return NextResponse.json({
       ok: true,

@@ -97,7 +97,7 @@ type Liquidacion = {
   fleteroId: string
   fletero: { razonSocial: string }
   viajes: ViajeEnLiquidacion[]
-  pagos: { id: string; monto: number; tipoPago: string; fechaPago: string; anulado: boolean; ordenPago?: { id: string; nro: number; fecha: string } | null }[]
+  pagos: { id: string; monto: number; tipoPago: string; fechaPago: string; anulado: boolean; ordenPago?: { id: string; nro: number; fecha: string; pdfS3Key?: string | null } | null }[]
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -1639,26 +1639,37 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
               <div className="text-center py-4 text-muted-foreground">Sin liquidaciones registradas.</div>
             ) : (
               <div className="space-y-2">
-                {liquidaciones.map((liq) => (
-                  <div key={liq.id} className="flex items-center justify-between p-4 rounded-lg border hover:bg-muted/30">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{formatearFecha(new Date(liq.grabadaEn))}</span>
-                        <EstadoBadge estado={liq.estado} />
+                {liquidaciones.map((liq) => {
+                  const op = liq.pagos.find((p) => !p.anulado && p.ordenPago)?.ordenPago ?? null
+                  return (
+                    <div key={liq.id} className="flex items-center justify-between p-4 rounded-lg border hover:bg-muted/30">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{formatearFecha(new Date(liq.grabadaEn))}</span>
+                          <EstadoBadge estado={liq.estado} />
+                          {op && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); window.open(`/api/ordenes-pago/${op.id}/pdf`, "_blank") }}
+                              className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-violet-100 text-violet-800 hover:bg-violet-200"
+                            >
+                              OP {op.nro.toLocaleString("es-AR")}
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{liq.viajes.length} viaje(s)</p>
                       </div>
-                      <p className="text-xs text-muted-foreground">{liq.viajes.length} viaje(s)</p>
+                      <div className="flex items-center gap-3">
+                        <p className="font-bold">{formatearMoneda(liq.total)}</p>
+                        <button
+                          onClick={() => setLiquidacionDetalle(liq)}
+                          className="h-8 px-3 rounded-md border text-xs font-medium hover:bg-accent"
+                        >
+                          Ver detalle
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <p className="font-bold">{formatearMoneda(liq.total)}</p>
-                      <button
-                        onClick={() => setLiquidacionDetalle(liq)}
-                        className="h-8 px-3 rounded-md border text-xs font-medium hover:bg-accent"
-                      >
-                        Ver detalle
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>

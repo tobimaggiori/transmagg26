@@ -174,6 +174,9 @@ export function RegistrarPagoFleteroModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [mostrandoPreview, setMostrandoPreview] = useState(false)
+  const [proximoNro, setProximoNro] = useState<number | null>(null)
+
   // ── Cálculos ────────────────────────────────────────────────────────────────
   const saldoPendiente = liquidacion.total - liquidacion.pagosExistentes
 
@@ -316,6 +319,46 @@ export function RegistrarPagoFleteroModal({
 
   const puedeConfirmar = !loading && (pagos.length > 0 || totalGastosDescontados > 0) && !draft
 
+  async function abrirPreview() {
+    setError(null)
+    try {
+      const res = await fetch("/api/ordenes-pago/proximo-nro")
+      if (res.ok) {
+        const data = await res.json()
+        setProximoNro(data.nro)
+      } else {
+        setProximoNro(null)
+      }
+    } catch {
+      setProximoNro(null)
+    }
+    setMostrandoPreview(true)
+  }
+
+  if (mostrandoPreview) {
+    return (
+      <PreviewOrdenPago
+        nro={proximoNro}
+        fecha={new Date().toISOString().slice(0, 10)}
+        fletero={liquidacion.fletero}
+        nroLabel={nroLabel}
+        pagos={pagos}
+        gastosDescontados={gastosPendientes.filter((g) => gastosSeleccionados[g.id]).map((g) => ({
+          razonSocial: g.facturaProveedor.proveedor.razonSocial,
+          comprobante: `${g.facturaProveedor.tipoCbte} ${g.facturaProveedor.nroComprobante ?? "s/n"}`,
+          monto: parseFloat(gastosMontos[g.id] ?? "0") || 0,
+        }))}
+        totalMedios={totalMedios}
+        totalGastosDescontados={totalGastosDescontados}
+        cuentasBancarias={cuentasBancarias}
+        chequesEnCartera={chequesEnCartera}
+        loading={loading}
+        onVolver={() => setMostrandoPreview(false)}
+        onConfirmar={handleSubmit}
+      />
+    )
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 md:p-4">
       <div
@@ -416,11 +459,11 @@ export function RegistrarPagoFleteroModal({
                 Cancelar
               </Button>
               <Button
-                onClick={handleSubmit}
+                onClick={abrirPreview}
                 disabled={!puedeConfirmar}
                 className="flex-1"
               >
-                {loading ? "Registrando..." : "Confirmar ✓"}
+                Previsualizar &rarr;
               </Button>
             </div>
           </div>
@@ -744,6 +787,183 @@ function DraftForm({
         >
           Agregar ✓
         </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Preview de Orden de Pago ─────────────────────────────────────────────────
+
+type GastoDescontadoPreview = {
+  razonSocial: string
+  comprobante: string
+  monto: number
+}
+
+function PreviewOrdenPago({
+  nro,
+  fecha,
+  fletero,
+  nroLabel,
+  pagos,
+  gastosDescontados,
+  totalMedios,
+  totalGastosDescontados,
+  cuentasBancarias,
+  chequesEnCartera,
+  loading,
+  onVolver,
+  onConfirmar,
+}: {
+  nro: number | null
+  fecha: string
+  fletero: { id: string; razonSocial: string; cuit: string }
+  nroLabel: string
+  pagos: PagoItem[]
+  gastosDescontados: GastoDescontadoPreview[]
+  totalMedios: number
+  totalGastosDescontados: number
+  cuentasBancarias: CuentaBancaria[]
+  chequesEnCartera: ChequeEnCartera[]
+  loading: boolean
+  onVolver: () => void
+  onConfirmar: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 md:p-4">
+      <div
+        className="bg-background rounded-lg shadow-xl w-full max-w-2xl flex flex-col overflow-hidden"
+        style={{ height: "min(92vh, 680px)" }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
+          <div>
+            <h2 className="text-base font-semibold">
+              Preview — Orden de Pago{nro != null ? ` Nro ${nro.toLocaleString("es-AR")}` : ""}
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {nroLabel} · {fletero.razonSocial} · {new Date(fecha + "T00:00:00").toLocaleDateString("es-AR")}
+            </p>
+          </div>
+          <button onClick={onVolver} className="text-muted-foreground hover:text-foreground text-xl leading-none">
+            &times;
+          </button>
+        </div>
+
+        {/* Documento — scroll interno */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          {/* Datos del fletero */}
+          <div className="rounded border p-3 text-sm space-y-0.5">
+            <p className="font-semibold">{fletero.razonSocial}</p>
+            <p className="text-xs text-muted-foreground">CUIT: {fletero.cuit}</p>
+          </div>
+
+          {/* Medios de pago */}
+          {pagos.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
+                Medios de pago
+              </p>
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="px-3 py-1.5 text-left text-xs font-medium">Tipo</th>
+                      <th className="px-3 py-1.5 text-left text-xs font-medium">Detalle</th>
+                      <th className="px-3 py-1.5 text-right text-xs font-medium">Monto</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {pagos.map((p, i) => (
+                      <tr key={i}>
+                        <td className="px-3 py-2 text-xs">{tipoBadge(p)}</td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground">
+                          {resumenItem(p, cuentasBancarias, chequesEnCartera)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-xs font-mono">
+                          {ars(parseFloat(p.monto) || 0)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Gastos descontados */}
+          {gastosDescontados.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
+                Gastos descontados
+              </p>
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="px-3 py-1.5 text-left text-xs font-medium">Proveedor</th>
+                      <th className="px-3 py-1.5 text-left text-xs font-medium">Comprobante</th>
+                      <th className="px-3 py-1.5 text-right text-xs font-medium">Monto</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {gastosDescontados.map((g, i) => (
+                      <tr key={i}>
+                        <td className="px-3 py-2 text-xs">{g.razonSocial}</td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground">{g.comprobante}</td>
+                        <td className="px-3 py-2 text-right text-xs font-mono text-orange-600">
+                          - {ars(g.monto)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Totales */}
+          <div className="rounded border p-3 space-y-1 text-sm">
+            {pagos.length > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total medios de pago</span>
+                <span className="font-mono">{ars(totalMedios)}</span>
+              </div>
+            )}
+            {gastosDescontados.length > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total gastos descontados</span>
+                <span className="font-mono text-orange-600">{ars(totalGastosDescontados)}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-semibold border-t pt-1 mt-1">
+              <span>Total Orden de Pago</span>
+              <span className="font-mono">{ars(totalMedios + totalGastosDescontados)}</span>
+            </div>
+          </div>
+
+          <p className="text-xs text-muted-foreground text-center">
+            Revisá los datos antes de confirmar. Una vez confirmado no se puede deshacer sin anulación.
+          </p>
+        </div>
+
+        {/* Botones */}
+        <div className="border-t px-6 py-4 flex gap-3 flex-shrink-0">
+          <button
+            onClick={onVolver}
+            disabled={loading}
+            className="flex-1 h-9 rounded-md border text-sm font-medium hover:bg-accent disabled:opacity-50"
+          >
+            &larr; Volver
+          </button>
+          <button
+            onClick={onConfirmar}
+            disabled={loading}
+            className="flex-1 h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+          >
+            {loading ? "Registrando..." : "Confirmar y guardar ✓"}
+          </button>
+        </div>
       </div>
     </div>
   )
