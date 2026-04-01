@@ -90,6 +90,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/viajes", label: "Viajes" },
       { href: "/fleteros/liquidar", label: "Líquido Producto" },
       { href: "/fleteros/liquidaciones", label: "Consultar Liq. Prod." },
+      { href: "/fleteros/pago", label: "Orden de Pago" },
       { href: "/fleteros/adelantos", label: "Adelantos" },
       { href: "/fleteros/gastos/ingresar", label: "Ingresar Gasto" },
       { href: "/fleteros/gastos", label: "Consultar Gastos" },

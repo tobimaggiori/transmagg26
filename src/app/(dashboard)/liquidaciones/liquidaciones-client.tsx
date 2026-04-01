@@ -13,7 +13,6 @@ import type { ProvinciaArgentina } from "@/lib/provincias"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
 import { labelCondicionIva, formatearNroComprobante } from "@/lib/liquidacion-utils"
 import { WorkflowNote } from "@/components/workflow/workflow-note"
-import { RegistrarPagoFleteroModal } from "@/components/forms/registrar-pago-fletero-form"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -98,24 +97,21 @@ type Liquidacion = {
   fletero: { razonSocial: string }
   viajes: ViajeEnLiquidacion[]
   pagos: { id: string; monto: number; tipoPago: string; fechaPago: string; anulado: boolean; ordenPago?: { id: string; nro: number; fecha: string; pdfS3Key?: string | null } | null }[]
+  gastoDescuentos?: {
+    id: string
+    montoDescontado: number
+    gasto: {
+      tipo: string
+      facturaProveedor: {
+        tipoCbte: string
+        nroComprobante: string | null
+        proveedor: { razonSocial: string }
+      }
+    }
+  }[]
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
-
-type GastoPendiente = {
-  id: string
-  tipo: string
-  montoPagado: number
-  montoDescontado: number
-  estado: string
-  facturaProveedor: {
-    id: string
-    tipoCbte: string
-    nroComprobante: string | null
-    fechaCbte: string
-    proveedor: { razonSocial: string }
-  }
-}
 
 type LiquidacionesClientProps = {
   rol: Rol
@@ -243,7 +239,6 @@ function ModalDetalleLiquidacion({
   liq,
   emailFletero,
   onCambiarEstado,
-  onRegistrarPago,
   onAnularPago,
   onEditarPago,
   onCerrar,
@@ -252,7 +247,6 @@ function ModalDetalleLiquidacion({
   liq: Liquidacion
   emailFletero?: string
   onCambiarEstado: (estado: string) => void
-  onRegistrarPago: () => void
   onAnularPago?: (pagoId: string) => void
   onEditarPago?: (pagoId: string) => void
   onCerrar: () => void
@@ -372,6 +366,45 @@ function ModalDetalleLiquidacion({
           </div>
         )}
 
+        {/* Gastos descontados */}
+        {(liq.gastoDescuentos?.length ?? 0) > 0 && (
+          <div className="mb-4">
+            <p className="text-sm font-medium mb-2">Gastos descontados</p>
+            <div className="rounded border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Proveedor</th>
+                    <th className="px-3 py-2 text-left">Comprobante</th>
+                    <th className="px-3 py-2 text-right">Monto descontado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {liq.gastoDescuentos!.map((d) => (
+                    <tr key={d.id}>
+                      <td className="px-3 py-2">{d.gasto.facturaProveedor.proveedor.razonSocial}</td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {d.gasto.facturaProveedor.tipoCbte} {d.gasto.facturaProveedor.nroComprobante ?? "s/n"}
+                      </td>
+                      <td className="px-3 py-2 text-right text-orange-600">
+                        {formatearMoneda(d.montoDescontado)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t font-semibold">
+                    <td colSpan={2} className="px-3 py-2">Total gastos descontados</td>
+                    <td className="px-3 py-2 text-right text-orange-600">
+                      {formatearMoneda(liq.gastoDescuentos!.reduce((s, d) => s + d.montoDescontado, 0))}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* Orden de Pago */}
         {ordenPago && (
           <div className="mb-4 pt-4 border-t">
@@ -426,15 +459,6 @@ function ModalDetalleLiquidacion({
                 className="h-9 px-4 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
               >
                 Marcar como emitida en ARCA
-              </button>
-            )}
-            {(liq.estado === "EMITIDA" || liq.estado === "PARCIALMENTE_PAGADA") && (
-              <button
-                onClick={onRegistrarPago}
-                disabled={cargando}
-                className="h-9 px-4 rounded-md bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50"
-              >
-                Registrar pago
               </button>
             )}
             {(liq.estado === "BORRADOR" || liq.estado === "EMITIDA") && (
@@ -1338,9 +1362,6 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
   const [cambioEstadoCargando, setCambioEstadoCargando] = useState(false)
   const [viajeEditando, setViajeEditando] = useState<ViajeParaLiquidar | null>(null)
   const [fleteroInfo, setFleteroInfo] = useState<FleteroInfo | null>(null)
-  const [pagandoLiquidacion, setPagandoLiquidacion] = useState<Liquidacion | null>(null)
-  const [saldoAFavorCC, setSaldoAFavorCC] = useState(0)
-  const [gastosPendientes, setGastosPendientes] = useState<GastoPendiente[]>([])
   const [anulando, setAnulando] = useState<{ pagoId: string; pagoMonto: number; pagoTipo: string; pagoFecha: string } | null>(null)
   const [editando, setEditando] = useState<{ pagoId: string; pagoMonto: number; pagoTipo: string; pagoFecha: string; liquidacionId: string; fleteroId: string } | null>(null)
 
@@ -1387,7 +1408,6 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
         }))
         setViajesPendientes(viajesConEdit)
         setLiquidaciones(data.liquidaciones ?? [])
-        setGastosPendientes(data.gastosPendientes ?? [])
         const fleteroEncontrado = fleteros.find((f) => f.id === fleteroId)
         if (fleteroEncontrado) {
           if (esInterno && fleteroEncontrado.comisionDefault != null) setComisionPct(fleteroEncontrado.comisionDefault)
@@ -1682,17 +1702,6 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
           liq={liquidacionDetalle}
           emailFletero=""
           onCambiarEstado={(estado) => cambiarEstadoLiquidacion(liquidacionDetalle.id, estado)}
-          onRegistrarPago={async () => {
-            try {
-              const res = await fetch(`/api/fleteros/${liquidacionDetalle.fleteroId}/saldo-cc`)
-              if (res.ok) {
-                const data = await res.json()
-                setSaldoAFavorCC(data.saldoAFavor ?? 0)
-              }
-            } catch { /* silencioso */ }
-            setPagandoLiquidacion(liquidacionDetalle)
-            setLiquidacionDetalle(null)
-          }}
           onAnularPago={(pagoId) => {
             const pago = liquidacionDetalle.pagos.find((p) => p.id === pagoId)
             if (pago) setAnulando({ pagoId, pagoMonto: pago.monto, pagoTipo: pago.tipoPago, pagoFecha: pago.fechaPago })
@@ -1737,29 +1746,6 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
             cargarDatos()
           }}
           onCerrar={() => setEditando(null)}
-        />
-      )}
-
-      {/* Modal pago fletero */}
-      {pagandoLiquidacion && (
-        <RegistrarPagoFleteroModal
-          liquidacion={{
-            id: pagandoLiquidacion.id,
-            nroComprobante: pagandoLiquidacion.nroComprobante,
-            ptoVenta: pagandoLiquidacion.ptoVenta,
-            total: pagandoLiquidacion.total,
-            pagosExistentes: pagandoLiquidacion.pagos.reduce((s, p) => s + p.monto, 0),
-            fletero: { id: pagandoLiquidacion.fleteroId, razonSocial: pagandoLiquidacion.fletero.razonSocial, cuit: fleteroInfo?.cuit ?? "" },
-          }}
-          cuentasBancarias={cuentasBancarias}
-          chequesEnCartera={[]}
-          saldoAFavorCC={saldoAFavorCC}
-          gastosPendientes={gastosPendientes.filter((g) => g.estado !== "DESCONTADO_TOTAL")}
-          onSuccess={() => {
-            setPagandoLiquidacion(null)
-            cargarDatos()
-          }}
-          onClose={() => setPagandoLiquidacion(null)}
         />
       )}
 
