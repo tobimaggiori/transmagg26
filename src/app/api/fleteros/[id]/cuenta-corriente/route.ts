@@ -94,6 +94,7 @@ export async function GET(
         where: {
           fleteroId: params.id,
           fechaPago: { gte: desdeDate, lte: hastaDate },
+          anulado: false,
         },
         select: {
           id: true,

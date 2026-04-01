@@ -90,7 +90,7 @@ export async function calcularSaldoCCFletero(fleteroId: string): Promise<SaldoCC
       select: { total: true },
     }),
     prisma.pagoAFletero.findMany({
-      where: { fleteroId },
+      where: { fleteroId, anulado: false },
       select: { monto: true },
     }),
     prisma.notaCreditoDebito.findMany({
@@ -156,7 +156,7 @@ export async function calcularSaldoPendienteLiquidacion(liquidacionId: string): 
     where: { id: liquidacionId },
     select: {
       total: true,
-      pagos: { select: { monto: true } },
+      pagos: { where: { anulado: false }, select: { monto: true } },
     },
   })
 

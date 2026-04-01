@@ -87,6 +87,7 @@
 Tests: 237 passed, 237 total (as of 2026-03-31 — Refactorización Cuentas fusionada con Movimientos)
 
 ## Módulo Chequeras (implementado 2026-03-31)
+- [x] Corrección cheque rechazado: reversión de CC del proveedor y fletero incluida en la transacción atómica — CCs calculadas dinámicamente filtran `anulado: false` en todos los endpoints (calcularSaldoCCFletero, CC historia fletero, CC proveedor)
 - [x] Chequeras: consulta ECheq emitidos (generados desde pagos), cartera recibidos con flujo correcto, endoso a brokers con seguimiento de depósito
 - [x] Página /contabilidad/chequeras con tabs "ECheq Emitidos" y "Cartera Recibidos"
 - [x] Tab Emitidos: alertas vencimiento, filtros (estado/cuenta/beneficiario/período), tabla completa con CUIT/motivo/vinculado a, acciones PATCH (depositar/rechazar), modal detalle

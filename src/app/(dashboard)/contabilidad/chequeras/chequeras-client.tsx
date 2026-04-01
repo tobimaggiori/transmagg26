@@ -141,7 +141,7 @@ function TabEmitidos() {
   const [guardando, setGuardando] = useState(false)
 
   // Estado del flujo de rechazo con preview
-  type ImpactoItem = { tipo: string; referencia: string; montoAnulado: number; estadoActual: string; estadoResultante: string }
+  type ImpactoItem = { tipo: "LIQUIDACION" | "FACTURA_PROVEEDOR" | "CC_PROVEEDOR" | "CC_FLETERO"; referencia: string; montoAnulado: number; estadoActual: string; estadoResultante: string }
   type ImpactoData = { impactos: ImpactoItem[]; costoBancario: { aplica: boolean } }
   const [impactoData, setImpactoData] = useState<ImpactoData | null>(null)
   const [loadingImpacto, setLoadingImpacto] = useState(false)
@@ -456,14 +456,23 @@ function TabEmitidos() {
                       </tr>
                     </thead>
                     <tbody>
-                      {impactoData.impactos.map((imp, i) => (
-                        <tr key={i} className="border-t">
-                          <td className="px-2 py-1.5 font-mono">{imp.referencia}</td>
-                          <td className="px-2 py-1.5 text-right text-destructive">{formatearMoneda(imp.montoAnulado)}</td>
-                          <td className="px-2 py-1.5 text-muted-foreground">{imp.estadoActual}</td>
-                          <td className="px-2 py-1.5 font-medium">{imp.estadoResultante}</td>
-                        </tr>
-                      ))}
+                      {impactoData.impactos.map((imp, i) => {
+                        const esCC = imp.tipo === "CC_PROVEEDOR" || imp.tipo === "CC_FLETERO"
+                        return (
+                          <tr key={i} className={`border-t ${esCC ? "bg-blue-50/40" : ""}`}>
+                            <td className="px-2 py-1.5">
+                              {esCC ? (
+                                <span className="text-blue-700">{imp.referencia}</span>
+                              ) : (
+                                <span className="font-mono">{imp.referencia}</span>
+                              )}
+                            </td>
+                            <td className="px-2 py-1.5 text-right text-destructive">{formatearMoneda(imp.montoAnulado)}</td>
+                            <td className="px-2 py-1.5 text-muted-foreground">{imp.estadoActual}</td>
+                            <td className="px-2 py-1.5 font-medium">{imp.estadoResultante}</td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

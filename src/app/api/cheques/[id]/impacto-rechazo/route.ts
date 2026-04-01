@@ -11,7 +11,7 @@ import { esRolInterno } from "@/lib/permissions"
 import type { Rol } from "@/types"
 
 type ImpactoItem = {
-  tipo: "LIQUIDACION" | "FACTURA_PROVEEDOR"
+  tipo: "LIQUIDACION" | "FACTURA_PROVEEDOR" | "CC_PROVEEDOR" | "CC_FLETERO"
   id: string
   referencia: string
   montoAnulado: number
@@ -20,10 +20,133 @@ type ImpactoItem = {
 }
 
 /**
+ * buildImpactos: calcula los impactos de anular pagosAFletero y pagosProveedor de un cheque.
+ * Retorna la lista de ImpactoItem para LP, FacturasProveedor, CC Proveedor y CC Fletero.
+ */
+function buildImpactos(
+  pagosFletero: {
+    monto: number
+    fleteroId: string
+    fletero: { razonSocial: string }
+    liquidacion: {
+      id: string
+      nroComprobante: number | null
+      ptoVenta: number | null
+      estado: string
+      pagos: { monto: number }[]
+    } | null
+  }[],
+  pagosProveedor: {
+    monto: number
+    facturaProveedor: {
+      id: string
+      nroComprobante: string
+      tipoCbte: string
+      estadoPago: string
+      pagos: { monto: number }[]
+      proveedorId: string
+      proveedor: { razonSocial: string }
+    }
+  }[]
+): ImpactoItem[] {
+  const impactos: ImpactoItem[] = []
+
+  for (const pago of pagosFletero) {
+    const liq = pago.liquidacion
+    if (!liq) continue
+    const totalPagado = liq.pagos.reduce((s, p) => s + p.monto, 0)
+    const totalSinEstePago = totalPagado - pago.monto
+    const estadoResultante = totalSinEstePago <= 0.01 ? "EMITIDA" : "PARCIALMENTE_PAGADA"
+    impactos.push({
+      tipo: "LIQUIDACION",
+      id: liq.id,
+      referencia: `LP ${String(liq.ptoVenta ?? "").padStart(4, "0")}-${String(liq.nroComprobante ?? "").padStart(8, "0")}`,
+      montoAnulado: pago.monto,
+      estadoActual: liq.estado,
+      estadoResultante,
+    })
+    impactos.push({
+      tipo: "CC_FLETERO",
+      id: pago.fleteroId,
+      referencia: `CC ${pago.fletero.razonSocial}`,
+      montoAnulado: pago.monto,
+      estadoActual: "Pago acreditado",
+      estadoResultante: "Pago revertido (saldo reabierto)",
+    })
+  }
+
+  for (const pago of pagosProveedor) {
+    const fact = pago.facturaProveedor
+    const totalPagado = fact.pagos.reduce((s, p) => s + p.monto, 0)
+    const totalSinEstePago = totalPagado - pago.monto
+    const estadoResultante = totalSinEstePago <= 0.01 ? "PENDIENTE" : "PARCIALMENTE_PAGADA"
+    impactos.push({
+      tipo: "FACTURA_PROVEEDOR",
+      id: fact.id,
+      referencia: `${fact.tipoCbte} ${fact.nroComprobante}`,
+      montoAnulado: pago.monto,
+      estadoActual: fact.estadoPago,
+      estadoResultante,
+    })
+    impactos.push({
+      tipo: "CC_PROVEEDOR",
+      id: fact.proveedorId,
+      referencia: `CC ${fact.proveedor.razonSocial}`,
+      montoAnulado: pago.monto,
+      estadoActual: "Pago acreditado",
+      estadoResultante: "Pago revertido (saldo reabierto)",
+    })
+  }
+
+  return impactos
+}
+
+const pagosFleteroSelect = {
+  where: { anulado: false },
+  select: {
+    id: true,
+    monto: true,
+    fleteroId: true,
+    fletero: { select: { razonSocial: true } },
+    liquidacion: {
+      select: {
+        id: true,
+        nroComprobante: true,
+        ptoVenta: true,
+        total: true,
+        estado: true,
+        pagos: { where: { anulado: false }, select: { monto: true } },
+      },
+    },
+  },
+} as const
+
+const pagosProveedorSelect = {
+  where: { anulado: false },
+  select: {
+    id: true,
+    monto: true,
+    facturaProveedor: {
+      select: {
+        id: true,
+        nroComprobante: true,
+        tipoCbte: true,
+        total: true,
+        estadoPago: true,
+        proveedorId: true,
+        proveedor: { select: { razonSocial: true } },
+        pagos: { where: { anulado: false }, select: { monto: true } },
+      },
+    },
+  },
+} as const
+
+/**
  * GET: (id) -> Promise<NextResponse>
  *
  * Dado el id de un cheque (emitido o recibido), calcula el impacto si se marcara
- * como RECHAZADO: pagos que se anularían y nuevos estados de LP/FacturaProveedor.
+ * como RECHAZADO: pagos que se anularían, nuevos estados de LP/FacturaProveedor,
+ * y efecto en CC del proveedor y fletero.
  * Solo accesible para roles internos.
  *
  * Retorna:
@@ -35,7 +158,7 @@ type ImpactoItem = {
  *
  * Ejemplos:
  * GET /api/cheques/abc/impacto-rechazo (cheque EMITIDO con 1 PagoAFletero)
- * // => 200 { cheque: {...}, impactos: [{ tipo: "LIQUIDACION", estadoResultante: "EMITIDA" }], costoBancario: { aplica: true } }
+ * // => 200 { cheque: {...}, impactos: [{ tipo: "LIQUIDACION", ... }, { tipo: "CC_FLETERO", ... }], costoBancario: { aplica: true } }
  * GET /api/cheques/abc/impacto-rechazo (cheque ya RECHAZADO)
  * // => 409 { error: "El cheque ya está rechazado" }
  */
@@ -50,7 +173,7 @@ export async function GET(
 
   const { id } = await params
 
-  // Buscar en emitidos primero, luego en recibidos
+  // Buscar en emitidos primero
   const chequeEmitido = await prisma.chequeEmitido.findUnique({
     where: { id },
     select: {
@@ -58,40 +181,8 @@ export async function GET(
       estado: true,
       monto: true,
       nroCheque: true,
-      pagosFletero: {
-        where: { anulado: false },
-        select: {
-          id: true,
-          monto: true,
-          liquidacion: {
-            select: {
-              id: true,
-              nroComprobante: true,
-              ptoVenta: true,
-              total: true,
-              estado: true,
-              pagos: { where: { anulado: false }, select: { monto: true } },
-            },
-          },
-        },
-      },
-      pagosProveedor: {
-        where: { anulado: false },
-        select: {
-          id: true,
-          monto: true,
-          facturaProveedor: {
-            select: {
-              id: true,
-              nroComprobante: true,
-              tipoCbte: true,
-              total: true,
-              estadoPago: true,
-              pagos: { where: { anulado: false }, select: { monto: true } },
-            },
-          },
-        },
-      },
+      pagosFletero: pagosFleteroSelect,
+      pagosProveedor: pagosProveedorSelect,
     },
   })
 
@@ -99,40 +190,6 @@ export async function GET(
     if (chequeEmitido.estado === "RECHAZADO") {
       return NextResponse.json({ error: "El cheque ya está rechazado" }, { status: 409 })
     }
-
-    const impactos: ImpactoItem[] = []
-
-    for (const pago of chequeEmitido.pagosFletero) {
-      const liq = pago.liquidacion
-      if (!liq) continue
-      const totalPagado = liq.pagos.reduce((s, p) => s + p.monto, 0)
-      const totalSinEstePago = totalPagado - pago.monto
-      const estadoResultante = totalSinEstePago <= 0.01 ? "EMITIDA" : "PARCIALMENTE_PAGADA"
-      impactos.push({
-        tipo: "LIQUIDACION",
-        id: liq.id,
-        referencia: `LP ${String(liq.ptoVenta ?? "").padStart(4, "0")}-${String(liq.nroComprobante ?? "").padStart(8, "0")}`,
-        montoAnulado: pago.monto,
-        estadoActual: liq.estado,
-        estadoResultante,
-      })
-    }
-
-    for (const pago of chequeEmitido.pagosProveedor) {
-      const fact = pago.facturaProveedor
-      const totalPagado = fact.pagos.reduce((s, p) => s + p.monto, 0)
-      const totalSinEstePago = totalPagado - pago.monto
-      const estadoResultante = totalSinEstePago <= 0.01 ? "PENDIENTE" : "PARCIALMENTE_PAGADA"
-      impactos.push({
-        tipo: "FACTURA_PROVEEDOR",
-        id: fact.id,
-        referencia: `${fact.tipoCbte} ${fact.nroComprobante}`,
-        montoAnulado: pago.monto,
-        estadoActual: fact.estadoPago,
-        estadoResultante,
-      })
-    }
-
     return NextResponse.json({
       cheque: {
         id: chequeEmitido.id,
@@ -141,7 +198,7 @@ export async function GET(
         monto: chequeEmitido.monto,
         nroCheque: chequeEmitido.nroCheque,
       },
-      impactos,
+      impactos: buildImpactos(chequeEmitido.pagosFletero, chequeEmitido.pagosProveedor),
       costoBancario: { aplica: chequeEmitido.estado === "EMITIDO" },
     })
   }
@@ -154,40 +211,8 @@ export async function GET(
       estado: true,
       monto: true,
       nroCheque: true,
-      pagosFletero: {
-        where: { anulado: false },
-        select: {
-          id: true,
-          monto: true,
-          liquidacion: {
-            select: {
-              id: true,
-              nroComprobante: true,
-              ptoVenta: true,
-              total: true,
-              estado: true,
-              pagos: { where: { anulado: false }, select: { monto: true } },
-            },
-          },
-        },
-      },
-      pagosProveedor: {
-        where: { anulado: false },
-        select: {
-          id: true,
-          monto: true,
-          facturaProveedor: {
-            select: {
-              id: true,
-              nroComprobante: true,
-              tipoCbte: true,
-              total: true,
-              estadoPago: true,
-              pagos: { where: { anulado: false }, select: { monto: true } },
-            },
-          },
-        },
-      },
+      pagosFletero: pagosFleteroSelect,
+      pagosProveedor: pagosProveedorSelect,
     },
   })
 
@@ -195,40 +220,6 @@ export async function GET(
     if (chequeRecibido.estado === "RECHAZADO") {
       return NextResponse.json({ error: "El cheque ya está rechazado" }, { status: 409 })
     }
-
-    const impactos: ImpactoItem[] = []
-
-    for (const pago of chequeRecibido.pagosFletero) {
-      const liq = pago.liquidacion
-      if (!liq) continue
-      const totalPagado = liq.pagos.reduce((s, p) => s + p.monto, 0)
-      const totalSinEstePago = totalPagado - pago.monto
-      const estadoResultante = totalSinEstePago <= 0.01 ? "EMITIDA" : "PARCIALMENTE_PAGADA"
-      impactos.push({
-        tipo: "LIQUIDACION",
-        id: liq.id,
-        referencia: `LP ${String(liq.ptoVenta ?? "").padStart(4, "0")}-${String(liq.nroComprobante ?? "").padStart(8, "0")}`,
-        montoAnulado: pago.monto,
-        estadoActual: liq.estado,
-        estadoResultante,
-      })
-    }
-
-    for (const pago of chequeRecibido.pagosProveedor) {
-      const fact = pago.facturaProveedor
-      const totalPagado = fact.pagos.reduce((s, p) => s + p.monto, 0)
-      const totalSinEstePago = totalPagado - pago.monto
-      const estadoResultante = totalSinEstePago <= 0.01 ? "PENDIENTE" : "PARCIALMENTE_PAGADA"
-      impactos.push({
-        tipo: "FACTURA_PROVEEDOR",
-        id: fact.id,
-        referencia: `${fact.tipoCbte} ${fact.nroComprobante}`,
-        montoAnulado: pago.monto,
-        estadoActual: fact.estadoPago,
-        estadoResultante,
-      })
-    }
-
     return NextResponse.json({
       cheque: {
         id: chequeRecibido.id,
@@ -237,7 +228,7 @@ export async function GET(
         monto: chequeRecibido.monto,
         nroCheque: chequeRecibido.nroCheque,
       },
-      impactos,
+      impactos: buildImpactos(chequeRecibido.pagosFletero, chequeRecibido.pagosProveedor),
       costoBancario: { aplica: false },
     })
   }
