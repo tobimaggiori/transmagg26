@@ -24,6 +24,7 @@ import {
 import { formatearCuit } from "@/lib/utils"
 import { CondicionIva } from "@/types"
 import { Plus, Pencil, Trash2, Search, ChevronDown, ChevronRight, Truck, User, UserX } from "lucide-react"
+import { ContactosEmailSubseccion, type ContactoEmailItem } from "./contactos-email-subseccion"
 
 export interface ChoferFlota {
   id: string
@@ -49,6 +50,7 @@ export interface FleteroAbm {
   usuario: { nombre: string; apellido: string; email: string }
   camiones: CamionAbm[]
   choferes: ChoferFlota[]
+  contactosEmail: ContactoEmailItem[]
 }
 
 interface FleterosAbmProps {
@@ -467,6 +469,13 @@ function FlotaSubseccion({ fletero }: { fletero: FleteroAbm }) {
           </div>
         </div>
       )}
+
+      {/* Contactos de email */}
+      <ContactosEmailSubseccion
+        parentId={fletero.id}
+        parentType="fletero"
+        contactos={fletero.contactosEmail}
+      />
 
       {/* Dialogs */}
       <Dialog open={dialogCamion} onOpenChange={setDialogCamion}>

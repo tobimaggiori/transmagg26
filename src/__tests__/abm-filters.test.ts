@@ -13,7 +13,7 @@ import { calcularFiltroProveedorOp } from "@/components/proveedores-client"
 
 // ─── calcularFiltroEmpresa ─────────────────────────────────────────────────────
 describe("calcularFiltroEmpresa", () => {
-  const empresa = { id: "e1", razonSocial: "Alimentos del Sur SA", cuit: "30714295698", condicionIva: "RESPONSABLE_INSCRIPTO", direccion: null }
+  const empresa = { id: "e1", razonSocial: "Alimentos del Sur SA", cuit: "30714295698", condicionIva: "RESPONSABLE_INSCRIPTO", direccion: null, contactosEmail: [] }
 
   it("retorna true cuando la búsqueda coincide con razón social (case insensitive)", () => {
     expect(calcularFiltroEmpresa(empresa, "alimentos")).toBe(true)
@@ -39,6 +39,7 @@ describe("calcularFiltroFletero", () => {
     usuario: { nombre: "Juan", apellido: "Pérez", email: "juan.perez@fletero.com" },
     camiones: [],
     choferes: [],
+    contactosEmail: [],
   }
 
   it("retorna true cuando coincide con razón social", () => {

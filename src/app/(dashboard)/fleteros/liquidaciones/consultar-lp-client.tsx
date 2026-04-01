@@ -9,6 +9,7 @@ import React, { useState, useCallback, useEffect, Fragment } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas } from "@/lib/viajes"
 import { formatearNroComprobante } from "@/lib/liquidacion-utils"
+import { SelectContactoEmail } from "@/components/forms/select-contacto-email"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -79,7 +80,7 @@ function EstadoBadge({ estado }: { estado: string }) {
 
 // ─── Enviar email Orden de Pago ───────────────────────────────────────────────
 
-function EnviarEmailOP({ ordenPagoId, nro }: { ordenPagoId: string; nro: number }) {
+function EnviarEmailOP({ ordenPagoId, nro, fleteroId }: { ordenPagoId: string; nro: number; fleteroId: string }) {
   const [abierto, setAbierto] = React.useState(false)
   const [email, setEmail] = React.useState("")
   const [enviando, setEnviando] = React.useState(false)
@@ -120,14 +121,16 @@ function EnviarEmailOP({ ordenPagoId, nro }: { ordenPagoId: string; nro: number 
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50" onClick={() => setAbierto(false)}>
           <div className="bg-background rounded-lg shadow-xl p-5 w-80" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-semibold mb-1">Enviar OP Nro {String(nro).padStart(8, "0")}</h3>
-            <p className="text-xs text-muted-foreground mb-3">Dejá vacío para usar el email del fletero.</p>
-            <input
-              type="email"
-              placeholder="email@destino.com (opcional)"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full h-9 px-3 rounded-md border text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+            <div className="mb-3">
+              <p className="text-xs font-medium mb-1">Enviar a</p>
+              <SelectContactoEmail
+                parentId={fleteroId}
+                parentType="fletero"
+                value={email}
+                onChange={setEmail}
+                disabled={enviando}
+              />
+            </div>
             {resultado && (
               <p className={`text-xs mb-2 ${resultado.startsWith("Enviado") ? "text-green-600" : "text-red-600"}`}>{resultado}</p>
             )}
@@ -135,7 +138,7 @@ function EnviarEmailOP({ ordenPagoId, nro }: { ordenPagoId: string; nro: number 
               <button onClick={() => setAbierto(false)} className="h-8 px-3 rounded-md border text-sm hover:bg-accent">Cancelar</button>
               <button
                 onClick={enviar}
-                disabled={enviando}
+                disabled={enviando || !email}
                 className="h-8 px-3 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50"
               >
                 {enviando ? "Enviando..." : "Enviar"}
@@ -280,7 +283,7 @@ function ModalDetalleLiquidacion({
                               >
                                 Imprimir
                               </a>
-                              <EnviarEmailOP ordenPagoId={p.ordenPago.id} nro={p.ordenPago.nro} />
+                              <EnviarEmailOP ordenPagoId={p.ordenPago.id} nro={p.ordenPago.nro} fleteroId={liq.fleteroId} />
                             </div>
                           )}
                         </td>

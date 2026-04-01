@@ -129,6 +129,7 @@ model Empresa {
   viajes           Viaje[]            @relation("EmpresaViajes")
   pagosRecibidos   PagoDeEmpresa[]
   chequesRecibidos ChequeRecibido[]
+  contactosEmail   ContactoEmail[]
 
   @@map("empresas")
 }
@@ -170,8 +171,26 @@ model Fletero {
   gastosFletero            GastoFletero[]
   facturasPorCuenta        FacturaProveedor[]  @relation("FacturaPorCuentaDeFletero")
   ordenesPago              OrdenPago[]
+  contactosEmail           ContactoEmail[]
 
   @@map("fleteros")
+}
+
+// ─── CONTACTOS EMAIL ──────────────────────────────────────────────────────────
+
+model ContactoEmail {
+  id        String   @id @default(uuid())
+  email     String
+  nombre    String?
+  empresaId String?  @map("empresa_id")
+  fleteroId String?  @map("fletero_id")
+  activo    Boolean  @default(true)
+  creadoEn  DateTime @default(now()) @map("creado_en")
+
+  empresa Empresa? @relation(fields: [empresaId], references: [id])
+  fletero Fletero? @relation(fields: [fleteroId], references: [id])
+
+  @@map("contactos_email")
 }
 
 // ─── CAMIONES ─────────────────────────────────────────────────────────────────

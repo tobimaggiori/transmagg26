@@ -9,6 +9,7 @@ import { useState, useCallback } from "react"
 import { SearchCombobox, type SearchComboboxItem } from "@/components/ui/search-combobox"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { RegistrarPagoFleteroModal } from "@/components/forms/registrar-pago-fletero-form"
+import { SelectContactoEmail } from "@/components/forms/select-contacto-email"
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -70,8 +71,8 @@ interface RegistrarPagoClientProps {
 interface ConfirmacionOP {
   opNro: number
   opId: string
+  fleteroId: string
   fleteroNombre: string
-  fleteroEmail: string | null
   operadorEmail: string | null
   operadorSmtpActivo: boolean
 }
@@ -95,9 +96,9 @@ function ModalConfirmacionOP({
   confirmacion: ConfirmacionOP
   onClose: () => void
 }) {
-  const { opId, opNro, fleteroNombre, fleteroEmail, operadorEmail, operadorSmtpActivo } = confirmacion
+  const { opId, opNro, fleteroId, fleteroNombre, operadorEmail, operadorSmtpActivo } = confirmacion
   const [mostrarEmail, setMostrarEmail] = useState(false)
-  const [emailDestino, setEmailDestino] = useState(fleteroEmail ?? "")
+  const [emailDestino, setEmailDestino] = useState("")
   const [mensajeAdicional, setMensajeAdicional] = useState("")
   const [enviando, setEnviando] = useState(false)
   const [enviado, setEnviado] = useState(false)
@@ -187,14 +188,13 @@ function ModalConfirmacionOP({
                   </p>
                 )}
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">Email destinatario</label>
-                  <input
-                    type="email"
+                  <label className="text-xs font-medium">Enviar a</label>
+                  <SelectContactoEmail
+                    parentId={fleteroId}
+                    parentType="fletero"
                     value={emailDestino}
-                    onChange={(e) => setEmailDestino(e.target.value)}
-                    className="w-full h-8 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    placeholder="email@ejemplo.com"
-                    disabled={!operadorSmtpActivo}
+                    onChange={setEmailDestino}
+                    disabled={!operadorSmtpActivo || enviando}
                   />
                 </div>
                 <div className="space-y-1">
@@ -317,8 +317,8 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera, opera
     setConfirmacionOP({
       opNro: nroOP,
       opId,
+      fleteroId,
       fleteroNombre: fletero?.razonSocial ?? "",
-      fleteroEmail: fletero?.email ?? null,
       operadorEmail,
       operadorSmtpActivo,
     })

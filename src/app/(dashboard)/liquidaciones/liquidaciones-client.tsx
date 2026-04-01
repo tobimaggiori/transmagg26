@@ -13,6 +13,7 @@ import type { ProvinciaArgentina } from "@/lib/provincias"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
 import { labelCondicionIva, formatearNroComprobante } from "@/lib/liquidacion-utils"
 import { WorkflowNote } from "@/components/workflow/workflow-note"
+import { SelectContactoEmail } from "@/components/forms/select-contacto-email"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -147,15 +148,15 @@ function EstadoBadge({ estado }: { estado: string }) {
 function ModalEnviarEmailOP({
   opId,
   opNro,
-  emailDefault,
+  fleteroId,
   onCerrar,
 }: {
   opId: string
   opNro: number
-  emailDefault: string
+  fleteroId: string
   onCerrar: () => void
 }) {
-  const [email, setEmail] = useState(emailDefault)
+  const [email, setEmail] = useState("")
   const [enviando, setEnviando] = useState(false)
   const [resultado, setResultado] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -198,12 +199,13 @@ function ModalEnviarEmailOP({
         ) : (
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium mb-1 block">Email destino</label>
-              <input
-                type="email"
+              <label className="text-sm font-medium mb-1 block">Enviar a</label>
+              <SelectContactoEmail
+                parentId={fleteroId}
+                parentType="fletero"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded border bg-background px-3 py-2 text-sm"
+                onChange={setEmail}
+                disabled={enviando}
               />
             </div>
             {error && <p className="text-xs text-red-600">{error}</p>}
@@ -237,7 +239,6 @@ function ModalEnviarEmailOP({
  */
 function ModalDetalleLiquidacion({
   liq,
-  emailFletero,
   onCambiarEstado,
   onAnularPago,
   onEditarPago,
@@ -245,7 +246,6 @@ function ModalDetalleLiquidacion({
   cargando,
 }: {
   liq: Liquidacion
-  emailFletero?: string
   onCambiarEstado: (estado: string) => void
   onAnularPago?: (pagoId: string) => void
   onEditarPago?: (pagoId: string) => void
@@ -438,7 +438,7 @@ function ModalDetalleLiquidacion({
           <ModalEnviarEmailOP
             opId={modalEmail.opId}
             opNro={modalEmail.opNro}
-            emailDefault={emailFletero ?? ""}
+            fleteroId={liq.fleteroId}
             onCerrar={() => setModalEmail(null)}
           />
         )}
@@ -1700,7 +1700,6 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
       {liquidacionDetalle && (
         <ModalDetalleLiquidacion
           liq={liquidacionDetalle}
-          emailFletero=""
           onCambiarEstado={(estado) => cambiarEstadoLiquidacion(liquidacionDetalle.id, estado)}
           onAnularPago={(pagoId) => {
             const pago = liquidacionDetalle.pagos.find((p) => p.id === pagoId)

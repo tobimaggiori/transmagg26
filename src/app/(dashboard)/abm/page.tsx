@@ -66,7 +66,14 @@ export default async function AbmPage({
   const [empresas, fleteros, , usuarios, proveedores, cuentas, fcis, empleados] = await Promise.all([
     tabValido === "empresas"
       ? prisma.empresa.findMany({
-          select: { id: true, razonSocial: true, cuit: true, condicionIva: true, direccion: true },
+          select: {
+            id: true, razonSocial: true, cuit: true, condicionIva: true, direccion: true,
+            contactosEmail: {
+              where: { activo: true },
+              select: { id: true, email: true, nombre: true },
+              orderBy: { creadoEn: "asc" },
+            },
+          },
           orderBy: { razonSocial: "asc" },
         })
       : [],
@@ -94,6 +101,11 @@ export default async function AbmPage({
               where: { rol: "CHOFER", activo: true },
               select: { id: true, nombre: true, apellido: true, email: true },
               orderBy: [{ apellido: "asc" }, { nombre: "asc" }],
+            },
+            contactosEmail: {
+              where: { activo: true },
+              select: { id: true, email: true, nombre: true },
+              orderBy: { creadoEn: "asc" },
             },
           },
           orderBy: { razonSocial: "asc" },

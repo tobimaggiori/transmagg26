@@ -3,6 +3,7 @@
 /**
  * Componente ABM para gestión de empresas clientes.
  * Incluye búsqueda, creación, edición y desactivación con dialogs.
+ * Cada empresa es expandible para gestionar sus contactos de email.
  */
 
 import { useState } from "react"
@@ -21,7 +22,8 @@ import {
 } from "@/components/ui/dialog"
 import { formatearCuit } from "@/lib/utils"
 import { CondicionIva } from "@/types"
-import { Plus, Pencil, Trash2, Search } from "lucide-react"
+import { Plus, Pencil, Trash2, Search, ChevronDown, ChevronRight } from "lucide-react"
+import { ContactosEmailSubseccion, type ContactoEmailItem } from "./contactos-email-subseccion"
 
 export interface EmpresaAbm {
   id: string
@@ -29,6 +31,7 @@ export interface EmpresaAbm {
   cuit: string
   condicionIva: string
   direccion: string | null
+  contactosEmail: ContactoEmailItem[]
 }
 
 interface EmpresasAbmProps {
@@ -37,15 +40,6 @@ interface EmpresasAbmProps {
 
 /**
  * calcularFiltroEmpresa: EmpresaAbm string -> boolean
- *
- * Dado una empresa y un texto de búsqueda, devuelve true si la razón social
- * o el CUIT contienen el texto (insensible a mayúsculas/minúsculas).
- * Existe para filtrar la lista de empresas en el cliente sin roundtrips al servidor.
- *
- * Ejemplos:
- * calcularFiltroEmpresa({ razonSocial: "ADS SA", cuit: "30714295698", ... }, "ads") === true
- * calcularFiltroEmpresa({ razonSocial: "ADS SA", cuit: "30714295698", ... }, "307") === true
- * calcularFiltroEmpresa({ razonSocial: "ADS SA", cuit: "30714295698", ... }, "xyz") === false
  */
 export function calcularFiltroEmpresa(empresa: EmpresaAbm, busqueda: string): boolean {
   const q = busqueda.toLowerCase()
@@ -127,27 +121,13 @@ function EmpresaFormModal({
   )
 }
 
-/**
- * EmpresasAbm: EmpresasAbmProps -> JSX.Element
- *
- * Dado el listado de empresas, renderiza la tabla ABM con buscador por razón social/CUIT,
- * botones Editar/Desactivar por fila y dialog de nueva empresa.
- * Existe para centralizar el alta, baja y modificación de empresas clientes
- * en la sección ABM, separada de la operatoria.
- *
- * Ejemplos:
- * <EmpresasAbm empresas={[{ id:"e1", razonSocial:"ADS SA", cuit:"30714295698", ... }]} />
- * // => lista filtrable con "ADS SA" + botones Editar/Desactivar
- * <EmpresasAbm empresas={[]} />
- * // => mensaje "No hay empresas" + botón "Nueva empresa"
- * // => búsqueda "xyz" en lista vacía → "Sin resultados"
- */
 export function EmpresasAbm({ empresas }: EmpresasAbmProps) {
   const router = useRouter()
   const [busqueda, setBusqueda] = useState("")
   const [dialogCrear, setDialogCrear] = useState(false)
   const [dialogEditar, setDialogEditar] = useState<EmpresaAbm | null>(null)
   const [dialogEliminar, setDialogEliminar] = useState<EmpresaAbm | null>(null)
+  const [expandida, setExpandida] = useState<string | null>(null)
   const [loadingElim, setLoadingElim] = useState(false)
   const [errorElim, setErrorElim] = useState<string | null>(null)
 
@@ -194,30 +174,50 @@ export function EmpresasAbm({ empresas }: EmpresasAbmProps) {
           {busqueda ? "Sin resultados para la búsqueda." : "No hay empresas registradas."}
         </p>
       ) : (
-        <div className="border rounded-lg divide-y">
+        <div className="border rounded-lg">
           {filtradas.map((emp) => (
-            <div key={emp.id} className="flex items-center justify-between px-4 py-3">
-              <div>
-                <p className="font-medium">{emp.razonSocial}</p>
-                <p className="text-sm text-muted-foreground">
-                  CUIT: {formatearCuit(emp.cuit)} &middot; {emp.condicionIva.replace(/_/g, " ")}
-                  {emp.direccion ? ` · ${emp.direccion}` : ""}
-                </p>
+            <div key={emp.id} className="border-b last:border-b-0">
+              <div className="flex items-center justify-between px-4 py-3">
+                <button
+                  className="flex items-center gap-2 text-left flex-1 min-w-0"
+                  onClick={() => setExpandida(expandida === emp.id ? null : emp.id)}
+                >
+                  {expandida === emp.id
+                    ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                    : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                  }
+                  <div>
+                    <p className="font-medium">{emp.razonSocial}</p>
+                    <p className="text-sm text-muted-foreground">
+                      CUIT: {formatearCuit(emp.cuit)} &middot; {emp.condicionIva.replace(/_/g, " ")}
+                      {emp.direccion ? ` · ${emp.direccion}` : ""}
+                      {emp.contactosEmail.length > 0 && ` · ${emp.contactosEmail.length} contacto${emp.contactosEmail.length !== 1 ? "s" : ""} email`}
+                    </p>
+                  </div>
+                </button>
+                <div className="flex gap-2 ml-3">
+                  <Button variant="outline" size="sm" onClick={() => setDialogEditar(emp)}>
+                    <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => setDialogEliminar(emp)}>
+                    <Trash2 className="h-3.5 w-3.5 mr-1" /> Desactivar
+                  </Button>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => setDialogEditar(emp)}>
-                  <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
-                </Button>
-                <Button variant="destructive" size="sm" onClick={() => setDialogEliminar(emp)}>
-                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Desactivar
-                </Button>
-              </div>
+              {expandida === emp.id && (
+                <div className="ml-6 mb-3 mr-4 border-l-2 border-gray-200 pl-4">
+                  <ContactosEmailSubseccion
+                    parentId={emp.id}
+                    parentType="empresa"
+                    contactos={emp.contactosEmail}
+                  />
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
 
-      {/* Dialog: Nueva empresa */}
       <Dialog open={dialogCrear} onOpenChange={setDialogCrear}>
         <DialogContent>
           <DialogHeader>
@@ -228,7 +228,6 @@ export function EmpresasAbm({ empresas }: EmpresasAbmProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog: Editar empresa */}
       <Dialog open={!!dialogEditar} onOpenChange={(o) => { if (!o) setDialogEditar(null) }}>
         <DialogContent>
           <DialogHeader>
@@ -239,7 +238,6 @@ export function EmpresasAbm({ empresas }: EmpresasAbmProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog: Confirmar desactivación */}
       <Dialog open={!!dialogEliminar} onOpenChange={(o) => { if (!o) { setDialogEliminar(null); setErrorElim(null) } }}>
         <DialogContent>
           <DialogHeader>
