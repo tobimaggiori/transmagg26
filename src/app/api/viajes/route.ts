@@ -126,7 +126,29 @@ export async function GET(request: NextRequest) {
         operador: { select: { nombre: true, apellido: true } },
         enLiquidaciones: {
           select: {
-            liquidacion: { select: { estado: true, cae: true, arcaEstado: true } },
+            liquidacion: {
+              select: {
+                estado: true,
+                cae: true,
+                arcaEstado: true,
+                nroComprobante: true,
+                ptoVenta: true,
+                pdfS3Key: true,
+              },
+            },
+          },
+        },
+        enFacturas: {
+          select: {
+            factura: {
+              select: {
+                id: true,
+                nroComprobante: true,
+                pdfS3Key: true,
+                estado: true,
+                tipoCbte: true,
+              },
+            },
           },
         },
       },

@@ -82,6 +82,7 @@ type ViajesClientProps = {
   empresaIdPropio: string | null
   initialFleteroId: string | null
   initialEmpresaId: string | null
+  autoOpenModal?: boolean
 }
 
 // ─── Carta de porte cell ──────────────────────────────────────────────────────
@@ -761,6 +762,7 @@ export function ViajesClient({
   empresaIdPropio,
   initialFleteroId,
   initialEmpresaId,
+  autoOpenModal = false,
 }: ViajesClientProps) {
   const esInterno = rol === "ADMIN_TRANSMAGG" || rol === "OPERADOR_TRANSMAGG"
 
@@ -777,7 +779,7 @@ export function ViajesClient({
   const [hasta, setHasta] = useState("")
   const [buscarCarta, setBuscarCarta] = useState("")
   const [filtroCupo, setFiltroCupo] = useState<"todos" | "con_cupo" | "sin_cupo">("todos")
-  const [modalAbierto, setModalAbierto] = useState(false)
+  const [modalAbierto, setModalAbierto] = useState(autoOpenModal)
   const [viajeEditando, setViajeEditando] = useState<ViajeAPI | undefined>(undefined)
   const [guardando, setGuardando] = useState(false)
   const [errorModal, setErrorModal] = useState<string | null>(null)

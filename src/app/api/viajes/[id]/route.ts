@@ -29,6 +29,9 @@ const actualizarViajeSchema = z.object({
   tarifaOperativaInicial: z.number().positive().optional(),
   empresaId: z.string().optional(),
   motivoCambioEmpresa: z.string().optional(),
+  fleteroId: z.string().uuid().nullable().optional(),
+  camionId: z.string().uuid().optional(),
+  motivoCambioFletero: z.string().optional(),
 })
 
 /**
@@ -120,9 +123,29 @@ export async function PATCH(
 
     const viaje = await prisma.viaje.findUnique({
       where: { id: params.id },
-      include: { empresa: { select: { razonSocial: true } } },
+      include: {
+        empresa: { select: { razonSocial: true } },
+        fletero: { select: { razonSocial: true } },
+        enLiquidaciones: { select: { id: true } },
+      },
     })
     if (!viaje) return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 })
+
+    // Validaciones de cambio de fletero
+    if (parsed.data.fleteroId !== undefined) {
+      if (viaje.estadoLiquidacion === "LIQUIDADO") {
+        return NextResponse.json(
+          { error: "No se puede cambiar el fletero de un viaje ya liquidado" },
+          { status: 422 }
+        )
+      }
+      if (!parsed.data.motivoCambioFletero?.trim()) {
+        return NextResponse.json(
+          { error: "El motivo del cambio de fletero es obligatorio" },
+          { status: 422 }
+        )
+      }
+    }
 
     // Validaciones de cambio de empresa
     if (parsed.data.empresaId) {
@@ -140,13 +163,13 @@ export async function PATCH(
       }
     }
 
-    const { fechaViaje, empresaId, motivoCambioEmpresa, ...resto } = parsed.data
+    const { fechaViaje, empresaId, motivoCambioEmpresa, fleteroId, camionId, motivoCambioFletero, ...resto } = parsed.data
     const actualizado = await prisma.$transaction(async (tx) => {
+      const historial: Array<Record<string, unknown>> = JSON.parse(viaje.historialCambios ?? "[]")
+
       // Si se cambia empresa, registrar en historial
-      let historialCambios = viaje.historialCambios
       if (empresaId && empresaId !== viaje.empresaId) {
         const nuevaEmpresa = await tx.empresa.findUnique({ where: { id: empresaId }, select: { razonSocial: true } })
-        const historial: Array<Record<string, unknown>> = JSON.parse(viaje.historialCambios ?? "[]")
         historial.push({
           fecha: new Date().toISOString(),
           campo: "empresaId",
@@ -155,14 +178,33 @@ export async function PATCH(
           motivo: motivoCambioEmpresa,
           operadorId: session.user.id,
         })
-        historialCambios = JSON.stringify(historial)
       }
+
+      // Si se cambia fletero, registrar en historial
+      if (fleteroId !== undefined && fleteroId !== viaje.fleteroId) {
+        const nuevoFletero = fleteroId
+          ? await tx.fletero.findUnique({ where: { id: fleteroId }, select: { razonSocial: true } })
+          : null
+        historial.push({
+          fecha: new Date().toISOString(),
+          campo: "fleteroId",
+          valorAnterior: viaje.fletero?.razonSocial ?? "(propio)",
+          valorNuevo: nuevoFletero?.razonSocial ?? "(propio)",
+          motivo: motivoCambioFletero,
+          operadorId: session.user.id,
+        })
+      }
+
+      const historialCambios = historial.length > 0 ? JSON.stringify(historial) : viaje.historialCambios
 
       const updated = await tx.viaje.update({
         where: { id: params.id },
         data: {
           ...resto,
-          ...(empresaId ? { empresaId, historialCambios } : {}),
+          ...(empresaId ? { empresaId } : {}),
+          ...(fleteroId !== undefined ? { fleteroId } : {}),
+          ...(camionId ? { camionId } : {}),
+          ...(historial.length > 0 ? { historialCambios } : {}),
           ...(fechaViaje ? { fechaViaje: new Date(fechaViaje) } : {}),
         },
         include: {
