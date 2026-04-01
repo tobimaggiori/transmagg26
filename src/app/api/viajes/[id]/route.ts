@@ -27,6 +27,8 @@ const actualizarViajeSchema = z.object({
   provinciaDestino: z.enum(PROVINCIAS_ARGENTINA as unknown as [string, ...string[]]).nullable().optional(),
   kilos: z.number().positive().nullable().optional(),
   tarifaOperativaInicial: z.number().positive().optional(),
+  empresaId: z.string().optional(),
+  motivoCambioEmpresa: z.string().optional(),
 })
 
 /**
@@ -116,15 +118,51 @@ export async function PATCH(
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const viaje = await prisma.viaje.findUnique({ where: { id: params.id } })
+    const viaje = await prisma.viaje.findUnique({
+      where: { id: params.id },
+      include: { empresa: { select: { razonSocial: true } } },
+    })
     if (!viaje) return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 })
 
-    const { fechaViaje, ...resto } = parsed.data
+    // Validaciones de cambio de empresa
+    if (parsed.data.empresaId) {
+      if (viaje.estadoFactura === "FACTURADA") {
+        return NextResponse.json(
+          { error: "No se puede cambiar la empresa de un viaje ya facturado" },
+          { status: 422 }
+        )
+      }
+      if (!parsed.data.motivoCambioEmpresa?.trim()) {
+        return NextResponse.json(
+          { error: "El motivo del cambio de empresa es obligatorio" },
+          { status: 422 }
+        )
+      }
+    }
+
+    const { fechaViaje, empresaId, motivoCambioEmpresa, ...resto } = parsed.data
     const actualizado = await prisma.$transaction(async (tx) => {
+      // Si se cambia empresa, registrar en historial
+      let historialCambios = viaje.historialCambios
+      if (empresaId && empresaId !== viaje.empresaId) {
+        const nuevaEmpresa = await tx.empresa.findUnique({ where: { id: empresaId }, select: { razonSocial: true } })
+        const historial: Array<Record<string, unknown>> = JSON.parse(viaje.historialCambios ?? "[]")
+        historial.push({
+          fecha: new Date().toISOString(),
+          campo: "empresaId",
+          valorAnterior: viaje.empresa.razonSocial,
+          valorNuevo: nuevaEmpresa?.razonSocial ?? empresaId,
+          motivo: motivoCambioEmpresa,
+          operadorId: session.user.id,
+        })
+        historialCambios = JSON.stringify(historial)
+      }
+
       const updated = await tx.viaje.update({
         where: { id: params.id },
         data: {
           ...resto,
+          ...(empresaId ? { empresaId, historialCambios } : {}),
           ...(fechaViaje ? { fechaViaje: new Date(fechaViaje) } : {}),
         },
         include: {

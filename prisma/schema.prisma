@@ -242,6 +242,7 @@ model Viaje {
   // Carta de porte — número único + PDF en R2
   nroCartaPorte       String?  @map("nro_carta_porte")
   cartaPorteS3Key     String?  @map("carta_porte_s3_key")
+  historialCambios    String?  @default("[]") @map("historial_cambios")
   creadoEn            DateTime @default(now()) @map("creado_en")
 
   fletero  Fletero? @relation("FleteroViajes", fields: [fleteroId], references: [id])
