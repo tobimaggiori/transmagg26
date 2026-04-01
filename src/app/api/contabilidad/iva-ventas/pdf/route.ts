@@ -62,6 +62,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             empresa: { select: { razonSocial: true, cuit: true } },
           },
         },
+        liquidacion: {
+          select: {
+            nroComprobante: true,
+            ptoVenta: true,
+            grabadaEn: true,
+            fletero: { select: { razonSocial: true, cuit: true } },
+          },
+        },
       },
       orderBy: [{ periodo: "asc" }],
     })
@@ -82,11 +90,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     const filas = ventas
       .map((a) => {
+        const esLP = a.tipoReferencia === "LIQUIDACION"
         const fe = a.facturaEmitida
-        const fecha = fe?.emitidaEn ? fmtFecha(fe.emitidaEn) : a.periodo
-        const empresa = fe?.empresa.razonSocial ?? "—"
-        const cbte = fe ? `${fe.tipoCbte} ${fe.nroComprobante ?? "s/n"}` : "—"
-        const cuit = fe?.empresa.cuit ? fmtCuit(fe.empresa.cuit) : "—"
+        const liq = a.liquidacion
+        const fecha = esLP
+          ? (liq?.grabadaEn ? fmtFecha(liq.grabadaEn) : a.periodo)
+          : (fe?.emitidaEn ? fmtFecha(fe.emitidaEn) : a.periodo)
+        const empresa = esLP ? (liq?.fletero.razonSocial ?? "—") : (fe?.empresa.razonSocial ?? "—")
+        const cbte = esLP
+          ? (liq?.ptoVenta != null && liq?.nroComprobante != null
+              ? `LP ${String(liq.ptoVenta).padStart(4, "0")}-${String(liq.nroComprobante).padStart(8, "0")}`
+              : "LP s/n")
+          : (fe ? `${fe.tipoCbte} ${fe.nroComprobante ?? "s/n"}` : "—")
+        const cuit = esLP
+          ? (liq?.fletero.cuit ? fmtCuit(liq.fletero.cuit) : "—")
+          : (fe?.empresa.cuit ? fmtCuit(fe.empresa.cuit) : "—")
         return `<tr>
           <td>${fecha}</td>
           <td>${empresa}</td>

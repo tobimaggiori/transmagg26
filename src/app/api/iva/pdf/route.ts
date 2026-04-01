@@ -73,6 +73,9 @@ export async function GET(request: NextRequest) {
       facturaProveedor: {
         select: { nroComprobante: true, fechaCbte: true, proveedor: { select: { razonSocial: true } } },
       },
+      liquidacion: {
+        select: { nroComprobante: true, ptoVenta: true, grabadaEn: true, fletero: { select: { razonSocial: true } } },
+      },
     },
     orderBy: [{ tipo: "asc" }, { periodo: "asc" }],
   })
@@ -83,15 +86,25 @@ export async function GET(request: NextRequest) {
   const totalCompras = compras.reduce((acc, a) => acc + a.montoIva, 0)
   const posicion = totalVentas - totalCompras
 
-  const filaVenta = (a: (typeof ventas)[0]) => `
-    <tr>
+  const filaVenta = (a: (typeof ventas)[0]) => {
+    const esLP = a.tipoReferencia === "LIQUIDACION"
+    const contraparte = esLP
+      ? (a.liquidacion?.fletero.razonSocial ?? "—")
+      : (a.facturaEmitida?.empresa.razonSocial ?? "—")
+    const cbte = esLP
+      ? (a.liquidacion?.ptoVenta != null && a.liquidacion?.nroComprobante != null
+          ? `LP ${String(a.liquidacion.ptoVenta).padStart(4, "0")}-${String(a.liquidacion.nroComprobante).padStart(8, "0")}`
+          : "LP s/n")
+      : (a.facturaEmitida?.nroComprobante ?? "—")
+    return `<tr>
       <td>${a.periodo}</td>
-      <td>${a.facturaEmitida?.empresa.razonSocial ?? "—"}</td>
-      <td>${a.facturaEmitida?.nroComprobante ?? "—"}</td>
+      <td>${contraparte}</td>
+      <td>${cbte}</td>
       <td class="right">${fmt(a.baseImponible)}</td>
       <td class="right">${a.alicuota}%</td>
       <td class="right">${fmt(a.montoIva)}</td>
     </tr>`
+  }
 
   const filaCompra = (a: (typeof compras)[0]) => `
     <tr>

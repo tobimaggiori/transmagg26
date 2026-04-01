@@ -86,6 +86,14 @@ export default async function ContabilidadIvaPage({
           proveedor: { select: { razonSocial: true, cuit: true } },
         },
       },
+      liquidacion: {
+        select: {
+          nroComprobante: true,
+          ptoVenta: true,
+          grabadaEn: true,
+          fletero: { select: { razonSocial: true, cuit: true } },
+        },
+      },
     },
     orderBy: [{ periodo: "asc" }],
     take: 2000,
@@ -116,7 +124,7 @@ export default async function ContabilidadIvaPage({
   // Grouping for ventas-alicuota: tipoCbte → alicuota
   const ventasAlicuotaMap = new Map<string, Map<number, { neto: number; iva: number; count: number }>>()
   for (const a of ventas) {
-    const tipoCbte = a.facturaEmitida?.tipoCbte ?? "—"
+    const tipoCbte = a.tipoReferencia === "LIQUIDACION" ? "Cta Vta Liq Prod" : (a.facturaEmitida?.tipoCbte ?? "—")
     if (!ventasAlicuotaMap.has(tipoCbte)) ventasAlicuotaMap.set(tipoCbte, new Map())
     const byAlicuota = ventasAlicuotaMap.get(tipoCbte)!
     const prev = byAlicuota.get(a.alicuota) ?? { neto: 0, iva: 0, count: 0 }
@@ -263,12 +271,19 @@ export default async function ContabilidadIvaPage({
                 </thead>
                 <tbody>
                   {ventas.map((a) => {
-                    const fecha = a.facturaEmitida?.emitidaEn
-                    const empresa = a.facturaEmitida?.empresa.razonSocial ?? "—"
-                    const cbte = a.facturaEmitida
-                      ? `${a.facturaEmitida.tipoCbte} ${a.facturaEmitida.nroComprobante ?? "s/n"}`
-                      : "—"
-                    const cuit = a.facturaEmitida?.empresa.cuit
+                    const esLP = a.tipoReferencia === "LIQUIDACION"
+                    const fecha = esLP ? a.liquidacion?.grabadaEn : a.facturaEmitida?.emitidaEn
+                    const empresa = esLP
+                      ? (a.liquidacion?.fletero.razonSocial ?? "—")
+                      : (a.facturaEmitida?.empresa.razonSocial ?? "—")
+                    const cbte = esLP
+                      ? (a.liquidacion?.ptoVenta != null && a.liquidacion?.nroComprobante != null
+                          ? `LP ${String(a.liquidacion.ptoVenta).padStart(4, "0")}-${String(a.liquidacion.nroComprobante).padStart(8, "0")}`
+                          : "LP s/n")
+                      : (a.facturaEmitida
+                          ? `${a.facturaEmitida.tipoCbte} ${a.facturaEmitida.nroComprobante ?? "s/n"}`
+                          : "—")
+                    const cuit = esLP ? a.liquidacion?.fletero.cuit : a.facturaEmitida?.empresa.cuit
                     return (
                       <tr key={a.id} className="border-b hover:bg-muted/30">
                         <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">

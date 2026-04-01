@@ -57,6 +57,14 @@ export async function GET(request: NextRequest): Promise<Response> {
             empresa: { select: { razonSocial: true, cuit: true } },
           },
         },
+        liquidacion: {
+          select: {
+            nroComprobante: true,
+            ptoVenta: true,
+            grabadaEn: true,
+            fletero: { select: { razonSocial: true, cuit: true } },
+          },
+        },
       },
       orderBy: [{ periodo: "asc" }],
     })
@@ -81,11 +89,19 @@ export async function GET(request: NextRequest): Promise<Response> {
     let totalIva = 0
 
     for (const a of ventas) {
+      const esLP = a.tipoReferencia === "LIQUIDACION"
       const fe = a.facturaEmitida
-      const fecha = fe?.emitidaEn ?? null
-      const empresa = fe?.empresa.razonSocial ?? "—"
-      const cbte = fe ? `${fe.tipoCbte} ${fe.nroComprobante ?? "s/n"}` : "—"
-      const cuit = fe?.empresa.cuit ? fmtCuit(fe.empresa.cuit) : "—"
+      const liq = a.liquidacion
+      const fecha = esLP ? (liq?.grabadaEn ?? null) : (fe?.emitidaEn ?? null)
+      const empresa = esLP ? (liq?.fletero.razonSocial ?? "—") : (fe?.empresa.razonSocial ?? "—")
+      const cbte = esLP
+        ? (liq?.ptoVenta != null && liq?.nroComprobante != null
+            ? `LP ${String(liq.ptoVenta).padStart(4, "0")}-${String(liq.nroComprobante).padStart(8, "0")}`
+            : "LP s/n")
+        : (fe ? `${fe.tipoCbte} ${fe.nroComprobante ?? "s/n"}` : "—")
+      const cuit = esLP
+        ? (liq?.fletero.cuit ? fmtCuit(liq.fletero.cuit) : "—")
+        : (fe?.empresa.cuit ? fmtCuit(fe.empresa.cuit) : "—")
       const row = ws.addRow([fecha, empresa, cbte, a.baseImponible, a.montoIva, a.alicuota, cuit])
       if (fecha) row.getCell(1).numFmt = "dd/mm/yyyy"
       row.getCell(4).numFmt = "#,##0.00"

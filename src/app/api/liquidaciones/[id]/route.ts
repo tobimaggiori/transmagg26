@@ -143,7 +143,10 @@ export async function PATCH(
 
     const liquidacion = await prisma.liquidacion.findUnique({
       where: { id: params.id },
-      include: { viajes: { select: { viajeId: true } } },
+      include: {
+        viajes: { select: { viajeId: true } },
+        asientoIva: { select: { id: true } },
+      },
     })
     if (!liquidacion) return NextResponse.json({ error: "Liquidación no encontrada" }, { status: 404 })
 
@@ -161,7 +164,28 @@ export async function PATCH(
         data: { estado: parsed.data.estado },
       })
 
-      // Si se anula, liberar viajes (solo estadoLiquidacion, NO tocar estadoFactura)
+      // Al emitir: crear AsientoIva de Ventas (comisión Transmagg)
+      if (parsed.data.estado === EstadoLiquidacionDocumento.EMITIDA && !liquidacion.asientoIva) {
+        await tx.asientoIva.create({
+          data: {
+            tipo: "VENTA",
+            tipoReferencia: "LIQUIDACION",
+            periodo: liquidacion.grabadaEn.toISOString().slice(0, 7),
+            baseImponible: liquidacion.neto,
+            alicuota: liquidacion.ivaPct,
+            montoIva: liquidacion.ivaMonto,
+            liquidacionId: liquidacion.id,
+          },
+        })
+      }
+
+      // Si se anula: eliminar AsientoIva y liberar viajes
+      if (parsed.data.estado === EstadoLiquidacionDocumento.ANULADA) {
+        if (liquidacion.asientoIva) {
+          await tx.asientoIva.delete({ where: { id: liquidacion.asientoIva.id } })
+        }
+      }
+
       if (parsed.data.estado === EstadoLiquidacionDocumento.ANULADA) {
         const viajeIds = liquidacion.viajes.map((v) => v.viajeId)
         if (viajeIds.length > 0) {
