@@ -158,6 +158,7 @@ function ModalDetalleLiquidacion({
   onCambiarEstado,
   onRegistrarPago,
   onAnularPago,
+  onEditarPago,
   onCerrar,
   cargando,
 }: {
@@ -165,6 +166,7 @@ function ModalDetalleLiquidacion({
   onCambiarEstado: (estado: string) => void
   onRegistrarPago: () => void
   onAnularPago?: (pagoId: string) => void
+  onEditarPago?: (pagoId: string) => void
   onCerrar: () => void
   cargando: boolean
 }) {
@@ -246,6 +248,12 @@ function ModalDetalleLiquidacion({
                         <td className="px-3 py-2">
                           {!p.anulado && (
                             <div className="flex gap-1 justify-end">
+                              <button
+                                onClick={() => onEditarPago?.(p.id)}
+                                className="h-6 px-2 rounded border text-xs font-medium hover:bg-accent"
+                              >
+                                Editar
+                              </button>
                               <button
                                 onClick={() => onAnularPago?.(p.id)}
                                 className="h-6 px-2 rounded border text-xs font-medium text-red-600 hover:bg-red-50"
@@ -453,6 +461,178 @@ function ModalAnularPagoFletero({
             className="h-9 px-4 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
           >
             {enviando ? "Anulando..." : "Confirmar anulación"}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Modal editar pago fletero ────────────────────────────────────────────────
+
+function ModalEditarPagoFletero({
+  pagoId,
+  pagoMonto,
+  pagoTipo,
+  pagoFecha,
+  liquidacionId,
+  fleteroId,
+  onConfirmar,
+  onCerrar,
+}: {
+  pagoId: string
+  pagoMonto: number
+  pagoTipo: string
+  pagoFecha: string
+  liquidacionId: string
+  fleteroId: string
+  onConfirmar: () => void
+  onCerrar: () => void
+}) {
+  const [nuevoMonto, setNuevoMonto] = useState(String(pagoMonto))
+  const [nuevaFecha, setNuevaFecha] = useState(pagoFecha.slice(0, 10))
+  const [nroCheque, setNroCheque] = useState("")
+  const [nuevaLiquidacionId, setNuevaLiquidacionId] = useState("")
+  const [justificacion, setJustificacion] = useState("")
+  const [liquidaciones, setLiquidaciones] = useState<{ id: string; label: string }[]>([])
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const esCheque = pagoTipo.includes("CHEQUE")
+
+  useEffect(() => {
+    fetch(`/api/liquidaciones?fleteroId=${fleteroId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const lqs = (data.liquidaciones ?? []) as { id: string; ptoVenta: number | null; nroComprobante: number | null; estado: string }[]
+        setLiquidaciones(lqs.map((l) => ({
+          id: l.id,
+          label: l.nroComprobante
+            ? `${String(l.ptoVenta ?? 1).padStart(4, "0")}-${formatearNroComprobante(l.nroComprobante)} (${l.estado})`
+            : `LP sin nro. (${l.estado})`,
+        })))
+      })
+      .catch(() => {})
+  }, [fleteroId])
+
+  async function guardar() {
+    const montoNum = parseFloat(nuevoMonto)
+    if (isNaN(montoNum) || montoNum <= 0) {
+      setError("El monto debe ser un número positivo")
+      return
+    }
+    if (justificacion.trim().length < 10) {
+      setError("La justificación debe tener al menos 10 caracteres")
+      return
+    }
+
+    const body: Record<string, unknown> = { justificacion }
+    if (montoNum !== pagoMonto) body.nuevoMonto = montoNum
+    if (nuevaFecha !== pagoFecha.slice(0, 10)) body.fechaPago = nuevaFecha
+    if (esCheque && nroCheque.trim()) body.nroCheque = nroCheque.trim()
+    if (nuevaLiquidacionId && nuevaLiquidacionId !== liquidacionId) body.nuevaLiquidacionId = nuevaLiquidacionId
+
+    if (Object.keys(body).length === 1) {
+      setError("Debe modificar al menos un campo")
+      return
+    }
+
+    setEnviando(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/pagos-fletero/${pagoId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        setError(err.error ?? "Error al modificar el pago")
+        return
+      }
+      onConfirmar()
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+      <div className="bg-background rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Modificar pago</h2>
+          <button onClick={onCerrar} className="text-muted-foreground hover:text-foreground text-xl leading-none">&times;</button>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium mb-1 block">Monto</label>
+            <input
+              type="number"
+              value={nuevoMonto}
+              onChange={(e) => setNuevoMonto(e.target.value)}
+              className="w-full rounded border bg-background px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1 block">Fecha de pago</label>
+            <input
+              type="date"
+              value={nuevaFecha}
+              onChange={(e) => setNuevaFecha(e.target.value)}
+              className="w-full rounded border bg-background px-3 py-2 text-sm"
+            />
+          </div>
+          {esCheque && (
+            <div>
+              <label className="text-sm font-medium mb-1 block">Nro. de cheque (nuevo)</label>
+              <input
+                type="text"
+                value={nroCheque}
+                onChange={(e) => setNroCheque(e.target.value)}
+                placeholder="Opcional — solo si cambió el número"
+                className="w-full rounded border bg-background px-3 py-2 text-sm"
+              />
+            </div>
+          )}
+          {liquidaciones.length > 1 && (
+            <div>
+              <label className="text-sm font-medium mb-1 block">Reasignar a otra LP</label>
+              <select
+                value={nuevaLiquidacionId}
+                onChange={(e) => setNuevaLiquidacionId(e.target.value)}
+                className="w-full rounded border bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Mantener LP actual</option>
+                {liquidaciones
+                  .filter((l) => l.id !== liquidacionId)
+                  .map((l) => (
+                    <option key={l.id} value={l.id}>{l.label}</option>
+                  ))}
+              </select>
+            </div>
+          )}
+          <div>
+            <label className="text-sm font-medium mb-1 block">Justificación (obligatoria)</label>
+            <textarea
+              value={justificacion}
+              onChange={(e) => setJustificacion(e.target.value)}
+              rows={3}
+              placeholder="Mínimo 10 caracteres..."
+              className="w-full rounded border bg-background px-3 py-2 text-sm resize-none"
+            />
+          </div>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onCerrar} className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent">
+            Cancelar
+          </button>
+          <button
+            onClick={guardar}
+            disabled={enviando || justificacion.trim().length < 10}
+            className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+          >
+            {enviando ? "Guardando..." : "Guardar cambios"}
           </button>
         </div>
       </div>
@@ -990,6 +1170,7 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
   const [saldoAFavorCC, setSaldoAFavorCC] = useState(0)
   const [gastosPendientes, setGastosPendientes] = useState<GastoPendiente[]>([])
   const [anulando, setAnulando] = useState<{ pagoId: string; pagoMonto: number; pagoTipo: string; pagoFecha: string } | null>(null)
+  const [editando, setEditando] = useState<{ pagoId: string; pagoMonto: number; pagoTipo: string; pagoFecha: string; liquidacionId: string; fleteroId: string } | null>(null)
 
   /**
    * cargarDatos: () -> Promise<void>
@@ -1327,6 +1508,10 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
             const pago = liquidacionDetalle.pagos.find((p) => p.id === pagoId)
             if (pago) setAnulando({ pagoId, pagoMonto: pago.monto, pagoTipo: pago.tipoPago, pagoFecha: pago.fechaPago })
           }}
+          onEditarPago={(pagoId) => {
+            const pago = liquidacionDetalle.pagos.find((p) => p.id === pagoId)
+            if (pago) setEditando({ pagoId, pagoMonto: pago.monto, pagoTipo: pago.tipoPago, pagoFecha: pago.fechaPago, liquidacionId: liquidacionDetalle.id, fleteroId: liquidacionDetalle.fleteroId })
+          }}
           onCerrar={() => setLiquidacionDetalle(null)}
           cargando={cambioEstadoCargando}
         />
@@ -1345,6 +1530,24 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
             cargarDatos()
           }}
           onCerrar={() => setAnulando(null)}
+        />
+      )}
+
+      {/* Modal editar pago fletero */}
+      {editando && (
+        <ModalEditarPagoFletero
+          pagoId={editando.pagoId}
+          pagoMonto={editando.pagoMonto}
+          pagoTipo={editando.pagoTipo}
+          pagoFecha={editando.pagoFecha}
+          liquidacionId={editando.liquidacionId}
+          fleteroId={editando.fleteroId}
+          onConfirmar={() => {
+            setEditando(null)
+            setLiquidacionDetalle(null)
+            cargarDatos()
+          }}
+          onCerrar={() => setEditando(null)}
         />
       )}
 
