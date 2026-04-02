@@ -514,7 +514,7 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
       )}
 
       {/* Tarjetas principales */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {permisos.includes("dashboard.deuda_empresas") && (
           <Card
             className="cursor-pointer hover:border-primary transition-colors"
@@ -642,7 +642,7 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
       {(data.cuentas?.length ?? 0) > 0 && permisos.some(p => p.startsWith("dashboard.cuentas_")) && (
         <div className="space-y-3">
           <h3 className="text-lg font-semibold">Cuentas Activas</h3>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {(data.cuentas ?? [])
               .filter((cuenta) => {
                 if (cuenta.tipo === "BANCO") return permisos.includes("dashboard.cuentas_bancos")

@@ -102,7 +102,7 @@ function ProveedorFormModal({ proveedor, onSuccess }: { proveedor?: ProveedorAbm
         <Label htmlFor="razonSocial">Razón social *</Label>
         <Input id="razonSocial" name="razonSocial" value={form.razonSocial} onChange={handleChange} required disabled={loading} />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label htmlFor="cuit">CUIT (11 dígitos) *</Label>
           <Input id="cuit" name="cuit" value={form.cuit} onChange={handleChange} required disabled={loading || isEdit} maxLength={11} pattern="\d{11}" placeholder="30123456789" />

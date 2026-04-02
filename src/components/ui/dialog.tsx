@@ -42,7 +42,7 @@ function DialogContent({
       <DialogBackdrop />
       <DialogPrimitive.Popup
         className={cn(
-          "fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
+          "fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 max-h-[calc(100vh-2rem)] overflow-y-auto",
           "bg-background rounded-xl border shadow-lg p-6 focus:outline-none",
           "data-[ending-style]:opacity-0 data-[ending-style]:scale-95",
           "data-[starting-style]:opacity-0 data-[starting-style]:scale-95",

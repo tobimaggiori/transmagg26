@@ -22,7 +22,7 @@ export default async function FacturasProveedorPage() {
         <h2 className="text-2xl font-bold tracking-tight">Facturas de Proveedores</h2>
         <p className="text-muted-foreground">Seleccioná una opción para continuar</p>
       </div>
-      <div className="grid grid-cols-2 gap-6 max-w-2xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
         <ActionCard
           title="INGRESAR"
           subtitle="FACTURA"

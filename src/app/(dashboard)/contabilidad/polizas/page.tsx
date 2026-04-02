@@ -16,7 +16,7 @@ export default async function PolizasPage() {
         <h1 className="text-3xl font-bold tracking-tight">Pólizas de Seguro</h1>
         <p className="text-muted-foreground mt-2">¿Qué querés hacer?</p>
       </div>
-      <div className="grid grid-cols-2 gap-6 w-full max-w-2xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-2xl">
         <ActionCard title="NUEVA"     subtitle="PÓLIZA DE SEGURO" href="/contabilidad/polizas/nueva"     icon={Plus} />
         <ActionCard title="CONSULTAR" subtitle="PÓLIZAS"          href="/contabilidad/polizas/consultar" icon={Search} />
       </div>

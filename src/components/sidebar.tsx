@@ -46,6 +46,8 @@ interface SidebarProps {
   arcaActiva?: boolean
   /** Array de secciones habilitadas para OPERADOR_TRANSMAGG (granular) */
   permisos?: string[]
+  /** Callback para cerrar el drawer en mobile al navegar */
+  onClose?: () => void
 }
 
 /**
@@ -150,7 +152,7 @@ const NAV_GROUPS: NavGroup[] = [
 ]
 
 /**
- * NavSimpleItem: { href, label, icon, pathname } -> JSX.Element
+ * NavSimpleItem: { href, label, icon, pathname, onClose? } -> JSX.Element
  *
  * Renderiza un ítem simple de navegación adaptado al fondo oscuro del sidebar.
  */
@@ -159,16 +161,19 @@ function NavSimpleItem({
   label,
   icon: Icon,
   pathname,
+  onClose,
 }: {
   href: string
   label: string
   icon: LucideIcon
   pathname: string
+  onClose?: () => void
 }) {
   const isActive = pathname === href || pathname.startsWith(href + "/")
   return (
     <Link
       href={href}
+      onClick={onClose}
       className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
         isActive
           ? "bg-primary/20 text-white"
@@ -198,7 +203,7 @@ function NavSimpleItem({
  * <Sidebar rol="ADMIN_EMPRESA" emailUsuario="empresa@x.com" />
  * // => sidebar con Dashboard, grupo Empresas
  */
-export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, arcaActiva = true, permisos }: SidebarProps) {
+export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, arcaActiva = true, permisos, onClose }: SidebarProps) {
   const pathname = usePathname()
 
   // Determine which group (if any) is currently active based on pathname
@@ -242,6 +247,7 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
               label="Mi Panel"
               icon={LayoutDashboard}
               pathname={pathname}
+              onClose={onClose}
             />
           ) : (
           <>
@@ -252,6 +258,7 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
               label="Dashboard"
               icon={LayoutDashboard}
               pathname={pathname}
+              onClose={onClose}
             />
           )}
 
@@ -301,7 +308,7 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
                 {estaExpandido && (
                   <div className="mt-0.5 space-y-0.5">
                     {itemsVisibles.map((item) => (
-                      <NavSubItem key={item.href} href={item.href} label={item.label} />
+                      <NavSubItem key={item.href} href={item.href} label={item.label} onClose={onClose} />
                     ))}
                   </div>
                 )}
@@ -316,6 +323,7 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
               label="Viajes"
               icon={Route}
               pathname={pathname}
+              onClose={onClose}
             />
           )}
 
@@ -337,6 +345,7 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
               label="Mi Flota"
               icon={Warehouse}
               pathname={pathname}
+              onClose={onClose}
             />
           )}
           </>

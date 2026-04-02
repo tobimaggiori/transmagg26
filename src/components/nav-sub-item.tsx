@@ -11,7 +11,7 @@ import { usePathname } from "next/navigation"
 /**
  * Props del componente NavSubItem.
  */
-type NavSubItemProps = { href: string; label: string }
+type NavSubItemProps = { href: string; label: string; onClose?: () => void }
 
 /**
  * NavSubItem: NavSubItemProps -> JSX.Element
@@ -27,12 +27,13 @@ type NavSubItemProps = { href: string; label: string }
  * <NavSubItem href="/fleteros/liquidar" label="Liquidar" />
  * // => enlace inactivo si pathname !== "/fleteros/liquidar"
  */
-export function NavSubItem({ href, label }: NavSubItemProps) {
+export function NavSubItem({ href, label, onClose }: NavSubItemProps) {
   const pathname = usePathname()
   const isActive = pathname === href || pathname.startsWith(href + "/")
   return (
     <Link
       href={href}
+      onClick={onClose}
       className={`block pl-10 pr-3 py-1.5 text-sm rounded-md transition-colors ${
         isActive
           ? "bg-primary/20 text-white font-medium"

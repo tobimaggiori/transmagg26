@@ -7,8 +7,8 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { Sidebar } from "@/components/sidebar"
 import { getPermisosUsuario } from "@/lib/permissions"
+import { DashboardShell } from "@/components/layout/dashboard-shell"
 import type { Rol } from "@/types"
 
 /**
@@ -68,11 +68,15 @@ export default async function DashboardLayout({
     : []
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar rol={rol} nombreUsuario={nombre} emailUsuario={email} esChoferTransmagg={esChoferTransmagg} arcaActiva={arcaActiva} permisos={permisos} />
-      <main className="flex-1 overflow-auto">
-        <div className="h-full p-6">{children}</div>
-      </main>
-    </div>
+    <DashboardShell
+      rol={rol}
+      nombreUsuario={nombre}
+      emailUsuario={email}
+      esChoferTransmagg={esChoferTransmagg}
+      arcaActiva={arcaActiva}
+      permisos={permisos}
+    >
+      {children}
+    </DashboardShell>
   )
 }

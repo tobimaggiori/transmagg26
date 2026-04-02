@@ -16,7 +16,7 @@ export default async function ContabilidadPage() {
         <h1 className="text-3xl font-bold tracking-tight">Contabilidad</h1>
         <p className="text-muted-foreground mt-2">¿Qué querés gestionar?</p>
       </div>
-      <div className="grid grid-cols-2 gap-6 w-full max-w-2xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-2xl">
         <ActionCard title="EMPLEADOS" subtitle="ABM Empleados" href="/abm/empleados" icon={Users} />
         <ActionCard title="CUENTAS"   subtitle="ABM Cuentas"   href="/abm/cuentas"   icon={CreditCard} />
       </div>

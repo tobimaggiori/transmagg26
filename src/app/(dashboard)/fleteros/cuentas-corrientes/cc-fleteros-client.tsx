@@ -156,6 +156,7 @@ export function CCFleterosClient({ fleteros }: CCFleterosClientProps) {
             <div className="px-4 py-3 border-b bg-muted/30">
               <p className="text-sm font-medium text-muted-foreground">Saldos pendientes</p>
             </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground text-xs bg-muted/10">
@@ -194,6 +195,7 @@ export function CCFleterosClient({ fleteros }: CCFleterosClientProps) {
                 ))}
               </tbody>
             </table>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -268,6 +270,7 @@ export function CCFleterosClient({ fleteros }: CCFleterosClientProps) {
                   Este fletero no tiene Líquidos Productos en el período seleccionado.
                 </p>
               ) : (
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
@@ -351,6 +354,7 @@ export function CCFleterosClient({ fleteros }: CCFleterosClientProps) {
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
             </CardContent>
           </Card>

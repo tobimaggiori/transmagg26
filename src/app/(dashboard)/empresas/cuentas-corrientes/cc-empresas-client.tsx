@@ -157,6 +157,7 @@ export function CCEmpresasClient({ empresas }: CCEmpresasClientProps) {
           {/* Tabla de movimientos */}
           <Card>
             <CardContent className="p-0">
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
@@ -219,6 +220,7 @@ export function CCEmpresasClient({ empresas }: CCEmpresasClientProps) {
                   </tr>
                 </tfoot>
               </table>
+              </div>
             </CardContent>
           </Card>
 

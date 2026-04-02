@@ -192,7 +192,7 @@ function SmtpModal({
         <span className="font-medium">{usuario.email}</span>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="space-y-1 col-span-2 sm:col-span-1">
           <Label htmlFor="smtpHost">Servidor SMTP *</Label>
           <Input id="smtpHost" name="smtpHost" value={form.smtpHost} onChange={handleChange} placeholder="smtp.gmail.com" required disabled={loading} />
@@ -563,7 +563,7 @@ function UsuarioFormModal({
           <span className="font-medium">{contextoLabel}</span>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label htmlFor="nombre">Nombre *</Label>
           <Input id="nombre" name="nombre" value={form.nombre} onChange={handleChange} required disabled={loading} />

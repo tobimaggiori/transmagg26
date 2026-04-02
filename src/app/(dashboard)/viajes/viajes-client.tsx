@@ -205,7 +205,7 @@ function ModalCambiarEmpresa({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
               <div>
                 <p className="text-xs text-muted-foreground mb-0.5">Empresa actual</p>
                 <p className="font-medium">{empresaActual?.razonSocial ?? "-"}</p>
@@ -484,7 +484,7 @@ function ModalViaje({
               Este viaje usa un camión propio de Transmagg. No genera liquidación al fletero.
             </div>
           )}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {!esCamionPropio && (
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Fletero *</label>
@@ -511,7 +511,7 @@ function ModalViaje({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Camión *</label>
               <select
@@ -569,7 +569,7 @@ function ModalViaje({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Remito</label>
               <input type="text" value={remito} onChange={(e) => setRemito(e.target.value)} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
@@ -609,7 +609,7 @@ function ModalViaje({
             <input type="text" value={mercaderia} onChange={(e) => setMercaderia(e.target.value)} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Procedencia</label>
               <input type="text" value={procedencia} onChange={(e) => setProcedencia(e.target.value)} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
@@ -620,7 +620,7 @@ function ModalViaje({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Provincia origen *</label>
               <select
@@ -651,7 +651,7 @@ function ModalViaje({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Kilos</label>
               <input
@@ -692,7 +692,7 @@ function ModalViaje({
           {modo === "nuevo" && (
             <div className="space-y-3 border-t pt-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Carta de Porte</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-medium text-muted-foreground block mb-1">Nro. de carta de porte *</label>
                   <input
@@ -1050,10 +1050,10 @@ export function ViajesClient({
                       <th className="px-3 py-2 text-left font-medium">Fecha</th>
                       <th className="px-3 py-2 text-left font-medium">Carga</th>
                       <th className="px-3 py-2 text-left font-medium">Recorrido</th>
-                      <th className="px-3 py-2 text-right font-medium">Kilos</th>
-                      <th className="px-3 py-2 text-right font-medium">Ton</th>
-                      {esInterno && <th className="px-3 py-2 text-right font-medium">Tarifa operativa inicial</th>}
-                      {esInterno && <th className="px-3 py-2 text-right font-medium">Referencia</th>}
+                      <th className="px-3 py-2 text-right font-medium hidden md:table-cell">Kilos</th>
+                      <th className="px-3 py-2 text-right font-medium hidden md:table-cell">Ton</th>
+                      {esInterno && <th className="px-3 py-2 text-right font-medium hidden md:table-cell">Tarifa operativa inicial</th>}
+                      {esInterno && <th className="px-3 py-2 text-right font-medium hidden md:table-cell">Referencia</th>}
                       <th className="px-3 py-2 text-left font-medium">Carta de Porte</th>
                       <th className="px-3 py-2 text-left font-medium">Workflow</th>
                       {esInterno && <th className="px-3 py-2 text-center font-medium">Acc.</th>}
@@ -1105,10 +1105,10 @@ export function ViajesClient({
                               </p>
                             </div>
                           </td>
-                          <td className="px-3 py-2 text-right">{v.kilos?.toLocaleString("es-AR") ?? "-"}</td>
-                          <td className="px-3 py-2 text-right">{toneladas?.toLocaleString("es-AR") ?? "-"}</td>
-                          {esInterno && <td className="px-3 py-2 text-right">{tarifaOperativa != null ? formatearMoneda(tarifaOperativa) : "-"}</td>}
-                          {esInterno && <td className="px-3 py-2 text-right font-medium">{total != null ? formatearMoneda(total) : "-"}</td>}
+                          <td className="px-3 py-2 text-right hidden md:table-cell">{v.kilos?.toLocaleString("es-AR") ?? "-"}</td>
+                          <td className="px-3 py-2 text-right hidden md:table-cell">{toneladas?.toLocaleString("es-AR") ?? "-"}</td>
+                          {esInterno && <td className="px-3 py-2 text-right hidden md:table-cell">{tarifaOperativa != null ? formatearMoneda(tarifaOperativa) : "-"}</td>}
+                          {esInterno && <td className="px-3 py-2 text-right font-medium hidden md:table-cell">{total != null ? formatearMoneda(total) : "-"}</td>}
                           <td className="px-3 py-2">
                             {v.nroCartaPorte ? (
                               <CartaPorteCell nro={v.nroCartaPorte} s3Key={v.cartaPorteS3Key ?? undefined} />
