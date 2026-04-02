@@ -641,16 +641,10 @@ function PanelCamion({
           )}
         </div>
 
-        {/* Póliza vigente (solo lectura — gestionar en Contabilidad) */}
+        {/* Póliza vigente (solo lectura — gestionar en Aseguradoras) */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Seguro</p>
-            <Link
-              href={`/contabilidad/polizas/nueva?camionId=${camion.id}`}
-              className="text-xs text-blue-600 hover:underline"
-            >
-              + Nueva póliza
-            </Link>
           </div>
           {polizaActiva ? (
             <div className="text-sm space-y-0.5">
@@ -687,10 +681,10 @@ function PanelCamion({
 
         <div className="flex justify-end pt-1">
           <Link
-            href="/contabilidad/polizas/consultar"
+            href="/aseguradoras/facturas"
             className="text-xs text-muted-foreground hover:text-foreground hover:underline"
           >
-            Gestionar pólizas en Contabilidad →
+            Gestionar seguros en Aseguradoras →
           </Link>
         </div>
 

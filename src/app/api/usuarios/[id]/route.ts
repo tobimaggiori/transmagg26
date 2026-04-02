@@ -1,6 +1,7 @@
 /**
  * API Routes para usuario individual.
- * PATCH /api/usuarios/[id] - Actualiza usuario (ADMIN_TRANSMAGG)
+ * PATCH  /api/usuarios/[id] - Actualiza usuario (ADMIN_TRANSMAGG)
+ * DELETE /api/usuarios/[id] - Elimina usuario (ADMIN_TRANSMAGG)
  */
 
 import { NextRequest, NextResponse } from "next/server"
@@ -38,6 +39,47 @@ const actualizarSchema = z.object({
  * PATCH /api/usuarios/u1 { nombre: "" }
  * // => 400 { error: "Datos inválidos", detalles: {...} }
  */
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const session = await auth()
+  if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+  if (!esAdmin(session.user.rol as Rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
+
+  try {
+    const existe = await prisma.usuario.findUnique({ where: { id: params.id } })
+    if (!existe) return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 })
+
+    // No permitir que el admin se elimine a sí mismo
+    if (params.id === session.user.id) {
+      return NextResponse.json({ error: "No podés eliminar tu propio usuario" }, { status: 400 })
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Cerrar asignaciones de camión activas si es CHOFER
+      if (existe.rol === "CHOFER") {
+        await tx.camionChofer.updateMany({
+          where: { choferId: params.id, hasta: null },
+          data: { hasta: new Date() },
+        })
+      }
+      // Eliminar permisos granulares
+      await tx.permisoUsuario.deleteMany({ where: { usuarioId: params.id } })
+      // Eliminar usuario
+      await tx.usuario.delete({ where: { id: params.id } })
+    })
+
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    console.error("[DELETE /api/usuarios/[id]]", error)
+    return NextResponse.json(
+      { error: "No se pudo eliminar el usuario. Puede tener registros asociados." },
+      { status: 500 }
+    )
+  }
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
