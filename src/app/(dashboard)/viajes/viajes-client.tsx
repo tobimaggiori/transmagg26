@@ -659,9 +659,7 @@ function ModalViaje({
                   Referencia inicial del viaje: {formatearMoneda(totalCalc)}
                 </p>
               )}
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Esta tarifa es editable y sirve como base operativa antes de definir la tarifa al fletero o a la empresa.
-              </p>
+
             </div>
           </div>
 
