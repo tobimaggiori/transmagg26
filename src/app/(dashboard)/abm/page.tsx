@@ -61,7 +61,9 @@ export default async function AbmPage({
   const rol = (session.user.rol ?? "OPERADOR_TRANSMAGG") as Rol
   if (!esAdmin(rol)) redirect("/dashboard")
 
-  const tab = (searchParams.tab as Tab) ?? "empresas"
+  if (!searchParams.tab) redirect("/abm/base-de-datos")
+
+  const tab = searchParams.tab as Tab
   const tabValido = TABS.some((t) => t.id === tab) ? tab : "empresas"
 
   // Fetch data según tab activo para no cargar todo innecesariamente
@@ -157,12 +159,12 @@ export default async function AbmPage({
     ? await Promise.all([
         prisma.empresa.findMany({
           where: { activa: true },
-          select: { id: true, razonSocial: true },
+          select: { id: true, razonSocial: true, cuit: true },
           orderBy: { razonSocial: "asc" },
         }),
         prisma.fletero.findMany({
           where: { activo: true },
-          select: { id: true, razonSocial: true },
+          select: { id: true, razonSocial: true, cuit: true },
           orderBy: { razonSocial: "asc" },
         }),
       ])

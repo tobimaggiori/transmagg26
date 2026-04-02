@@ -22,6 +22,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { Plus, Pencil, Trash2, Search, Mail, Settings, Building2, Truck, Users } from "lucide-react"
+import { SearchCombobox } from "@/components/ui/search-combobox"
 import type { Rol } from "@/types"
 
 export interface UsuarioAbm {
@@ -46,11 +47,13 @@ export interface UsuarioAbm {
 export interface EmpresaSimple {
   id: string
   razonSocial: string
+  cuit: string
 }
 
 export interface FleteroSimple {
   id: string
   razonSocial: string
+  cuit: string
 }
 
 type Tipo = "transmagg" | "empresas" | "fleteros"
@@ -615,30 +618,44 @@ export function UsuariosAbm({ usuarios, empresas, fleteros, rolActual }: Usuario
       {tipo === "empresas" && (
         <div className="space-y-1 max-w-sm">
           <Label className="text-xs">Empresa</Label>
-          <Select
+          <SearchCombobox
+            items={empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: e.cuit }))}
             value={empresaSelId}
-            onChange={(e) => setEmpresaSelId(e.target.value)}
-          >
-            <option value="">Seleccioná una empresa...</option>
-            {empresas.map((e) => (
-              <option key={e.id} value={e.id}>{e.razonSocial}</option>
-            ))}
-          </Select>
+            onChange={setEmpresaSelId}
+            placeholder="Buscar por razón social o CUIT..."
+          />
+          {empresaSelId && (() => {
+            const sel = empresas.find((e) => e.id === empresaSelId)
+            return sel ? (
+              <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-sm">
+                <span className="text-green-600">✓</span>
+                <span className="font-medium">{sel.razonSocial}</span>
+                <span className="text-muted-foreground">— CUIT: {sel.cuit}</span>
+              </div>
+            ) : null
+          })()}
         </div>
       )}
 
       {tipo === "fleteros" && (
         <div className="space-y-1 max-w-sm">
           <Label className="text-xs">Fletero</Label>
-          <Select
+          <SearchCombobox
+            items={fleteros.map((f) => ({ id: f.id, label: f.razonSocial, sublabel: f.cuit }))}
             value={fleteroSelId}
-            onChange={(e) => setFleteroSelId(e.target.value)}
-          >
-            <option value="">Seleccioná un fletero...</option>
-            {fleteros.map((f) => (
-              <option key={f.id} value={f.id}>{f.razonSocial}</option>
-            ))}
-          </Select>
+            onChange={setFleteroSelId}
+            placeholder="Buscar por razón social o CUIT..."
+          />
+          {fleteroSelId && (() => {
+            const sel = fleteros.find((f) => f.id === fleteroSelId)
+            return sel ? (
+              <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-sm">
+                <span className="text-green-600">✓</span>
+                <span className="font-medium">{sel.razonSocial}</span>
+                <span className="text-muted-foreground">— CUIT: {sel.cuit}</span>
+              </div>
+            ) : null
+          })()}
         </div>
       )}
 

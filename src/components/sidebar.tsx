@@ -127,6 +127,18 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/contabilidad/notas-credito-debito", label: "Notas C/D" },
     ],
   },
+  {
+    id: "abm",
+    label: "ABM",
+    icon: Settings2,
+    seccion: "abm",
+    pathPrefix: "/abm",
+    items: [
+      { href: "/abm/base-de-datos",  label: "Base de datos" },
+      { href: "/abm/contabilidad",   label: "Contabilidad" },
+      { href: "/abm/configuraciones", label: "Configuraciones" },
+    ],
+  },
 ]
 
 /**
@@ -283,26 +295,15 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
             />
           )}
 
-          {/* ABM */}
-          {puedeAcceder(rol, "abm") && (
-            <>
-              <NavSimpleItem
-                href="/abm"
-                label="ABM"
-                icon={Settings2}
-                pathname={pathname}
-              />
-              {/* Alerta ARCA para ADMIN_TRANSMAGG cuando config está incompleta */}
-              {rol === "ADMIN_TRANSMAGG" && !arcaActiva && (
-                <a
-                  href="/abm?tab=arca"
-                  className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs text-yellow-300 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors ml-2"
-                >
-                  <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
-                  <span>Config ARCA incompleta</span>
-                </a>
-              )}
-            </>
+          {/* Alerta ARCA para ADMIN_TRANSMAGG cuando config está incompleta */}
+          {rol === "ADMIN_TRANSMAGG" && !arcaActiva && (
+            <a
+              href="/abm/arca"
+              className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs text-yellow-300 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors ml-2"
+            >
+              <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+              <span>Config ARCA incompleta</span>
+            </a>
           )}
 
           {/* Mi Flota — roles internos y FLETERO */}
