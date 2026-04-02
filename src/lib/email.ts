@@ -37,6 +37,8 @@ interface EnviarOtpParams {
  *
  * Dados el email del destinatario, su nombre y el código OTP,
  * envía un email transaccional con el código formateado en texto y HTML.
+ * Carga la configuración SMTP desde la BD (ConfiguracionOtp singleton);
+ * si no hay configuración activa, cae al fallback de variables de entorno.
  */
 export async function enviarEmailOtp({
   destinatario,
@@ -48,10 +50,42 @@ export async function enviarEmailOtp({
     return
   }
 
-  const transporter = crearTransporter()
-  const from = process.env.EMAIL_FROM ?? "noreply@transmagg.com.ar"
+  console.log("[OTP] Intentando enviar código a:", destinatario)
 
-  await transporter.sendMail({
+  // Intentar cargar configuración desde BD
+  const dbConfig = await prisma.configuracionOtp.findUnique({
+    where: { id: "singleton" },
+    select: {
+      host: true, puerto: true, usuario: true, passwordHash: true,
+      usarSsl: true, emailRemitente: true, nombreRemitente: true, activo: true,
+    },
+  }).catch(() => null)
+
+  let transporter: ReturnType<typeof nodemailer.createTransport>
+  let from: string
+
+  if (dbConfig?.activo && dbConfig.host && dbConfig.passwordHash) {
+    console.log("[OTP] Usando config SMTP de BD:", dbConfig.host, dbConfig.puerto)
+    const pass = decrypt(dbConfig.passwordHash)
+    transporter = nodemailer.createTransport({
+      host: dbConfig.host,
+      port: dbConfig.puerto ?? 587,
+      secure: dbConfig.usarSsl,
+      auth: { user: dbConfig.usuario ?? "", pass },
+      tls: { rejectUnauthorized: false },
+    })
+    from = dbConfig.emailRemitente
+      ? dbConfig.nombreRemitente
+        ? `"${dbConfig.nombreRemitente}" <${dbConfig.emailRemitente}>`
+        : dbConfig.emailRemitente
+      : "noreply@transmagg.com.ar"
+  } else {
+    console.log("[OTP] Sin config SMTP en BD (activo:", dbConfig?.activo, ") — usando variables de entorno")
+    transporter = crearTransporter()
+    from = process.env.EMAIL_FROM ?? "noreply@transmagg.com.ar"
+  }
+
+  const info = await transporter.sendMail({
     from,
     to: destinatario,
     subject: `Tu código de acceso Transmagg: ${codigo}`,
@@ -85,6 +119,7 @@ Transmagg - Sistema de Gestión de Transporte
 </html>
 `.trim(),
   })
+  console.log("[OTP] Email enviado exitosamente. MessageId:", info.messageId)
 }
 
 export interface OpcionesEmail {

@@ -1201,3 +1201,20 @@ model HistorialPago {
 
   @@map("historial_pagos")
 }
+
+// ─── CONFIGURACIÓN OTP ────────────────────────────────────────────────────────
+
+model ConfiguracionOtp {
+  id              String   @id @default("singleton")
+  host            String?
+  puerto          Int?
+  usuario         String?
+  passwordHash    String?  @map("password_hash")
+  usarSsl         Boolean  @default(true) @map("usar_ssl")
+  emailRemitente  String?  @map("email_remitente")
+  nombreRemitente String?  @map("nombre_remitente")
+  activo          Boolean  @default(false)
+  actualizadoEn   DateTime @updatedAt @map("actualizado_en")
+
+  @@map("configuracion_otp")
+}

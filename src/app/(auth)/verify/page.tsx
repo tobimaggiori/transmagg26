@@ -10,7 +10,6 @@ import { useState, useRef, useEffect, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { signIn } from "next-auth/react"
 import { Truck, ArrowLeft } from "lucide-react"
-import Link from "next/link"
 import {
   Card,
   CardContent,
@@ -189,13 +188,14 @@ function VerifyForm() {
             {loading ? "Verificando..." : "Ingresar"}
           </Button>
 
-          <Link
-            href="/login"
+          <button
+            type="button"
+            onClick={() => router.push("/login")}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="h-3 w-3" />
             Volver al inicio de sesión
-          </Link>
+          </button>
         </CardFooter>
       </form>
     </Card>

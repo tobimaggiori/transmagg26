@@ -9,6 +9,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { signOut } from "next-auth/react"
 import { NavSubItem } from "@/components/nav-sub-item"
 import { puedeAcceder } from "@/lib/permissions"
 import type { Rol } from "@/types"
@@ -332,13 +333,14 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
               {emailUsuario}
             </p>
           </div>
-          <a
-            href="/api/auth/signout"
+          <button
+            type="button"
+            onClick={() => signOut({ callbackUrl: "/login" })}
             className="ml-auto text-slate-400 hover:text-white transition-colors"
             title="Cerrar sesión"
           >
             <LogOut className="h-4 w-4" />
-          </a>
+          </button>
         </div>
       </div>
     </aside>

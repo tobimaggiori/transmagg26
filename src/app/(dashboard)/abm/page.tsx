@@ -17,9 +17,10 @@ import { CuentasAbm } from "@/components/abm/cuentas-abm"
 import { FciAbm } from "@/components/abm/fci-abm"
 import { EmpleadosAbm } from "@/components/abm/empleados-abm"
 import { ConfiguracionArcaAbm } from "@/components/abm/configuracion-arca-abm"
+import { ConfiguracionOtpAbm } from "@/components/abm/configuracion-otp-abm"
 import type { Rol } from "@/types"
 
-type Tab = "empresas" | "fleteros" | "usuarios" | "proveedores" | "cuentas" | "fci" | "empleados" | "arca"
+type Tab = "empresas" | "fleteros" | "usuarios" | "proveedores" | "cuentas" | "fci" | "empleados" | "arca" | "otp"
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "empresas", label: "Empresas" },
@@ -30,6 +31,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "fci", label: "FCI" },
   { id: "empleados", label: "Empleados" },
   { id: "arca", label: "ARCA" },
+  { id: "otp", label: "OTP" },
 ]
 
 /**
@@ -163,6 +165,24 @@ export default async function AbmPage({
     ? await prisma.configuracionArca.findFirst()
     : null
 
+  // Config OTP (tab otp)
+  const otpConfigRaw = tabValido === "otp"
+    ? await prisma.configuracionOtp.findUnique({ where: { id: "singleton" } })
+    : null
+
+  const otpConfig = otpConfigRaw
+    ? {
+        host: otpConfigRaw.host,
+        puerto: otpConfigRaw.puerto,
+        usuario: otpConfigRaw.usuario,
+        tienePassword: !!otpConfigRaw.passwordHash,
+        usarSsl: otpConfigRaw.usarSsl,
+        emailRemitente: otpConfigRaw.emailRemitente,
+        nombreRemitente: otpConfigRaw.nombreRemitente,
+        activo: otpConfigRaw.activo,
+      }
+    : null
+
   const arcaConfig = arcaConfigRaw
     ? (() => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -223,6 +243,7 @@ export default async function AbmPage({
         {tabValido === "fci" && <FciAbm fcis={fcis} cuentas={cuentas.map(c => ({ id: c.id, nombre: c.nombre }))} />}
         {tabValido === "empleados" && <EmpleadosAbm empleados={empleados.map(e => ({ ...e, fechaIngreso: e.fechaIngreso.toISOString() }))} />}
         {tabValido === "arca" && <ConfiguracionArcaAbm config={arcaConfig} />}
+        {tabValido === "otp" && <ConfiguracionOtpAbm config={otpConfig} />}
       </div>
     </div>
   )

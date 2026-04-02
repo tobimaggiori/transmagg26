@@ -99,11 +99,20 @@ export async function POST(request: NextRequest) {
 
     // Enviar el código por email
     const nombreCompleto = `${usuario.nombre} ${usuario.apellido}`.trim()
-    await enviarEmailOtp({
-      destinatario: email,
-      nombre: nombreCompleto,
-      codigo,
-    })
+    try {
+      await enviarEmailOtp({
+        destinatario: email,
+        nombre: nombreCompleto,
+        codigo,
+      })
+    } catch (emailError) {
+      const msg = emailError instanceof Error ? emailError.message : String(emailError)
+      console.error("[send-otp] Error enviando email:", msg)
+      return NextResponse.json(
+        { error: `Error enviando OTP: ${msg}` },
+        { status: 500 }
+      )
+    }
 
     return NextResponse.json({
       message: "Si el email está registrado, recibirás un código de acceso.",
