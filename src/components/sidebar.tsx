@@ -6,7 +6,7 @@
 
 "use client"
 
-import { useState } from "react"
+import { useState, Fragment } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { signOut } from "next-auth/react"
@@ -95,7 +95,6 @@ const NAV_GROUPS: NavGroup[] = [
     seccion: "liquidaciones",
     pathPrefix: "/fleteros",
     items: [
-      { href: "/fleteros/viajes",              label: "Viajes",               seccion: "fleteros.viajes" },
       { href: "/fleteros/liquidos-productos", label: "Líquidos Productos",   seccion: "fleteros.liquidos_productos" },
       { href: "/fleteros/ordenes-de-pago",    label: "Órdenes de Pago",      seccion: "fleteros.ordenes_pago" },
       { href: "/fleteros/gastos-adelantos",   label: "Gastos y Adelantos",   seccion: "fleteros.gastos_adelantos" },
@@ -215,8 +214,7 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
 
   const [expandido, setExpandido] = useState<string | null>(grupoActivoPorRuta)
 
-  // Viajes is shown as top-level only for roles that don't have the Fleteros group
-  const tieneGrupoFleteros = puedeAcceder(rol, "liquidaciones")
+
 
   /**
    * filtrarItems: items del grupo -> items visibles según permisos granulares.
@@ -263,9 +261,24 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
             />
           )}
 
-          {/* Grupos colapsables */}
+          {/* Grupos colapsables — con Viajes intercalado después de Fleteros */}
           {NAV_GROUPS.map((grupo) => {
-            if (!puedeAcceder(rol, grupo.seccion)) return null
+            if (!puedeAcceder(rol, grupo.seccion)) {
+              // Si Fleteros no es visible pero Viajes sí, renderizar Viajes aquí
+              if (grupo.id === "fleteros" && puedeAcceder(rol, "viajes")) {
+                return (
+                  <NavSimpleItem
+                    key="viajes-toplevel"
+                    href="/fleteros/viajes"
+                    label="Viajes"
+                    icon={Route}
+                    pathname={pathname}
+                    onClose={onClose}
+                  />
+                )
+              }
+              return null
+            }
 
             // Filtrar sub-items por permisos granulares
             const itemsVisibles = filtrarItems(grupo.items)
@@ -277,56 +290,57 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
             const grupoActivo =
               pathname.startsWith(grupo.pathPrefix + "/") ||
               pathname === grupo.pathPrefix ||
-              // También activo si algún sub-item es la ruta actual
               itemsVisibles.some(
                 (it) => pathname === it.href || pathname.startsWith(it.href + "/")
               )
 
             return (
-              <div key={grupo.id}>
-                {/* Cabecera del grupo */}
-                <button
-                  type="button"
-                  onClick={() =>
-                    setExpandido(estaExpandido ? null : grupo.id)
-                  }
-                  className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                    grupoActivo
-                      ? "bg-primary/20 text-white"
-                      : "text-slate-200 hover:bg-white/10 hover:text-white"
-                  }`}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span className="flex-1 text-left">{grupo.label}</span>
-                  {estaExpandido ? (
-                    <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
-                  ) : (
-                    <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-                  )}
-                </button>
+              <Fragment key={grupo.id}>
+                <div>
+                  {/* Cabecera del grupo */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandido(estaExpandido ? null : grupo.id)
+                    }
+                    className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                      grupoActivo
+                        ? "bg-primary/20 text-white"
+                        : "text-slate-200 hover:bg-white/10 hover:text-white"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="flex-1 text-left">{grupo.label}</span>
+                    {estaExpandido ? (
+                      <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                    )}
+                  </button>
 
-                {/* Sub-ítems del grupo */}
-                {estaExpandido && (
-                  <div className="mt-0.5 space-y-0.5">
-                    {itemsVisibles.map((item) => (
-                      <NavSubItem key={item.href} href={item.href} label={item.label} onClose={onClose} />
-                    ))}
-                  </div>
+                  {/* Sub-ítems del grupo */}
+                  {estaExpandido && (
+                    <div className="mt-0.5 space-y-0.5">
+                      {itemsVisibles.map((item) => (
+                        <NavSubItem key={item.href} href={item.href} label={item.label} onClose={onClose} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Viajes — top-level después de Fleteros */}
+                {grupo.id === "fleteros" && puedeAcceder(rol, "viajes") && (
+                  <NavSimpleItem
+                    href="/fleteros/viajes"
+                    label="Viajes"
+                    icon={Route}
+                    pathname={pathname}
+                    onClose={onClose}
+                  />
                 )}
-              </div>
+              </Fragment>
             )
           })}
-
-          {/* Viajes — solo para roles sin grupo Fleteros */}
-          {!tieneGrupoFleteros && puedeAcceder(rol, "viajes") && (
-            <NavSimpleItem
-              href="/viajes"
-              label="Viajes"
-              icon={Route}
-              pathname={pathname}
-              onClose={onClose}
-            />
-          )}
 
           {/* Alerta ARCA para ADMIN_TRANSMAGG cuando config está incompleta */}
           {rol === "ADMIN_TRANSMAGG" && !arcaActiva && (
