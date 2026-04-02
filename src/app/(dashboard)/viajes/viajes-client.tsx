@@ -520,7 +520,7 @@ function ModalViaje({
                 className="w-full h-9 rounded-md border bg-background px-2 text-sm"
               >
                 <option value="">Seleccionar...</option>
-                {(fleteroId ? camionesDelFletero : camiones).map((c) => (
+                {(esCamionPropio || fleteroId ? camionesDelFletero : camiones).map((c) => (
                   <option key={c.id} value={c.id}>{c.patenteChasis}</option>
                 ))}
               </select>
