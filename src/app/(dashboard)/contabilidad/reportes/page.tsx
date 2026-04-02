@@ -25,7 +25,7 @@ export default async function ReportesPage() {
         <h2 className="text-2xl font-bold tracking-tight">Reportes Contables</h2>
         <p className="text-muted-foreground">Seleccioná un reporte para continuar</p>
       </div>
-      <div className="grid grid-cols-3 gap-6 max-w-4xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl">
         <ActionCard
           title="LIBRO"
           subtitle="IVA"
@@ -42,11 +42,6 @@ export default async function ReportesPage() {
           href="/contabilidad/gastos"
         />
         <ActionCard
-          title="MOVIMIENTOS"
-          subtitle="BANCARIOS"
-          href="/contabilidad/movimientos"
-        />
-        <ActionCard
           title="LP VS"
           subtitle="FACTURAS"
           href="/contabilidad/lp-vs-facturas"
@@ -60,21 +55,6 @@ export default async function ReportesPage() {
           title="NOTAS"
           subtitle="C/D"
           href="/contabilidad/notas-credito-debito"
-        />
-        <ActionCard
-          title="CUENTAS"
-          subtitle="BANCARIAS"
-          href="/contabilidad/cuentas"
-        />
-        <ActionCard
-          title="CHEQUERAS"
-          subtitle="Y CHEQUES"
-          href="/contabilidad/chequeras"
-        />
-        <ActionCard
-          title="TARJETAS"
-          subtitle="PREPAGAS"
-          href="/contabilidad/tarjetas"
         />
       </div>
     </div>
