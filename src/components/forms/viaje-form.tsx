@@ -191,11 +191,11 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="remito">Remito</Label>
-          <Input id="remito" value={remito} onChange={(e) => setRemito(e.target.value)} placeholder="R-00001" />
+          <Input id="remito" value={remito} onChange={(e) => setRemito(e.target.value.toUpperCase())} placeholder="R-00001" style={{ textTransform: "uppercase" }} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="cupo">Cupo</Label>
-          <Input id="cupo" value={cupo} onChange={(e) => setCupo(e.target.value)} />
+          <Input id="cupo" value={cupo} onChange={(e) => setCupo(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} />
         </div>
       </div>
 
@@ -203,11 +203,11 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
       <div className="grid grid-cols-3 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="mercaderia">Mercadería</Label>
-          <Input id="mercaderia" value={mercaderia} onChange={(e) => setMercaderia(e.target.value)} />
+          <Input id="mercaderia" value={mercaderia} onChange={(e) => setMercaderia(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="procedencia">Procedencia</Label>
-          <Input id="procedencia" value={procedencia} onChange={(e) => setProcedencia(e.target.value)} />
+          <Input id="procedencia" value={procedencia} onChange={(e) => setProcedencia(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="kilos">Kilos</Label>
@@ -240,7 +240,7 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="destino">Destino</Label>
-          <Input id="destino" value={destino} onChange={(e) => setDestino(e.target.value)} />
+          <Input id="destino" value={destino} onChange={(e) => setDestino(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="tarifa" className="text-primary font-medium">Tarifa base ($) *</Label>

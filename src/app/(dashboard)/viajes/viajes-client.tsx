@@ -573,7 +573,7 @@ function ModalViaje({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Remito</label>
-              <input type="text" value={remito} onChange={(e) => setRemito(e.target.value)} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
+              <input type="text" value={remito} onChange={(e) => setRemito(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">¿Lleva cupo?</label>
@@ -597,8 +597,9 @@ function ModalViaje({
                 <input
                   type="text"
                   value={cupo}
-                  onChange={(e) => setCupo(e.target.value)}
+                  onChange={(e) => setCupo(e.target.value.toUpperCase())}
                   placeholder="Nro. de cupo"
+                  style={{ textTransform: "uppercase" }}
                   className="w-full h-9 rounded-md border bg-background px-2 text-sm mt-2"
                 />
               )}
@@ -607,17 +608,17 @@ function ModalViaje({
 
           <div>
             <label className="text-xs font-medium text-muted-foreground block mb-1">Mercadería</label>
-            <input type="text" value={mercaderia} onChange={(e) => setMercaderia(e.target.value)} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
+            <input type="text" value={mercaderia} onChange={(e) => setMercaderia(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Procedencia</label>
-              <input type="text" value={procedencia} onChange={(e) => setProcedencia(e.target.value)} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
+              <input type="text" value={procedencia} onChange={(e) => setProcedencia(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Destino</label>
-              <input type="text" value={destino} onChange={(e) => setDestino(e.target.value)} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
+              <input type="text" value={destino} onChange={(e) => setDestino(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
             </div>
           </div>
 
