@@ -88,6 +88,6 @@ export function calcularExpiracionOtp(): Date {
  * estaExpirado(new Date(Date.now() + 600000))     === false
  * estaExpirado(new Date(Date.now() - 1))          === true
  */
-export function estaExpirado(expiraEn: Date): boolean {
-  return new Date() > expiraEn
+export function estaExpirado(expiraEn: Date | string): boolean {
+  return Date.now() > new Date(expiraEn).getTime()
 }

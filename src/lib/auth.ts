@@ -58,6 +58,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const email = credentials?.email as string | undefined
         const otp = credentials?.otp as string | undefined
 
+        console.log("[authorize] Email:", email, "| OTP recibido:", otp ? `${otp.length} dígitos` : "vacío")
+
         if (!email || !otp) return null
 
         const usuario = await prisma.usuario.findUnique({
@@ -72,6 +74,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           },
         })
 
+        console.log("[authorize] Usuario:", usuario?.id ?? "no encontrado", "| activo:", usuario?.activo)
+
         if (!usuario || !usuario.activo) return null
 
         const otpRecord = await prisma.otpCodigo.findFirst({
@@ -79,15 +83,24 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           orderBy: { expiraEn: "desc" },
         })
 
-        if (!otpRecord || estaExpirado(otpRecord.expiraEn)) return null
+        console.log("[authorize] OTP en BD:", otpRecord?.id ?? "ninguno", "| expira:", otpRecord?.expiraEn)
+
+        if (!otpRecord) return null
+
+        const expirado = estaExpirado(otpRecord.expiraEn)
+        console.log("[authorize] ¿Expirado?", expirado)
+        if (expirado) return null
 
         const esValido = await verificarCodigoOtp(otp, otpRecord.codigoHash)
+        console.log("[authorize] Match bcrypt:", esValido)
         if (!esValido) return null
 
         await prisma.otpCodigo.update({
           where: { id: otpRecord.id },
           data: { usado: true },
         })
+
+        console.log("[authorize] Autenticación exitosa para:", email)
 
         return {
           id: usuario.id,

@@ -50,12 +50,16 @@ export async function POST(request: NextRequest) {
     }
 
     const { email, codigo } = parsed.data
+    console.log("[verify-otp] Email recibido:", email)
+    console.log("[verify-otp] Código recibido:", codigo)
 
     // Buscar usuario activo
     const usuario = await prisma.usuario.findUnique({
       where: { email },
       select: { id: true, activo: true },
     })
+
+    console.log("[verify-otp] Usuario encontrado:", usuario?.id, "activo:", usuario?.activo)
 
     if (!usuario || !usuario.activo) {
       return NextResponse.json(
@@ -65,13 +69,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Obtener el OTP activo más reciente
-    const otp = await prisma.otpCodigo.findFirst({
-      where: {
-        usuarioId: usuario.id,
-        usado: false,
-      },
+    const otps = await prisma.otpCodigo.findMany({
+      where: { usuarioId: usuario.id, usado: false },
       orderBy: { expiraEn: "desc" },
     })
+
+    console.log("[verify-otp] OTPs activos encontrados:", otps.length)
+    if (otps.length > 0) {
+      console.log("[verify-otp] OTP a verificar:", otps[0].id, "expira:", otps[0].expiraEn)
+    }
+
+    const otp = otps[0]
 
     if (!otp) {
       return NextResponse.json(
@@ -82,6 +90,7 @@ export async function POST(request: NextRequest) {
 
     // Verificar expiración
     if (estaExpirado(otp.expiraEn)) {
+      console.log("[verify-otp] OTP expirado")
       await prisma.otpCodigo.update({
         where: { id: otp.id },
         data: { usado: true },
@@ -94,6 +103,7 @@ export async function POST(request: NextRequest) {
 
     // Verificar el código
     const esValido = await verificarCodigoOtp(codigo, otp.codigoHash)
+    console.log("[verify-otp] Match bcrypt:", esValido)
 
     if (!esValido) {
       return NextResponse.json(
