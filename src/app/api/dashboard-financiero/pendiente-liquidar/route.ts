@@ -43,7 +43,7 @@ export async function GET() {
         fechaViaje: string
         procedencia: string | null
         destino: string | null
-        tarifaOperativaInicial: number
+        tarifa: number
       }>
     }>()
 
@@ -60,15 +60,15 @@ export async function GET() {
         })
       }
       const entry = porFletero.get(key)!
-      const tarifaOperativaInicial = v.tarifaOperativaInicial ?? 0
-      entry.totalTarifaBase += tarifaOperativaInicial
+      const tarifaFletero = v.tarifaFletero ?? 0
+      entry.totalTarifaBase += tarifaFletero
       entry.cantidadViajes += 1
       entry.viajes.push({
         id: v.id,
         fechaViaje: v.fechaViaje.toISOString(),
         procedencia: v.procedencia,
         destino: v.destino,
-        tarifaOperativaInicial,
+        tarifa: tarifaFletero,
       })
     }
 

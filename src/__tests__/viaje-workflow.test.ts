@@ -11,21 +11,21 @@ import {
   construirAvisosEdicionViaje,
   resolverEstadoFacturaViaje,
   resolverEstadoLiquidacionViaje,
-  tarifaOperativaInicialEsEditable,
+  tarifaEsEditable,
   tieneDocumentosActivos,
 } from "@/lib/viaje-workflow"
 
-describe("tarifaOperativaInicialEsEditable", () => {
-  it("tarifaOperativaInicialEsEditable(150000) === true", () => {
-    expect(tarifaOperativaInicialEsEditable(150000)).toBe(true)
+describe("tarifaEsEditable", () => {
+  it("tarifaEsEditable(150000) === true", () => {
+    expect(tarifaEsEditable(150000)).toBe(true)
   })
 
-  it("tarifaOperativaInicialEsEditable(0) === false", () => {
-    expect(tarifaOperativaInicialEsEditable(0)).toBe(false)
+  it("tarifaEsEditable(0) === false", () => {
+    expect(tarifaEsEditable(0)).toBe(false)
   })
 
-  it("tarifaOperativaInicialEsEditable(undefined) === false", () => {
-    expect(tarifaOperativaInicialEsEditable(undefined)).toBe(false)
+  it("tarifaEsEditable(undefined) === false", () => {
+    expect(tarifaEsEditable(undefined)).toBe(false)
   })
 })
 

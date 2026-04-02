@@ -44,7 +44,7 @@ type ViajeParaLiquidar = {
   destino: string | null
   provinciaDestino: string | null
   kilos: number | null
-  tarifaOperativaInicial: number
+  tarifaFletero: number
   estadoFactura: string
   kilosEdit?: number
   tarifaEdit?: number
@@ -141,7 +141,7 @@ function ModalEditarViaje({
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Tarifa al fletero / ton</label>
-            <input type="number" value={form.tarifaEdit ?? form.tarifaOperativaInicial} onChange={(e) => set("tarifaEdit", parseFloat(e.target.value) || form.tarifaOperativaInicial)} min="0" step="0.01" className="h-9 w-full rounded border bg-background px-2 text-sm" />
+            <input type="number" value={form.tarifaEdit ?? form.tarifaFletero} onChange={(e) => set("tarifaEdit", parseFloat(e.target.value) || form.tarifaFletero)} min="0" step="0.01" className="h-9 w-full rounded border bg-background px-2 text-sm" />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Camión</label>
@@ -196,7 +196,7 @@ function ModalPreviewLiquidacion({
 
   const viajesParaCalc = viajes.map((v) => ({
     kilos: v.kilosEdit ?? v.kilos ?? 0,
-    tarifaFletero: v.tarifaEdit ?? v.tarifaOperativaInicial,
+    tarifaFletero: v.tarifaEdit ?? v.tarifaFletero,
   }))
   const preview = calcularLiquidacion(viajesParaCalc, comisionPct, ivaPct)
 
@@ -241,7 +241,7 @@ function ModalPreviewLiquidacion({
             <tbody className="divide-y">
               {viajes.map((v) => {
                 const kilos = v.kilosEdit ?? v.kilos ?? 0
-                const tarifa = v.tarifaEdit ?? v.tarifaOperativaInicial
+                const tarifa = v.tarifaEdit ?? v.tarifaFletero
                 const ton = kilos > 0 ? calcularToneladas(kilos) : null
                 const importe = kilos > 0 ? calcularTotalViaje(kilos, tarifa) : null
                 return (
@@ -255,7 +255,7 @@ function ModalPreviewLiquidacion({
                     <td className="px-1 py-1"><input type="text" value={v.destinoEdit ?? ""} onChange={(e) => actualizarCelda(v.id, "destinoEdit", e.target.value)} className="h-7 w-28 rounded border bg-background px-1 text-xs" /></td>
                     <td className="px-1 py-1"><select value={v.provinciaDestinoEdit ?? ""} onChange={(e) => actualizarCelda(v.id, "provinciaDestinoEdit", e.target.value)} className="h-7 w-28 rounded border bg-background px-1 text-xs"><option value="">—</option>{PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}</select></td>
                     <td className="px-1 py-1"><input type="number" value={v.kilosEdit ?? v.kilos ?? ""} onChange={(e) => actualizarCelda(v.id, "kilosEdit", parseFloat(e.target.value) || undefined)} min="0" step="1" className="h-7 w-24 text-right rounded border bg-background px-1 text-xs" /></td>
-                    <td className="px-1 py-1"><input type="number" value={v.tarifaEdit ?? v.tarifaOperativaInicial} onChange={(e) => actualizarCelda(v.id, "tarifaEdit", parseFloat(e.target.value) || v.tarifaOperativaInicial)} min="0" step="0.01" className="h-7 w-28 text-right rounded border bg-background px-1 text-xs" /></td>
+                    <td className="px-1 py-1"><input type="number" value={v.tarifaEdit ?? v.tarifaFletero} onChange={(e) => actualizarCelda(v.id, "tarifaEdit", parseFloat(e.target.value) || v.tarifaFletero)} min="0" step="0.01" className="h-7 w-28 text-right rounded border bg-background px-1 text-xs" /></td>
                     <td className="px-2 py-1 text-right text-muted-foreground text-xs">{ton?.toLocaleString("es-AR") ?? "-"}</td>
                     <td className="px-2 py-1 text-right font-medium text-xs">{importe != null ? formatearMoneda(importe) : "-"}</td>
                   </tr>
@@ -342,7 +342,7 @@ export function LiquidarClient({ rol, fleteros, camiones, choferes, fleteroIdPro
         const viajesConEdit = (data.viajesPendientes ?? []).map((v) => ({
           ...v,
           kilosEdit: v.kilos ?? undefined,
-          tarifaEdit: v.tarifaOperativaInicial,
+          tarifaEdit: v.tarifaFletero,
           fechaEdit: v.fechaViaje.slice(0, 10),
           remitoEdit: v.remito ?? "",
           cupoEdit: v.cupo ?? "",
@@ -416,7 +416,7 @@ export function LiquidarClient({ rol, fleteros, camiones, choferes, fleteroIdPro
           destino: v.destinoEdit || null,
           provinciaDestino: v.provinciaDestinoEdit || null,
           kilos: v.kilosEdit ?? v.kilos ?? 0,
-          tarifaFletero: v.tarifaEdit ?? v.tarifaOperativaInicial,
+          tarifaFletero: v.tarifaEdit ?? v.tarifaFletero,
         })),
       }
       const res = await fetch("/api/liquidaciones", {
@@ -524,7 +524,7 @@ export function LiquidarClient({ rol, fleteros, camiones, choferes, fleteroIdPro
                 <tbody className="divide-y">
                   {viajesPendientes.map((v) => {
                     const kilos = v.kilosEdit ?? v.kilos ?? 0
-                    const tarifa = v.tarifaEdit ?? v.tarifaOperativaInicial
+                    const tarifa = v.tarifaEdit ?? v.tarifaFletero
                     const ton = kilos > 0 ? calcularToneladas(kilos) : null
                     const total = kilos > 0 ? calcularTotalViaje(kilos, tarifa) : null
                     return (

@@ -28,7 +28,7 @@ interface ViajeDisponible {
   provinciaOrigen?: string | null
   provinciaDestino?: string | null
   kilos?: number | null
-  tarifaOperativaInicial: number
+  tarifaFletero: number
   empresa: { razonSocial: string }
   camion: { patenteChasis: string }
   chofer: { nombre: string; apellido: string }
@@ -93,7 +93,7 @@ export function LiquidacionForm({ fleteros, viajesPendientes, onSuccess }: Liqui
       }
       return {
         ...prev,
-        [viaje.id]: { viajeId: viaje.id, tarifaFletero: String(viaje.tarifaOperativaInicial) },
+        [viaje.id]: { viajeId: viaje.id, tarifaFletero: String(viaje.tarifaFletero) },
       }
     })
   }
@@ -248,7 +248,7 @@ export function LiquidacionForm({ fleteros, viajesPendientes, onSuccess }: Liqui
                       </p>
                     </div>
                     <div className="text-right text-xs text-muted-foreground shrink-0">
-                      base: {formatearMoneda(viaje.tarifaOperativaInicial)}
+                      base: {formatearMoneda(viaje.tarifaFletero)}
                     </div>
                   </div>
 

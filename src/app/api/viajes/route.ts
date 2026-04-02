@@ -5,7 +5,7 @@
  *
  * Los viajes tienen estados independientes para liquidación y factura.
  * SEGURIDAD:
- * - tarifaOperativaInicial nunca se expone a roles de empresa ni de fletero
+ * - tarifaFletero/tarifaEmpresa nunca se expone a roles de empresa ni de fletero
  * - Fletero solo ve sus propios viajes
  * - Empresa solo ve sus propios viajes
  */
@@ -36,7 +36,7 @@ const crearViajeSchema = z.object({
   destino: z.string().optional(),
   provinciaDestino: z.enum(PROVINCIAS_ARGENTINA as unknown as [string, ...string[]]),
   kilos: z.number().positive().optional(),
-  tarifaOperativaInicial: z.number().positive("La tarifa debe ser mayor a 0"),
+  tarifa: z.number().positive("La tarifa debe ser mayor a 0"),
   estadoLiquidacion: z.string().default("PENDIENTE_LIQUIDAR"),
   estadoFactura: z.string().default("PENDIENTE_FACTURAR"),
   nroCartaPorte: z.string().min(1, "El número de carta de porte es obligatorio"),
@@ -53,17 +53,17 @@ const crearViajeSchema = z.object({
  * GET: NextRequest -> Promise<NextResponse>
  *
  * Devuelve hasta 200 viajes filtrados por rol y parámetros opcionales.
- * Incluye empresa.razonSocial, fletero.razonSocial, estadoLiquidacion, estadoFactura, kilos, tarifaOperativaInicial.
- * Roles externos no reciben tarifaOperativaInicial; roles internos reciben todo.
+ * Incluye empresa.razonSocial, fletero.razonSocial, estadoLiquidacion, estadoFactura, kilos, tarifaFletero/tarifaEmpresa.
+ * Roles externos no reciben tarifaFletero/tarifaEmpresa; roles internos reciben todo.
  * Existe para el listado de viajes con cálculos de toneladas y totales.
  *
  * Ejemplos:
  * GET /api/viajes (sesión ADMIN_TRANSMAGG)
- * // => 200 [{ id, tarifaOperativaInicial, estadoLiquidacion, estadoFactura, toneladas, total, empresa, fletero }]
+ * // => 200 [{ id, tarifaFletero/tarifaEmpresa, estadoLiquidacion, estadoFactura, toneladas, total, empresa, fletero }]
  * GET /api/viajes?fleteroId=f1 (sesión OPERADOR_TRANSMAGG)
  * // => 200 viajes filtrados por fletero
  * GET /api/viajes (sesión FLETERO)
- * // => 200 viajes propios sin tarifaOperativaInicial
+ * // => 200 viajes propios sin tarifaFletero/tarifaEmpresa
  */
 export async function GET(request: NextRequest) {
   const session = await auth()
@@ -158,7 +158,7 @@ export async function GET(request: NextRequest) {
 
     const viajesConCalculo = viajes.map((v) => enriquecerViajeOperativo(v))
 
-    // No exponer tarifaOperativaInicial a roles externos
+    // No exponer tarifas a roles externos
     if (!esRolInterno(rol)) {
       return NextResponse.json(
         viajesConCalculo.map((v) => ocultarTarifaOperativa(v))
@@ -183,7 +183,7 @@ export async function GET(request: NextRequest) {
  * Existe para que operadores internos carguen viajes standalone.
  *
  * Ejemplos:
- * POST /api/viajes { fleteroId, camionId, choferId, empresaId, fechaViaje: "2026-03-15", tarifaOperativaInicial: 50000 }
+ * POST /api/viajes { fleteroId, camionId, choferId, empresaId, fechaViaje: "2026-03-15", tarifaFletero/tarifaEmpresa: 50000 }
  * // => 201 { id, estadoLiquidacion: "PENDIENTE_LIQUIDAR", estadoFactura: "PENDIENTE_FACTURAR" }
  * POST /api/viajes { ...datos, fleteroId: "noexiste" }
  * // => 404 { error: "Fletero no encontrado" }
@@ -210,7 +210,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { esCamionPropio, fleteroId, camionId, choferId, empresaId, fechaViaje, tarifaOperativaInicial, estadoLiquidacion, estadoFactura, ...resto } = parsed.data
+    const { esCamionPropio, fleteroId, camionId, choferId, empresaId, fechaViaje, tarifa, estadoLiquidacion, estadoFactura, ...resto } = parsed.data
 
     const [fletero, camion, chofer, empresa] = await Promise.all([
       fleteroId ? prisma.fletero.findUnique({ where: { id: fleteroId, activo: true } }) : Promise.resolve(esCamionPropio ? true : null),
@@ -243,7 +243,8 @@ export async function POST(request: NextRequest) {
         empresaId,
         operadorId,
         fechaViaje: new Date(fechaViaje),
-        tarifaOperativaInicial,
+        tarifaFletero: tarifa,
+        tarifaEmpresa: tarifa,
         estadoLiquidacion,
         estadoFactura,
         ...resto,

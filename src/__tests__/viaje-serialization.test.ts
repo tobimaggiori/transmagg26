@@ -1,58 +1,35 @@
 /**
  * Propósito: Tests unitarios para la serialización semántica del viaje operativo.
- * Cada caso usa exactamente los mismos ejemplos del JSDoc de viaje-serialization.ts.
  */
 
 import {
   enriquecerViajeOperativo,
-  obtenerTarifaOperativaInicial,
   ocultarTarifaOperativa,
 } from "@/lib/viaje-serialization"
 
-describe("obtenerTarifaOperativaInicial", () => {
-  it("obtenerTarifaOperativaInicial(150000) === 150000", () => {
-    expect(obtenerTarifaOperativaInicial(150000)).toBe(150000)
-  })
-
-  it("obtenerTarifaOperativaInicial(null) === null", () => {
-    expect(obtenerTarifaOperativaInicial(null)).toBeNull()
-  })
-
-  it("obtenerTarifaOperativaInicial(undefined) === null", () => {
-    expect(obtenerTarifaOperativaInicial(undefined)).toBeNull()
-  })
-})
-
 describe("enriquecerViajeOperativo", () => {
-  it("enriquecerViajeOperativo({ kilos: 25000, tarifaOperativaInicial: 50 }).tarifaOperativaInicial === 50", () => {
-    expect(enriquecerViajeOperativo({ kilos: 25000, tarifaOperativaInicial: 50 }).tarifaOperativaInicial).toBe(50)
+  it("usa tarifaEmpresa para calcular total", () => {
+    const r = enriquecerViajeOperativo({ kilos: 25000, tarifaFletero: 40, tarifaEmpresa: 50 })
+    expect(r.toneladas).toBe(25)
+    expect(r.total).toBe(25000 * 50)
   })
 
-  it("enriquecerViajeOperativo({ kilos: 25000, tarifaOperativaInicial: 50 }).toneladas === 25", () => {
-    expect(enriquecerViajeOperativo({ kilos: 25000, tarifaOperativaInicial: 50 }).toneladas).toBe(25)
+  it("kilos null → total null", () => {
+    expect(enriquecerViajeOperativo({ kilos: null, tarifaEmpresa: 50 }).total).toBeNull()
   })
 
-  it("enriquecerViajeOperativo({ kilos: null, tarifaOperativaInicial: 50 }).total === null", () => {
-    expect(enriquecerViajeOperativo({ kilos: null, tarifaOperativaInicial: 50 }).total).toBeNull()
+  it("fallback a tarifaFletero si no hay tarifaEmpresa", () => {
+    const r = enriquecerViajeOperativo({ kilos: 10000, tarifaFletero: 30 })
+    expect(r.total).toBe(10000 * 30)
   })
 })
 
 describe("ocultarTarifaOperativa", () => {
-  it('"tarifaOperativaInicial" in ocultarTarifaOperativa({ tarifaOperativaInicial: 10, total: 20, id: "v1" }) === false', () => {
-    expect(
-      "tarifaOperativaInicial" in ocultarTarifaOperativa({ tarifaOperativaInicial: 10, total: 20, id: "v1" })
-    ).toBe(false)
-  })
-
-  it('"total" in ocultarTarifaOperativa({ tarifaOperativaInicial: 10, total: 20, id: "v1" }) === false', () => {
-    expect(
-      "total" in ocultarTarifaOperativa({ tarifaOperativaInicial: 10, total: 20, id: "v1" })
-    ).toBe(false)
-  })
-
-  it('"id" in ocultarTarifaOperativa({ tarifaOperativaInicial: 10, total: 20, id: "v1" }) === true', () => {
-    expect(
-      "id" in ocultarTarifaOperativa({ tarifaOperativaInicial: 10, total: 20, id: "v1" })
-    ).toBe(true)
+  it("oculta tarifaFletero, tarifaEmpresa y total", () => {
+    const result = ocultarTarifaOperativa({ tarifaFletero: 10, tarifaEmpresa: 20, total: 30, id: "v1" })
+    expect("tarifaFletero" in result).toBe(false)
+    expect("tarifaEmpresa" in result).toBe(false)
+    expect("total" in result).toBe(false)
+    expect("id" in result).toBe(true)
   })
 })

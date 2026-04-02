@@ -40,7 +40,7 @@ type ViajeParaFacturar = {
   destino: string | null
   provinciaDestino: string | null
   kilos: number | null
-  tarifaOperativaInicial: number
+  tarifaEmpresa: number
   estadoLiquidacion: string
   // editados localmente
   kilosEdit?: number
@@ -759,7 +759,7 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
         const viajesConEdit = (data.viajesPendientes ?? []).map((v: ViajeParaFacturar) => ({
           ...v,
           kilosEdit: v.kilos ?? undefined,
-          tarifaEmpresaEdit: v.tarifaOperativaInicial,
+          tarifaEmpresaEdit: v.tarifaEmpresa,
           fechaEdit: v.fechaViaje.slice(0, 10),
           remitoEdit: v.remito ?? "",
           cupoEdit: v.cupo ?? "",
@@ -811,7 +811,7 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
   // Calcular preview
   const viajesParaCalc = viajesSeleccionados.map((v) => ({
     kilos: v.kilosEdit ?? v.kilos ?? 0,
-    tarifaEmpresa: v.tarifaEmpresaEdit ?? v.tarifaOperativaInicial,
+    tarifaEmpresa: v.tarifaEmpresaEdit ?? v.tarifaEmpresa,
   }))
   const preview = viajesParaCalc.length > 0
     ? calcularFactura(viajesParaCalc, ivaPct)
@@ -839,7 +839,7 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
           destino: v.destinoEdit || null,
           provinciaDestino: v.provinciaDestinoEdit || null,
           kilos: v.kilosEdit ?? v.kilos ?? 0,
-          tarifaEmpresa: v.tarifaEmpresaEdit ?? v.tarifaOperativaInicial,
+          tarifaEmpresa: v.tarifaEmpresaEdit ?? v.tarifaEmpresa,
         })),
       }
       const res = await fetch("/api/facturas", {
@@ -980,7 +980,7 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
                     <tbody className="divide-y">
                       {viajesPendientes.map((v) => {
                         const kilos = v.kilosEdit ?? v.kilos ?? 0
-                        const tarifa = v.tarifaEmpresaEdit ?? v.tarifaOperativaInicial
+                        const tarifa = v.tarifaEmpresaEdit ?? v.tarifaEmpresa
                         const ton = kilos > 0 ? calcularToneladas(kilos) : null
                         const total = kilos > 0 ? calcularTotalViaje(kilos, tarifa) : null
                         const camionesDelFletero = camiones.filter((camion) => camion.fleteroId === v.fleteroId)
@@ -1013,8 +1013,8 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
                             <td className="px-3 py-2 text-right">
                               <input
                                 type="number"
-                                value={v.tarifaEmpresaEdit ?? v.tarifaOperativaInicial}
-                                onChange={(e) => actualizarViaje(v.id, "tarifaEmpresaEdit", parseFloat(e.target.value) || v.tarifaOperativaInicial)}
+                                value={v.tarifaEmpresaEdit ?? v.tarifaEmpresa}
+                                onChange={(e) => actualizarViaje(v.id, "tarifaEmpresaEdit", parseFloat(e.target.value) || v.tarifaEmpresa)}
                                 className="w-28 h-7 text-right rounded border bg-background px-2 text-xs"
                                 min="0"
                                 step="0.01"

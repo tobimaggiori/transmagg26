@@ -80,20 +80,12 @@ export type EstadoFacturaDocumentoType =
   typeof EstadoFacturaDocumento[keyof typeof EstadoFacturaDocumento]
 
 /**
- * tarifaOperativaInicialEsEditable: number -> boolean
+ * tarifaEsEditable: number -> boolean
  *
- * Dado [un valor de tarifa base opcional], devuelve [true si la tarifa base puede
- * seguir actuando como tarifa operativa editable del viaje base].
- * Existe para documentar que la tarifa del viaje base es una referencia operativa
- * previa al guardado de la liquidación o factura, no un comprobante ya generado.
- *
- * Ejemplos:
- * tarifaOperativaInicialEsEditable(150000) === true
- * tarifaOperativaInicialEsEditable(0) === false
- * tarifaOperativaInicialEsEditable(undefined) === false
+ * Dado [un valor de tarifa opcional], devuelve [true si es un valor positivo válido].
  */
-export function tarifaOperativaInicialEsEditable(tarifaOperativaInicial?: number | null): boolean {
-  return typeof tarifaOperativaInicial === "number" && tarifaOperativaInicial > 0
+export function tarifaEsEditable(tarifa?: number | null): boolean {
+  return typeof tarifa === "number" && tarifa > 0
 }
 
 /**

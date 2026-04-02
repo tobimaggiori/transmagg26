@@ -48,7 +48,7 @@ type ViajeParaLiquidar = {
   destino: string | null
   provinciaDestino: string | null
   kilos: number | null
-  tarifaOperativaInicial: number
+  tarifaFletero: number
   estadoFactura: string
   // editados localmente
   kilosEdit?: number
@@ -997,8 +997,8 @@ function ModalEditarViaje({
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Tarifa al fletero / ton</label>
             <input
               type="number"
-              value={form.tarifaEdit ?? form.tarifaOperativaInicial}
-              onChange={(e) => set("tarifaEdit", parseFloat(e.target.value) || form.tarifaOperativaInicial)}
+              value={form.tarifaEdit ?? form.tarifaFletero}
+              onChange={(e) => set("tarifaEdit", parseFloat(e.target.value) || form.tarifaFletero)}
               min="0"
               step="0.01"
               className="h-9 w-full rounded border bg-background px-2 text-sm"
@@ -1076,7 +1076,7 @@ function ModalPreviewLiquidacion({
 
   const viajesParaCalc = viajes.map((v) => ({
     kilos: v.kilosEdit ?? v.kilos ?? 0,
-    tarifaFletero: v.tarifaEdit ?? v.tarifaOperativaInicial,
+    tarifaFletero: v.tarifaEdit ?? v.tarifaFletero,
   }))
   const preview = calcularLiquidacion(viajesParaCalc, comisionPct, ivaPct)
 
@@ -1141,7 +1141,7 @@ function ModalPreviewLiquidacion({
             <tbody className="divide-y">
               {viajes.map((v) => {
                 const kilos = v.kilosEdit ?? v.kilos ?? 0
-                const tarifa = v.tarifaEdit ?? v.tarifaOperativaInicial
+                const tarifa = v.tarifaEdit ?? v.tarifaFletero
                 const ton = kilos > 0 ? calcularToneladas(kilos) : null
                 const importe = kilos > 0 ? calcularTotalViaje(kilos, tarifa) : null
                 return (
@@ -1235,8 +1235,8 @@ function ModalPreviewLiquidacion({
                     <td className="px-1 py-1">
                       <input
                         type="number"
-                        value={v.tarifaEdit ?? v.tarifaOperativaInicial}
-                        onChange={(e) => actualizarCelda(v.id, "tarifaEdit", parseFloat(e.target.value) || v.tarifaOperativaInicial)}
+                        value={v.tarifaEdit ?? v.tarifaFletero}
+                        onChange={(e) => actualizarCelda(v.id, "tarifaEdit", parseFloat(e.target.value) || v.tarifaFletero)}
                         min="0"
                         step="0.01"
                         className="h-7 w-28 text-right rounded border bg-background px-1 text-xs"
@@ -1390,7 +1390,7 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
         const viajesConEdit = (data.viajesPendientes ?? []).map((v: ViajeParaLiquidar) => ({
           ...v,
           kilosEdit: v.kilos ?? undefined,
-          tarifaEdit: v.tarifaOperativaInicial,
+          tarifaEdit: v.tarifaFletero,
           fechaEdit: v.fechaViaje.slice(0, 10),
           remitoEdit: v.remito ?? "",
           tieneCupoEdit: v.tieneCupo ?? false,
@@ -1475,7 +1475,7 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
           destino: v.destinoEdit || null,
           provinciaDestino: v.provinciaDestinoEdit || null,
           kilos: v.kilosEdit ?? v.kilos ?? 0,
-          tarifaFletero: v.tarifaEdit ?? v.tarifaOperativaInicial,
+          tarifaFletero: v.tarifaEdit ?? v.tarifaFletero,
         })),
       }
       const res = await fetch("/api/liquidaciones", {
@@ -1613,7 +1613,7 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
                   <tbody className="divide-y">
                     {viajesPendientes.map((v) => {
                       const kilos = v.kilosEdit ?? v.kilos ?? 0
-                      const tarifa = v.tarifaEdit ?? v.tarifaOperativaInicial
+                      const tarifa = v.tarifaEdit ?? v.tarifaFletero
                       const ton = kilos > 0 ? calcularToneladas(kilos) : null
                       const total = kilos > 0 ? calcularTotalViaje(kilos, tarifa) : null
                       return (

@@ -35,7 +35,8 @@ type ViajeAPI = {
   destino: string | null
   provinciaDestino: string | null
   kilos: number | null
-  tarifaOperativaInicial: number | null
+  tarifaFletero: number | null
+  tarifaEmpresa: number | null
   tieneCupo: boolean
   cupo: string | null
   remito: string | null
@@ -157,7 +158,7 @@ type FormViaje = {
   destino: string
   provinciaDestino: string
   kilos: string
-  tarifaOperativaInicial: string
+  tarifa: string
 }
 
 function formDesdeViaje(v: ViajeDetalle): FormViaje {
@@ -172,7 +173,7 @@ function formDesdeViaje(v: ViajeDetalle): FormViaje {
     destino: v.destino ?? "",
     provinciaDestino: v.provinciaDestino ?? "",
     kilos: v.kilos != null ? String(v.kilos) : "",
-    tarifaOperativaInicial: v.tarifaOperativaInicial != null ? String(v.tarifaOperativaInicial) : "",
+    tarifa: v.tarifaEmpresa != null ? String(v.tarifaEmpresa) : "",
   }
 }
 
@@ -216,7 +217,7 @@ function PanelDetalle({
 
   // Cálculos del resumen
   const kilos = parseFloat(form.kilos) || 0
-  const tarifa = parseFloat(form.tarifaOperativaInicial) || 0
+  const tarifa = parseFloat(form.tarifa) || 0
   const subtotal = kilos * tarifa
   // Buscar comisión del fletero
   const fletero = fleteros.find((f) => f.id === viaje.fleteroId)
@@ -249,7 +250,7 @@ function PanelDetalle({
       if (form.destino !== original.destino) body.destino = form.destino || null
       if (form.provinciaDestino !== original.provinciaDestino) body.provinciaDestino = form.provinciaDestino || null
       if (form.kilos !== original.kilos) body.kilos = form.kilos ? parseFloat(form.kilos) : null
-      if (form.tarifaOperativaInicial !== original.tarifaOperativaInicial) body.tarifaOperativaInicial = form.tarifaOperativaInicial ? parseFloat(form.tarifaOperativaInicial) : undefined
+      if (form.tarifa !== original.tarifa) body.tarifa = form.tarifa ? parseFloat(form.tarifa) : undefined
 
       if (Object.keys(body).length === 0) return
 
@@ -454,11 +455,16 @@ function PanelDetalle({
               <input
                 type="number"
                 step="0.01"
-                value={form.tarifaOperativaInicial}
-                onChange={(e) => setField("tarifaOperativaInicial", e.target.value)}
+                value={form.tarifa}
+                onChange={(e) => setField("tarifa", e.target.value)}
                 className={cn(inputCls, tieneFactura && disabledCls)}
                 disabled={tieneFactura}
               />
+              {tieneLP && (
+                <p className="text-xs text-amber-600 mt-1">
+                  ⚠ El LP ya fue emitido. Este cambio solo impactará en la factura a la empresa. La tarifa del fletero ({formatearMoneda(viaje.tarifaFletero ?? 0)}) no se modifica.
+                </p>
+              )}
             </div>
           </div>
 
@@ -552,13 +558,13 @@ function ModalCambiarEmpresa({
 }: {
   viaje: ViajeAPI
   empresas: Empresa[]
-  onGuardar: (data: { empresaId: string; tarifaOperativaInicial?: number; motivoCambioEmpresa: string }) => void
+  onGuardar: (data: { empresaId: string; tarifa?: number; motivoCambioEmpresa: string }) => void
   onCerrar: () => void
   cargando: boolean
   error: string | null
 }) {
   const [nuevaEmpresaId, setNuevaEmpresaId] = useState("")
-  const [nuevaTarifa, setNuevaTarifa] = useState(viaje.tarifaOperativaInicial?.toString() ?? "")
+  const [nuevaTarifa, setNuevaTarifa] = useState(viaje.tarifaEmpresa?.toString() ?? "")
   const [motivo, setMotivo] = useState("")
   const [mostrarHistorial, setMostrarHistorial] = useState(false)
 
@@ -588,7 +594,7 @@ function ModalCambiarEmpresa({
             if (!puedeConfirmar) return
             onGuardar({
               empresaId: nuevaEmpresaId,
-              tarifaOperativaInicial: nuevaTarifa ? Number(nuevaTarifa) : undefined,
+              tarifa: nuevaTarifa ? Number(nuevaTarifa) : undefined,
               motivoCambioEmpresa: motivo.trim(),
             })
           }}
@@ -950,7 +956,7 @@ export function ConsultarViajesClient({
   const viajesPagina = viajes.slice((pagina - 1) * PER_PAGE, pagina * PER_PAGE)
 
   // ── Acción: cambiar empresa ───────────────────────────────────────────────
-  async function handleCambiarEmpresa(data: { empresaId: string; tarifaOperativaInicial?: number; motivoCambioEmpresa: string }) {
+  async function handleCambiarEmpresa(data: { empresaId: string; tarifa?: number; motivoCambioEmpresa: string }) {
     if (!viajeCambioEmpresa) return
     setGuardando(true)
     setErrorModal(null)

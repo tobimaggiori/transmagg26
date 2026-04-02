@@ -28,7 +28,7 @@ interface ViajeDisponible {
   provinciaOrigen?: string | null
   provinciaDestino?: string | null
   kilos?: number | null
-  tarifaOperativaInicial: number
+  tarifaEmpresa: number
   empresaId: string
   fletero: { razonSocial: string }
   camion: { patenteChasis: string }
@@ -92,7 +92,7 @@ export function FacturaForm({ empresas, viajesPendientes, onSuccess }: FacturaFo
       }
       return {
         ...prev,
-        [viaje.id]: { viajeId: viaje.id, tarifaEmpresa: String(viaje.tarifaOperativaInicial) },
+        [viaje.id]: { viajeId: viaje.id, tarifaEmpresa: String(viaje.tarifaEmpresa) },
       }
     })
   }
@@ -243,7 +243,7 @@ export function FacturaForm({ empresas, viajesPendientes, onSuccess }: FacturaFo
                       </p>
                     </div>
                     <div className="text-right text-xs text-muted-foreground shrink-0">
-                      base: {formatearMoneda(viaje.tarifaOperativaInicial)}
+                      base: {formatearMoneda(viaje.tarifaEmpresa)}
                     </div>
                   </div>
 

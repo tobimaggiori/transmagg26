@@ -3,7 +3,7 @@
 /**
  * Propósito: Componente cliente de la página de viajes.
  * Maneja selección de fletero/empresa, carga de viajes via API, tabs y modales de ABM.
- * SEGURIDAD: tarifaOperativaInicial nunca se muestra a roles externos.
+ * SEGURIDAD: tarifaFletero/tarifaEmpresa nunca se muestra a roles externos.
  */
 
 import { useState, useCallback, useEffect } from "react"
@@ -42,7 +42,8 @@ type ViajeAPI = {
   destino: string | null
   provinciaDestino: string | null
   kilos: number | null
-  tarifaOperativaInicial?: number | null
+  tarifaFletero?: number | null
+  tarifaEmpresa?: number | null
   estadoLiquidacion: string
   estadoFactura: string
   nroCartaPorte?: string | null
@@ -156,7 +157,7 @@ function ModalCambiarEmpresa({
   error: string | null
 }) {
   const [nuevaEmpresaId, setNuevaEmpresaId] = useState("")
-  const [nuevaTarifa, setNuevaTarifa] = useState(viaje.tarifaOperativaInicial?.toString() ?? "")
+  const [nuevaTarifa, setNuevaTarifa] = useState(viaje.tarifaEmpresa?.toString() ?? "")
   const [motivo, setMotivo] = useState("")
   const [mostrarHistorial, setMostrarHistorial] = useState(false)
 
@@ -178,8 +179,8 @@ function ModalCambiarEmpresa({
       motivoCambioEmpresa: motivo.trim(),
     }
     const tarifaNum = parseFloat(nuevaTarifa)
-    if (tarifaNum > 0 && tarifaNum !== viaje.tarifaOperativaInicial) {
-      payload.tarifaOperativaInicial = tarifaNum
+    if (tarifaNum > 0 && tarifaNum !== viaje.tarifaEmpresa) {
+      payload.tarifa = tarifaNum
     }
     onGuardar(payload)
   }
@@ -212,7 +213,7 @@ function ModalCambiarEmpresa({
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-0.5">Tarifa actual</p>
-                <p className="font-medium">{viaje.tarifaOperativaInicial != null ? formatearMoneda(viaje.tarifaOperativaInicial) : "-"}</p>
+                <p className="font-medium">{viaje.tarifaEmpresa != null ? formatearMoneda(viaje.tarifaEmpresa) : "-"}</p>
               </div>
             </div>
 
@@ -333,7 +334,7 @@ function ModalCambiarEmpresa({
  * Ejemplos:
  * <ModalViaje modo="nuevo" onGuardar={fn} onCerrar={fn} fleteros={[]} ... />
  * <ModalViaje modo="editar" viaje={v} onGuardar={fn} onCerrar={fn} ... />
- * // Al ingresar kilos y tarifaOperativaInicial → muestra toneladas y total en tiempo real
+ * // Al ingresar kilos y tarifa → muestra toneladas y total en tiempo real
  */
 function ModalViaje({
   modo,
@@ -375,7 +376,7 @@ function ModalViaje({
   const [destino, setDestino] = useState(viaje?.destino ?? "")
   const [provinciaDestino, setProvinciaDestino] = useState(viaje?.provinciaDestino ?? "")
   const [kilos, setKilos] = useState(viaje?.kilos?.toString() ?? "")
-  const [tarifaOperativaInicial, setTarifaBase] = useState(viaje?.tarifaOperativaInicial?.toString() ?? "")
+  const [tarifaInput, setTarifaBase] = useState(viaje?.tarifaEmpresa?.toString() ?? "")
   const [nroCartaPorte, setNroCartaPorte] = useState(viaje?.nroCartaPorte ?? "")
   const [cartaPorteS3Key, setCartaPorteS3Key] = useState(viaje?.cartaPorteS3Key ?? "")
 
@@ -392,7 +393,7 @@ function ModalViaje({
   const empresaItems = empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: e.cuit }))
 
   const kilosNum = parseFloat(kilos) || 0
-  const tarifaNum = parseFloat(tarifaOperativaInicial) || 0
+  const tarifaNum = parseFloat(tarifaInput) || 0
   const toneladas = kilosNum > 0 ? calcularToneladas(kilosNum) : null
   const totalCalc = kilosNum > 0 && tarifaNum > 0 ? calcularTotalViaje(kilosNum, tarifaNum) : null
 
@@ -428,7 +429,7 @@ function ModalViaje({
       destino: destino || undefined,
       provinciaDestino: provinciaDestino || undefined,
       kilos: kilosNum > 0 ? kilosNum : undefined,
-      tarifaOperativaInicial: tarifaNum > 0 ? tarifaNum : undefined,
+      tarifa: tarifaNum > 0 ? tarifaNum : undefined,
       ...(esNuevo ? { nroCartaPorte: nroCartaPorte.trim(), cartaPorteS3Key } : {}),
     })
   }
@@ -667,10 +668,10 @@ function ModalViaje({
               )}
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Tarifa operativa inicial / ton *</label>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Tarifa / ton *</label>
               <input
                 type="number"
-                value={tarifaOperativaInicial}
+                value={tarifaInput}
                 onChange={(e) => setTarifaBase(e.target.value)}
                 min="0"
                 step="0.01"
@@ -1062,7 +1063,7 @@ export function ViajesClient({
                   <tbody className="divide-y">
                     {viajesFiltrados.map((v) => {
                       const toneladas = v.kilos != null ? calcularToneladas(v.kilos) : null
-                      const tarifaOperativa = v.tarifaOperativaInicial ?? null
+                      const tarifaOperativa = v.tarifaEmpresa ?? null
                       const total = v.kilos != null && tarifaOperativa != null
                         ? calcularTotalViaje(v.kilos, tarifaOperativa)
                         : null

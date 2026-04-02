@@ -26,7 +26,7 @@ const actualizarViajeSchema = z.object({
   destino: z.string().nullable().optional(),
   provinciaDestino: z.enum(PROVINCIAS_ARGENTINA as unknown as [string, ...string[]]).nullable().optional(),
   kilos: z.number().positive().nullable().optional(),
-  tarifaOperativaInicial: z.number().positive().optional(),
+  tarifa: z.number().positive().optional(),
   empresaId: z.string().optional(),
   motivoCambioEmpresa: z.string().optional(),
   fleteroId: z.string().uuid().nullable().optional(),
@@ -140,7 +140,7 @@ export async function PATCH(
     }
 
     // Validaciones por factura emitida: no permitir cambios en tarifa
-    if (viaje.estadoFactura === "FACTURADO" && parsed.data.tarifaOperativaInicial !== undefined) {
+    if (viaje.estadoFactura === "FACTURADO" && parsed.data.tarifa !== undefined) {
       return NextResponse.json(
         { error: "No se puede modificar la tarifa porque el viaje tiene una factura emitida" },
         { status: 422 }
@@ -179,7 +179,20 @@ export async function PATCH(
       }
     }
 
-    const { fechaViaje, empresaId, motivoCambioEmpresa, fleteroId, camionId, motivoCambioFletero, ...resto } = parsed.data
+    const { fechaViaje, empresaId, motivoCambioEmpresa, fleteroId, camionId, motivoCambioFletero, tarifa, ...resto } = parsed.data
+
+    // Determinar qué campos de tarifa actualizar según estado del LP
+    const tieneLP = viaje.estadoLiquidacion === "LIQUIDADO"
+    const tarifaUpdate: Record<string, number> = {}
+    if (tarifa !== undefined) {
+      // tarifaEmpresa siempre actualizable
+      tarifaUpdate.tarifaEmpresa = tarifa
+      // tarifaFletero solo si no tiene LP emitido
+      if (!tieneLP) {
+        tarifaUpdate.tarifaFletero = tarifa
+      }
+    }
+
     const actualizado = await prisma.$transaction(async (tx) => {
       const historial: Array<Record<string, unknown>> = JSON.parse(viaje.historialCambios ?? "[]")
 
@@ -217,6 +230,7 @@ export async function PATCH(
         where: { id: params.id },
         data: {
           ...resto,
+          ...tarifaUpdate,
           ...(empresaId ? { empresaId } : {}),
           ...(fleteroId !== undefined ? { fleteroId } : {}),
           ...(camionId ? { camionId } : {}),

@@ -106,7 +106,7 @@ interface GrupoPendiente {
   cantidadViajes: number
   listosParaFacturar?: number
   bloqueados?: number
-  viajes: Array<{ id: string; fechaViaje: string; procedencia: string | null; destino: string | null; tarifaOperativaInicial: number }>
+  viajes: Array<{ id: string; fechaViaje: string; procedencia: string | null; destino: string | null; tarifa: number }>
 }
 
 type ModalTipo =
@@ -428,7 +428,7 @@ function PendienteModal({ url }: { url: string; titulo: string }) {
                   <td className="py-1">{formatearFecha(v.fechaViaje)}</td>
                   <td className="py-1">{v.procedencia ?? "-"}</td>
                   <td className="py-1">{v.destino ?? "-"}</td>
-                  <td className="text-right py-1">{formatearMoneda(v.tarifaOperativaInicial)}</td>
+                  <td className="text-right py-1">{formatearMoneda(v.tarifa)}</td>
                 </tr>
               ))}
             </tbody>

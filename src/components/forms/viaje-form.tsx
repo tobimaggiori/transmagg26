@@ -68,7 +68,7 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
   const [destino, setDestino] = useState("")
   const [provinciaDestino, setProvinciaDestino] = useState("")
   const [kilos, setKilos] = useState("")
-  const [tarifaOperativaInicial, setTarifaBase] = useState("")
+  const [tarifa, setTarifaBase] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -117,7 +117,7 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
           destino: destino || undefined,
           provinciaDestino: provinciaDestino || undefined,
           kilos: kilos ? parseFloat(kilos) : undefined,
-          tarifaOperativaInicial: parseFloat(tarifaOperativaInicial),
+          tarifa: parseFloat(tarifa),
         }),
       })
 
@@ -243,13 +243,13 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
           <Input id="destino" value={destino} onChange={(e) => setDestino(e.target.value)} />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="tarifaOperativaInicial" className="text-primary font-medium">Tarifa base ($) *</Label>
+          <Label htmlFor="tarifa" className="text-primary font-medium">Tarifa base ($) *</Label>
           <Input
-            id="tarifaOperativaInicial"
+            id="tarifa"
             type="number"
             min="0"
             step="0.01"
-            value={tarifaOperativaInicial}
+            value={tarifa}
             onChange={(e) => setTarifaBase(e.target.value)}
             required
             className="border-primary/40 focus:border-primary"
@@ -265,7 +265,7 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
         </Button>
         <Button
           type="submit"
-          disabled={loading || !fleteroId || !camionId || !choferId || !empresaId || !tarifaOperativaInicial}
+          disabled={loading || !fleteroId || !camionId || !choferId || !empresaId || !tarifa}
         >
           {loading ? "Guardando..." : "Crear viaje"}
         </Button>

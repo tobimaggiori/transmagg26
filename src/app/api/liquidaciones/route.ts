@@ -14,7 +14,6 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
-import { obtenerTarifaOperativaInicial } from "@/lib/viaje-serialization"
 import { EstadoLiquidacionDocumento, EstadoLiquidacionViaje } from "@/lib/viaje-workflow"
 import { resolverOperadorId } from "@/lib/session-utils"
 import type { Rol } from "@/types"
@@ -138,7 +137,7 @@ export async function GET(request: NextRequest) {
           destino: true,
           provinciaDestino: true,
           kilos: true,
-          tarifaOperativaInicial: true,
+          tarifaFletero: true,
           estadoLiquidacion: true,
           estadoFactura: true,
         },
@@ -211,9 +210,9 @@ export async function GET(request: NextRequest) {
     // Calcular toneladas y total en los viajes pendientes
     const viajesPendientes = viajesRaw.map((v) => ({
       ...v,
-      tarifaOperativaInicial: obtenerTarifaOperativaInicial(v.tarifaOperativaInicial),
+      tarifaFletero: v.tarifaFletero,
       toneladas: v.kilos != null ? calcularToneladas(v.kilos) : null,
-      total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaOperativaInicial) : null,
+      total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaFletero) : null,
     }))
 
     return NextResponse.json({ viajesPendientes, liquidaciones, fletero: fleteroData, nroProximoComprobante, gastosPendientes })

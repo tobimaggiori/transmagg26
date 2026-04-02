@@ -43,7 +43,7 @@ export async function GET() {
       fechaViaje: string
       procedencia: string | null
       destino: string | null
-      tarifaOperativaInicial: number
+      tarifa: number
     }
     type EmpresaEntry = {
       empresaId: string
@@ -72,8 +72,8 @@ export async function GET() {
         })
       }
       const entry = porEmpresa.get(key)!
-      const tarifaOperativaInicial = v.tarifaOperativaInicial ?? 0
-      entry.totalTarifaBase += tarifaOperativaInicial
+      const tarifaEmpresa = v.tarifaEmpresa ?? 0
+      entry.totalTarifaBase += tarifaEmpresa
       entry.cantidadViajes += 1
       if (viajeEsFacturable(v)) {
         entry.listosParaFacturar += 1
@@ -85,7 +85,7 @@ export async function GET() {
         fechaViaje: v.fechaViaje.toISOString(),
         procedencia: v.procedencia,
         destino: v.destino,
-        tarifaOperativaInicial,
+        tarifa: tarifaEmpresa,
       })
     }
 
