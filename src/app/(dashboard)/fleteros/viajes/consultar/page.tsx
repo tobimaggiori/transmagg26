@@ -20,12 +20,12 @@ export default async function ConsultarViajesPage() {
   const [fleteros, empresas, camiones] = await Promise.all([
     prisma.fletero.findMany({
       where: { activo: true },
-      select: { id: true, razonSocial: true },
+      select: { id: true, razonSocial: true, cuit: true, comisionDefault: true },
       orderBy: { razonSocial: "asc" },
     }),
     prisma.empresa.findMany({
       where: { activa: true },
-      select: { id: true, razonSocial: true },
+      select: { id: true, razonSocial: true, cuit: true },
       orderBy: { razonSocial: "asc" },
     }),
     prisma.camion.findMany({

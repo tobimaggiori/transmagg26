@@ -131,6 +131,22 @@ export async function PATCH(
     })
     if (!viaje) return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 })
 
+    // Validaciones por LP emitido: no permitir cambios en kilos
+    if (viaje.estadoLiquidacion === "LIQUIDADO" && parsed.data.kilos !== undefined) {
+      return NextResponse.json(
+        { error: "No se pueden modificar los kilos porque el viaje tiene un LP emitido" },
+        { status: 422 }
+      )
+    }
+
+    // Validaciones por factura emitida: no permitir cambios en tarifa
+    if (viaje.estadoFactura === "FACTURADO" && parsed.data.tarifaOperativaInicial !== undefined) {
+      return NextResponse.json(
+        { error: "No se puede modificar la tarifa porque el viaje tiene una factura emitida" },
+        { status: 422 }
+      )
+    }
+
     // Validaciones de cambio de fletero
     if (parsed.data.fleteroId !== undefined) {
       if (viaje.estadoLiquidacion === "LIQUIDADO") {
