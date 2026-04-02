@@ -76,8 +76,8 @@ const NAV_GROUPS: NavGroup[] = [
     seccion: "facturas",
     pathPrefix: "/empresas",
     items: [
-      { href: "/empresas/facturar", label: "Facturar" },
-      { href: "/empresas/facturas", label: "Consultar Facturas" },
+      { href: "/empresas/facturas", label: "Facturas" },
+      { href: "/empresas/recibos", label: "Recibos por Cobranza" },
       { href: "/empresas/cuentas-corrientes", label: "Cuentas Corrientes" },
     ],
   },

@@ -95,6 +95,7 @@ model Usuario {
   resumenesBancariosOpera    ResumenBancario[]        @relation("OperadorResumenBancario")
   historialPagosOpera        HistorialPago[]          @relation("OperadorHistorialPago")
   ordenesPagoOpera           OrdenPago[]              @relation("OperadorOrdenPago")
+  recibosOpera               ReciboCobranza[]         @relation("OperadorRecibo")
 
   @@map("usuarios")
 }
@@ -130,6 +131,7 @@ model Empresa {
   pagosRecibidos   PagoDeEmpresa[]
   chequesRecibidos ChequeRecibido[]
   contactosEmail   ContactoEmail[]
+  recibosCobranza  ReciboCobranza[]
 
   @@map("empresas")
 }
@@ -400,6 +402,8 @@ model FacturaEmitida {
   estado           String   @default("BORRADOR")
   pdfS3Key         String?  @map("pdf_s3_key")
   emitidaEn        DateTime @default(now()) @map("emitida_en")
+  reciboId         String?  @map("recibo_id")
+  estadoCobro      String   @default("PENDIENTE") @map("estado_cobro")
 
   empresa              Empresa             @relation(fields: [empresaId], references: [id])
   operador             Usuario             @relation("OperadorFactura", fields: [operadorId], references: [id])
@@ -408,6 +412,7 @@ model FacturaEmitida {
   asientosIva          AsientoIva[]
   chequesRecibidos     ChequeRecibido[]
   notasCreditoDebito   NotaCreditoDebito[]
+  recibo               ReciboCobranza?     @relation("FacturasRecibo", fields: [reciboId], references: [id])
 
   @@map("facturas_emitidas")
 }
@@ -1206,6 +1211,50 @@ model HistorialPago {
   operador      Usuario        @relation("OperadorHistorialPago", fields: [operadorId], references: [id])
 
   @@map("historial_pagos")
+}
+
+// ─── RECIBOS DE COBRANZA ──────────────────────────────────────────────────────
+
+model ReciboCobranza {
+  id                 String    @id @default(uuid())
+  nro                Int
+  ptoVenta           Int       @default(1) @map("pto_venta")
+  fecha              DateTime  @default(now())
+  empresaId          String    @map("empresa_id")
+  totalCobrado       Float     @map("total_cobrado")
+  totalRetenciones   Float     @default(0) @map("total_retenciones")
+  totalComprobantes  Float     @map("total_comprobantes")
+  retencionGanancias Float     @default(0) @map("retencion_ganancias")
+  retencionIIBB      Float     @default(0) @map("retencion_iibb")
+  retencionSUSS      Float     @default(0) @map("retencion_suss")
+  pdfS3Key           String?   @map("pdf_s3_key")
+  operadorId         String    @map("operador_id")
+  creadoEn           DateTime  @default(now()) @map("creado_en")
+
+  empresa     Empresa           @relation(fields: [empresaId], references: [id])
+  operador    Usuario           @relation("OperadorRecibo", fields: [operadorId], references: [id])
+  facturas    FacturaEmitida[]  @relation("FacturasRecibo")
+  mediosPago  MedioPagoRecibo[]
+
+  @@map("recibos_cobranza")
+}
+
+model MedioPagoRecibo {
+  id                 String    @id @default(uuid())
+  reciboId           String    @map("recibo_id")
+  tipo               String    // TRANSFERENCIA | ECHEQ | CHEQUE_FISICO
+  monto              Float
+  cuentaId           String?   @map("cuenta_id")
+  fechaTransferencia DateTime? @map("fecha_transferencia")
+  referencia         String?
+  nroCheque          String?   @map("nro_cheque")
+  bancoEmisor        String?   @map("banco_emisor")
+  fechaEmision       DateTime? @map("fecha_emision")
+  fechaPago          DateTime? @map("fecha_pago")
+
+  recibo   ReciboCobranza @relation(fields: [reciboId], references: [id])
+
+  @@map("medios_pago_recibo")
 }
 
 // ─── CONFIGURACIÓN OTP ────────────────────────────────────────────────────────

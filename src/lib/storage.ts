@@ -32,6 +32,7 @@ export type StoragePrefijo =
   | "resumenes-tarjeta"
   | "cartas-de-porte"
   | "polizas"
+  | "recibos-cobranza"
 
 export const PREFIJOS_VALIDOS: StoragePrefijo[] = [
   "liquidaciones",
@@ -43,6 +44,7 @@ export const PREFIJOS_VALIDOS: StoragePrefijo[] = [
   "resumenes-tarjeta",
   "cartas-de-porte",
   "polizas",
+  "recibos-cobranza",
 ]
 
 const r2 = new S3Client({
