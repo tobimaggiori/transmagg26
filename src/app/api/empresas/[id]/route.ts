@@ -71,17 +71,17 @@ export async function PATCH(
 /**
  * DELETE: NextRequest { params: { id } } -> Promise<NextResponse>
  *
- * Dado el id de la empresa, la desactiva (soft delete) sin eliminar registros.
- * Existe para conservar el historial de facturas y viajes asociados
- * a la empresa mientras se impide su aparición en formularios nuevos.
+ * Dado el id de la empresa, la elimina permanentemente si no tiene viajes ni facturas.
+ * Si tiene registros asociados, devuelve 422 con el detalle.
+ * Existe para permitir borrar empresas creadas por error sin historial operativo.
  *
  * Ejemplos:
- * DELETE /api/empresas/e1 (empresa activa)
- * // => 200 { message: "Empresa desactivada correctamente" }
+ * DELETE /api/empresas/e1 (sin viajes ni facturas)
+ * // => 200 { message: "Empresa eliminada correctamente" }
+ * DELETE /api/empresas/e1 (con 3 viajes)
+ * // => 422 { error: "No se puede eliminar: tiene 3 viaje(s) y 0 factura(s) asociados." }
  * DELETE /api/empresas/noexiste
  * // => 404 { error: "Empresa no encontrada" }
- * DELETE /api/empresas/e1 (sesión ADMIN_EMPRESA)
- * // => 403 { error: "Acceso denegado" }
  */
 export async function DELETE(
   _request: NextRequest,
@@ -96,9 +96,24 @@ export async function DELETE(
     const existe = await prisma.empresa.findUnique({ where: { id: params.id } })
     if (!existe) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 })
 
-    await prisma.empresa.update({ where: { id: params.id }, data: { activa: false } })
+    const [nViajes, nFacturas] = await Promise.all([
+      prisma.viaje.count({ where: { empresaId: params.id } }),
+      prisma.facturaEmitida.count({ where: { empresaId: params.id } }),
+    ])
 
-    return NextResponse.json({ message: "Empresa desactivada correctamente" })
+    if (nViajes > 0 || nFacturas > 0) {
+      return NextResponse.json(
+        { error: `No se puede eliminar: tiene ${nViajes} viaje(s) y ${nFacturas} factura(s) asociados. Desactivá la empresa en su lugar.` },
+        { status: 422 }
+      )
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.contactoEmail.deleteMany({ where: { empresaId: params.id } })
+      await tx.empresa.delete({ where: { id: params.id } })
+    })
+
+    return NextResponse.json({ message: "Empresa eliminada correctamente" })
   } catch (error) {
     console.error("[DELETE /api/empresas/[id]]", error)
     return NextResponse.json(

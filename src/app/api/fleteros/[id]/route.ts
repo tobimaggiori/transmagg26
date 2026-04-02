@@ -103,22 +103,42 @@ export async function PATCH(
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const fletero = await prisma.fletero.findUnique({ where: { id: params.id } })
+    const fletero = await prisma.fletero.findUnique({
+      where: { id: params.id },
+      include: { camiones: { where: { activo: true }, select: { id: true } } },
+    })
     if (!fletero) return NextResponse.json({ error: "Fletero no encontrado" }, { status: 404 })
 
-    const { telefono, ...datosFletero } = parsed.data
+    const { telefono, activo, ...datosFletero } = parsed.data
 
-    // Actualizar fletero y usuario en paralelo si hay cambio de teléfono
-    const updates: Promise<unknown>[] = [
-      prisma.fletero.update({ where: { id: params.id }, data: datosFletero }),
-    ]
-    if (telefono !== undefined) {
-      updates.push(
-        prisma.usuario.update({ where: { id: fletero.usuarioId }, data: { telefono } })
-      )
+    if (activo !== undefined) {
+      // Togglear activo: sincronizar usuario y, si se desactiva, cerrar asignaciones de chofer
+      const ahora = new Date()
+      await prisma.$transaction(async (tx) => {
+        if (activo === false) {
+          const camionIds = fletero.camiones.map((c) => c.id)
+          if (camionIds.length > 0) {
+            await tx.camionChofer.updateMany({
+              where: { camionId: { in: camionIds }, hasta: null },
+              data: { hasta: ahora },
+            })
+          }
+        }
+        await tx.fletero.update({ where: { id: params.id }, data: { activo } })
+        await tx.usuario.update({ where: { id: fletero.usuarioId }, data: { activo } })
+      })
+    } else {
+      // Actualizar datos del fletero y usuario en paralelo si hay cambio de teléfono
+      const updates: Promise<unknown>[] = [
+        prisma.fletero.update({ where: { id: params.id }, data: datosFletero }),
+      ]
+      if (telefono !== undefined) {
+        updates.push(
+          prisma.usuario.update({ where: { id: fletero.usuarioId }, data: { telefono } })
+        )
+      }
+      await Promise.all(updates)
     }
-
-    await Promise.all(updates)
     const actualizado = await prisma.fletero.findUnique({
       where: { id: params.id },
       select: {
@@ -146,19 +166,17 @@ export async function PATCH(
 /**
  * DELETE: NextRequest { params: { id } } -> Promise<NextResponse>
  *
- * Dado el id del fletero, desactiva el fletero y su usuario (soft delete),
- * cierra las asignaciones activas en CamionChofer de todos sus camiones
- * y desactiva los choferes del fletero.
- * Existe para conservar el historial de liquidaciones y camiones asociados
- * al fletero mientras se impide su acceso al sistema.
+ * Dado el id del fletero, lo elimina permanentemente si no tiene viajes ni liquidaciones.
+ * Si tiene registros asociados, devuelve 422 con el detalle.
+ * Existe para permitir borrar fleteros creados por error sin historial operativo.
  *
  * Ejemplos:
- * DELETE /api/fleteros/f1 (fletero activo)
- * // => 200 { message: "Fletero desactivado correctamente" }
+ * DELETE /api/fleteros/f1 (sin viajes ni liquidaciones)
+ * // => 200 { message: "Fletero eliminado correctamente" }
+ * DELETE /api/fleteros/f1 (con 5 viajes)
+ * // => 422 { error: "No se puede eliminar: tiene 5 viaje(s) y 0 liquidación(es) asociados." }
  * DELETE /api/fleteros/noexiste
  * // => 404 { error: "Fletero no encontrado" }
- * DELETE /api/fleteros/f1 (sesión FLETERO)
- * // => 403 { error: "Acceso denegado" }
  */
 export async function DELETE(
   _request: NextRequest,
@@ -172,27 +190,39 @@ export async function DELETE(
   try {
     const fletero = await prisma.fletero.findUnique({
       where: { id: params.id },
-      include: { camiones: { where: { activo: true }, select: { id: true } } },
+      include: { camiones: { select: { id: true } } },
     })
     if (!fletero) return NextResponse.json({ error: "Fletero no encontrado" }, { status: 404 })
 
-    const ahora = new Date()
+    const [nViajes, nLiquidaciones] = await Promise.all([
+      prisma.viaje.count({ where: { fleteroId: params.id } }),
+      prisma.liquidacion.count({ where: { fleteroId: params.id } }),
+    ])
+
+    if (nViajes > 0 || nLiquidaciones > 0) {
+      return NextResponse.json(
+        { error: `No se puede eliminar: tiene ${nViajes} viaje(s) y ${nLiquidaciones} liquidación(es) asociados. Desactivá el fletero en su lugar.` },
+        { status: 422 }
+      )
+    }
+
     const camionIds = fletero.camiones.map((c) => c.id)
 
     await prisma.$transaction(async (tx) => {
-      // Cerrar asignaciones activas en CamionChofer para todos los camiones del fletero
       if (camionIds.length > 0) {
-        await tx.camionChofer.updateMany({
-          where: { camionId: { in: camionIds }, hasta: null },
-          data: { hasta: ahora },
-        })
+        await tx.polizaSeguro.deleteMany({ where: { camionId: { in: camionIds } } })
+        await tx.infraccion.deleteMany({ where: { camionId: { in: camionIds } } })
+        await tx.camionChofer.deleteMany({ where: { camionId: { in: camionIds } } })
+        await tx.camion.deleteMany({ where: { id: { in: camionIds } } })
       }
-      // Desactivar el fletero y su usuario
-      await tx.fletero.update({ where: { id: params.id }, data: { activo: false } })
-      await tx.usuario.update({ where: { id: fletero.usuarioId }, data: { activo: false } })
+      await tx.contactoEmail.deleteMany({ where: { fleteroId: params.id } })
+      // Desactivar primero los choferes (usuarios vinculados al fletero) antes de borrar el fletero
+      await tx.usuario.updateMany({ where: { fleteroId: params.id, rol: "CHOFER" }, data: { activo: false } })
+      await tx.fletero.delete({ where: { id: params.id } })
+      await tx.usuario.delete({ where: { id: fletero.usuarioId } })
     })
 
-    return NextResponse.json({ message: "Fletero desactivado correctamente" })
+    return NextResponse.json({ message: "Fletero eliminado correctamente" })
   } catch (error) {
     console.error("[DELETE /api/fleteros/[id]]", error)
     return NextResponse.json(

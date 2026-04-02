@@ -2,7 +2,7 @@
 
 /**
  * Componente ABM para gestión de proveedores.
- * Incluye búsqueda, creación, edición y desactivación.
+ * Incluye búsqueda, creación, edición, activar/desactivar y eliminación.
  */
 
 import { useState } from "react"
@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog"
 import { formatearCuit } from "@/lib/utils"
 import { CondicionIva } from "@/types"
-import { Plus, Pencil, Trash2, Search } from "lucide-react"
+import { Plus, Pencil, Trash2, Search, PowerOff, Power } from "lucide-react"
 
 export interface ProveedorAbm {
   id: string
@@ -31,6 +31,7 @@ export interface ProveedorAbm {
   rubro: string | null
   tipo: string
   activo: boolean
+  puedeEliminar: boolean
 }
 
 interface ProveedoresAbmProps {
@@ -144,28 +145,46 @@ function ProveedorFormModal({ proveedor, onSuccess }: { proveedor?: ProveedorAbm
  * ProveedoresAbm: ProveedoresAbmProps -> JSX.Element
  *
  * Dado el listado de proveedores, renderiza la tabla ABM con buscador,
- * botones Editar/Desactivar y dialog de nuevo proveedor.
+ * botones Editar/Activar/Desactivar/Eliminar y dialog de nuevo proveedor.
  * Existe para gestionar el alta, baja y modificación de proveedores
  * en la sección ABM, separada de la operatoria de facturas.
- *
- * Ejemplos:
- * <ProveedoresAbm proveedores={[{ id:"p1", razonSocial:"Gas SA", cuit:"30111222333" }]} />
- * // => lista filtrable con "Gas SA" + botones editar/desactivar
- * <ProveedoresAbm proveedores={[]} />
- * // => mensaje "No hay proveedores" + botón "Nuevo proveedor"
  */
 export function ProveedoresAbm({ proveedores }: ProveedoresAbmProps) {
   const router = useRouter()
   const [busqueda, setBusqueda] = useState("")
   const [dialogCrear, setDialogCrear] = useState(false)
   const [dialogEditar, setDialogEditar] = useState<ProveedorAbm | null>(null)
+  const [dialogToggle, setDialogToggle] = useState<ProveedorAbm | null>(null)
   const [dialogEliminar, setDialogEliminar] = useState<ProveedorAbm | null>(null)
+  const [loadingToggle, setLoadingToggle] = useState(false)
+  const [errorToggle, setErrorToggle] = useState<string | null>(null)
   const [loadingElim, setLoadingElim] = useState(false)
   const [errorElim, setErrorElim] = useState<string | null>(null)
 
   const filtrados = busqueda
     ? proveedores.filter((p) => calcularFiltroProveedor(p, busqueda))
     : proveedores
+
+  async function handleToggle() {
+    if (!dialogToggle) return
+    setLoadingToggle(true)
+    setErrorToggle(null)
+    try {
+      const res = await fetch(`/api/proveedores/${dialogToggle.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ activo: !dialogToggle.activo }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setErrorToggle(data.error ?? "Error al actualizar"); return }
+      router.refresh()
+      setDialogToggle(null)
+    } catch {
+      setErrorToggle("Error de conexión.")
+    } finally {
+      setLoadingToggle(false)
+    }
+  }
 
   async function handleEliminar() {
     if (!dialogEliminar) return
@@ -174,7 +193,7 @@ export function ProveedoresAbm({ proveedores }: ProveedoresAbmProps) {
     try {
       const res = await fetch(`/api/proveedores/${dialogEliminar.id}`, { method: "DELETE" })
       const data = await res.json()
-      if (!res.ok) { setErrorElim(data.error ?? "Error al desactivar"); return }
+      if (!res.ok) { setErrorElim(data.error ?? "Error al eliminar"); return }
       router.refresh()
       setDialogEliminar(null)
     } catch {
@@ -217,21 +236,36 @@ export function ProveedoresAbm({ proveedores }: ProveedoresAbmProps) {
                       Aseguradora
                     </span>
                   )}
+                  {!p.activo && (
+                    <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                      Inactivo
+                    </span>
+                  )}
                 </p>
                 <p className="text-sm text-muted-foreground">
                   CUIT: {formatearCuit(p.cuit)}
                   {p.rubro ? ` · ${p.rubro}` : ""}
                   {" · "}{p.condicionIva.replace(/_/g, " ")}
-                  {!p.activo && <span className="ml-2 text-destructive">(inactivo)</span>}
                 </p>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={() => setDialogEditar(p)}>
                   <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
                 </Button>
-                <Button variant="destructive" size="sm" onClick={() => setDialogEliminar(p)} disabled={!p.activo}>
-                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Desactivar
-                </Button>
+                {p.activo ? (
+                  <Button variant="outline" size="sm" onClick={() => setDialogToggle(p)}>
+                    <PowerOff className="h-3.5 w-3.5 mr-1" /> Desactivar
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={() => setDialogToggle(p)}>
+                    <Power className="h-3.5 w-3.5 mr-1" /> Activar
+                  </Button>
+                )}
+                {p.puedeEliminar && (
+                  <Button variant="destructive" size="sm" onClick={() => setDialogEliminar(p)}>
+                    <Trash2 className="h-3.5 w-3.5 mr-1" /> Eliminar
+                  </Button>
+                )}
               </div>
             </div>
           ))}
@@ -258,19 +292,41 @@ export function ProveedoresAbm({ proveedores }: ProveedoresAbmProps) {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!dialogToggle} onOpenChange={(o) => { if (!o) { setDialogToggle(null); setErrorToggle(null) } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{dialogToggle?.activo ? "Desactivar proveedor" : "Activar proveedor"}</DialogTitle>
+            <DialogDescription>
+              {dialogToggle?.activo
+                ? <>¿Desactivar <strong>{dialogToggle?.razonSocial}</strong>? No aparecerá en formularios de nuevas facturas.</>
+                : <>¿Activar <strong>{dialogToggle?.razonSocial}</strong>? Volverá a estar disponible en los formularios.</>
+              }
+            </DialogDescription>
+          </DialogHeader>
+          <FormError message={errorToggle} />
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setDialogToggle(null)} disabled={loadingToggle}>Cancelar</Button>
+            <Button variant={dialogToggle?.activo ? "destructive" : "default"} onClick={handleToggle} disabled={loadingToggle}>
+              {loadingToggle ? "Guardando..." : dialogToggle?.activo ? "Desactivar" : "Activar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!dialogEliminar} onOpenChange={(o) => { if (!o) { setDialogEliminar(null); setErrorElim(null) } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Desactivar proveedor</DialogTitle>
+            <DialogTitle>Eliminar proveedor</DialogTitle>
             <DialogDescription>
-              ¿Desactivar <strong>{dialogEliminar?.razonSocial}</strong>? No se eliminarán las facturas históricas.
+              ¿Eliminar permanentemente <strong>{dialogEliminar?.razonSocial}</strong>? Esta acción no se puede deshacer.
+              Solo es posible si el proveedor no tiene facturas registradas.
             </DialogDescription>
           </DialogHeader>
           <FormError message={errorElim} />
           <div className="flex justify-end gap-2 mt-4">
             <Button variant="outline" onClick={() => setDialogEliminar(null)} disabled={loadingElim}>Cancelar</Button>
             <Button variant="destructive" onClick={handleEliminar} disabled={loadingElim}>
-              {loadingElim ? "Desactivando..." : "Desactivar"}
+              {loadingElim ? "Eliminando..." : "Eliminar"}
             </Button>
           </div>
         </DialogContent>

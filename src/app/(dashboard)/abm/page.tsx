@@ -71,19 +71,19 @@ export default async function AbmPage({
     tabValido === "empresas"
       ? prisma.empresa.findMany({
           select: {
-            id: true, razonSocial: true, cuit: true, condicionIva: true, direccion: true,
+            id: true, razonSocial: true, cuit: true, condicionIva: true, direccion: true, activa: true,
+            _count: { select: { viajes: true, facturasEmitidas: true } },
             contactosEmail: {
               where: { activo: true },
               select: { id: true, email: true, nombre: true },
               orderBy: { creadoEn: "asc" },
             },
           },
-          orderBy: { razonSocial: "asc" },
+          orderBy: [{ activa: "desc" }, { razonSocial: "asc" }],
         })
       : [],
     tabValido === "fleteros"
       ? prisma.fletero.findMany({
-          where: { activo: true },
           include: {
             usuario: { select: { nombre: true, apellido: true, email: true } },
             camiones: {
@@ -111,8 +111,9 @@ export default async function AbmPage({
               select: { id: true, email: true, nombre: true },
               orderBy: { creadoEn: "asc" },
             },
+            _count: { select: { viajes: true, liquidaciones: true } },
           },
-          orderBy: { razonSocial: "asc" },
+          orderBy: [{ activo: "desc" }, { razonSocial: "asc" }],
         })
       : [],
     [] as never[],
@@ -131,7 +132,7 @@ export default async function AbmPage({
     tabValido === "proveedores"
       ? prisma.proveedor.findMany({
           orderBy: [{ activo: "desc" }, { razonSocial: "asc" }],
-          select: { id: true, razonSocial: true, cuit: true, condicionIva: true, rubro: true, tipo: true, activo: true },
+          select: { id: true, razonSocial: true, cuit: true, condicionIva: true, rubro: true, tipo: true, activo: true, _count: { select: { facturas: true } } },
         })
       : [],
     (tabValido === "cuentas" || tabValido === "fci")
@@ -239,8 +240,18 @@ export default async function AbmPage({
 
       {/* Contenido del tab activo */}
       <div>
-        {tabValido === "empresas" && <EmpresasAbm empresas={empresas} />}
-        {tabValido === "fleteros" && <FleterosAbm fleteros={fleteros} />}
+        {tabValido === "empresas" && (
+          <EmpresasAbm empresas={empresas.map(e => ({
+            ...e,
+            puedeEliminar: e.activa && e._count.viajes === 0 && e._count.facturasEmitidas === 0,
+          }))} />
+        )}
+        {tabValido === "fleteros" && (
+          <FleterosAbm fleteros={fleteros.map(f => ({
+            ...f,
+            puedeEliminar: f.activo && f._count.viajes === 0 && f._count.liquidaciones === 0,
+          }))} />
+        )}
         {tabValido === "usuarios" && (
           <UsuariosAbm
             usuarios={usuarios.map((u) => ({
@@ -254,7 +265,12 @@ export default async function AbmPage({
             rolActual={rol}
           />
         )}
-        {tabValido === "proveedores" && <ProveedoresAbm proveedores={proveedores} />}
+        {tabValido === "proveedores" && (
+          <ProveedoresAbm proveedores={proveedores.map(p => ({
+            ...p,
+            puedeEliminar: p.activo && p._count.facturas === 0,
+          }))} />
+        )}
         {tabValido === "cuentas" && <CuentasAbm cuentas={cuentas} />}
         {tabValido === "fci" && <FciAbm fcis={fcis} cuentas={cuentas.map(c => ({ id: c.id, nombre: c.nombre }))} />}
         {tabValido === "empleados" && <EmpleadosAbm empleados={empleados.map(e => ({ ...e, fechaIngreso: e.fechaIngreso.toISOString() }))} />}

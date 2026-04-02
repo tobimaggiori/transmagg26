@@ -13,7 +13,7 @@ import { calcularFiltroProveedorOp } from "@/components/proveedores-client"
 
 // ─── calcularFiltroEmpresa ─────────────────────────────────────────────────────
 describe("calcularFiltroEmpresa", () => {
-  const empresa = { id: "e1", razonSocial: "Alimentos del Sur SA", cuit: "30714295698", condicionIva: "RESPONSABLE_INSCRIPTO", direccion: null, contactosEmail: [] }
+  const empresa = { id: "e1", razonSocial: "Alimentos del Sur SA", cuit: "30714295698", condicionIva: "RESPONSABLE_INSCRIPTO", direccion: null, activa: true, puedeEliminar: false, contactosEmail: [] }
 
   it("retorna true cuando la búsqueda coincide con razón social (case insensitive)", () => {
     expect(calcularFiltroEmpresa(empresa, "alimentos")).toBe(true)
@@ -36,6 +36,8 @@ describe("calcularFiltroFletero", () => {
     cuit: "20123456789",
     condicionIva: "RESPONSABLE_INSCRIPTO",
     comisionDefault: 10,
+    activo: true,
+    puedeEliminar: false,
     usuario: { nombre: "Juan", apellido: "Pérez", email: "juan.perez@fletero.com" },
     camiones: [],
     choferes: [],
@@ -120,7 +122,7 @@ describe("calcularFiltroUsuario", () => {
 
 // ─── calcularFiltroProveedor (ABM) ────────────────────────────────────────────
 describe("calcularFiltroProveedor", () => {
-    const proveedor = { id: "p1", razonSocial: "Gas del Sur SA", cuit: "30111222333", condicionIva: "RESPONSABLE_INSCRIPTO", rubro: "Combustible", tipo: "GENERAL", activo: true }
+    const proveedor = { id: "p1", razonSocial: "Gas del Sur SA", cuit: "30111222333", condicionIva: "RESPONSABLE_INSCRIPTO", rubro: "Combustible", tipo: "GENERAL", activo: true, puedeEliminar: false }
 
   it("retorna true cuando coincide con razón social", () => {
     expect(calcularFiltroProveedor(proveedor, "gas")).toBe(true)

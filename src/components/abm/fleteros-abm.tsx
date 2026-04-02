@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dialog"
 import { formatearCuit } from "@/lib/utils"
 import { CondicionIva } from "@/types"
-import { Plus, Pencil, Trash2, Search, ChevronDown, ChevronRight, Truck, User, UserX } from "lucide-react"
+import { Plus, Pencil, Trash2, Search, ChevronDown, ChevronRight, Truck, User, UserX, PowerOff, Power } from "lucide-react"
 import { ContactosEmailSubseccion, type ContactoEmailItem } from "./contactos-email-subseccion"
 
 export interface ChoferFlota {
@@ -47,6 +47,8 @@ export interface FleteroAbm {
   cuit: string
   condicionIva: string
   comisionDefault: number
+  activo: boolean
+  puedeEliminar: boolean
   usuario: { nombre: string; apellido: string; email: string }
   camiones: CamionAbm[]
   choferes: ChoferFlota[]
@@ -566,14 +568,38 @@ export function FleterosAbm({ fleteros }: FleterosAbmProps) {
   const [busqueda, setBusqueda] = useState("")
   const [dialogCrear, setDialogCrear] = useState(false)
   const [dialogEditar, setDialogEditar] = useState<FleteroAbm | null>(null)
+  const [dialogToggle, setDialogToggle] = useState<FleteroAbm | null>(null)
   const [dialogEliminar, setDialogEliminar] = useState<FleteroAbm | null>(null)
   const [expandido, setExpandido] = useState<string | null>(null)
+  const [loadingToggle, setLoadingToggle] = useState(false)
+  const [errorToggle, setErrorToggle] = useState<string | null>(null)
   const [loadingElim, setLoadingElim] = useState(false)
   const [errorElim, setErrorElim] = useState<string | null>(null)
 
   const filtrados = busqueda
     ? fleteros.filter((f) => calcularFiltroFletero(f, busqueda))
     : fleteros
+
+  async function handleToggle() {
+    if (!dialogToggle) return
+    setLoadingToggle(true)
+    setErrorToggle(null)
+    try {
+      const res = await fetch(`/api/fleteros/${dialogToggle.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ activo: !dialogToggle.activo }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setErrorToggle(data.error ?? "Error al actualizar"); return }
+      router.refresh()
+      setDialogToggle(null)
+    } catch {
+      setErrorToggle("Error de conexión.")
+    } finally {
+      setLoadingToggle(false)
+    }
+  }
 
   async function handleEliminar() {
     if (!dialogEliminar) return
@@ -582,7 +608,7 @@ export function FleterosAbm({ fleteros }: FleterosAbmProps) {
     try {
       const res = await fetch(`/api/fleteros/${dialogEliminar.id}`, { method: "DELETE" })
       const data = await res.json()
-      if (!res.ok) { setErrorElim(data.error ?? "Error al desactivar"); return }
+      if (!res.ok) { setErrorElim(data.error ?? "Error al eliminar"); return }
       router.refresh()
       setDialogEliminar(null)
     } catch {
@@ -627,7 +653,14 @@ export function FleterosAbm({ fleteros }: FleterosAbmProps) {
                     : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                   }
                   <div>
-                    <p className="font-medium">{flet.razonSocial}</p>
+                    <p className="font-medium flex items-center gap-2">
+                      {flet.razonSocial}
+                      {!flet.activo && (
+                        <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                          Inactivo
+                        </span>
+                      )}
+                    </p>
                     <p className="text-sm text-muted-foreground">
                       CUIT: {formatearCuit(flet.cuit)} &middot; {flet.usuario.nombre} {flet.usuario.apellido} &middot; {flet.comisionDefault}% comisión
                       &middot; {flet.camiones.length} camión{flet.camiones.length !== 1 ? "es" : ""}
@@ -639,9 +672,20 @@ export function FleterosAbm({ fleteros }: FleterosAbmProps) {
                   <Button variant="outline" size="sm" onClick={() => setDialogEditar(flet)}>
                     <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
                   </Button>
-                  <Button variant="destructive" size="sm" onClick={() => setDialogEliminar(flet)}>
-                    <Trash2 className="h-3.5 w-3.5 mr-1" /> Desactivar
-                  </Button>
+                  {flet.activo ? (
+                    <Button variant="outline" size="sm" onClick={() => setDialogToggle(flet)}>
+                      <PowerOff className="h-3.5 w-3.5 mr-1" /> Desactivar
+                    </Button>
+                  ) : (
+                    <Button variant="outline" size="sm" onClick={() => setDialogToggle(flet)}>
+                      <Power className="h-3.5 w-3.5 mr-1" /> Activar
+                    </Button>
+                  )}
+                  {flet.puedeEliminar && (
+                    <Button variant="destructive" size="sm" onClick={() => setDialogEliminar(flet)}>
+                      <Trash2 className="h-3.5 w-3.5 mr-1" /> Eliminar
+                    </Button>
+                  )}
                 </div>
               </div>
               {expandido === flet.id && (
@@ -672,19 +716,41 @@ export function FleterosAbm({ fleteros }: FleterosAbmProps) {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!dialogToggle} onOpenChange={(o) => { if (!o) { setDialogToggle(null); setErrorToggle(null) } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{dialogToggle?.activo ? "Desactivar fletero" : "Activar fletero"}</DialogTitle>
+            <DialogDescription>
+              {dialogToggle?.activo
+                ? <>¿Desactivar <strong>{dialogToggle?.razonSocial}</strong>? No podrá ingresar al sistema ni aparecer en nuevos viajes.</>
+                : <>¿Activar <strong>{dialogToggle?.razonSocial}</strong>? Volverá a tener acceso al sistema.</>
+              }
+            </DialogDescription>
+          </DialogHeader>
+          <FormError message={errorToggle} />
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setDialogToggle(null)} disabled={loadingToggle}>Cancelar</Button>
+            <Button variant={dialogToggle?.activo ? "destructive" : "default"} onClick={handleToggle} disabled={loadingToggle}>
+              {loadingToggle ? "Guardando..." : dialogToggle?.activo ? "Desactivar" : "Activar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!dialogEliminar} onOpenChange={(o) => { if (!o) { setDialogEliminar(null); setErrorElim(null) } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Desactivar fletero</DialogTitle>
+            <DialogTitle>Eliminar fletero</DialogTitle>
             <DialogDescription>
-              ¿Desactivar <strong>{dialogEliminar?.razonSocial}</strong>? No se eliminarán registros históricos.
+              ¿Eliminar permanentemente <strong>{dialogEliminar?.razonSocial}</strong>? Esta acción no se puede deshacer.
+              Solo es posible si el fletero no tiene viajes ni liquidaciones.
             </DialogDescription>
           </DialogHeader>
           <FormError message={errorElim} />
           <div className="flex justify-end gap-2 mt-4">
             <Button variant="outline" onClick={() => setDialogEliminar(null)} disabled={loadingElim}>Cancelar</Button>
             <Button variant="destructive" onClick={handleEliminar} disabled={loadingElim}>
-              {loadingElim ? "Desactivando..." : "Desactivar"}
+              {loadingElim ? "Eliminando..." : "Eliminar"}
             </Button>
           </div>
         </DialogContent>

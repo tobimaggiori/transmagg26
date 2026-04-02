@@ -2,7 +2,7 @@
 
 /**
  * Componente ABM para gestión de empresas clientes.
- * Incluye búsqueda, creación, edición y desactivación con dialogs.
+ * Incluye búsqueda, creación, edición, activar/desactivar y eliminación con dialogs.
  * Cada empresa es expandible para gestionar sus contactos de email.
  */
 
@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dialog"
 import { formatearCuit } from "@/lib/utils"
 import { CondicionIva } from "@/types"
-import { Plus, Pencil, Trash2, Search, ChevronDown, ChevronRight } from "lucide-react"
+import { Plus, Pencil, Trash2, Search, ChevronDown, ChevronRight, PowerOff, Power } from "lucide-react"
 import { ContactosEmailSubseccion, type ContactoEmailItem } from "./contactos-email-subseccion"
 
 export interface EmpresaAbm {
@@ -31,6 +31,8 @@ export interface EmpresaAbm {
   cuit: string
   condicionIva: string
   direccion: string | null
+  activa: boolean
+  puedeEliminar: boolean
   contactosEmail: ContactoEmailItem[]
 }
 
@@ -126,14 +128,38 @@ export function EmpresasAbm({ empresas }: EmpresasAbmProps) {
   const [busqueda, setBusqueda] = useState("")
   const [dialogCrear, setDialogCrear] = useState(false)
   const [dialogEditar, setDialogEditar] = useState<EmpresaAbm | null>(null)
+  const [dialogToggle, setDialogToggle] = useState<EmpresaAbm | null>(null)
   const [dialogEliminar, setDialogEliminar] = useState<EmpresaAbm | null>(null)
   const [expandida, setExpandida] = useState<string | null>(null)
+  const [loadingToggle, setLoadingToggle] = useState(false)
+  const [errorToggle, setErrorToggle] = useState<string | null>(null)
   const [loadingElim, setLoadingElim] = useState(false)
   const [errorElim, setErrorElim] = useState<string | null>(null)
 
   const filtradas = busqueda
     ? empresas.filter((e) => calcularFiltroEmpresa(e, busqueda))
     : empresas
+
+  async function handleToggle() {
+    if (!dialogToggle) return
+    setLoadingToggle(true)
+    setErrorToggle(null)
+    try {
+      const res = await fetch(`/api/empresas/${dialogToggle.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ activa: !dialogToggle.activa }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setErrorToggle(data.error ?? "Error al actualizar"); return }
+      router.refresh()
+      setDialogToggle(null)
+    } catch {
+      setErrorToggle("Error de conexión.")
+    } finally {
+      setLoadingToggle(false)
+    }
+  }
 
   async function handleEliminar() {
     if (!dialogEliminar) return
@@ -142,7 +168,7 @@ export function EmpresasAbm({ empresas }: EmpresasAbmProps) {
     try {
       const res = await fetch(`/api/empresas/${dialogEliminar.id}`, { method: "DELETE" })
       const data = await res.json()
-      if (!res.ok) { setErrorElim(data.error ?? "Error al desactivar"); return }
+      if (!res.ok) { setErrorElim(data.error ?? "Error al eliminar"); return }
       router.refresh()
       setDialogEliminar(null)
     } catch {
@@ -187,7 +213,14 @@ export function EmpresasAbm({ empresas }: EmpresasAbmProps) {
                     : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                   }
                   <div>
-                    <p className="font-medium">{emp.razonSocial}</p>
+                    <p className="font-medium flex items-center gap-2">
+                      {emp.razonSocial}
+                      {!emp.activa && (
+                        <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                          Inactiva
+                        </span>
+                      )}
+                    </p>
                     <p className="text-sm text-muted-foreground">
                       CUIT: {formatearCuit(emp.cuit)} &middot; {emp.condicionIva.replace(/_/g, " ")}
                       {emp.direccion ? ` · ${emp.direccion}` : ""}
@@ -199,9 +232,20 @@ export function EmpresasAbm({ empresas }: EmpresasAbmProps) {
                   <Button variant="outline" size="sm" onClick={() => setDialogEditar(emp)}>
                     <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
                   </Button>
-                  <Button variant="destructive" size="sm" onClick={() => setDialogEliminar(emp)}>
-                    <Trash2 className="h-3.5 w-3.5 mr-1" /> Desactivar
-                  </Button>
+                  {emp.activa ? (
+                    <Button variant="outline" size="sm" onClick={() => setDialogToggle(emp)}>
+                      <PowerOff className="h-3.5 w-3.5 mr-1" /> Desactivar
+                    </Button>
+                  ) : (
+                    <Button variant="outline" size="sm" onClick={() => setDialogToggle(emp)}>
+                      <Power className="h-3.5 w-3.5 mr-1" /> Activar
+                    </Button>
+                  )}
+                  {emp.puedeEliminar && (
+                    <Button variant="destructive" size="sm" onClick={() => setDialogEliminar(emp)}>
+                      <Trash2 className="h-3.5 w-3.5 mr-1" /> Eliminar
+                    </Button>
+                  )}
                 </div>
               </div>
               {expandida === emp.id && (
@@ -238,19 +282,41 @@ export function EmpresasAbm({ empresas }: EmpresasAbmProps) {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!dialogToggle} onOpenChange={(o) => { if (!o) { setDialogToggle(null); setErrorToggle(null) } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{dialogToggle?.activa ? "Desactivar empresa" : "Activar empresa"}</DialogTitle>
+            <DialogDescription>
+              {dialogToggle?.activa
+                ? <>¿Desactivar <strong>{dialogToggle?.razonSocial}</strong>? No aparecerá en formularios de nuevos viajes ni facturas.</>
+                : <>¿Activar <strong>{dialogToggle?.razonSocial}</strong>? Volverá a estar disponible en los formularios.</>
+              }
+            </DialogDescription>
+          </DialogHeader>
+          <FormError message={errorToggle} />
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setDialogToggle(null)} disabled={loadingToggle}>Cancelar</Button>
+            <Button variant={dialogToggle?.activa ? "destructive" : "default"} onClick={handleToggle} disabled={loadingToggle}>
+              {loadingToggle ? "Guardando..." : dialogToggle?.activa ? "Desactivar" : "Activar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!dialogEliminar} onOpenChange={(o) => { if (!o) { setDialogEliminar(null); setErrorElim(null) } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Desactivar empresa</DialogTitle>
+            <DialogTitle>Eliminar empresa</DialogTitle>
             <DialogDescription>
-              ¿Desactivar <strong>{dialogEliminar?.razonSocial}</strong>? No se eliminarán registros históricos.
+              ¿Eliminar permanentemente <strong>{dialogEliminar?.razonSocial}</strong>? Esta acción no se puede deshacer.
+              Solo es posible si la empresa no tiene viajes ni facturas.
             </DialogDescription>
           </DialogHeader>
           <FormError message={errorElim} />
           <div className="flex justify-end gap-2 mt-4">
             <Button variant="outline" onClick={() => setDialogEliminar(null)} disabled={loadingElim}>Cancelar</Button>
             <Button variant="destructive" onClick={handleEliminar} disabled={loadingElim}>
-              {loadingElim ? "Desactivando..." : "Desactivar"}
+              {loadingElim ? "Eliminando..." : "Eliminar"}
             </Button>
           </div>
         </DialogContent>

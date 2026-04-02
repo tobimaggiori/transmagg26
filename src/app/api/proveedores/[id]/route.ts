@@ -71,17 +71,17 @@ export async function PATCH(
 /**
  * DELETE: NextRequest { params: { id } } -> Promise<NextResponse>
  *
- * Dado el id del proveedor, lo desactiva (soft delete) sin eliminar el registro.
- * Existe para retirar un proveedor del sistema conservando los asientos
- * contables históricos que lo referencian.
+ * Dado el id del proveedor, lo elimina permanentemente si no tiene facturas asociadas.
+ * Si tiene facturas, devuelve 422 con el detalle.
+ * Existe para permitir borrar proveedores creados por error sin historial contable.
  *
  * Ejemplos:
- * DELETE /api/proveedores/p1 (proveedor activo)
- * // => 200 { message: "Proveedor desactivado correctamente" }
+ * DELETE /api/proveedores/p1 (sin facturas)
+ * // => 200 { message: "Proveedor eliminado correctamente" }
+ * DELETE /api/proveedores/p1 (con 2 facturas)
+ * // => 422 { error: "No se puede eliminar: tiene 2 factura(s) asociadas. Desactivá el proveedor en su lugar." }
  * DELETE /api/proveedores/noexiste
  * // => 404 { error: "Proveedor no encontrado" }
- * DELETE /api/proveedores/p1 (sesión FLETERO)
- * // => 403 { error: "Acceso denegado" }
  */
 export async function DELETE(
   _request: NextRequest,
@@ -96,9 +96,18 @@ export async function DELETE(
     const existe = await prisma.proveedor.findUnique({ where: { id: params.id } })
     if (!existe) return NextResponse.json({ error: "Proveedor no encontrado" }, { status: 404 })
 
-    await prisma.proveedor.update({ where: { id: params.id }, data: { activo: false } })
+    const nFacturas = await prisma.facturaProveedor.count({ where: { proveedorId: params.id } })
 
-    return NextResponse.json({ message: "Proveedor desactivado correctamente" })
+    if (nFacturas > 0) {
+      return NextResponse.json(
+        { error: `No se puede eliminar: tiene ${nFacturas} factura(s) asociadas. Desactivá el proveedor en su lugar.` },
+        { status: 422 }
+      )
+    }
+
+    await prisma.proveedor.delete({ where: { id: params.id } })
+
+    return NextResponse.json({ message: "Proveedor eliminado correctamente" })
   } catch (error) {
     console.error("[DELETE /api/proveedores/[id]]", error)
     return NextResponse.json(
