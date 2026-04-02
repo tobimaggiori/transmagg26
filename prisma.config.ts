@@ -2,6 +2,8 @@
 // npm install --save-dev prisma dotenv
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
+import { PrismaLibSql } from "@prisma/adapter-libsql";
+import { createClient } from "@libsql/client";
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
@@ -9,6 +11,22 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    url: process.env["DATABASE_URL"] ?? "file:./prisma/dev.db",
+  },
+  adapter: async () => {
+    const raw = process.env["DATABASE_URL"] ?? "file:./prisma/dev.db";
+
+    // Turso / libsql remoto: "libsql://host?authToken=..." o URL local "file:./..."
+    if (raw.startsWith("libsql://")) {
+      const [baseUrl, query] = raw.split("?authToken=");
+      const authToken = query ?? process.env["DATABASE_AUTH_TOKEN"];
+      const client = createClient({ url: baseUrl, authToken });
+      return new PrismaLibSql(client);
+    }
+
+    // SQLite local
+    const { url } = raw.startsWith("file:") ? { url: raw } : { url: `file:${raw}` };
+    const client = createClient({ url });
+    return new PrismaLibSql(client);
   },
 });

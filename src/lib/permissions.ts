@@ -7,7 +7,6 @@
  */
 
 import type { Rol } from "@/types"
-import { prisma } from "@/lib/prisma"
 import { SECCIONES } from "@/lib/secciones"
 
 export const ROLES_INTERNOS: Rol[] = ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"]
@@ -205,6 +204,7 @@ export async function tienePermiso(
   seccion: string
 ): Promise<boolean> {
   if (rol === "ADMIN_TRANSMAGG") return true
+  const { prisma } = await import("@/lib/prisma")
   const permiso = await prisma.permisoUsuario.findUnique({
     where: { usuarioId_seccion: { usuarioId, seccion } }
   })
@@ -227,6 +227,7 @@ export async function getPermisosUsuario(
   rol: string
 ): Promise<string[]> {
   if (rol === "ADMIN_TRANSMAGG") return Object.values(SECCIONES)
+  const { prisma } = await import("@/lib/prisma")
   const permisos = await prisma.permisoUsuario.findMany({
     where: { usuarioId, habilitado: true },
     select: { seccion: true }
