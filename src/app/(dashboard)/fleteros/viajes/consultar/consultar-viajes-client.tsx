@@ -210,8 +210,6 @@ function hayCambios(form: FormViaje, original: ViajeDetalle): boolean {
 function PanelDetalle({
   viaje,
   fleteros,
-  empresas,
-  camiones,
   onGuardar,
   onCerrar,
   onCambiarEmpresa,
@@ -220,8 +218,6 @@ function PanelDetalle({
 }: {
   viaje: ViajeDetalle
   fleteros: Fletero[]
-  empresas: Empresa[]
-  camiones: Camion[]
   onGuardar: () => void
   onCerrar: () => void
   onCambiarEmpresa: () => void
@@ -237,6 +233,7 @@ function PanelDetalle({
     setForm(formDesdeViaje(viaje))
     setError(null)
     setExito(false)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viaje.id])
 
   const tieneLP = viaje.estadoLiquidacion === "LIQUIDADO"
@@ -1231,8 +1228,6 @@ export function ConsultarViajesClient({
         <PanelDetalle
           viaje={viajeDetalle}
           fleteros={fleteros}
-          empresas={empresas}
-          camiones={camiones}
           onGuardar={async () => {
             await cargar()
             // Refresh the detail panel with updated data

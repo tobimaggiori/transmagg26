@@ -625,10 +625,19 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
         {([
           { id: "resumenes", label: "Resúmenes" },
           { id: "gastos", label: "Gastos" },
+          { id: "pendientes", label: "Pendientes" },
+          { id: "historial", label: "Cierres" },
         ] as const).map((t) => (
           <button
             key={t.id}
-            onClick={() => abrirTab(t.id)}
+            onClick={() => {
+              if (t.id === "resumenes" || t.id === "gastos") abrirTab(t.id)
+              else {
+                setTab(t.id)
+                if (t.id === "pendientes") cargarFacturasPendientes()
+                else cargarCierres()
+              }
+            }}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               tab === t.id
                 ? "border-primary text-primary"
@@ -753,6 +762,87 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
             )}
           </div>
         )}
+
+        {tab === "pendientes" && (
+          <div className="space-y-3">
+            <div className="flex justify-end">
+              <Button size="sm" onClick={abrirModalCierre} disabled={!facturasPendientes || facturasPendientes.length === 0}>
+                Crear cierre de resumen
+              </Button>
+            </div>
+            {cargandoPendientes ? (
+              <p className="text-muted-foreground text-sm">Cargando...</p>
+            ) : (
+              <div className="border rounded overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-2">Tipo</th>
+                      <th className="text-left px-3 py-2">Razón Social</th>
+                      <th className="text-left px-3 py-2">Comprobante</th>
+                      <th className="text-right px-3 py-2">Total</th>
+                      <th className="text-right px-3 py-2">Pagado</th>
+                      <th className="text-right px-3 py-2">Pendiente</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(facturasPendientes ?? []).map((f) => (
+                      <tr key={f.id} className="border-t">
+                        <td className="px-3 py-2">{f.tipo}</td>
+                        <td className="px-3 py-2">{f.razonSocial}</td>
+                        <td className="px-3 py-2">{f.nroComprobante}</td>
+                        <td className="px-3 py-2 text-right">{formatearMoneda(f.total)}</td>
+                        <td className="px-3 py-2 text-right">{formatearMoneda(f.pagado)}</td>
+                        <td className="px-3 py-2 text-right font-medium">{formatearMoneda(f.pendiente)}</td>
+                      </tr>
+                    ))}
+                    {(facturasPendientes ?? []).length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-3 py-4 text-center text-muted-foreground">Sin facturas pendientes.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "historial" && (
+          <div className="space-y-3">
+            {cargandoCierres ? (
+              <p className="text-muted-foreground text-sm">Cargando...</p>
+            ) : (
+              <div className="border rounded overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-2">Período</th>
+                      <th className="text-left px-3 py-2">Fecha Pago</th>
+                      <th className="text-right px-3 py-2">Total Pagado</th>
+                      <th className="text-left px-3 py-2">Cuenta</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(cierres ?? []).map((c) => (
+                      <tr key={c.id} className="border-t">
+                        <td className="px-3 py-2">{c.mesAnio}</td>
+                        <td className="px-3 py-2">{formatearFecha(c.fechaPago)}</td>
+                        <td className="px-3 py-2 text-right font-medium">{formatearMoneda(c.totalPagado)}</td>
+                        <td className="px-3 py-2">{c.cuentaPago?.nombre ?? "-"}</td>
+                      </tr>
+                    ))}
+                    {(cierres ?? []).length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="px-3 py-4 text-center text-muted-foreground">Sin cierres de resumen.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Modal nuevo resumen */}
@@ -858,6 +948,93 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
             <Button variant="outline" onClick={() => setModalGasto(false)}>Cancelar</Button>
             <Button onClick={crearGasto} disabled={guardando || !formGasto.monto}>
               {guardando ? "Guardando..." : "Guardar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal cierre de resumen */}
+      <Dialog open={modalCierre} onOpenChange={setModalCierre}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Cierre de resumen</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Mes/Año</Label>
+                <Input type="month" value={cierreMesAnio} onChange={(e) => setCierreMesAnio(e.target.value)} />
+              </div>
+              <div>
+                <Label>Fecha de pago</Label>
+                <Input type="date" value={cierreFechaPago} onChange={(e) => setCierreFechaPago(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <Label>Cuenta de pago</Label>
+              <Select value={cierreCuentaId} onChange={(e) => setCierreCuentaId(e.target.value)}>
+                <option value="">— Seleccionar cuenta —</option>
+                {cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </Select>
+            </div>
+            <div>
+              <Label>PDF resumen (opcional)</Label>
+              <UploadPDF
+                prefijo="cierres-resumen"
+                onUpload={(key) => setCierrePdfS3Key(key)}
+                s3Key={cierrePdfS3Key || undefined}
+              />
+            </div>
+
+            <div className="border rounded overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-center px-2 py-1.5"></th>
+                    <th className="text-left px-2 py-1.5">Comprobante</th>
+                    <th className="text-right px-2 py-1.5">Pendiente</th>
+                    <th className="text-right px-2 py-1.5">Monto a pagar</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagosCierre.map((p, i) => {
+                    const fp = facturasPendientes?.[i]
+                    return (
+                      <tr key={p.facturaId} className="border-t">
+                        <td className="px-2 py-1.5 text-center">
+                          <input type="checkbox" checked={p.seleccionada} onChange={() => togglePagoCierre(i)} />
+                        </td>
+                        <td className="px-2 py-1.5 text-xs">
+                          {fp?.razonSocial} — {fp?.nroComprobante}
+                        </td>
+                        <td className="px-2 py-1.5 text-right text-xs">{formatearMoneda(fp?.pendiente ?? 0)}</td>
+                        <td className="px-2 py-1.5">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={p.montoPagado || ""}
+                            onChange={(e) => actualizarMontoCierre(i, parseFloat(e.target.value) || 0)}
+                            disabled={!p.seleccionada}
+                            className="h-7 text-right text-sm"
+                          />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="text-right font-semibold">
+              Total cierre: {formatearMoneda(totalCierre)}
+            </div>
+
+            {errorCierre && <FormError message={errorCierre} />}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setModalCierre(false)}>Cancelar</Button>
+            <Button onClick={confirmarCierre} disabled={guardandoCierre || totalCierre === 0}>
+              {guardandoCierre ? "Guardando..." : "Confirmar cierre"}
             </Button>
           </div>
         </DialogContent>

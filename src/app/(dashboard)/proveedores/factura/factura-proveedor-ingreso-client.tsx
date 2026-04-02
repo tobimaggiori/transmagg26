@@ -110,7 +110,6 @@ const todayStr = () => new Date().toISOString().slice(0, 10)
 export function FacturaProveedorIngresoClient({
   proveedores,
   cuentas,
-  tarjetas,
   chequesEnCartera,
 }: FacturaProveedorIngresoClientProps) {
   // ── Cabecera ──────────────────────────────────────────────────────────────

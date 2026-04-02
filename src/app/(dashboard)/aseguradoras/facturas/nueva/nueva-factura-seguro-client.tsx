@@ -65,7 +65,7 @@ const TIPO_BIEN_OPTIONS = [
   { value: "CARGA_GENERAL", label: "Carga General" },
 ]
 
-export function NuevaFacturaSeguroClient({ proveedores, tarjetas, camiones, cuentas }: Props) {
+export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Props) {
   const router = useRouter()
   const today = new Date().toISOString().split("T")[0]
 
@@ -115,6 +115,7 @@ export function NuevaFacturaSeguroClient({ proveedores, tarjetas, camiones, cuen
     setPolizas((prev) => prev.map((p, i) => (i === index ? { ...p, [field]: value } : p)))
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function getCuotasPreview(): Array<{ nro: number; mesAnio: string; monto: number }> {
     if (!primerMesAnio || !cantCuotas) return []
     const n = parseInt(cantCuotas)
