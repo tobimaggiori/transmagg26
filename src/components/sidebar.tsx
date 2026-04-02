@@ -95,8 +95,7 @@ const NAV_GROUPS: NavGroup[] = [
     seccion: "liquidaciones",
     pathPrefix: "/fleteros",
     items: [
-      { href: "/fleteros/viajes/nuevo",        label: "Ingresar Viaje",       seccion: "fleteros.viajes" },
-      { href: "/fleteros/viajes/consultar",   label: "Consultar Viajes",     seccion: "fleteros.viajes" },
+      { href: "/fleteros/viajes",              label: "Viajes",               seccion: "fleteros.viajes" },
       { href: "/fleteros/liquidos-productos", label: "Líquidos Productos",   seccion: "fleteros.liquidos_productos" },
       { href: "/fleteros/ordenes-de-pago",    label: "Órdenes de Pago",      seccion: "fleteros.ordenes_pago" },
       { href: "/fleteros/gastos-adelantos",   label: "Gastos y Adelantos",   seccion: "fleteros.gastos_adelantos" },
