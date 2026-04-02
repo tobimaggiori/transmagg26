@@ -97,6 +97,7 @@ describe("calcularFiltroUsuario", () => {
     smtpSsl: true,
     smtpActivo: false,
     smtpTienePassword: false,
+    fleteroPropio: null,
     empresaUsuarios: [],
   }
 

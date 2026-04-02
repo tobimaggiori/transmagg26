@@ -111,10 +111,11 @@ export async function POST(request: NextRequest) {
     // Validaciones específicas por rol
     if (rol === "CHOFER") {
       if (!fleteroId) return NextResponse.json({ error: "Se requiere fleteroId para crear un chofer" }, { status: 400 })
-      if (!camionId) return NextResponse.json({ error: "Se requiere camionId para crear un chofer" }, { status: 400 })
-      const camion = await prisma.camion.findUnique({ where: { id: camionId } })
-      if (!camion) return NextResponse.json({ error: "Camión no encontrado" }, { status: 404 })
-      if (camion.fleteroId !== fleteroId) return NextResponse.json({ error: "El camión no pertenece al fletero indicado" }, { status: 400 })
+      if (camionId) {
+        const camion = await prisma.camion.findUnique({ where: { id: camionId } })
+        if (!camion) return NextResponse.json({ error: "Camión no encontrado" }, { status: 404 })
+        if (camion.fleteroId !== fleteroId) return NextResponse.json({ error: "El camión no pertenece al fletero indicado" }, { status: 400 })
+      }
     }
 
     const emailExiste = await prisma.usuario.findUnique({ where: { email } })

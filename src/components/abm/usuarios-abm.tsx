@@ -2,8 +2,9 @@
 
 /**
  * Componente ABM para gestión de usuarios del sistema.
- * Secciones: Transmagg / Empresas / Fleteros.
- * ADMIN_TRANSMAGG puede configurar SMTP por usuario.
+ * Filtro por Tipo: Transmagg / Empresas / Fleteros.
+ * El tipo determina los roles disponibles al crear un usuario y
+ * si se requiere seleccionar una empresa o un fletero como contexto.
  */
 
 import { useState } from "react"
@@ -20,7 +21,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog"
-import { Plus, Pencil, Trash2, Search, Mail, Settings } from "lucide-react"
+import { Plus, Pencil, Trash2, Search, Mail, Settings, Building2, Truck, Users } from "lucide-react"
 import type { Rol } from "@/types"
 
 export interface UsuarioAbm {
@@ -32,13 +33,14 @@ export interface UsuarioAbm {
   rol: string
   activo: boolean
   fleteroId: string | null
+  fleteroPropio: { id: string } | null
   smtpHost: string | null
   smtpPuerto: number | null
   smtpUsuario: string | null
   smtpSsl: boolean
   smtpActivo: boolean
   smtpTienePassword: boolean
-  empresaUsuarios: { empresa: { razonSocial: string }; nivelAcceso: string }[]
+  empresaUsuarios: { empresaId: string; empresa: { razonSocial: string }; nivelAcceso: string }[]
 }
 
 export interface EmpresaSimple {
@@ -46,9 +48,17 @@ export interface EmpresaSimple {
   razonSocial: string
 }
 
+export interface FleteroSimple {
+  id: string
+  razonSocial: string
+}
+
+type Tipo = "transmagg" | "empresas" | "fleteros"
+
 interface UsuariosAbmProps {
   usuarios: UsuarioAbm[]
   empresas: EmpresaSimple[]
+  fleteros: FleteroSimple[]
   rolActual: string
 }
 
@@ -68,6 +78,12 @@ const COLORES_ROL: Record<string, string> = {
   CHOFER: "bg-yellow-100 text-yellow-800",
   ADMIN_EMPRESA: "bg-green-100 text-green-800",
   OPERADOR_EMPRESA: "bg-teal-100 text-teal-800",
+}
+
+const ROLES_POR_TIPO: Record<Tipo, string[]> = {
+  transmagg: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  empresas: ["ADMIN_EMPRESA", "OPERADOR_EMPRESA"],
+  fleteros: ["FLETERO", "CHOFER"],
 }
 
 export function calcularFiltroUsuario(usuario: UsuarioAbm, busqueda: string): boolean {
@@ -129,7 +145,7 @@ function SmtpModal({
       if (res.ok) {
         setTestResult({ ok: true, msg: "Conexión exitosa" })
       } else {
-        setTestResult({ ok: false, msg: data.error ?? "Conexión fallida" })
+        setTestResult({ ok: false, msg: (data as { error?: string }).error ?? "Conexión fallida" })
       }
     } catch {
       setTestResult({ ok: false, msg: "Error de red" })
@@ -233,30 +249,36 @@ function SmtpModal({
 function UsuarioFormModal({
   usuario,
   empresas,
+  fleteros,
+  tipo,
+  contextoId,
   onSuccess,
 }: {
   usuario?: UsuarioAbm
   empresas: EmpresaSimple[]
+  fleteros: FleteroSimple[]
+  tipo: Tipo
+  contextoId?: string
   onSuccess: () => void
 }) {
   const router = useRouter()
+  const rolesDisponibles = ROLES_POR_TIPO[tipo]
+  const defaultRol = rolesDisponibles[rolesDisponibles.length - 1] // more restrictive by default
+  const isEdit = !!usuario
+
   const [form, setForm] = useState({
     nombre: usuario?.nombre ?? "",
     apellido: usuario?.apellido ?? "",
     email: usuario?.email ?? "",
     telefono: usuario?.telefono ?? "",
-    rol: (usuario?.rol ?? "OPERADOR_TRANSMAGG") as Rol,
-    empresaId: "",
+    rol: (usuario?.rol ?? defaultRol) as Rol,
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const isEdit = !!usuario
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
   }
-
-  const necesitaEmpresa = !isEdit && (form.rol === "ADMIN_EMPRESA" || form.rol === "OPERADOR_EMPRESA")
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -272,7 +294,8 @@ function UsuarioFormModal({
             email: form.email,
             telefono: form.telefono || undefined,
             rol: form.rol,
-            ...(necesitaEmpresa && form.empresaId ? { empresaId: form.empresaId } : {}),
+            ...(tipo === "empresas" && contextoId ? { empresaId: contextoId } : {}),
+            ...(tipo === "fleteros" && contextoId && form.rol === "CHOFER" ? { fleteroId: contextoId } : {}),
           }
       const res = await fetch(url, {
         method: isEdit ? "PATCH" : "POST",
@@ -280,7 +303,7 @@ function UsuarioFormModal({
         body: JSON.stringify(body),
       })
       const data = await res.json()
-      if (!res.ok) { setError(data.error ?? "Error al guardar"); return }
+      if (!res.ok) { setError((data as { error?: string }).error ?? "Error al guardar"); return }
       router.refresh()
       onSuccess()
     } catch {
@@ -290,8 +313,21 @@ function UsuarioFormModal({
     }
   }
 
+  // Context label for the create form
+  const contextoLabel = tipo === "empresas" && contextoId
+    ? empresas.find((e) => e.id === contextoId)?.razonSocial
+    : tipo === "fleteros" && contextoId
+    ? fleteros.find((f) => f.id === contextoId)?.razonSocial
+    : null
+
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
+      {!isEdit && contextoLabel && (
+        <div className="bg-muted/40 rounded-md px-3 py-2 text-sm">
+          <span className="text-muted-foreground">{tipo === "empresas" ? "Empresa:" : "Fletero:"} </span>
+          <span className="font-medium">{contextoLabel}</span>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label htmlFor="nombre">Nombre *</Label>
@@ -313,20 +349,11 @@ function UsuarioFormModal({
       <div className="space-y-1">
         <Label htmlFor="rol">Rol *</Label>
         <Select id="rol" name="rol" value={form.rol} onChange={handleChange} disabled={loading}>
-          {Object.entries(ROLES_DISPLAY).map(([k, v]) => (
-            <option key={k} value={k}>{v}</option>
+          {rolesDisponibles.map((k) => (
+            <option key={k} value={k}>{ROLES_DISPLAY[k] ?? k}</option>
           ))}
         </Select>
       </div>
-      {necesitaEmpresa && (
-        <div className="space-y-1">
-          <Label htmlFor="empresaId">Empresa *</Label>
-          <Select id="empresaId" name="empresaId" value={form.empresaId} onChange={handleChange} disabled={loading} required>
-            <option value="">Seleccioná una empresa...</option>
-            {empresas.map((e) => <option key={e.id} value={e.id}>{e.razonSocial}</option>)}
-          </Select>
-        </div>
-      )}
       <FormError message={error} />
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onSuccess} disabled={loading}>Cancelar</Button>
@@ -394,23 +421,25 @@ function FilaUsuario({
   )
 }
 
-// ─── Sección de usuarios ──────────────────────────────────────────────────────
+// ─── Lista de usuarios con dialogs de crear/editar/eliminar ──────────────────
 
-function SeccionUsuarios({
-  titulo,
-  descripcion,
+function ListaUsuarios({
   usuarios,
   rolActual,
   mostrarSmtp,
   empresas,
+  fleteros,
+  tipo,
+  contextoId,
   onSmtp,
 }: {
-  titulo: string
-  descripcion: string
   usuarios: UsuarioAbm[]
   rolActual: string
   mostrarSmtp: boolean
   empresas: EmpresaSimple[]
+  fleteros: FleteroSimple[]
+  tipo: Tipo
+  contextoId?: string
   onSmtp: (u: UsuarioAbm) => void
 }) {
   const router = useRouter()
@@ -427,7 +456,7 @@ function SeccionUsuarios({
     try {
       const res = await fetch(`/api/usuarios/${dialogEliminar.id}`, { method: "DELETE" })
       const data = await res.json()
-      if (!res.ok) { setErrorElim(data.error ?? "Error al desactivar"); return }
+      if (!res.ok) { setErrorElim((data as { error?: string }).error ?? "Error al desactivar"); return }
       router.refresh()
       setDialogEliminar(null)
     } catch {
@@ -439,18 +468,14 @@ function SeccionUsuarios({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="font-semibold text-base">{titulo}</h3>
-          <p className="text-xs text-muted-foreground">{descripcion}</p>
-        </div>
+      <div className="flex justify-end">
         <Button size="sm" onClick={() => setDialogCrear(true)}>
-          <Plus className="h-4 w-4 mr-1" /> Nuevo
+          <Plus className="h-4 w-4 mr-1" /> Nuevo usuario
         </Button>
       </div>
 
       {usuarios.length === 0 ? (
-        <p className="text-sm text-center py-4 text-muted-foreground border rounded-lg">Sin usuarios en esta sección.</p>
+        <p className="text-sm text-center py-8 text-muted-foreground border rounded-lg">Sin usuarios en esta sección.</p>
       ) : (
         <div className="border rounded-lg divide-y">
           {usuarios.map((u) => (
@@ -473,7 +498,13 @@ function SeccionUsuarios({
             <DialogTitle>Nuevo usuario</DialogTitle>
             <DialogDescription>Registrá un nuevo usuario y asigná su rol.</DialogDescription>
           </DialogHeader>
-          <UsuarioFormModal empresas={empresas} onSuccess={() => setDialogCrear(false)} />
+          <UsuarioFormModal
+            empresas={empresas}
+            fleteros={fleteros}
+            tipo={tipo}
+            contextoId={contextoId}
+            onSuccess={() => setDialogCrear(false)}
+          />
         </DialogContent>
       </Dialog>
 
@@ -483,7 +514,15 @@ function SeccionUsuarios({
             <DialogTitle>Editar usuario</DialogTitle>
             <DialogDescription>Modificá los datos del usuario.</DialogDescription>
           </DialogHeader>
-          {dialogEditar && <UsuarioFormModal usuario={dialogEditar} empresas={empresas} onSuccess={() => setDialogEditar(null)} />}
+          {dialogEditar && (
+            <UsuarioFormModal
+              usuario={dialogEditar}
+              empresas={empresas}
+              fleteros={fleteros}
+              tipo={tipo}
+              onSuccess={() => setDialogEditar(null)}
+            />
+          )}
         </DialogContent>
       </Dialog>
 
@@ -510,65 +549,133 @@ function SeccionUsuarios({
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function UsuariosAbm({ usuarios, empresas, rolActual }: UsuariosAbmProps) {
+export function UsuariosAbm({ usuarios, empresas, fleteros, rolActual }: UsuariosAbmProps) {
+  const [tipo, setTipo] = useState<Tipo>("transmagg")
+  const [empresaSelId, setEmpresaSelId] = useState("")
+  const [fleteroSelId, setFleteroSelId] = useState("")
   const [busqueda, setBusqueda] = useState("")
   const [dialogSmtp, setDialogSmtp] = useState<UsuarioAbm | null>(null)
 
-  const filtrados = busqueda
-    ? usuarios.filter((u) => calcularFiltroUsuario(u, busqueda))
-    : usuarios
+  // Filter by tipo
+  const usuariosPorTipo = usuarios.filter((u) => {
+    if (tipo === "transmagg") return u.rol === "ADMIN_TRANSMAGG" || u.rol === "OPERADOR_TRANSMAGG" || (u.rol === "CHOFER" && !u.fleteroId)
+    if (tipo === "empresas") return u.rol === "ADMIN_EMPRESA" || u.rol === "OPERADOR_EMPRESA"
+    if (tipo === "fleteros") return u.rol === "FLETERO" || (u.rol === "CHOFER" && u.fleteroId)
+    return false
+  })
 
-  const transmagg = filtrados.filter(
-    (u) => u.rol === "ADMIN_TRANSMAGG" || u.rol === "OPERADOR_TRANSMAGG" || (u.rol === "CHOFER" && !u.fleteroId)
-  )
-  const empresasUsers = filtrados.filter(
-    (u) => u.rol === "ADMIN_EMPRESA" || u.rol === "OPERADOR_EMPRESA"
-  )
-  const fleteros = filtrados.filter(
-    (u) => u.rol === "FLETERO" || (u.rol === "CHOFER" && u.fleteroId)
-  )
+  // Filter by selected empresa or fletero
+  const contextoId = tipo === "empresas" ? empresaSelId : tipo === "fleteros" ? fleteroSelId : undefined
+  const necesitaContexto = tipo === "empresas" || tipo === "fleteros"
+  const tieneContexto = !!contextoId
+
+  const usuariosConContexto = tipo === "empresas" && empresaSelId
+    ? usuariosPorTipo.filter((u) => u.empresaUsuarios.some((eu) => eu.empresaId === empresaSelId))
+    : tipo === "fleteros" && fleteroSelId
+    ? usuariosPorTipo.filter((u) => u.fleteroId === fleteroSelId || u.fleteroPropio?.id === fleteroSelId)
+    : usuariosPorTipo
+
+  // Apply search
+  const filtrados = busqueda
+    ? usuariosConContexto.filter((u) => calcularFiltroUsuario(u, busqueda))
+    : usuariosConContexto
+
+  const TIPO_BUTTONS: { id: Tipo; label: string; icon: React.ReactNode }[] = [
+    { id: "transmagg", label: "Transmagg", icon: <Users className="h-3.5 w-3.5" /> },
+    { id: "empresas", label: "Empresas", icon: <Building2 className="h-3.5 w-3.5" /> },
+    { id: "fleteros", label: "Fleteros", icon: <Truck className="h-3.5 w-3.5" /> },
+  ]
+
+  function handleTipo(t: Tipo) {
+    setTipo(t)
+    setBusqueda("")
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Buscar por nombre, apellido, email o rol..."
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-          className="pl-9"
-        />
+    <div className="space-y-5">
+      {/* Tipo filter */}
+      <div className="flex gap-2 flex-wrap">
+        {TIPO_BUTTONS.map((b) => (
+          <button
+            key={b.id}
+            onClick={() => handleTipo(b.id)}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
+              tipo === b.id
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border hover:bg-muted"
+            }`}
+          >
+            {b.icon}
+            {b.label}
+          </button>
+        ))}
       </div>
 
-      <SeccionUsuarios
-        titulo="Transmagg"
-        descripcion="Administradores, operadores y choferes propios de Transmagg"
-        usuarios={transmagg}
-        rolActual={rolActual}
-        mostrarSmtp={true}
-        empresas={empresas}
-        onSmtp={(u) => setDialogSmtp(u)}
-      />
+      {/* Empresa / Fletero selector */}
+      {tipo === "empresas" && (
+        <div className="space-y-1 max-w-sm">
+          <Label className="text-xs">Empresa</Label>
+          <Select
+            value={empresaSelId}
+            onChange={(e) => setEmpresaSelId(e.target.value)}
+          >
+            <option value="">Seleccioná una empresa...</option>
+            {empresas.map((e) => (
+              <option key={e.id} value={e.id}>{e.razonSocial}</option>
+            ))}
+          </Select>
+        </div>
+      )}
 
-      <SeccionUsuarios
-        titulo="Empresas"
-        descripcion="Usuarios de las empresas clientes"
-        usuarios={empresasUsers}
-        rolActual={rolActual}
-        mostrarSmtp={false}
-        empresas={empresas}
-        onSmtp={() => {}}
-      />
+      {tipo === "fleteros" && (
+        <div className="space-y-1 max-w-sm">
+          <Label className="text-xs">Fletero</Label>
+          <Select
+            value={fleteroSelId}
+            onChange={(e) => setFleteroSelId(e.target.value)}
+          >
+            <option value="">Seleccioná un fletero...</option>
+            {fleteros.map((f) => (
+              <option key={f.id} value={f.id}>{f.razonSocial}</option>
+            ))}
+          </Select>
+        </div>
+      )}
 
-      <SeccionUsuarios
-        titulo="Fleteros"
-        descripcion="Fleteros y choferes asignados a fleteros"
-        usuarios={fleteros}
-        rolActual={rolActual}
-        mostrarSmtp={false}
-        empresas={empresas}
-        onSmtp={() => {}}
-      />
+      {/* Placeholder when context required but not selected */}
+      {necesitaContexto && !tieneContexto ? (
+        <div className="rounded-lg border border-dashed p-10 text-center">
+          <p className="text-sm text-muted-foreground">
+            {tipo === "empresas"
+              ? "Seleccioná una empresa para ver sus usuarios."
+              : "Seleccioná un fletero para ver sus usuarios."}
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nombre, apellido, email o rol..."
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+
+          <ListaUsuarios
+            usuarios={filtrados}
+            rolActual={rolActual}
+            mostrarSmtp={tipo === "transmagg"}
+            empresas={empresas}
+            fleteros={fleteros}
+            tipo={tipo}
+            contextoId={contextoId}
+            onSmtp={(u) => setDialogSmtp(u)}
+          />
+        </>
+      )}
 
       <Dialog open={!!dialogSmtp} onOpenChange={(o) => { if (!o) setDialogSmtp(null) }}>
         <DialogContent className="max-w-lg">

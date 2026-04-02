@@ -121,7 +121,8 @@ export default async function AbmPage({
             id: true, nombre: true, apellido: true, email: true, telefono: true, rol: true, activo: true,
             fleteroId: true,
             smtpHost: true, smtpPuerto: true, smtpUsuario: true, smtpPassword: true, smtpSsl: true, smtpActivo: true,
-            empresaUsuarios: { select: { empresa: { select: { razonSocial: true } }, nivelAcceso: true } },
+            empresaUsuarios: { select: { empresaId: true, empresa: { select: { razonSocial: true } }, nivelAcceso: true } },
+            fletero: { select: { id: true } },
           },
         })
       : [],
@@ -151,14 +152,21 @@ export default async function AbmPage({
       : [],
   ])
 
-  // Para el tab usuarios necesitamos la lista de empresas para asignar
-  const empresasParaUsuarios = tabValido === "usuarios"
-    ? await prisma.empresa.findMany({
-        where: { activa: true },
-        select: { id: true, razonSocial: true },
-        orderBy: { razonSocial: "asc" },
-      })
-    : []
+  // Para el tab usuarios necesitamos la lista de empresas y fleteros para asignar
+  const [empresasParaUsuarios, fleterosParaUsuarios] = tabValido === "usuarios"
+    ? await Promise.all([
+        prisma.empresa.findMany({
+          where: { activa: true },
+          select: { id: true, razonSocial: true },
+          orderBy: { razonSocial: "asc" },
+        }),
+        prisma.fletero.findMany({
+          where: { activo: true },
+          select: { id: true, razonSocial: true },
+          orderBy: { razonSocial: "asc" },
+        }),
+      ])
+    : [[], []]
 
   // Config ARCA (tab arca)
   const arcaConfigRaw = tabValido === "arca"
@@ -233,8 +241,14 @@ export default async function AbmPage({
         {tabValido === "fleteros" && <FleterosAbm fleteros={fleteros} />}
         {tabValido === "usuarios" && (
           <UsuariosAbm
-            usuarios={usuarios.map((u) => ({ ...u, smtpTienePassword: !!u.smtpPassword, smtpPassword: undefined }))}
+            usuarios={usuarios.map((u) => ({
+              ...u,
+              smtpTienePassword: !!u.smtpPassword,
+              smtpPassword: undefined,
+              fleteroPropio: u.fletero ?? null,
+            }))}
             empresas={empresasParaUsuarios}
+            fleteros={fleterosParaUsuarios}
             rolActual={rol}
           />
         )}
