@@ -10,18 +10,6 @@ import { puedeAcceder, esRolInterno } from "@/lib/permissions"
 import type { Rol } from "@/types"
 import { LiquidarClient } from "./liquidar-client"
 
-/**
- * FleterosLiquidarPage: () -> Promise<JSX.Element>
- *
- * Verifica autenticación y permisos, carga fleteros/camiones/choferes,
- * y renderiza LiquidarClient (solo creación de LP).
- *
- * Ejemplos:
- * // Sesión ADMIN_TRANSMAGG → LiquidarClient con selector de fletero
- * <FleterosLiquidarPage />
- * // Sin sesión → redirect /login
- * <FleterosLiquidarPage />
- */
 export default async function FleterosLiquidarPage() {
   const session = await auth()
   if (!session?.user) redirect("/login")
@@ -31,25 +19,13 @@ export default async function FleterosLiquidarPage() {
 
   const esInterno = esRolInterno(rol)
 
-  const [fleteros, camiones, choferes] = esInterno
-    ? await Promise.all([
-        prisma.fletero.findMany({
-          where: { activo: true },
-          select: { id: true, razonSocial: true, comisionDefault: true },
-          orderBy: { razonSocial: "asc" },
-        }),
-        prisma.camion.findMany({
-          where: { activo: true, esPropio: false },
-          select: { id: true, patenteChasis: true, fleteroId: true },
-          orderBy: { patenteChasis: "asc" },
-        }),
-        prisma.usuario.findMany({
-          where: { rol: "CHOFER", activo: true },
-          select: { id: true, nombre: true, apellido: true },
-          orderBy: { apellido: "asc" },
-        }),
-      ])
-    : [[], [], []]
+  const fleteros = esInterno
+    ? await prisma.fletero.findMany({
+        where: { activo: true },
+        select: { id: true, razonSocial: true, comisionDefault: true },
+        orderBy: { razonSocial: "asc" },
+      })
+    : []
 
   let fleteroIdPropio: string | null = null
   if (rol === "FLETERO") {
@@ -64,8 +40,6 @@ export default async function FleterosLiquidarPage() {
     <LiquidarClient
       rol={rol}
       fleteros={fleteros}
-      camiones={camiones.filter((c) => c.fleteroId !== null) as { id: string; patenteChasis: string; fleteroId: string }[]}
-      choferes={choferes}
       fleteroIdPropio={fleteroIdPropio}
     />
   )

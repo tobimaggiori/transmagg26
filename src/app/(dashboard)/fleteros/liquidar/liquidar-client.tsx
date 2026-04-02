@@ -3,6 +3,7 @@
 /**
  * Propósito: Componente de creación de Líquido Producto.
  * Selector de fletero → viajes pendientes con checkboxes → preview fullscreen → confirmar.
+ * Los datos de viaje son solo de visualización — se editan desde Consultar Viajes.
  */
 
 import { useState, useCallback, useEffect } from "react"
@@ -10,14 +11,11 @@ import Link from "next/link"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
 import { labelCondicionIva, formatearNroComprobante } from "@/lib/liquidacion-utils"
-import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 type Fletero = { id: string; razonSocial: string; comisionDefault?: number }
-type Camion = { id: string; patenteChasis: string; fleteroId: string }
-type Chofer = { id: string; nombre: string; apellido: string }
 
 type FleteroInfo = {
   razonSocial: string
@@ -46,130 +44,20 @@ type ViajeParaLiquidar = {
   kilos: number | null
   tarifaFletero: number
   estadoFactura: string
-  kilosEdit?: number
-  tarifaEdit?: number
-  fechaEdit?: string
-  remitoEdit?: string
-  cupoEdit?: string
-  mercaderiaEdit?: string
-  procedenciaEdit?: string
-  origenEdit?: string
-  destinoEdit?: string
-  provinciaDestinoEdit?: string
-  camionIdEdit?: string
-  choferIdEdit?: string
+  nroCartaPorte: string | null
 }
 
 type LiquidarClientProps = {
   rol: Rol
   fleteros: Fletero[]
-  camiones: Camion[]
-  choferes: Chofer[]
   fleteroIdPropio: string | null
-}
-
-// ─── Modal editar viaje ───────────────────────────────────────────────────────
-
-function ModalEditarViaje({
-  viaje,
-  camiones,
-  choferes,
-  fleteroId,
-  onGuardar,
-  onCerrar,
-}: {
-  viaje: ViajeParaLiquidar
-  camiones: Camion[]
-  choferes: Chofer[]
-  fleteroId: string
-  onGuardar: (v: ViajeParaLiquidar) => void
-  onCerrar: () => void
-}) {
-  const [form, setForm] = useState<ViajeParaLiquidar>({ ...viaje })
-  const camionesDelFletero = camiones.filter((c) => c.fleteroId === fleteroId)
-
-  function set(campo: keyof ViajeParaLiquidar, valor: unknown) {
-    setForm((prev) => ({ ...prev, [campo]: valor }))
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-background rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Editar viaje</h2>
-          <button onClick={onCerrar} className="text-muted-foreground hover:text-foreground text-xl leading-none">&times;</button>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Fecha viaje</label>
-            <input type="date" value={form.fechaEdit ?? form.fechaViaje.slice(0, 10)} onChange={(e) => set("fechaEdit", e.target.value)} className="h-9 w-full rounded border bg-background px-2 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Remito</label>
-            <input type="text" value={form.remitoEdit ?? ""} onChange={(e) => set("remitoEdit", e.target.value)} className="h-9 w-full rounded border bg-background px-2 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Cupo</label>
-            <input type="text" value={form.cupoEdit ?? ""} onChange={(e) => set("cupoEdit", e.target.value)} className="h-9 w-full rounded border bg-background px-2 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Mercadería</label>
-            <input type="text" value={form.mercaderiaEdit ?? ""} onChange={(e) => set("mercaderiaEdit", e.target.value)} className="h-9 w-full rounded border bg-background px-2 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Procedencia</label>
-            <input type="text" value={form.procedenciaEdit ?? ""} onChange={(e) => set("procedenciaEdit", e.target.value)} className="h-9 w-full rounded border bg-background px-2 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Prov. Origen</label>
-            <input type="text" value={form.origenEdit ?? ""} onChange={(e) => set("origenEdit", e.target.value)} className="h-9 w-full rounded border bg-background px-2 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Destino</label>
-            <input type="text" value={form.destinoEdit ?? ""} onChange={(e) => set("destinoEdit", e.target.value)} className="h-9 w-full rounded border bg-background px-2 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Prov. Destino</label>
-            <select value={form.provinciaDestinoEdit ?? ""} onChange={(e) => set("provinciaDestinoEdit", e.target.value)} className="h-9 w-full rounded border bg-background px-2 text-sm">
-              <option value="">— Seleccionar —</option>
-              {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Kilos</label>
-            <input type="number" value={form.kilosEdit ?? form.kilos ?? ""} onChange={(e) => set("kilosEdit", parseFloat(e.target.value) || undefined)} min="0" step="1" className="h-9 w-full rounded border bg-background px-2 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Tarifa al fletero / ton</label>
-            <input type="number" value={form.tarifaEdit ?? form.tarifaFletero} onChange={(e) => set("tarifaEdit", parseFloat(e.target.value) || form.tarifaFletero)} min="0" step="0.01" className="h-9 w-full rounded border bg-background px-2 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Camión</label>
-            <select value={form.camionIdEdit ?? form.camionId} onChange={(e) => set("camionIdEdit", e.target.value)} className="h-9 w-full rounded border bg-background px-2 text-sm">
-              {camionesDelFletero.map((c) => <option key={c.id} value={c.id}>{c.patenteChasis}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Chofer</label>
-            <select value={form.choferIdEdit ?? form.choferId} onChange={(e) => set("choferIdEdit", e.target.value)} className="h-9 w-full rounded border bg-background px-2 text-sm">
-              {choferes.map((c) => <option key={c.id} value={c.id}>{c.apellido}, {c.nombre}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 mt-6">
-          <button onClick={onCerrar} className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent">Cancelar</button>
-          <button onClick={() => { onGuardar(form); onCerrar() }} className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90">Guardar</button>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 // ─── Modal preview liquidación (fullscreen) ───────────────────────────────────
 
 function ModalPreviewLiquidacion({
   fletero,
-  viajesIniciales,
+  viajes,
   comisionPctInicial,
   ivaPctInicial,
   generando,
@@ -178,7 +66,7 @@ function ModalPreviewLiquidacion({
   onConfirmar,
 }: {
   fletero: FleteroInfo
-  viajesIniciales: ViajeParaLiquidar[]
+  viajes: ViajeParaLiquidar[]
   comisionPctInicial: number
   ivaPctInicial: number
   generando: boolean
@@ -186,17 +74,12 @@ function ModalPreviewLiquidacion({
   onCancelar: () => void
   onConfirmar: (viajes: ViajeParaLiquidar[], comisionPct: number, ivaPct: number) => void
 }) {
-  const [viajes, setViajes] = useState<ViajeParaLiquidar[]>(viajesIniciales)
   const [comisionPct, setComisionPct] = useState(comisionPctInicial)
   const [ivaPct, setIvaPct] = useState(ivaPctInicial)
 
-  function actualizarCelda(id: string, campo: keyof ViajeParaLiquidar, valor: unknown) {
-    setViajes((prev) => prev.map((v) => v.id === id ? { ...v, [campo]: valor } : v))
-  }
-
   const viajesParaCalc = viajes.map((v) => ({
-    kilos: v.kilosEdit ?? v.kilos ?? 0,
-    tarifaFletero: v.tarifaEdit ?? v.tarifaFletero,
+    kilos: v.kilos ?? 0,
+    tarifaFletero: v.tarifaFletero,
   }))
   const preview = calcularLiquidacion(viajesParaCalc, comisionPct, ivaPct)
 
@@ -223,41 +106,40 @@ function ModalPreviewLiquidacion({
         <div className="overflow-x-auto rounded border">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 sticky top-0">
-              <tr>
+              <tr className="uppercase text-xs">
                 <th className="px-2 py-2 text-left whitespace-nowrap">Fecha</th>
+                <th className="px-2 py-2 text-left whitespace-nowrap">Carta de Porte</th>
                 <th className="px-2 py-2 text-left whitespace-nowrap">Remito</th>
                 <th className="px-2 py-2 text-left whitespace-nowrap">Cupo</th>
                 <th className="px-2 py-2 text-left whitespace-nowrap">Mercadería</th>
-                <th className="px-2 py-2 text-left whitespace-nowrap">Procedencia</th>
+                <th className="px-2 py-2 text-left whitespace-nowrap">Ciudad Origen</th>
                 <th className="px-2 py-2 text-left whitespace-nowrap">Prov. Origen</th>
-                <th className="px-2 py-2 text-left whitespace-nowrap">Destino</th>
+                <th className="px-2 py-2 text-left whitespace-nowrap">Ciudad Destino</th>
                 <th className="px-2 py-2 text-left whitespace-nowrap">Prov. Destino</th>
                 <th className="px-2 py-2 text-right whitespace-nowrap">Kilos</th>
                 <th className="px-2 py-2 text-right whitespace-nowrap">Tarifa</th>
-                <th className="px-2 py-2 text-right whitespace-nowrap">Ton</th>
-                <th className="px-2 py-2 text-right whitespace-nowrap">Importe</th>
+                <th className="px-2 py-2 text-right whitespace-nowrap">Subtotal</th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {viajes.map((v) => {
-                const kilos = v.kilosEdit ?? v.kilos ?? 0
-                const tarifa = v.tarifaEdit ?? v.tarifaFletero
-                const ton = kilos > 0 ? calcularToneladas(kilos) : null
+              {viajes.map((v, i) => {
+                const kilos = v.kilos ?? 0
+                const tarifa = v.tarifaFletero
                 const importe = kilos > 0 ? calcularTotalViaje(kilos, tarifa) : null
                 return (
-                  <tr key={v.id} className="hover:bg-muted/20">
-                    <td className="px-1 py-1"><input type="date" value={v.fechaEdit ?? v.fechaViaje.slice(0, 10)} onChange={(e) => actualizarCelda(v.id, "fechaEdit", e.target.value)} className="h-7 w-28 rounded border bg-background px-1 text-xs" /></td>
-                    <td className="px-1 py-1"><input type="text" value={v.remitoEdit ?? ""} onChange={(e) => actualizarCelda(v.id, "remitoEdit", e.target.value)} className="h-7 w-24 rounded border bg-background px-1 text-xs" /></td>
-                    <td className="px-1 py-1"><input type="text" value={v.cupoEdit ?? ""} onChange={(e) => actualizarCelda(v.id, "cupoEdit", e.target.value)} className="h-7 w-20 rounded border bg-background px-1 text-xs" /></td>
-                    <td className="px-1 py-1"><input type="text" value={v.mercaderiaEdit ?? ""} onChange={(e) => actualizarCelda(v.id, "mercaderiaEdit", e.target.value)} className="h-7 w-28 rounded border bg-background px-1 text-xs" /></td>
-                    <td className="px-1 py-1"><input type="text" value={v.procedenciaEdit ?? ""} onChange={(e) => actualizarCelda(v.id, "procedenciaEdit", e.target.value)} className="h-7 w-28 rounded border bg-background px-1 text-xs" /></td>
-                    <td className="px-1 py-1"><input type="text" value={v.origenEdit ?? ""} onChange={(e) => actualizarCelda(v.id, "origenEdit", e.target.value)} className="h-7 w-28 rounded border bg-background px-1 text-xs" /></td>
-                    <td className="px-1 py-1"><input type="text" value={v.destinoEdit ?? ""} onChange={(e) => actualizarCelda(v.id, "destinoEdit", e.target.value)} className="h-7 w-28 rounded border bg-background px-1 text-xs" /></td>
-                    <td className="px-1 py-1"><select value={v.provinciaDestinoEdit ?? ""} onChange={(e) => actualizarCelda(v.id, "provinciaDestinoEdit", e.target.value)} className="h-7 w-28 rounded border bg-background px-1 text-xs"><option value="">—</option>{PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}</select></td>
-                    <td className="px-1 py-1"><input type="number" value={v.kilosEdit ?? v.kilos ?? ""} onChange={(e) => actualizarCelda(v.id, "kilosEdit", parseFloat(e.target.value) || undefined)} min="0" step="1" className="h-7 w-24 text-right rounded border bg-background px-1 text-xs" /></td>
-                    <td className="px-1 py-1"><input type="number" value={v.tarifaEdit ?? v.tarifaFletero} onChange={(e) => actualizarCelda(v.id, "tarifaEdit", parseFloat(e.target.value) || v.tarifaFletero)} min="0" step="0.01" className="h-7 w-28 text-right rounded border bg-background px-1 text-xs" /></td>
-                    <td className="px-2 py-1 text-right text-muted-foreground text-xs">{ton?.toLocaleString("es-AR") ?? "-"}</td>
-                    <td className="px-2 py-1 text-right font-medium text-xs">{importe != null ? formatearMoneda(importe) : "-"}</td>
+                  <tr key={v.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                    <td className="px-2 py-1.5 text-xs whitespace-nowrap">{formatearFecha(new Date(v.fechaViaje))}</td>
+                    <td className="px-2 py-1.5 text-xs">{v.nroCartaPorte ?? "—"}</td>
+                    <td className="px-2 py-1.5 text-xs">{v.remito ?? "—"}</td>
+                    <td className="px-2 py-1.5 text-xs">{v.cupo ?? "—"}</td>
+                    <td className="px-2 py-1.5 text-xs">{v.mercaderia ?? "—"}</td>
+                    <td className="px-2 py-1.5 text-xs">{v.procedencia ?? "—"}</td>
+                    <td className="px-2 py-1.5 text-xs">{v.provinciaOrigen ?? "—"}</td>
+                    <td className="px-2 py-1.5 text-xs">{v.destino ?? "—"}</td>
+                    <td className="px-2 py-1.5 text-xs">{v.provinciaDestino ?? "—"}</td>
+                    <td className="px-2 py-1.5 text-xs text-right">{kilos > 0 ? kilos.toLocaleString("es-AR") : "—"}</td>
+                    <td className="px-2 py-1.5 text-xs text-right">{formatearMoneda(tarifa)}</td>
+                    <td className="px-2 py-1.5 text-xs text-right font-medium">{importe != null ? formatearMoneda(importe) : "—"}</td>
                   </tr>
                 )
               })}
@@ -299,19 +181,7 @@ function ModalPreviewLiquidacion({
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-/**
- * LiquidarClient: LiquidarClientProps -> JSX.Element
- *
- * Dado los datos del servidor, renderiza la UI de creación de Líquido Producto:
- * selector de fletero, tabla de viajes pendientes con checkboxes, edición inline
- * y preview fullscreen antes de confirmar.
- * Al emitir exitosamente muestra banner con link a "Consultar Liq. Prod.".
- * Existe para la página /fleteros/liquidar.
- *
- * Ejemplos:
- * <LiquidarClient rol="OPERADOR_TRANSMAGG" fleteros={[...]} camiones={[...]} choferes={[...]} fleteroIdPropio={null} />
- */
-export function LiquidarClient({ rol, fleteros, camiones, choferes, fleteroIdPropio }: LiquidarClientProps) {
+export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClientProps) {
   const esInterno = rol === "ADMIN_TRANSMAGG" || rol === "OPERADOR_TRANSMAGG"
 
   const [fleteroId, setFleteroId] = useState<string>(fleteroIdPropio ?? "")
@@ -323,7 +193,6 @@ export function LiquidarClient({ rol, fleteros, camiones, choferes, fleteroIdPro
   const [ivaPct] = useState<number>(21)
   const [generando, setGenerando] = useState(false)
   const [errorGen, setErrorGen] = useState<string | null>(null)
-  const [viajeEditando, setViajeEditando] = useState<ViajeParaLiquidar | null>(null)
   const [fleteroInfo, setFleteroInfo] = useState<FleteroInfo | null>(null)
   const [exitoLiquidacion, setExitoLiquidacion] = useState(false)
 
@@ -339,22 +208,7 @@ export function LiquidarClient({ rol, fleteros, camiones, choferes, fleteroIdPro
           fletero: { cuit: string; condicionIva: string; direccion?: string | null } | null
           nroProximoComprobante: number
         }
-        const viajesConEdit = (data.viajesPendientes ?? []).map((v) => ({
-          ...v,
-          kilosEdit: v.kilos ?? undefined,
-          tarifaEdit: v.tarifaFletero,
-          fechaEdit: v.fechaViaje.slice(0, 10),
-          remitoEdit: v.remito ?? "",
-          cupoEdit: v.cupo ?? "",
-          mercaderiaEdit: v.mercaderia ?? "",
-          procedenciaEdit: v.procedencia ?? "",
-          origenEdit: v.provinciaOrigen ?? "",
-          destinoEdit: v.destino ?? "",
-          provinciaDestinoEdit: v.provinciaDestino ?? "",
-          camionIdEdit: v.camionId,
-          choferIdEdit: v.choferId,
-        }))
-        setViajesPendientes(viajesConEdit)
+        setViajesPendientes(data.viajesPendientes ?? [])
         const fleteroEncontrado = fleteros.find((f) => f.id === fleteroId)
         if (fleteroEncontrado) {
           if (esInterno && fleteroEncontrado.comisionDefault != null) setComisionPct(fleteroEncontrado.comisionDefault)
@@ -388,14 +242,10 @@ export function LiquidarClient({ rol, fleteros, camiones, choferes, fleteroIdPro
     else setSeleccionados(new Set(viajesPendientes.map((v) => v.id)))
   }
 
-  function guardarViajeEditado(v: ViajeParaLiquidar) {
-    setViajesPendientes((prev) => prev.map((vp) => vp.id === v.id ? v : vp))
-  }
-
   const viajesSeleccionados = viajesPendientes.filter((v) => seleccionados.has(v.id))
 
-  async function confirmarLiquidacion(viajesEditados: ViajeParaLiquidar[], comision: number, iva: number) {
-    if (!fleteroId || viajesEditados.length === 0) return
+  async function confirmarLiquidacion(viajesConfirmados: ViajeParaLiquidar[], comision: number, iva: number) {
+    if (!fleteroId || viajesConfirmados.length === 0) return
     setGenerando(true)
     setErrorGen(null)
     try {
@@ -403,20 +253,20 @@ export function LiquidarClient({ rol, fleteros, camiones, choferes, fleteroIdPro
         fleteroId,
         comisionPct: comision,
         ivaPct: iva,
-        viajes: viajesEditados.map((v) => ({
+        viajes: viajesConfirmados.map((v) => ({
           viajeId: v.id,
-          camionId: v.camionIdEdit ?? v.camionId,
-          choferId: v.choferIdEdit ?? v.choferId,
-          fechaViaje: v.fechaEdit ?? v.fechaViaje.slice(0, 10),
-          remito: v.remitoEdit || null,
-          cupo: v.cupoEdit || null,
-          mercaderia: v.mercaderiaEdit || null,
-          procedencia: v.procedenciaEdit || null,
-          provinciaOrigen: v.origenEdit || null,
-          destino: v.destinoEdit || null,
-          provinciaDestino: v.provinciaDestinoEdit || null,
-          kilos: v.kilosEdit ?? v.kilos ?? 0,
-          tarifaFletero: v.tarifaEdit ?? v.tarifaFletero,
+          camionId: v.camionId,
+          choferId: v.choferId,
+          fechaViaje: v.fechaViaje.slice(0, 10),
+          remito: v.remito,
+          cupo: v.cupo,
+          mercaderia: v.mercaderia,
+          procedencia: v.procedencia,
+          provinciaOrigen: v.provinciaOrigen,
+          destino: v.destino,
+          provinciaDestino: v.provinciaDestino,
+          kilos: v.kilos ?? 0,
+          tarifaFletero: v.tarifaFletero,
         })),
       }
       const res = await fetch("/api/liquidaciones", {
@@ -444,7 +294,6 @@ export function LiquidarClient({ rol, fleteros, camiones, choferes, fleteroIdPro
         <h2 className="text-2xl font-bold tracking-tight">Líquido Producto</h2>
         <p className="text-muted-foreground">Creación de liquidación al fletero</p>
       </div>
-
 
       {exitoLiquidacion && (
         <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
@@ -509,6 +358,7 @@ export function LiquidarClient({ rol, fleteros, camiones, choferes, fleteroIdPro
                       <input type="checkbox" checked={seleccionados.size === viajesPendientes.length} onChange={toggleTodos} />
                     </th>
                     <th className="px-3 py-2 text-left">Fecha</th>
+                    <th className="px-3 py-2 text-left">Carta de Porte</th>
                     <th className="px-3 py-2 text-left">Remito</th>
                     <th className="px-3 py-2 text-left">Cupo</th>
                     <th className="px-3 py-2 text-left">Mercadería</th>
@@ -518,13 +368,12 @@ export function LiquidarClient({ rol, fleteros, camiones, choferes, fleteroIdPro
                     <th className="px-3 py-2 text-right">Ton</th>
                     <th className="px-3 py-2 text-right">Tarifa / ton</th>
                     <th className="px-3 py-2 text-right">Importe</th>
-                    <th className="px-3 py-2" />
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {viajesPendientes.map((v) => {
-                    const kilos = v.kilosEdit ?? v.kilos ?? 0
-                    const tarifa = v.tarifaEdit ?? v.tarifaFletero
+                    const kilos = v.kilos ?? 0
+                    const tarifa = v.tarifaFletero
                     const ton = kilos > 0 ? calcularToneladas(kilos) : null
                     const total = kilos > 0 ? calcularTotalViaje(kilos, tarifa) : null
                     return (
@@ -532,19 +381,17 @@ export function LiquidarClient({ rol, fleteros, camiones, choferes, fleteroIdPro
                         <td className="px-3 py-2 text-center">
                           <input type="checkbox" checked={seleccionados.has(v.id)} onChange={() => toggleSeleccion(v.id)} />
                         </td>
-                        <td className="px-3 py-2">{formatearFecha(v.fechaEdit ?? new Date(v.fechaViaje))}</td>
-                        <td className="px-3 py-2">{v.remitoEdit || v.remito || "-"}</td>
-                        <td className="px-3 py-2">{v.cupoEdit || v.cupo || "-"}</td>
-                        <td className="px-3 py-2">{v.mercaderiaEdit || v.mercaderia || "-"}</td>
-                        <td className="px-3 py-2">{v.origenEdit || v.provinciaOrigen || v.procedencia || "-"}</td>
-                        <td className="px-3 py-2">{v.provinciaDestinoEdit || v.destinoEdit || v.provinciaDestino || v.destino || "-"}</td>
-                        <td className="px-3 py-2 text-right">{kilos > 0 ? kilos.toLocaleString("es-AR") : "-"}</td>
-                        <td className="px-3 py-2 text-right text-muted-foreground">{ton?.toLocaleString("es-AR") ?? "-"}</td>
+                        <td className="px-3 py-2">{formatearFecha(new Date(v.fechaViaje))}</td>
+                        <td className="px-3 py-2">{v.nroCartaPorte ?? "—"}</td>
+                        <td className="px-3 py-2">{v.remito ?? "—"}</td>
+                        <td className="px-3 py-2">{v.cupo ?? "—"}</td>
+                        <td className="px-3 py-2">{v.mercaderia ?? "—"}</td>
+                        <td className="px-3 py-2">{v.provinciaOrigen ?? v.procedencia ?? "—"}</td>
+                        <td className="px-3 py-2">{v.provinciaDestino ?? v.destino ?? "—"}</td>
+                        <td className="px-3 py-2 text-right">{kilos > 0 ? kilos.toLocaleString("es-AR") : "—"}</td>
+                        <td className="px-3 py-2 text-right text-muted-foreground">{ton?.toLocaleString("es-AR") ?? "—"}</td>
                         <td className="px-3 py-2 text-right">{formatearMoneda(tarifa)}</td>
-                        <td className="px-3 py-2 text-right font-medium">{total != null ? formatearMoneda(total) : "-"}</td>
-                        <td className="px-3 py-2">
-                          <button onClick={() => setViajeEditando(v)} className="h-7 px-2 rounded border text-xs font-medium hover:bg-accent">Editar</button>
-                        </td>
+                        <td className="px-3 py-2 text-right font-medium">{total != null ? formatearMoneda(total) : "—"}</td>
                       </tr>
                     )
                   })}
@@ -555,21 +402,10 @@ export function LiquidarClient({ rol, fleteros, camiones, choferes, fleteroIdPro
         </div>
       )}
 
-      {viajeEditando && (
-        <ModalEditarViaje
-          viaje={viajeEditando}
-          camiones={camiones}
-          choferes={choferes}
-          fleteroId={fleteroId}
-          onGuardar={guardarViajeEditado}
-          onCerrar={() => setViajeEditando(null)}
-        />
-      )}
-
       {enPreview && (
         <ModalPreviewLiquidacion
           fletero={fleteroInfo ?? { razonSocial: "", cuit: "", condicionIva: "", nroProximoComprobante: 1 }}
-          viajesIniciales={viajesSeleccionados}
+          viajes={viajesSeleccionados}
           comisionPctInicial={comisionPct}
           ivaPctInicial={ivaPct}
           generando={generando}
