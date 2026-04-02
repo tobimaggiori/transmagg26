@@ -97,6 +97,7 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
   const [facturaDetalle, setFacturaDetalle] = useState<FacturaProveedor | null>(null)
   const [anulandoPago, setAnulandoPago] = useState<{ pagoId: string; pagoMonto: number; pagoTipo: string; pagoFecha: string } | null>(null)
   const [editandoPago, setEditandoPago] = useState<{ pagoId: string; pagoMonto: number; pagoTipo: string; pagoFecha: string; facturaId: string; proveedorId: string } | null>(null)
+  const [eliminandoFactura, setEliminandoFactura] = useState<FacturaProveedor | null>(null)
 
   const buscar = useCallback(async () => {
     setLoading(true)
@@ -208,7 +209,8 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
                         <th className="pb-2 pr-3 text-right">Saldo</th>
                         <th className="pb-2 pr-3 text-center">Estado</th>
                         <th className="pb-2 pr-3 text-center">Factura</th>
-                        <th className="pb-2 text-center">Comprobante</th>
+                        <th className="pb-2 pr-3 text-center">Comprobante</th>
+                        <th className="pb-2 text-center">Acciones</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -244,7 +246,7 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
                             <td className="py-2 pr-3 text-center" onClick={(e) => e.stopPropagation()}>
                               <ViewPDF s3Key={f.pdfS3Key} size="sm" label="Ver" />
                             </td>
-                            <td className="py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                            <td className="py-2 pr-3 text-center" onClick={(e) => e.stopPropagation()}>
                               {f.pagos.length > 1 ? (
                                 <button
                                   className="text-xs text-primary underline underline-offset-2"
@@ -255,6 +257,14 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
                               ) : (
                                 <ViewPDF s3Key={compKey} size="sm" label="Ver" />
                               )}
+                            </td>
+                            <td className="py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                onClick={() => setEliminandoFactura(f)}
+                                className="h-6 px-2 rounded border text-xs font-medium text-red-600 hover:bg-red-50"
+                              >
+                                Eliminar
+                              </button>
                             </td>
                           </tr>
                         )
@@ -427,6 +437,18 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
         )}
       </Dialog>
 
+      {/* Modal eliminar factura */}
+      {eliminandoFactura && (
+        <ModalEliminarFactura
+          factura={eliminandoFactura}
+          onConfirmar={() => {
+            setEliminandoFactura(null)
+            buscar()
+          }}
+          onCerrar={() => setEliminandoFactura(null)}
+        />
+      )}
+
       {/* Modal anular pago proveedor */}
       {anulandoPago && (
         <ModalAnularPagoProveedor
@@ -461,6 +483,87 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
         />
       )}
     </div>
+  )
+}
+
+// ─── Modal eliminar factura ───────────────────────────────────────────────────
+
+function ModalEliminarFactura({
+  factura,
+  onConfirmar,
+  onCerrar,
+}: {
+  factura: FacturaProveedor
+  onConfirmar: () => void
+  onCerrar: () => void
+}) {
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleEliminar() {
+    setEnviando(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/facturas-proveedor/${factura.id}`, { method: "DELETE" })
+      const data = await res.json() as { error?: string }
+      if (!res.ok) {
+        setError(data.error ?? "Error al eliminar la factura")
+        return
+      }
+      onConfirmar()
+    } catch {
+      setError("Error de conexión")
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onCerrar()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Eliminar factura</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 text-sm">
+          <div className="grid grid-cols-2 gap-2 border rounded p-3 bg-muted/30">
+            <div>
+              <p className="text-xs text-muted-foreground">Proveedor</p>
+              <p className="font-medium">{factura.proveedor.razonSocial}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Comprobante</p>
+              <p className="font-mono text-xs">{factura.tipoCbte} {factura.nroComprobante}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Fecha</p>
+              <p>{formatearFecha(factura.fechaCbte)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Monto</p>
+              <p className="font-semibold">{formatearMoneda(factura.total)}</p>
+            </div>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            Esta acción no se puede deshacer. Si el libro de IVA del mes ya fue generado, no podrá eliminarse.
+          </p>
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onCerrar} disabled={enviando}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleEliminar}
+              disabled={enviando}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              {enviando ? "Eliminando..." : "Eliminar definitivamente"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

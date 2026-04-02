@@ -11,6 +11,7 @@ import { puedeAcceder } from "@/lib/permissions"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FiltroPeriodo } from "@/components/contabilidad/filtro-periodo"
+import { LibroIvaGeneracion } from "@/components/contabilidad/libro-iva-generacion"
 import type { Rol } from "@/types"
 
 function construirWherePeriodo({
@@ -66,6 +67,13 @@ export default async function ContabilidadIvaPage({
 
   const tabActivo = parseTab(searchParams.tab)
   const whereExtra = construirWherePeriodo(searchParams)
+
+  const librosIva = await prisma.libroIva.findMany({
+    include: {
+      operador: { select: { nombre: true, apellido: true } },
+    },
+    orderBy: { mesAnio: "desc" },
+  })
 
   const asientos = await prisma.asientoIva.findMany({
     where: whereExtra,
@@ -168,6 +176,13 @@ export default async function ContabilidadIvaPage({
         <h2 className="text-2xl font-bold tracking-tight">Libro IVA</h2>
         <p className="text-muted-foreground">Libro de IVA Ventas e IVA Compras — Transmagg</p>
       </div>
+
+      <LibroIvaGeneracion
+        libros={librosIva.map((l) => ({
+          ...l,
+          generadoEn: l.generadoEn.toISOString(),
+        }))}
+      />
 
       <FiltroPeriodo
         action="/contabilidad/iva"

@@ -100,6 +100,7 @@ model Usuario {
   permisos                   PermisoUsuario[]
   pagosImpuesto              PagoImpuesto[]          @relation("OperadorPagoImpuesto")
   infracciones               Infraccion[]            @relation("OperadorInfracciones")
+  librosIva                  LibroIva[]              @relation("OperadorLibroIva")
 
   @@map("usuarios")
 }
@@ -1112,6 +1113,18 @@ model AsientoIva {
   facturaSeguro    FacturaSeguro?    @relation("FacturaSeguroAsientoIva", fields: [facturaSeguroId], references: [id])
 
   @@map("asientos_iva")
+}
+
+model LibroIva {
+  id         String   @id @default(uuid())
+  mesAnio    String   @unique @map("mes_anio")   // "2026-03" formato YYYY-MM
+  pdfS3Key   String?  @map("pdf_s3_key")
+  generadoEn DateTime @default(now()) @map("generado_en")
+  operadorId String   @map("operador_id")
+
+  operador   Usuario  @relation("OperadorLibroIva", fields: [operadorId], references: [id])
+
+  @@map("libros_iva")
 }
 
 model AsientoIibb {
