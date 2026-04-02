@@ -16,7 +16,7 @@ import { CircuitBadge } from "@/components/workflow/circuit-badge"
 import { WorkflowNote } from "@/components/workflow/workflow-note"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { viajeEsFacturable, razonNoFacturable } from "@/lib/facturacion"
-import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
+import { CiudadArgentinaInput } from "@/components/ui/ciudad-argentina-input"
 import { UploadPDF } from "@/components/upload-pdf"
 import type { Rol } from "@/types"
 
@@ -612,45 +612,20 @@ function ModalViaje({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Procedencia</label>
-              <input type="text" value={procedencia} onChange={(e) => setProcedencia(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Destino</label>
-              <input type="text" value={destino} onChange={(e) => setDestino(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Provincia origen *</label>
-              <select
-                value={provinciaOrigen}
-                onChange={(e) => setProvinciaOrigen(e.target.value)}
-                required
-                className="w-full h-9 rounded-md border bg-background px-2 text-sm"
-              >
-                <option value="">Seleccioná una provincia...</option>
-                {PROVINCIAS_ARGENTINA.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Provincia destino *</label>
-              <select
-                value={provinciaDestino}
-                onChange={(e) => setProvinciaDestino(e.target.value)}
-                required
-                className="w-full h-9 rounded-md border bg-background px-2 text-sm"
-              >
-                <option value="">Seleccioná una provincia...</option>
-                {PROVINCIAS_ARGENTINA.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </div>
+            <CiudadArgentinaInput
+              label="Ciudad de origen"
+              value={procedencia}
+              provincia={provinciaOrigen}
+              onSelect={(ciudad, prov) => { setProcedencia(ciudad); setProvinciaOrigen(prov) }}
+              required
+            />
+            <CiudadArgentinaInput
+              label="Ciudad de destino"
+              value={destino}
+              provincia={provinciaDestino}
+              onSelect={(ciudad, prov) => { setDestino(ciudad); setProvinciaDestino(prov) }}
+              required
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
