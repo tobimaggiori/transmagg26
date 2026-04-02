@@ -32,7 +32,6 @@ interface ConfiguracionArcaProps {
     modo: string
     puntosVenta: Record<string, string>
     cbuMiPymes: string | null
-    modalidadMiPymes: string | null
     activa: boolean
     actualizadoEn: string
     actualizadoPor: string | null
@@ -62,7 +61,6 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: ConfiguracionArc
       modo: "homologacion",
       puntosVenta: {} as Record<string, string>,
       cbuMiPymes: null,
-      modalidadMiPymes: "SCA",
       activa: false,
       actualizadoEn: new Date().toISOString(),
       actualizadoPor: null,
@@ -75,7 +73,6 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: ConfiguracionArc
   const [certPass, setCertPass] = useState("")
   const [puntosVenta, setPuntosVenta] = useState<Record<string, string>>(config.puntosVenta)
   const [cbuMiPymes, setCbuMiPymes] = useState(config.cbuMiPymes ?? "")
-  const [modalidadMiPymes, setModalidadMiPymes] = useState(config.modalidadMiPymes ?? "SCA")
   const [modoSel, setModoSel] = useState(config.modo)
 
   const [saving, setSaving] = useState<string | null>(null)
@@ -318,33 +315,15 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: ConfiguracionArc
                 placeholder="CBU de 22 dígitos"
                 maxLength={22}
               />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Modalidad</Label>
-              <div className="flex gap-3">
-                {(["SCA", "ADC"] as const).map((m) => (
-                  <label key={m} className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="modalidad"
-                      value={m}
-                      checked={modalidadMiPymes === m}
-                      onChange={() => setModalidadMiPymes(m)}
-                      className="accent-primary"
-                    />
-                    <span className="text-sm">{m}</span>
-                  </label>
-                ))}
-              </div>
               <p className="text-xs text-muted-foreground">
-                SCA: Sistema de Circulación Abierta · ADC: Agente de Depósito Colectivo
+                CBU de Transmagg donde se acreditan los pagos de FCE MiPyME
               </p>
             </div>
           </div>
           <Button
             size="sm"
             disabled={saving === "mipymes"}
-            onClick={() => patch({ cbuMiPymes: cbuMiPymes || null, modalidadMiPymes }, "mipymes")}
+            onClick={() => patch({ cbuMiPymes: cbuMiPymes || null }, "mipymes")}
           >
             {saving === "mipymes" ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
             Guardar

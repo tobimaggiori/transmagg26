@@ -1177,7 +1177,6 @@ model ConfiguracionArca {
   modo             String   @default("homologacion")
   puntosVenta      String   @default("{}") @map("puntos_venta")
   cbuMiPymes       String?  @map("cbu_mi_pymes")
-  modalidadMiPymes String?  @default("SCA") @map("modalidad_mi_pymes")
   activa           Boolean  @default(false)
   actualizadoEn    DateTime @updatedAt @map("actualizado_en")
   actualizadoPor   String?  @map("actualizado_por")

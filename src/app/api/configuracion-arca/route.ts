@@ -19,7 +19,6 @@ const patchSchema = z.object({
   modo: z.enum(["homologacion", "produccion"]).optional(),
   puntosVenta: z.record(z.string(), z.string()).optional(),
   cbuMiPymes: z.string().nullable().optional(),
-  modalidadMiPymes: z.enum(["SCA", "ADC"]).nullable().optional(),
   activa: z.boolean().optional(),
 })
 
