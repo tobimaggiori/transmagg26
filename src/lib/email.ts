@@ -15,7 +15,7 @@ export interface OpcionesEmail {
   tipo: "sistema" | "usuario"
   /** Requerido cuando tipo === "usuario" */
   usuarioId?: string
-  attachments?: { filename: string; content: Buffer; contentType: string }[]
+  adjuntos?: { nombre: string; contenido: Buffer; tipo: string }[]
 }
 
 /**
@@ -109,10 +109,10 @@ export async function enviarEmail(opciones: OpcionesEmail): Promise<{ ok: boolea
       subject: opciones.asunto,
       text: opciones.texto,
       html: opciones.html,
-      attachments: opciones.attachments?.map((a) => ({
-        filename: a.filename,
-        content: a.content,
-        contentType: a.contentType,
+      attachments: opciones.adjuntos?.map((a) => ({
+        filename: a.nombre,
+        content: a.contenido,
+        contentType: a.tipo,
       })),
     })
     console.log(`[EMAIL] Enviado a ${opciones.para}: ${opciones.asunto} — ${info.messageId}`)

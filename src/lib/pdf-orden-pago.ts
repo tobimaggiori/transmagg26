@@ -6,6 +6,7 @@
  */
 
 import { prisma } from "@/lib/prisma"
+import puppeteer from "puppeteer"
 
 function fmt(monto: number): string {
   return new Intl.NumberFormat("es-AR", {
@@ -509,4 +510,37 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
 </html>`
 
   return html
+}
+
+/**
+ * generarPDFOrdenPago: (ordenPagoId: string) -> Promise<Buffer>
+ *
+ * Dado el id de una Orden de Pago, genera el HTML con generarHTMLOrdenPago
+ * y lo convierte a PDF usando Puppeteer (formato A4 sin márgenes extra).
+ * Existe para adjuntar el comprobante como PDF en el email al fletero.
+ *
+ * Ejemplos:
+ * const buf = await generarPDFOrdenPago("uuid-de-op")
+ * // => Buffer con el PDF de la Orden de Pago listo para enviar como adjunto
+ */
+export async function generarPDFOrdenPago(ordenPagoId: string): Promise<Buffer> {
+  const html = await generarHTMLOrdenPago(ordenPagoId)
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  })
+
+  try {
+    const page = await browser.newPage()
+    await page.setContent(html, { waitUntil: "networkidle0" })
+    const pdf = await page.pdf({
+      format: "A4",
+      printBackground: true,
+      margin: { top: "10mm", bottom: "10mm", left: "14mm", right: "14mm" },
+    })
+    return Buffer.from(pdf)
+  } finally {
+    await browser.close()
+  }
 }
