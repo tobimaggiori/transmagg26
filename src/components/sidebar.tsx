@@ -6,7 +6,7 @@
 
 "use client"
 
-import { useState, Fragment } from "react"
+import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { signOut } from "next-auth/react"
@@ -27,54 +27,40 @@ import {
   ChevronRight,
   ShieldAlert,
   Shield,
+  Cog,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
-/**
- * Props del componente Sidebar.
- */
 interface SidebarProps {
-  /** Rol del usuario autenticado para filtrar las secciones accesibles */
   rol: Rol
-  /** Nombre del usuario para mostrar en el pie del sidebar */
   nombreUsuario?: string
-  /** Email del usuario autenticado */
   emailUsuario?: string
-  /** Cuando es true, muestra solo "Mi Panel" (chofer empleado de Transmagg) */
   esChoferTransmagg?: boolean
-  /** Cuando es false y el rol es ADMIN_TRANSMAGG, muestra alerta de config ARCA incompleta */
   arcaActiva?: boolean
-  /** Array de secciones habilitadas para OPERADOR_TRANSMAGG (granular) */
   permisos?: string[]
-  /** Callback para cerrar el drawer en mobile al navegar */
   onClose?: () => void
 }
 
-/**
- * Definición de un sub-ítem dentro de un grupo colapsable.
- */
 interface SubItem {
   href: string
   label: string
-  /** Sección granular para filtrar por permisos. "" o undefined = siempre visible */
   seccion?: string
 }
 
-/**
- * Definición de un grupo colapsable de navegación.
- */
 interface NavGroup {
   id: string
   label: string
   icon: LucideIcon
-  /** Clave de sección usada en puedeAcceder para decidir visibilidad */
   seccion: string
-  /** Prefijo de ruta para detectar si el grupo está activo */
   pathPrefix: string
   items: SubItem[]
 }
 
-/** Grupos colapsables de navegación */
+/**
+ * Orden del sidebar:
+ * Dashboard, Viajes, Empresas, Proveedores, Aseguradoras, Contabilidad,
+ * Fleteros, ABM (con Mi Flota), Configuracion (ARCA, OTP)
+ */
 const NAV_GROUPS: NavGroup[] = [
   {
     id: "empresas",
@@ -86,6 +72,42 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/empresas/facturas",           label: "Facturas",             seccion: "empresas.facturas" },
       { href: "/empresas/recibos",            label: "Recibos por Cobranza", seccion: "empresas.recibos" },
       { href: "/empresas/cuentas-corrientes", label: "Cuentas Corrientes",   seccion: "empresas.cuentas_corrientes" },
+    ],
+  },
+  {
+    id: "proveedores",
+    label: "Proveedores",
+    icon: Package,
+    seccion: "proveedores",
+    pathPrefix: "/proveedores",
+    items: [
+      { href: "/proveedores/facturas",           label: "Facturas",           seccion: "proveedores.facturas" },
+      { href: "/proveedores/pago",               label: "Registrar Pago",     seccion: "proveedores.pagos" },
+      { href: "/proveedores/cuentas-corrientes", label: "Cuentas Corrientes", seccion: "proveedores.cuentas_corrientes" },
+    ],
+  },
+  {
+    id: "aseguradoras",
+    label: "Aseguradoras",
+    icon: Shield,
+    seccion: "aseguradoras",
+    pathPrefix: "/aseguradoras",
+    items: [
+      { href: "/aseguradoras/facturas", label: "Facturas y Pólizas", seccion: "aseguradoras" },
+    ],
+  },
+  {
+    id: "contabilidad",
+    label: "Contabilidad",
+    icon: BookOpen,
+    seccion: "cuentas",
+    pathPrefix: "/contabilidad",
+    items: [
+      { href: "/contabilidad/reportes",  label: "Reportes",   seccion: "contabilidad.reportes" },
+      { href: "/contabilidad/chequeras", label: "Chequeras",  seccion: "contabilidad.reportes" },
+      { href: "/contabilidad/tarjetas",  label: "Tarjetas",   seccion: "contabilidad.reportes" },
+      { href: "/contabilidad/cuentas",   label: "Cuentas",    seccion: "contabilidad.reportes" },
+      { href: "/contabilidad/impuestos", label: "Impuestos",  seccion: "contabilidad.impuestos" },
     ],
   },
   {
@@ -102,60 +124,30 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: "proveedores",
-    label: "Proveedores",
-    icon: Package,
-    seccion: "proveedores",
-    pathPrefix: "/proveedores",
-    items: [
-      { href: "/proveedores/facturas",           label: "Facturas",           seccion: "proveedores.facturas" },
-      { href: "/proveedores/pago",               label: "Registrar Pago",     seccion: "proveedores.pagos" },
-      { href: "/proveedores/cuentas-corrientes", label: "Cuentas Corrientes", seccion: "proveedores.cuentas_corrientes" },
-    ],
-  },
-  {
-    id: "contabilidad",
-    label: "Contabilidad",
-    icon: BookOpen,
-    seccion: "cuentas",
-    pathPrefix: "/contabilidad",
-    items: [
-      { href: "/contabilidad/reportes",  label: "Reportes",          seccion: "contabilidad.reportes" },
-      { href: "/contabilidad/chequeras", label: "Chequeras",          seccion: "contabilidad.reportes" },
-      { href: "/contabilidad/tarjetas",  label: "Tarjetas",           seccion: "contabilidad.reportes" },
-      { href: "/contabilidad/cuentas",   label: "Cuentas",            seccion: "contabilidad.reportes" },
-      { href: "/contabilidad/impuestos", label: "Impuestos",          seccion: "contabilidad.impuestos" },
-    ],
-  },
-  {
-    id: "aseguradoras",
-    label: "Aseguradoras",
-    icon: Shield,
-    seccion: "aseguradoras",
-    pathPrefix: "/aseguradoras",
-    items: [
-      { href: "/aseguradoras/facturas",         label: "Facturas y Pólizas", seccion: "aseguradoras" },
-    ],
-  },
-  {
     id: "abm",
     label: "ABM",
     icon: Settings2,
     seccion: "abm",
     pathPrefix: "/abm",
     items: [
-      { href: "/abm/base-de-datos",   label: "Base de datos",   seccion: "" },
-      { href: "/abm/contabilidad",    label: "Contabilidad",    seccion: "" },
-      { href: "/abm/configuraciones", label: "Configuraciones", seccion: "" },
+      { href: "/abm/base-de-datos", label: "Base de datos", seccion: "" },
+      { href: "/abm/contabilidad",  label: "Contabilidad",  seccion: "" },
+      { href: "/mi-flota",          label: "Mi Flota",      seccion: "" },
+    ],
+  },
+  {
+    id: "configuracion",
+    label: "Configuración",
+    icon: Cog,
+    seccion: "abm",
+    pathPrefix: "/abm/configuracion",
+    items: [
+      { href: "/abm/arca", label: "ARCA", seccion: "" },
+      { href: "/abm/otp",  label: "OTP",  seccion: "" },
     ],
   },
 ]
 
-/**
- * NavSimpleItem: { href, label, icon, pathname, onClose? } -> JSX.Element
- *
- * Renderiza un ítem simple de navegación adaptado al fondo oscuro del sidebar.
- */
 function NavSimpleItem({
   href,
   label,
@@ -186,49 +178,71 @@ function NavSimpleItem({
   )
 }
 
-/**
- * Sidebar: SidebarProps -> JSX.Element
- *
- * Dado el rol del usuario, renderiza la barra lateral con navegación agrupada y
- * colapsable. Solo muestra grupos e ítems accesibles según PERMISOS_SECCION.
- * Los grupos con sub-ruta activa se expanden automáticamente al cargar la página.
- * Existe para garantizar que cada usuario vea únicamente las secciones
- * permitidas por su rol, centralizando el filtro de UI en un solo lugar.
- *
- * Ejemplos:
- * <Sidebar rol="FLETERO" nombreUsuario="Juan Pérez" emailUsuario="juan@fletero.com" />
- * // => sidebar con Dashboard, grupo Fleteros expandido, Mi Flota
- * <Sidebar rol="ADMIN_TRANSMAGG" nombreUsuario="Admin" emailUsuario="admin@transmagg.com.ar" />
- * // => sidebar con todos los grupos y ítems simples
- * <Sidebar rol="ADMIN_EMPRESA" emailUsuario="empresa@x.com" />
- * // => sidebar con Dashboard, grupo Empresas
- */
 export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, arcaActiva = true, permisos, onClose }: SidebarProps) {
   const pathname = usePathname()
 
-  // Determine which group (if any) is currently active based on pathname
   const grupoActivoPorRuta =
     NAV_GROUPS.find(
-      (g) => pathname.startsWith(g.pathPrefix + "/") || pathname === g.pathPrefix
+      (g) =>
+        pathname.startsWith(g.pathPrefix + "/") ||
+        pathname === g.pathPrefix ||
+        g.items.some((it) => pathname === it.href || pathname.startsWith(it.href + "/"))
     )?.id ?? null
 
   const [expandido, setExpandido] = useState<string | null>(grupoActivoPorRuta)
 
-
-
-  /**
-   * filtrarItems: items del grupo -> items visibles según permisos granulares.
-   * Solo filtra para OPERADOR_TRANSMAGG cuando se proveen permisos.
-   * Items con seccion === "" o sin seccion se muestran siempre.
-   */
   function filtrarItems(items: SubItem[]): SubItem[] {
     if (rol !== "OPERADOR_TRANSMAGG" || !permisos) return items
     return items.filter(item => !item.seccion || item.seccion === "" || permisos.includes(item.seccion))
   }
 
+  function renderGrupo(grupo: NavGroup) {
+    if (!puedeAcceder(rol, grupo.seccion)) return null
+
+    const itemsVisibles = filtrarItems(grupo.items)
+    if (rol === "OPERADOR_TRANSMAGG" && permisos && itemsVisibles.length === 0) return null
+
+    const Icon = grupo.icon
+    const estaExpandido = expandido === grupo.id
+    const grupoActivo =
+      pathname.startsWith(grupo.pathPrefix + "/") ||
+      pathname === grupo.pathPrefix ||
+      itemsVisibles.some(
+        (it) => pathname === it.href || pathname.startsWith(it.href + "/")
+      )
+
+    return (
+      <div key={grupo.id}>
+        <button
+          type="button"
+          onClick={() => setExpandido(estaExpandido ? null : grupo.id)}
+          className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+            grupoActivo
+              ? "bg-primary/20 text-white"
+              : "text-slate-200 hover:bg-white/10 hover:text-white"
+          }`}
+        >
+          <Icon className="h-4 w-4 shrink-0" />
+          <span className="flex-1 text-left">{grupo.label}</span>
+          {estaExpandido ? (
+            <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+          )}
+        </button>
+        {estaExpandido && (
+          <div className="mt-0.5 space-y-0.5">
+            {itemsVisibles.map((item) => (
+              <NavSubItem key={item.href} href={item.href} label={item.label} onClose={onClose} />
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <aside className="flex h-full w-64 flex-col bg-sidebar">
-      {/* Logo y nombre del sistema */}
       <div className="flex h-16 items-center border-b border-white/10 px-6">
         <div className="flex items-center gap-2">
           <Truck className="h-6 w-6 text-primary-foreground" />
@@ -236,10 +250,8 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
         </div>
       </div>
 
-      {/* Navegación principal */}
       <nav className="flex-1 overflow-auto px-3 py-4">
         <div className="space-y-1">
-          {/* Sidebar minimalista para chofer empleado de Transmagg */}
           {esChoferTransmagg ? (
             <NavSimpleItem
               href="/dashboard"
@@ -250,97 +262,18 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
             />
           ) : (
           <>
-          {/* Dashboard — siempre visible */}
+          {/* Dashboard */}
           {puedeAcceder(rol, "dashboard") && (
-            <NavSimpleItem
-              href="/dashboard"
-              label="Dashboard"
-              icon={LayoutDashboard}
-              pathname={pathname}
-              onClose={onClose}
-            />
+            <NavSimpleItem href="/dashboard" label="Dashboard" icon={LayoutDashboard} pathname={pathname} onClose={onClose} />
           )}
 
-          {/* Grupos colapsables — con Viajes intercalado después de Fleteros */}
-          {NAV_GROUPS.map((grupo) => {
-            if (!puedeAcceder(rol, grupo.seccion)) {
-              // Si Fleteros no es visible pero Viajes sí, renderizar Viajes aquí
-              if (grupo.id === "fleteros" && puedeAcceder(rol, "viajes")) {
-                return (
-                  <NavSimpleItem
-                    key="viajes-toplevel"
-                    href="/fleteros/viajes"
-                    label="Viajes"
-                    icon={Route}
-                    pathname={pathname}
-                    onClose={onClose}
-                  />
-                )
-              }
-              return null
-            }
+          {/* Viajes — top level */}
+          {puedeAcceder(rol, "viajes") && (
+            <NavSimpleItem href="/fleteros/viajes" label="Viajes" icon={Route} pathname={pathname} onClose={onClose} />
+          )}
 
-            // Filtrar sub-items por permisos granulares
-            const itemsVisibles = filtrarItems(grupo.items)
-            // Si no quedan items visibles (para OPERADOR_TRANSMAGG), no mostrar el grupo
-            if (rol === "OPERADOR_TRANSMAGG" && permisos && itemsVisibles.length === 0) return null
-
-            const Icon = grupo.icon
-            const estaExpandido = expandido === grupo.id
-            const grupoActivo =
-              pathname.startsWith(grupo.pathPrefix + "/") ||
-              pathname === grupo.pathPrefix ||
-              itemsVisibles.some(
-                (it) => pathname === it.href || pathname.startsWith(it.href + "/")
-              )
-
-            return (
-              <Fragment key={grupo.id}>
-                <div>
-                  {/* Cabecera del grupo */}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpandido(estaExpandido ? null : grupo.id)
-                    }
-                    className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                      grupoActivo
-                        ? "bg-primary/20 text-white"
-                        : "text-slate-200 hover:bg-white/10 hover:text-white"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    <span className="flex-1 text-left">{grupo.label}</span>
-                    {estaExpandido ? (
-                      <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
-                    ) : (
-                      <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-                    )}
-                  </button>
-
-                  {/* Sub-ítems del grupo */}
-                  {estaExpandido && (
-                    <div className="mt-0.5 space-y-0.5">
-                      {itemsVisibles.map((item) => (
-                        <NavSubItem key={item.href} href={item.href} label={item.label} onClose={onClose} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Viajes — top-level después de Fleteros */}
-                {grupo.id === "fleteros" && puedeAcceder(rol, "viajes") && (
-                  <NavSimpleItem
-                    href="/fleteros/viajes"
-                    label="Viajes"
-                    icon={Route}
-                    pathname={pathname}
-                    onClose={onClose}
-                  />
-                )}
-              </Fragment>
-            )
-          })}
+          {/* Grupos colapsables en orden: Empresas, Proveedores, Aseguradoras, Contabilidad, Fleteros, ABM, Configuración */}
+          {NAV_GROUPS.map((grupo) => renderGrupo(grupo))}
 
           {/* Alerta ARCA para ADMIN_TRANSMAGG cuando config está incompleta */}
           {rol === "ADMIN_TRANSMAGG" && !arcaActiva && (
@@ -352,23 +285,11 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
               <span>Config ARCA incompleta</span>
             </a>
           )}
-
-          {/* Mi Flota — roles internos y FLETERO */}
-          {puedeAcceder(rol, "mi_flota") && (
-            <NavSimpleItem
-              href="/mi-flota"
-              label="Mi Flota"
-              icon={Warehouse}
-              pathname={pathname}
-              onClose={onClose}
-            />
-          )}
           </>
           )}
         </div>
       </nav>
 
-      {/* Footer con info del usuario */}
       <div className="border-t border-white/10 p-4">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold uppercase">
@@ -378,9 +299,7 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
             {nombreUsuario && (
               <p className="truncate text-sm font-medium text-white">{nombreUsuario}</p>
             )}
-            <p className="truncate text-xs text-slate-400">
-              {emailUsuario}
-            </p>
+            <p className="truncate text-xs text-slate-400">{emailUsuario}</p>
           </div>
           <button
             type="button"
