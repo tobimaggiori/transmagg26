@@ -197,6 +197,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const totalMediosPago = pagos.reduce((s, p) => s + p.monto, 0)
     const totalGastosRequest = gastos ? gastos.reduce((s, g) => s + g.montoDescontar, 0) : 0
 
+    // ── Validar que el pago cubre exactamente el saldo total ────────────────
+    if (Math.abs(totalMediosPago + totalGastosRequest - totalSaldoPendiente) > 0.01) {
+      return badRequestResponse(
+        `El total de los medios de pago debe cubrir exactamente el saldo pendiente (${totalSaldoPendiente.toFixed(2)}). Diferencia: ${(totalMediosPago + totalGastosRequest - totalSaldoPendiente).toFixed(2)}`
+      )
+    }
+
     // ── Validar SALDO_A_FAVOR ───────────────────────────────────────────────
     const pagoSaldoAFavor = pagos.find((p) => p.tipoPago === "SALDO_A_FAVOR")
     if (pagoSaldoAFavor) {
@@ -215,10 +222,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       // Saldo restante por LP para la distribución
       const saldosRestantes = new Map<string, number>(
         lpsOrdenados.map((lp) => [lp.id, lp.saldoPendiente])
-      )
-      // Monto aplicado por LP (para calcular nuevo estado)
-      const montoAplicadoMap = new Map<string, number>(
-        lpsOrdenados.map((lp) => [lp.id, 0])
       )
 
       let lpIndex = 0
@@ -327,26 +330,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             pagoIdsParaOP.push(nuevoPago.id)
 
             saldosRestantes.set(lp.id, saldoLP - montoParaEsteLP)
-            montoAplicadoMap.set(lp.id, (montoAplicadoMap.get(lp.id) ?? 0) + montoParaEsteLP)
             montoRestantePago -= montoParaEsteLP
           }
 
           if ((saldosRestantes.get(lp.id) ?? 0) < 0.01) lpIndex++
         }
 
-        // Excedente: pago mayor que la suma de todos los saldos
-        if (montoRestantePago > 0.009) {
-          await tx.pagoAFletero.create({
-            data: {
-              fleteroId,
-              liquidacionId: null,
-              tipoPago: "SALDO_A_FAVOR",
-              monto: -montoRestantePago,
-              fechaPago,
-              operadorId,
-            },
-          })
-        }
       }
 
       // ── Gastos descontados → se vinculan al primer LP (más antiguo) ───────
@@ -386,40 +375,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         }
       }
 
-      // ── Actualizar estado de cada LP ──────────────────────────────────────
+      // ── Actualizar estado de cada LP a PAGADA ─────────────────────────────
       for (const lp of lpsOrdenados) {
-        const aplicado = montoAplicadoMap.get(lp.id) ?? 0
-        const gastosEsteLP = lp.id === primerLpId ? totalGastosRequest : 0
-        const totalCubierto = lp.totalPagado + aplicado + gastosEsteLP
-
-        let nuevoEstado: string | null = null
-        if (totalCubierto >= lp.total - 0.01) {
-          nuevoEstado = "PAGADA"
-        } else if (aplicado > 0 || gastosEsteLP > 0) {
-          nuevoEstado = "PARCIALMENTE_PAGADA"
-        }
-
-        if (nuevoEstado) {
-          await tx.liquidacion.update({
-            where: { id: lp.id },
-            data: { estado: nuevoEstado },
-          })
-        }
-      }
-
-      // Excedente del total de pagos respecto al total de saldos pendientes
-      const excedenteFinal =
-        totalMediosPago + totalGastosRequest - totalSaldoPendiente
-      if (excedenteFinal > 0.009) {
-        await tx.pagoAFletero.create({
-          data: {
-            fleteroId,
-            liquidacionId: null,
-            tipoPago: "SALDO_A_FAVOR",
-            monto: -excedenteFinal,
-            fechaPago,
-            operadorId,
-          },
+        await tx.liquidacion.update({
+          where: { id: lp.id },
+          data: { estado: "PAGADA" },
         })
       }
 

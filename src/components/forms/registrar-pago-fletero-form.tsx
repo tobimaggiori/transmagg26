@@ -256,6 +256,9 @@ export function RegistrarPagoFleteroModal({
     if (pagos.length === 0 && totalGastosDescontados === 0) {
       setError("Agregá al menos un medio de pago o gasto a descontar"); return
     }
+    if (Math.abs(diferencia) > 0.01) {
+      setError(`El total debe cubrir exactamente el saldo (${ars(saldoAjustado)}). Diferencia: ${ars(diferencia)}`); return
+    }
     setError(null)
     setLoading(true)
     try {
@@ -311,7 +314,7 @@ export function RegistrarPagoFleteroModal({
     }
   }
 
-  const puedeConfirmar = !loading && (pagos.length > 0 || totalGastosDescontados > 0) && !draft
+  const puedeConfirmar = !loading && (pagos.length > 0 || totalGastosDescontados > 0) && !draft && Math.abs(diferencia) < 0.01
 
   async function abrirPreview() {
     setError(null)
