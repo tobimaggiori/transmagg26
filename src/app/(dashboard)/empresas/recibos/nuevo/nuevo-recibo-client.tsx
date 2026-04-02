@@ -3,10 +3,10 @@
 /**
  * Propósito: Formulario multi-paso para crear un Recibo de Cobranza.
  *
- * Paso 1: Seleccionar empresa
- * Paso 2: Seleccionar facturas pendientes
- * Paso 3: Ingresar retenciones y medios de pago
- * Paso 4: Confirmar y emitir
+ * Paso 1: Seleccionar empresa + facturas pendientes (en la misma pantalla)
+ * Paso 2: Ingresar retenciones y medios de pago
+ * Paso 3: Confirmar y emitir
+ * Paso 4 (éxito): Ver PDF / Enviar por mail / Nuevo recibo
  */
 
 import { useState, useEffect, useCallback } from "react"
@@ -39,6 +39,12 @@ interface FacturaPendiente {
   emitidaEn: string
   neto: number
   ivaMonto: number
+}
+
+interface ContactoEmail {
+  id: string
+  email: string
+  nombre: string | null
 }
 
 interface MedioPago {
@@ -92,13 +98,13 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
   // Paso 1
   const [empresaId, setEmpresaId] = useState("")
 
-  // Paso 2
+  // Facturas (cargadas automáticamente al seleccionar empresa)
   const [facturas, setFacturas] = useState<FacturaPendiente[]>([])
   const [loadingFacturas, setLoadingFacturas] = useState(false)
   const [errorFacturas, setErrorFacturas] = useState<string | null>(null)
   const [seleccionadas, setSeleccionadas] = useState<Set<string>>(new Set())
 
-  // Paso 3
+  // Paso 2
   const [fecha, setFecha] = useState(todayIso())
   const [retGanancias, setRetGanancias] = useState("")
   const [retIIBB, setRetIIBB] = useState("")
@@ -107,11 +113,19 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
     { tipo: "TRANSFERENCIA", monto: "", cuentaId: "", fechaTransferencia: todayIso(), referencia: "" },
   ])
 
-  // Paso 4 / resultado
+  // Paso 3 / resultado
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [reciboCreado, setReciboCreado] = useState<{ id: string; nro: number } | null>(null)
   const [loadingPDF, setLoadingPDF] = useState(false)
+
+  // Enviar por mail (paso éxito)
+  const [contactosEmail, setContactosEmail] = useState<ContactoEmail[]>([])
+  const [loadingContactos, setLoadingContactos] = useState(false)
+  const [mostrarEnvioMail, setMostrarEnvioMail] = useState(false)
+  const [emailSeleccionado, setEmailSeleccionado] = useState("")
+  const [enviandoMail, setEnviandoMail] = useState(false)
+  const [resultadoMail, setResultadoMail] = useState<{ ok: boolean; msg: string } | null>(null)
 
   // ─── Cargar facturas cuando cambia la empresa ─────────────────────────────
 
@@ -134,7 +148,7 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
 
   useEffect(() => {
     if (empresaId) cargarFacturas(empresaId)
-    else setFacturas([])
+    else { setFacturas([]); setSeleccionadas(new Set()) }
   }, [empresaId, cargarFacturas])
 
   // ─── Cálculos ─────────────────────────────────────────────────────────────
@@ -220,7 +234,7 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
 
       const data = await res.json()
       setReciboCreado(data)
-      setPaso(5)
+      setPaso(4)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error desconocido")
     } finally {
@@ -243,18 +257,84 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
     }
   }
 
+  async function abrirEnvioMail() {
+    setMostrarEnvioMail(true)
+    setResultadoMail(null)
+    setEmailSeleccionado("")
+    if (contactosEmail.length === 0) {
+      setLoadingContactos(true)
+      try {
+        const res = await fetch(`/api/empresas/${empresaId}/contactos-email`)
+        if (res.ok) {
+          const data: ContactoEmail[] = await res.json()
+          setContactosEmail(data)
+          if (data.length === 1) setEmailSeleccionado(data[0].email)
+        }
+      } catch {
+        // silencioso — el usuario puede tipear manualmente
+      } finally {
+        setLoadingContactos(false)
+      }
+    } else {
+      if (contactosEmail.length === 1) setEmailSeleccionado(contactosEmail[0].email)
+    }
+  }
+
+  async function enviarPorMail() {
+    if (!reciboCreado || !emailSeleccionado) return
+    setEnviandoMail(true)
+    setResultadoMail(null)
+    try {
+      const res = await fetch(`/api/recibos-cobranza/${reciboCreado.id}/enviar-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emailDestino: emailSeleccionado }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setResultadoMail({ ok: true, msg: `Email enviado a ${data.emailDestino}` })
+      } else {
+        setResultadoMail({ ok: false, msg: data.error ?? "No se pudo enviar el email" })
+      }
+    } catch {
+      setResultadoMail({ ok: false, msg: "Error de conexión" })
+    } finally {
+      setEnviandoMail(false)
+    }
+  }
+
+  function resetForm() {
+    setEmpresaId("")
+    setFacturas([])
+    setSeleccionadas(new Set())
+    setRetGanancias("")
+    setRetIIBB("")
+    setRetSUSS("")
+    setMedios([{ tipo: "TRANSFERENCIA", monto: "", cuentaId: "", fechaTransferencia: todayIso() }])
+    setFecha(todayIso())
+    setReciboCreado(null)
+    setError(null)
+    setContactosEmail([])
+    setMostrarEnvioMail(false)
+    setResultadoMail(null)
+    setEmailSeleccionado("")
+    setPaso(1)
+  }
+
   // ─── Renderizado por paso ─────────────────────────────────────────────────
 
   const empresaItem = empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: e.cuit }))
+  const empresa = empresas.find((e) => e.id === empresaId)
 
-  // Paso 1: Seleccionar empresa
+  // Paso 1: Seleccionar empresa + facturas (en la misma pantalla)
   if (paso === 1) {
     return (
-      <div className="max-w-lg mx-auto mt-8">
-        <h1 className="text-2xl font-bold mb-6">Nuevo Recibo de Cobranza</h1>
+      <div className="max-w-3xl mx-auto mt-8 space-y-6">
+        <h1 className="text-2xl font-bold">Nuevo Recibo de Cobranza</h1>
+
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Paso 1 — Seleccionar empresa</CardTitle>
+            <CardTitle className="text-base">Paso 1 — Seleccionar empresa y facturas</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
@@ -266,7 +346,84 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
                 placeholder="Buscar empresa..."
               />
             </div>
-            <Button disabled={!empresaId} onClick={() => setPaso(2)}>
+
+            {/* Facturas pendientes — se muestran automáticamente al seleccionar empresa */}
+            {empresaId && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Facturas pendientes de cobro
+                  </p>
+                  {facturas.length > 0 && (
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={seleccionarTodas}>
+                        Todas
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={deseleccionarTodas}>
+                        Ninguna
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {loadingFacturas ? (
+                  <p className="text-muted-foreground text-sm">Cargando facturas...</p>
+                ) : errorFacturas ? (
+                  <p className="text-destructive text-sm">{errorFacturas}</p>
+                ) : facturas.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    Esta empresa no tiene facturas pendientes de cobro.
+                  </p>
+                ) : (
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-2 pr-3 w-8"></th>
+                        <th className="text-left py-2 pr-3">Fecha</th>
+                        <th className="text-left py-2 pr-3">Tipo</th>
+                        <th className="text-left py-2 pr-3">Nro. Comprobante</th>
+                        <th className="text-right py-2">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {facturas.map((f) => (
+                        <tr
+                          key={f.id}
+                          className="border-b hover:bg-muted/40 cursor-pointer"
+                          onClick={() => toggleFactura(f.id)}
+                        >
+                          <td className="py-2 pr-3">
+                            <input
+                              type="checkbox"
+                              checked={seleccionadas.has(f.id)}
+                              onChange={() => toggleFactura(f.id)}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </td>
+                          <td className="py-2 pr-3">{fmtFecha(f.emitidaEn)}</td>
+                          <td className="py-2 pr-3">{tipoCbteLabel(f.tipoCbte)}</td>
+                          <td className="py-2 pr-3">{f.nroComprobante ?? "—"}</td>
+                          <td className="py-2 text-right font-mono">{fmt(f.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan={4} className="py-2 font-semibold">
+                          {seleccionadas.size} factura(s) seleccionada(s)
+                        </td>
+                        <td className="py-2 text-right font-bold font-mono">{fmt(totalComprobantes)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                )}
+              </div>
+            )}
+
+            <Button
+              disabled={!empresaId || seleccionadas.size === 0}
+              onClick={() => setPaso(2)}
+            >
               Siguiente
             </Button>
           </CardContent>
@@ -275,106 +432,23 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
     )
   }
 
-  // Paso 2: Seleccionar facturas
+  // Paso 2: Retenciones y medios de pago
   if (paso === 2) {
-    const empresa = empresas.find((e) => e.id === empresaId)
-    return (
-      <div className="max-w-3xl mx-auto mt-8">
-        <h1 className="text-2xl font-bold mb-2">Nuevo Recibo de Cobranza</h1>
-        <p className="text-muted-foreground mb-6">
-          Empresa: <span className="font-semibold">{empresa?.razonSocial}</span>
-        </p>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">Paso 2 — Facturas pendientes</CardTitle>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={seleccionarTodas}>
-                Todas
-              </Button>
-              <Button variant="outline" size="sm" onClick={deseleccionarTodas}>
-                Ninguna
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {loadingFacturas ? (
-              <p className="text-muted-foreground text-sm">Cargando facturas...</p>
-            ) : errorFacturas ? (
-              <p className="text-destructive text-sm">{errorFacturas}</p>
-            ) : facturas.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No hay facturas pendientes para esta empresa.</p>
-            ) : (
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-2 pr-3 w-8"></th>
-                    <th className="text-left py-2 pr-3">Fecha</th>
-                    <th className="text-left py-2 pr-3">Tipo</th>
-                    <th className="text-left py-2 pr-3">Nro. Comprobante</th>
-                    <th className="text-right py-2">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {facturas.map((f) => (
-                    <tr
-                      key={f.id}
-                      className="border-b hover:bg-muted/40 cursor-pointer"
-                      onClick={() => toggleFactura(f.id)}
-                    >
-                      <td className="py-2 pr-3">
-                        <input
-                          type="checkbox"
-                          checked={seleccionadas.has(f.id)}
-                          onChange={() => toggleFactura(f.id)}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </td>
-                      <td className="py-2 pr-3">{fmtFecha(f.emitidaEn)}</td>
-                      <td className="py-2 pr-3">{tipoCbteLabel(f.tipoCbte)}</td>
-                      <td className="py-2 pr-3">{f.nroComprobante ?? "—"}</td>
-                      <td className="py-2 text-right font-mono">{fmt(f.total)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={4} className="py-2 font-semibold">
-                      {seleccionadas.size} factura(s) seleccionada(s)
-                    </td>
-                    <td className="py-2 text-right font-bold font-mono">{fmt(totalComprobantes)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            )}
-
-            <div className="flex gap-3 mt-4">
-              <Button variant="outline" onClick={() => setPaso(1)}>
-                Atrás
-              </Button>
-              <Button disabled={seleccionadas.size === 0} onClick={() => setPaso(3)}>
-                Siguiente
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  // Paso 3: Retenciones y medios de pago
-  if (paso === 3) {
     const saldoPorCubrir = diferencia
     const diferenciaBien = Math.abs(diferencia) < 0.01
 
     return (
       <div className="max-w-4xl mx-auto mt-8">
-        <h1 className="text-2xl font-bold mb-6">Nuevo Recibo de Cobranza — Paso 3</h1>
+        <h1 className="text-2xl font-bold mb-2">Nuevo Recibo de Cobranza</h1>
+        <p className="text-muted-foreground mb-6">
+          Empresa: <span className="font-semibold">{empresa?.razonSocial}</span>
+        </p>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Panel izquierdo: resumen */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Resumen</CardTitle>
+              <CardTitle className="text-base">Paso 2 — Resumen y retenciones</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex justify-between text-sm">
@@ -598,10 +672,10 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
         </div>
 
         <div className="flex gap-3 mt-6">
-          <Button variant="outline" onClick={() => setPaso(2)}>
+          <Button variant="outline" onClick={() => setPaso(1)}>
             Atrás
           </Button>
-          <Button disabled={!diferenciaBien || seleccionadas.size === 0} onClick={() => setPaso(4)}>
+          <Button disabled={!diferenciaBien || seleccionadas.size === 0} onClick={() => setPaso(3)}>
             Siguiente
           </Button>
         </div>
@@ -609,9 +683,8 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
     )
   }
 
-  // Paso 4: Confirmación
-  if (paso === 4) {
-    const empresa = empresas.find((e) => e.id === empresaId)
+  // Paso 3: Confirmación
+  if (paso === 3) {
     const diferenciaBien = Math.abs(diferencia) < 0.01
 
     return (
@@ -671,7 +744,7 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
         )}
 
         <div className="flex gap-3 mt-6">
-          <Button variant="outline" onClick={() => setPaso(3)} disabled={loading}>
+          <Button variant="outline" onClick={() => setPaso(2)} disabled={loading}>
             Atrás
           </Button>
           <Button onClick={handleEmitir} disabled={loading || !diferenciaBien}>
@@ -682,39 +755,107 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
     )
   }
 
-  // Paso 5: Éxito
-  if (paso === 5 && reciboCreado) {
+  // Paso 4: Éxito
+  if (paso === 4 && reciboCreado) {
     return (
       <div className="max-w-lg mx-auto mt-8 text-center space-y-6">
         <div className="text-5xl">✓</div>
         <h1 className="text-2xl font-bold">Recibo emitido</h1>
         <p className="text-muted-foreground">
-          Recibo Nro <span className="font-mono font-semibold">0001-{String(reciboCreado.nro).padStart(8, "0")}</span> creado correctamente.
+          Recibo Nro{" "}
+          <span className="font-mono font-semibold">
+            0001-{String(reciboCreado.nro).padStart(8, "0")}
+          </span>{" "}
+          creado correctamente.
         </p>
         <div className="flex flex-col gap-3 items-center">
           <Button onClick={verPDF} disabled={loadingPDF} className="w-48">
             {loadingPDF ? "Cargando..." : "Ver PDF"}
           </Button>
-          <Button variant="outline" onClick={() => router.push("/empresas/recibos")} className="w-48">
-            Volver
-          </Button>
+
+          {/* Enviar por mail */}
+          {!mostrarEnvioMail ? (
+            <Button variant="outline" onClick={abrirEnvioMail} className="w-48">
+              Enviar por mail
+            </Button>
+          ) : (
+            <div className="w-full max-w-sm border rounded-md p-4 space-y-3 text-left">
+              <p className="text-sm font-medium">Enviar recibo por email</p>
+              {loadingContactos ? (
+                <p className="text-xs text-muted-foreground">Cargando contactos...</p>
+              ) : contactosEmail.length > 0 ? (
+                <div className="space-y-2">
+                  <Label className="text-xs">Destinatario</Label>
+                  <select
+                    value={emailSeleccionado}
+                    onChange={(e) => setEmailSeleccionado(e.target.value)}
+                    className="h-8 w-full rounded-md border bg-background px-2 text-sm"
+                  >
+                    <option value="">Seleccionar contacto...</option>
+                    {contactosEmail.map((c) => (
+                      <option key={c.id} value={c.email}>
+                        {c.nombre ? `${c.nombre} <${c.email}>` : c.email}
+                      </option>
+                    ))}
+                  </select>
+                  <Input
+                    type="email"
+                    value={emailSeleccionado}
+                    onChange={(e) => setEmailSeleccionado(e.target.value)}
+                    placeholder="o escribir email manualmente..."
+                    className="h-8 text-sm"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <Label className="text-xs">Email destinatario</Label>
+                  <Input
+                    type="email"
+                    value={emailSeleccionado}
+                    onChange={(e) => setEmailSeleccionado(e.target.value)}
+                    placeholder="nombre@empresa.com"
+                    className="h-8 text-sm"
+                  />
+                </div>
+              )}
+
+              {resultadoMail && (
+                <p
+                  className={`text-xs ${
+                    resultadoMail.ok ? "text-green-700" : "text-destructive"
+                  }`}
+                >
+                  {resultadoMail.msg}
+                </p>
+              )}
+
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={enviarPorMail}
+                  disabled={enviandoMail || !emailSeleccionado}
+                >
+                  {enviandoMail ? "Enviando..." : "Enviar"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setMostrarEnvioMail(false)}
+                >
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
+
           <Button
-            variant="ghost"
-            onClick={() => {
-              setEmpresaId("")
-              setFacturas([])
-              setSeleccionadas(new Set())
-              setRetGanancias("")
-              setRetIIBB("")
-              setRetSUSS("")
-              setMedios([{ tipo: "TRANSFERENCIA", monto: "", cuentaId: "", fechaTransferencia: todayIso() }])
-              setFecha(todayIso())
-              setReciboCreado(null)
-              setError(null)
-              setPaso(1)
-            }}
+            variant="outline"
+            onClick={() => router.push("/empresas/recibos")}
             className="w-48"
           >
+            Volver
+          </Button>
+          <Button variant="ghost" onClick={resetForm} className="w-48">
             Nuevo recibo
           </Button>
         </div>

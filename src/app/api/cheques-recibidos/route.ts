@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
         include: {
           empresa: { select: { id: true, razonSocial: true } },
           factura: { select: { id: true, nroComprobante: true, tipoCbte: true } },
+          reciboCobranza: { select: { id: true, nro: true } },
           cuentaDeposito: { select: { id: true, nombre: true } },
           endosadoAFletero: { select: { id: true, razonSocial: true } },
           endosadoAProveedor: { select: { id: true, razonSocial: true } },

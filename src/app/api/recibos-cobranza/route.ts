@@ -227,9 +227,10 @@ export async function POST(req: NextRequest) {
             monto: m.monto,
             fechaEmision: m.fechaEmision ? new Date(m.fechaEmision) : new Date(fecha),
             fechaCobro: m.fechaPago ? new Date(m.fechaPago) : new Date(fecha),
-            estado: "CARTERA",
+            estado: "EN_CARTERA",
             esElectronico: m.tipo === "ECHEQ",
             operadorId,
+            reciboCobranzaId: recibo.id,
           },
         })
       }
@@ -240,6 +241,25 @@ export async function POST(req: NextRequest) {
       where: { id: { in: facturaIds } },
       data: { reciboId: recibo.id, estadoCobro: "COBRADA" },
     })
+
+    // Crear PagoDeEmpresa por cada factura para impactar la CC de la empresa (Fix 1.7)
+    // Distribuir el total cobrado (medios de pago) proporcionalmente entre facturas
+    const totalFacturasLocal = facturas.reduce((s, f) => s + f.total, 0)
+    for (const f of facturas) {
+      const proporcion = totalFacturasLocal > 0 ? f.total / totalFacturasLocal : 1 / facturas.length
+      const montoAplicado = Math.round(totalCobrado * proporcion * 100) / 100
+      await tx.pagoDeEmpresa.create({
+        data: {
+          empresaId,
+          facturaId: f.id,
+          tipoPago: "RECIBO_COBRANZA",
+          monto: montoAplicado,
+          referencia: `Recibo ${String(recibo.ptoVenta).padStart(4, "0")}-${String(nro).padStart(8, "0")}`,
+          fechaPago: new Date(fecha),
+          operadorId,
+        },
+      })
+    }
 
     return recibo
   })

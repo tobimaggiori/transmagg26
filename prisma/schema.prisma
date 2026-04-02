@@ -587,9 +587,11 @@ model ChequeRecibido {
   creadoEn            DateTime        @default(now()) @map("creado_en")
   // false = cheque físico recibido de empresa cliente; true = ECheq electrónico recibido
   esElectronico       Boolean         @default(false) @map("es_electronico")
+  reciboCobranzaId    String?         @map("recibo_cobranza_id")
 
   empresa               Empresa             @relation(fields: [empresaId], references: [id])
   factura               FacturaEmitida?     @relation(fields: [facturaId], references: [id], onDelete: SetNull)
+  reciboCobranza        ReciboCobranza?     @relation("ChequesRecibo", fields: [reciboCobranzaId], references: [id], onDelete: SetNull)
   cuentaDeposito        Cuenta?             @relation("CuentaDepositaChequeRecibido", fields: [cuentaDepositoId], references: [id], onDelete: SetNull)
   endosadoAFletero      Fletero?            @relation("FleteroEndosoChequeRecibido", fields: [endosadoAFleteroId], references: [id], onDelete: SetNull)
   endosadoAProveedor    Proveedor?          @relation("ProveedorEndosoChequeRecibido", fields: [endosadoAProveedorId], references: [id], onDelete: SetNull)
@@ -1231,10 +1233,11 @@ model ReciboCobranza {
   operadorId         String    @map("operador_id")
   creadoEn           DateTime  @default(now()) @map("creado_en")
 
-  empresa     Empresa           @relation(fields: [empresaId], references: [id])
-  operador    Usuario           @relation("OperadorRecibo", fields: [operadorId], references: [id])
-  facturas    FacturaEmitida[]  @relation("FacturasRecibo")
-  mediosPago  MedioPagoRecibo[]
+  empresa           Empresa           @relation(fields: [empresaId], references: [id])
+  operador          Usuario           @relation("OperadorRecibo", fields: [operadorId], references: [id])
+  facturas          FacturaEmitida[]  @relation("FacturasRecibo")
+  mediosPago        MedioPagoRecibo[]
+  chequesRecibidos  ChequeRecibido[]  @relation("ChequesRecibo")
 
   @@map("recibos_cobranza")
 }

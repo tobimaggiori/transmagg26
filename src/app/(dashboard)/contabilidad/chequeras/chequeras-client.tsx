@@ -48,6 +48,7 @@ interface ChequeRecibido {
   fechaDepositoBroker: string | null
   empresa: { id: string; razonSocial: string }
   factura: { id: string; nroComprobante: string; tipoCbte: string } | null
+  reciboCobranza: { id: string; nro: number } | null
   endosadoAFletero: { id: string; razonSocial: string } | null
   endosadoAProveedor: { id: string; razonSocial: string } | null
   endosadoABroker: { id: string; nombre: string } | null
@@ -820,9 +821,9 @@ function TabRecibidos() {
                 <th className="text-left px-3 py-2">Nro. Cheque</th>
                 <th className="text-left px-3 py-2">Banco</th>
                 <th className="text-left px-3 py-2">Empresa</th>
-                <th className="text-left px-3 py-2">Factura</th>
+                <th className="text-left px-3 py-2">Origen</th>
                 <th className="text-right px-3 py-2">Monto</th>
-                <th className="text-left px-3 py-2">F. Cobro</th>
+                <th className="text-left px-3 py-2">F. Pago</th>
                 <th className="text-left px-3 py-2">Estado</th>
                 <th className="text-left px-3 py-2">Destino</th>
                 <th className="text-left px-3 py-2"></th>
@@ -845,9 +846,18 @@ function TabRecibidos() {
                     <td className="px-3 py-2 text-xs">{c.bancoEmisor}</td>
                     <td className="px-3 py-2">{c.empresa.razonSocial}</td>
                     <td className="px-3 py-2 text-xs">
-                      {c.factura
-                        ? <span className="text-blue-700">{c.factura.tipoCbte} {c.factura.nroComprobante}</span>
-                        : <span className="text-muted-foreground">Sin factura</span>
+                      {c.reciboCobranza
+                        ? (
+                          <a
+                            href={`/empresas/recibos/${c.reciboCobranza.id}`}
+                            className="text-blue-700 underline underline-offset-2 hover:text-blue-900"
+                          >
+                            Ver Recibo {String(c.reciboCobranza.nro).padStart(8, "0")}
+                          </a>
+                        )
+                        : c.factura
+                          ? <span className="text-blue-700">{c.factura.tipoCbte} {c.factura.nroComprobante}</span>
+                          : <span className="text-muted-foreground">—</span>
                       }
                     </td>
                     <td className="px-3 py-2 text-right">{formatearMoneda(c.monto)}</td>
