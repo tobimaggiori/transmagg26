@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
 
     const resultado = cheques.map((c) => ({
       id: c.id,
-      empresa: c.empresa.razonSocial,
+      empresa: c.empresa?.razonSocial ?? "—",
       nroCheque: c.nroCheque,
       bancoEmisor: c.bancoEmisor,
       monto: c.monto,

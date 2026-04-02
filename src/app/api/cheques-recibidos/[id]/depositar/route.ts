@@ -63,7 +63,7 @@ export async function POST(
           categoria: "CHEQUE_DEPOSITADO",
           monto: cheque.monto,
           fecha: fechaDeposito,
-          descripcion: `Depósito cheque ${cheque.nroCheque} — ${cheque.empresa.razonSocial}`,
+          descripcion: `Depósito cheque ${cheque.nroCheque}${cheque.empresa ? ` — ${cheque.empresa.razonSocial}` : ""}`,
           referencia: cheque.nroCheque,
           operadorId,
         },

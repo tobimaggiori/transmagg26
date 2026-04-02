@@ -105,11 +105,11 @@ export async function POST(request: NextRequest) {
 
     const data = parsed.data
     const [empresa, factura] = await Promise.all([
-      prisma.empresa.findUnique({ where: { id: data.empresaId } }),
+      data.empresaId ? prisma.empresa.findUnique({ where: { id: data.empresaId } }) : Promise.resolve(null),
       data.facturaId ? prisma.facturaEmitida.findUnique({ where: { id: data.facturaId } }) : Promise.resolve(null),
     ])
 
-    if (!empresa) return notFoundResponse("Empresa")
+    if (data.empresaId && !empresa) return notFoundResponse("Empresa")
     if (data.facturaId && !factura) return notFoundResponse("Factura")
 
     if (data.estado === "DEPOSITADO" && !data.cuentaDepositoId) {

@@ -29,7 +29,7 @@ interface ChequeEnCartera {
   monto: number
   fechaCobro: string
   esElectronico: boolean
-  empresa: { razonSocial: string }
+  empresa: { razonSocial: string } | null
 }
 interface FacturaPendiente {
   id: string
@@ -560,7 +560,7 @@ export function RegistrarPagoProveedorClient({
                             </span>
                             {c.bancoEmisor} · {c.nroCheque}
                           </td>
-                          <td className="px-3 py-2">{c.empresa.razonSocial}</td>
+                          <td className="px-3 py-2">{c.empresa?.razonSocial ?? "—"}</td>
                           <td className="px-3 py-2 text-right font-medium">{formatearMoneda(c.monto)}</td>
                           <td className="px-3 py-2 text-right text-muted-foreground text-xs">{formatearFecha(c.fechaCobro)}</td>
                         </tr>

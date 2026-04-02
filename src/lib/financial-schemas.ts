@@ -159,7 +159,8 @@ export const crearMovimientoBancarioSchema = z.object({
 export const actualizarMovimientoBancarioSchema = crearMovimientoBancarioSchema.partial()
 
 export const crearChequeRecibidoSchema = z.object({
-  empresaId: z.string().uuid("Empresa inválida"),
+  empresaId: z.string().uuid("Empresa inválida").optional(),
+  brokerOrigenId: z.string().uuid("Broker inválido").optional(),
   facturaId: z.string().uuid("Factura inválida").nullable().optional(),
   nroCheque: z.string().min(1, "El número de cheque es obligatorio"),
   bancoEmisor: z.string().min(1, "El banco emisor es obligatorio"),
