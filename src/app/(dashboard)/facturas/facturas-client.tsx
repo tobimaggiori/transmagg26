@@ -13,6 +13,7 @@ import { calcularTotalesNotaCD, labelTipoNotaCD, labelSubtipoNotaCD } from "@/li
 import { WorkflowNote } from "@/components/workflow/workflow-note"
 import { RegistrarCobroModal } from "@/components/forms/registrar-cobro-form"
 import type { Rol } from "@/types"
+import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -1061,7 +1062,10 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
                                 </div>
                                 <div>
                                   <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Provincia destino</label>
-                                  <input type="text" value={v.provinciaDestinoEdit ?? ""} onChange={(e) => actualizarViaje(v.id, "provinciaDestinoEdit", e.target.value)} className="h-8 w-full rounded border bg-background px-2 text-xs" />
+                                  <select value={v.provinciaDestinoEdit ?? ""} onChange={(e) => actualizarViaje(v.id, "provinciaDestinoEdit", e.target.value)} className="h-8 w-full rounded border bg-background px-2 text-xs">
+                                    <option value="">— Seleccionar —</option>
+                                    {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
+                                  </select>
                                 </div>
                                 <div>
                                   <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Mercadería</label>

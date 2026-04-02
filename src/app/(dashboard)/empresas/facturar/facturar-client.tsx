@@ -11,6 +11,7 @@ import { calcularToneladas, calcularTotalViaje, calcularFactura } from "@/lib/vi
 import { WorkflowNote } from "@/components/workflow/workflow-note"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { viajeEsFacturable, razonNoFacturable } from "@/lib/facturacion"
+import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -530,7 +531,10 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
                                 </div>
                                 <div>
                                   <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Provincia destino</label>
-                                  <input type="text" value={v.provinciaDestinoEdit ?? ""} onChange={(e) => actualizarViaje(v.id, "provinciaDestinoEdit", e.target.value)} className="h-8 w-full rounded border bg-background px-2 text-xs" />
+                                  <select value={v.provinciaDestinoEdit ?? ""} onChange={(e) => actualizarViaje(v.id, "provinciaDestinoEdit", e.target.value)} className="h-8 w-full rounded border bg-background px-2 text-xs">
+                                    <option value="">— Seleccionar —</option>
+                                    {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
+                                  </select>
                                 </div>
                                 <div>
                                   <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Mercadería</label>

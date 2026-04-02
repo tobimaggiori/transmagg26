@@ -10,6 +10,7 @@ import Link from "next/link"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
 import { labelCondicionIva, formatearNroComprobante } from "@/lib/liquidacion-utils"
+import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 import { WorkflowNote } from "@/components/workflow/workflow-note"
 import type { Rol } from "@/types"
 
@@ -130,7 +131,10 @@ function ModalEditarViaje({
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Prov. Destino</label>
-            <input type="text" value={form.provinciaDestinoEdit ?? ""} onChange={(e) => set("provinciaDestinoEdit", e.target.value)} className="h-9 w-full rounded border bg-background px-2 text-sm" />
+            <select value={form.provinciaDestinoEdit ?? ""} onChange={(e) => set("provinciaDestinoEdit", e.target.value)} className="h-9 w-full rounded border bg-background px-2 text-sm">
+              <option value="">— Seleccionar —</option>
+              {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Kilos</label>
@@ -250,7 +254,7 @@ function ModalPreviewLiquidacion({
                     <td className="px-1 py-1"><input type="text" value={v.procedenciaEdit ?? ""} onChange={(e) => actualizarCelda(v.id, "procedenciaEdit", e.target.value)} className="h-7 w-28 rounded border bg-background px-1 text-xs" /></td>
                     <td className="px-1 py-1"><input type="text" value={v.origenEdit ?? ""} onChange={(e) => actualizarCelda(v.id, "origenEdit", e.target.value)} className="h-7 w-28 rounded border bg-background px-1 text-xs" /></td>
                     <td className="px-1 py-1"><input type="text" value={v.destinoEdit ?? ""} onChange={(e) => actualizarCelda(v.id, "destinoEdit", e.target.value)} className="h-7 w-28 rounded border bg-background px-1 text-xs" /></td>
-                    <td className="px-1 py-1"><input type="text" value={v.provinciaDestinoEdit ?? ""} onChange={(e) => actualizarCelda(v.id, "provinciaDestinoEdit", e.target.value)} className="h-7 w-28 rounded border bg-background px-1 text-xs" /></td>
+                    <td className="px-1 py-1"><select value={v.provinciaDestinoEdit ?? ""} onChange={(e) => actualizarCelda(v.id, "provinciaDestinoEdit", e.target.value)} className="h-7 w-28 rounded border bg-background px-1 text-xs"><option value="">—</option>{PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}</select></td>
                     <td className="px-1 py-1"><input type="number" value={v.kilosEdit ?? v.kilos ?? ""} onChange={(e) => actualizarCelda(v.id, "kilosEdit", parseFloat(e.target.value) || undefined)} min="0" step="1" className="h-7 w-24 text-right rounded border bg-background px-1 text-xs" /></td>
                     <td className="px-1 py-1"><input type="number" value={v.tarifaEdit ?? v.tarifaOperativaInicial} onChange={(e) => actualizarCelda(v.id, "tarifaEdit", parseFloat(e.target.value) || v.tarifaOperativaInicial)} min="0" step="0.01" className="h-7 w-28 text-right rounded border bg-background px-1 text-xs" /></td>
                     <td className="px-2 py-1 text-right text-muted-foreground text-xs">{ton?.toLocaleString("es-AR") ?? "-"}</td>
