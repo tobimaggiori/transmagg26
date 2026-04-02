@@ -34,7 +34,7 @@ export default async function FleterosLiquidacionesPage() {
   const fleteros = esInterno
     ? await prisma.fletero.findMany({
         where: { activo: true },
-        select: { id: true, razonSocial: true },
+        select: { id: true, razonSocial: true, cuit: true },
         orderBy: { razonSocial: "asc" },
       })
     : []

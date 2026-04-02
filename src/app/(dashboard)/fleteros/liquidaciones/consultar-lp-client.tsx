@@ -5,16 +5,20 @@
  * Filtros por fletero, estado y período → tabla con detalle y modal de pago.
  */
 
-import React, { useState, useCallback, useEffect, Fragment } from "react"
+import React, { useState, useCallback, useEffect, Fragment, useMemo } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas } from "@/lib/viajes"
 import { formatearNroComprobante } from "@/lib/liquidacion-utils"
 import { SelectContactoEmail } from "@/components/forms/select-contacto-email"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Check, ChevronsUpDown } from "lucide-react"
+import { cn } from "@/lib/utils"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type Fletero = { id: string; razonSocial: string }
+type Fletero = { id: string; razonSocial: string; cuit: string }
 
 type ViajeEnLiquidacion = {
   id: string
@@ -75,6 +79,64 @@ function EstadoBadge({ estado }: { estado: string }) {
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilos[estado] ?? "bg-gray-100 text-gray-800"}`}>
       {labels[estado] ?? estado}
     </span>
+  )
+}
+
+// ─── Combobox Fletero ────────────────────────────────────────────────────────
+
+function ComboboxFletero({ fleteros, value, onChange }: { fleteros: Fletero[]; value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [busqueda, setBusqueda] = useState("")
+
+  const filtrados = useMemo(() => {
+    if (!busqueda) return fleteros
+    const q = busqueda.toLowerCase()
+    const qDigits = busqueda.replace(/\D/g, "")
+    return fleteros.filter(
+      (f) => f.razonSocial.toLowerCase().includes(q) || (qDigits && f.cuit.replace(/\D/g, "").includes(qDigits))
+    )
+  }, [fleteros, busqueda])
+
+  const seleccionado = fleteros.find((f) => f.id === value)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        className="flex h-9 w-full items-center justify-between rounded-md border bg-background px-2 text-sm"
+      >
+        <span className="truncate">{seleccionado ? seleccionado.razonSocial : "Todos los fleteros"}</span>
+        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+      </PopoverTrigger>
+      <PopoverContent className="w-[320px] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput placeholder="Buscar por razón social o CUIT..." value={busqueda} onValueChange={setBusqueda} />
+          <CommandList>
+            <CommandEmpty>No se encontraron fleteros.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                onSelect={() => { onChange(""); setOpen(false); setBusqueda("") }}
+              >
+                <Check className={cn("mr-2 h-4 w-4", value === "" ? "opacity-100" : "opacity-0")} />
+                Todos los fleteros
+              </CommandItem>
+              {filtrados.map((f) => (
+                <CommandItem
+                  key={f.id}
+                  value={f.id}
+                  onSelect={() => { onChange(f.id); setOpen(false); setBusqueda("") }}
+                >
+                  <Check className={cn("mr-2 h-4 w-4", value === f.id ? "opacity-100" : "opacity-0")} />
+                  <div>
+                    <p className="font-medium">{f.razonSocial}</p>
+                    <p className="text-xs text-muted-foreground">CUIT: {f.cuit}</p>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -457,14 +519,11 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
         {esInterno && (
           <div className="flex flex-col gap-1 min-w-[220px]">
             <label className="text-xs font-medium text-muted-foreground">Fletero</label>
-            <select
+            <ComboboxFletero
+              fleteros={fleteros}
               value={fleteroId}
-              onChange={(e) => setFleteroId(e.target.value)}
-              className="h-9 rounded-md border bg-background px-2 text-sm"
-            >
-              <option value="">Todos los fleteros</option>
-              {fleteros.map((f) => <option key={f.id} value={f.id}>{f.razonSocial}</option>)}
-            </select>
+              onChange={setFleteroId}
+            />
           </div>
         )}
         <div className="flex flex-col gap-1 min-w-[160px]">
