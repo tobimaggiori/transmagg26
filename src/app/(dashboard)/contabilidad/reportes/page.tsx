@@ -1,0 +1,79 @@
+/**
+ * Propósito: Landing de Reportes Contables (ruta /contabilidad/reportes).
+ * Muestra accesos directos a los distintos reportes disponibles.
+ */
+
+import { auth } from "@/lib/auth"
+import { redirect } from "next/navigation"
+import { puedeAcceder } from "@/lib/permissions"
+import { ActionCard } from "@/components/ui/action-card"
+import type { Rol } from "@/types"
+
+export default async function ReportesPage() {
+  const session = await auth()
+  if (!session?.user) redirect("/login")
+
+  const rol = (session.user.rol ?? "OPERADOR_TRANSMAGG") as Rol
+  if (!puedeAcceder(rol, "cuentas")) redirect("/dashboard")
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">Reportes Contables</h2>
+        <p className="text-muted-foreground">Seleccioná un reporte para continuar</p>
+      </div>
+      <div className="grid grid-cols-3 gap-6 max-w-4xl">
+        <ActionCard
+          title="LIBRO"
+          subtitle="IVA"
+          href="/contabilidad/iva"
+        />
+        <ActionCard
+          title="LIBRO"
+          subtitle="IIBB"
+          href="/contabilidad/iibb"
+        />
+        <ActionCard
+          title="LIBRO"
+          subtitle="GASTOS"
+          href="/contabilidad/gastos"
+        />
+        <ActionCard
+          title="MOVIMIENTOS"
+          subtitle="BANCARIOS"
+          href="/contabilidad/movimientos"
+        />
+        <ActionCard
+          title="LP VS"
+          subtitle="FACTURAS"
+          href="/contabilidad/lp-vs-facturas"
+        />
+        <ActionCard
+          title="VIAJES"
+          subtitle="SIN LP"
+          href="/contabilidad/viajes-sin-lp"
+        />
+        <ActionCard
+          title="NOTAS"
+          subtitle="C/D"
+          href="/contabilidad/notas-credito-debito"
+        />
+        <ActionCard
+          title="CUENTAS"
+          subtitle="BANCARIAS"
+          href="/contabilidad/cuentas"
+        />
+        <ActionCard
+          title="CHEQUERAS"
+          subtitle="Y CHEQUES"
+          href="/contabilidad/chequeras"
+        />
+        <ActionCard
+          title="TARJETAS"
+          subtitle="PREPAGAS"
+          href="/contabilidad/tarjetas"
+        />
+      </div>
+    </div>
+  )
+}

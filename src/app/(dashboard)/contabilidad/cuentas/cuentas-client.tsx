@@ -109,6 +109,7 @@ interface CuentasClientProps {
   cuentaInicialId?: string
   tabInicial?: string
   esAdmin?: boolean
+  filtroTipo?: string
 }
 
 const CATEGORIAS = [
@@ -937,7 +938,6 @@ function TabConfiguracion({ cuenta, onCuentaActualizada }: { cuenta: Cuenta; onC
         <div className="grid grid-cols-2 gap-2">
           {[
             { key: "tieneChequera", label: "Tiene chequera" },
-            { key: "tienePlanillaEmisionMasiva", label: "Planilla emisión masiva" },
             { key: "tieneCuentaRemunerada", label: "Cuenta remunerada (FCI)" },
             { key: "tieneTarjetasPrepagasChoferes", label: "Tarjetas prepagas" },
           ].map(({ key, label }) => (
@@ -993,7 +993,7 @@ function TabConfiguracion({ cuenta, onCuentaActualizada }: { cuenta: Cuenta; onC
  * <CuentasClient cuentaInicialId="xxx" esAdmin /> // cuenta pre-seleccionada con botones de admin
  * <CuentasClient cuentaInicialId="xxx" tabInicial="resumenes-bancarios" /> // tab pre-seleccionado
  */
-export function CuentasClient({ cuentaInicialId, tabInicial, esAdmin = false }: CuentasClientProps) {
+export function CuentasClient({ cuentaInicialId, tabInicial, esAdmin = false, filtroTipo }: CuentasClientProps) {
   const router = useRouter()
   const [cuentas, setCuentas] = useState<Cuenta[]>([])
   const [loading, setLoading] = useState(true)
@@ -1001,7 +1001,7 @@ export function CuentasClient({ cuentaInicialId, tabInicial, esAdmin = false }: 
   const [tabActivo, setTabActivo] = useState<TabId>((tabInicial as TabId) ?? "movimientos")
   const [modalNuevaCuenta, setModalNuevaCuenta] = useState(false)
   const [formCuenta, setFormCuenta] = useState({
-    nombre: "", tipo: "BANCO", bancoOEntidad: "", moneda: "PESOS",
+    nombre: "", tipo: filtroTipo ?? "BANCO", bancoOEntidad: "", moneda: "PESOS",
     saldoInicial: "0", activa: true, tieneImpuestoDebcred: false, alicuotaImpuesto: "0.006",
     tieneChequera: false, tienePlanillaEmisionMasiva: false, tieneCuentaRemunerada: false,
     tieneTarjetasPrepagasChoferes: false,
@@ -1020,16 +1020,20 @@ export function CuentasClient({ cuentaInicialId, tabInicial, esAdmin = false }: 
 
   const cuenta = cuentas.find(c => c.id === cuentaSeleccionada)
 
+  const baseUrl = filtroTipo
+    ? `/contabilidad/cuentas/${filtroTipo.toLowerCase()}s`
+    : "/contabilidad/cuentas"
+
   function seleccionarCuenta(id: string) {
     setCuentaSeleccionada(id)
     setTabActivo("movimientos")
-    router.push(`/contabilidad/cuentas?cuenta=${id}`, { scroll: false })
+    router.push(`${baseUrl}?cuenta=${id}`, { scroll: false })
   }
 
   function seleccionarTab(tab: TabId) {
     setTabActivo(tab)
     if (cuentaSeleccionada) {
-      router.push(`/contabilidad/cuentas?cuenta=${cuentaSeleccionada}&tab=${tab}`, { scroll: false })
+      router.push(`${baseUrl}?cuenta=${cuentaSeleccionada}&tab=${tab}`, { scroll: false })
     }
   }
 
@@ -1054,8 +1058,8 @@ export function CuentasClient({ cuentaInicialId, tabInicial, esAdmin = false }: 
     const tabs: Array<{ id: TabId; label: string }> = [
       { id: "movimientos", label: "Movimientos" },
       { id: "resumenes-bancarios", label: "Resúmenes" },
-      { id: "broker-pendiente", label: "Broker Pendiente" },
     ]
+    if (c.tipo === "BROKER") tabs.push({ id: "broker-pendiente", label: "Broker Pendiente" })
     if (c.tienePlanillaEmisionMasiva) tabs.push({ id: "planillas-galicia", label: "Planillas Galicia" })
     if (c.tieneCuentaRemunerada) tabs.push({ id: "fci", label: "FCI Propios" })
     if (c.tieneTarjetasPrepagasChoferes) tabs.push({ id: "tarjetas", label: "Tarjetas Prepagas" })
@@ -1067,7 +1071,9 @@ export function CuentasClient({ cuentaInicialId, tabInicial, esAdmin = false }: 
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Cuentas</h2>
+          <h2 className="text-2xl font-bold tracking-tight">
+            {filtroTipo ? `Cuentas — ${filtroTipo.charAt(0) + filtroTipo.slice(1).toLowerCase()}s` : "Cuentas"}
+          </h2>
           <p className="text-muted-foreground">Gestión de cuentas bancarias y financieras</p>
         </div>
         <Button onClick={() => setModalNuevaCuenta(true)}><Plus className="h-4 w-4 mr-1" /> Nueva cuenta</Button>
@@ -1078,7 +1084,7 @@ export function CuentasClient({ cuentaInicialId, tabInicial, esAdmin = false }: 
         <div className="col-span-1 border rounded p-2 space-y-1 overflow-auto">
           {loading ? (
             <p className="text-muted-foreground text-sm p-2">Cargando...</p>
-          ) : cuentas.filter(c => c.activa).map((c) => (
+          ) : cuentas.filter(c => c.activa && (!filtroTipo || c.tipo === filtroTipo)).map((c) => (
             <div
               key={c.id}
               onClick={() => seleccionarCuenta(c.id)}
@@ -1094,7 +1100,7 @@ export function CuentasClient({ cuentaInicialId, tabInicial, esAdmin = false }: 
               <p className="text-xs text-muted-foreground">{c.moneda}</p>
             </div>
           ))}
-          {!loading && cuentas.filter(c => c.activa).length === 0 && (
+          {!loading && cuentas.filter(c => c.activa && (!filtroTipo || c.tipo === filtroTipo)).length === 0 && (
             <p className="text-muted-foreground text-sm p-2">Sin cuentas activas.</p>
           )}
         </div>
@@ -1198,7 +1204,6 @@ export function CuentasClient({ cuentaInicialId, tabInicial, esAdmin = false }: 
             <div className="grid grid-cols-2 gap-2">
               {[
                 { key: "tieneChequera", label: "Tiene chequera" },
-                { key: "tienePlanillaEmisionMasiva", label: "Planilla emisión masiva" },
                 { key: "tieneCuentaRemunerada", label: "Cuenta remunerada (FCI)" },
                 { key: "tieneTarjetasPrepagasChoferes", label: "Tarjetas prepagas" },
               ].map(({ key, label }) => (
