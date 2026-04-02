@@ -125,7 +125,6 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/contabilidad/chequeras", label: "Chequeras",          seccion: "contabilidad.reportes" },
       { href: "/contabilidad/tarjetas",  label: "Tarjetas",           seccion: "contabilidad.reportes" },
       { href: "/contabilidad/cuentas",   label: "Cuentas",            seccion: "contabilidad.reportes" },
-      { href: "/contabilidad/polizas",   label: "Pólizas de Seguro",  seccion: "contabilidad.polizas" },
       { href: "/contabilidad/impuestos", label: "Impuestos",          seccion: "contabilidad.impuestos" },
     ],
   },
