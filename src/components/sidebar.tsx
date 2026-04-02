@@ -119,8 +119,9 @@ const NAV_GROUPS: NavGroup[] = [
     seccion: "cuentas",
     pathPrefix: "/contabilidad",
     items: [
-      { href: "/contabilidad/reportes", label: "Reportes",          seccion: "contabilidad.reportes" },
-      { href: "/contabilidad/polizas",  label: "Pólizas de Seguro", seccion: "contabilidad.polizas" },
+      { href: "/contabilidad/reportes",  label: "Reportes",          seccion: "contabilidad.reportes" },
+      { href: "/contabilidad/polizas",   label: "Pólizas de Seguro", seccion: "contabilidad.polizas" },
+      { href: "/contabilidad/impuestos", label: "Impuestos",          seccion: "contabilidad.impuestos" },
     ],
   },
   {

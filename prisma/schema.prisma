@@ -98,6 +98,8 @@ model Usuario {
   recibosOpera               ReciboCobranza[]         @relation("OperadorRecibo")
   facturasSeguroOpera        FacturaSeguro[]          @relation("OperadorFacturaSeguro")
   permisos                   PermisoUsuario[]
+  pagosImpuesto              PagoImpuesto[]          @relation("OperadorPagoImpuesto")
+  infracciones               Infraccion[]            @relation("OperadorInfracciones")
 
   @@map("usuarios")
 }
@@ -227,6 +229,7 @@ model Camion {
   choferHistorial CamionChofer[]
   viajes          Viaje[]
   polizas         PolizaSeguro[]
+  infracciones    Infraccion[]   @relation("CamionInfracciones")
 
   @@map("camiones")
 }
@@ -267,6 +270,52 @@ model CamionChofer {
   chofer Usuario @relation("ChoferHistorial", fields: [choferId], references: [id])
 
   @@map("camion_chofer")
+}
+
+// ─── PAGOS DE IMPUESTOS ───────────────────────────────────────────────────────
+
+model PagoImpuesto {
+  id                  String    @id @default(uuid())
+  tipoImpuesto        String    @map("tipo_impuesto")
+  descripcion         String?
+  periodo             String
+  monto               Float
+  fechaPago           DateTime  @map("fecha_pago")
+  medioPago           String    @map("medio_pago")
+  cuentaId            String?   @map("cuenta_id")
+  comprobantePdfS3Key String?   @map("comprobante_pdf_s3_key")
+  observaciones       String?
+  operadorId          String    @map("operador_id")
+  creadoEn            DateTime  @default(now()) @map("creado_en")
+
+  cuenta    Cuenta?  @relation("CuentaPagoImpuesto", fields: [cuentaId], references: [id])
+  operador  Usuario  @relation("OperadorPagoImpuesto", fields: [operadorId], references: [id])
+
+  @@map("pagos_impuesto")
+}
+
+// ─── INFRACCIONES ─────────────────────────────────────────────────────────────
+
+model Infraccion {
+  id                  String    @id @default(uuid())
+  camionId            String    @map("camion_id")
+  fecha               DateTime
+  organismo           String
+  descripcion         String
+  monto               Float
+  estado              String    @default("PENDIENTE")
+  fechaPago           DateTime? @map("fecha_pago")
+  medioPago           String?   @map("medio_pago")
+  cuentaId            String?   @map("cuenta_id")
+  comprobantePdfS3Key String?   @map("comprobante_pdf_s3_key")
+  operadorId          String    @map("operador_id")
+  creadoEn            DateTime  @default(now()) @map("creado_en")
+
+  camion    Camion  @relation("CamionInfracciones", fields: [camionId], references: [id])
+  cuenta    Cuenta? @relation("CuentaInfracciones", fields: [cuentaId], references: [id])
+  operador  Usuario @relation("OperadorInfracciones", fields: [operadorId], references: [id])
+
+  @@map("infracciones")
 }
 
 // ─── VIAJES (entidad base) ─────────────────────────────────────────────────────
@@ -480,6 +529,8 @@ model Cuenta {
   pagosAFletero                  PagoAFletero[]       @relation("CuentaPagoAFletero")
   pagosDeEmpresa                 PagoDeEmpresa[]      @relation("CuentaPagoDeEmpresa")
   facturasSeguro                 FacturaSeguro[]      @relation("CuentaFacturaSeguro")
+  pagosImpuesto                  PagoImpuesto[]       @relation("CuentaPagoImpuesto")
+  infracciones                   Infraccion[]         @relation("CuentaInfracciones")
 
   @@map("cuentas")
 }

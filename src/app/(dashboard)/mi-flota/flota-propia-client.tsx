@@ -3,12 +3,14 @@
 /**
  * Componente cliente para la gestión de la flota propia de Transmagg.
  * Solo accesible por roles internos (ADMIN_TRANSMAGG, OPERADOR_TRANSMAGG).
- * ABM completo: camiones, choferes asignados y pólizas de seguro.
+ * ABM completo: camiones, choferes asignados, pólizas de seguro e infracciones.
  */
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Truck, User, UserX, Plus, Pencil, Trash2, ShieldAlert, ShieldCheck, ShieldX, X } from "lucide-react"
+import { formatearMoneda, formatearFecha } from "@/lib/utils"
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -38,6 +40,16 @@ interface Poliza {
   estadoPoliza: "VIGENTE" | "POR_VENCER" | "VENCIDA"
 }
 
+interface InfraccionFlota {
+  id: string
+  fecha: string
+  organismo: string
+  descripcion: string
+  monto: number
+  estado: string
+  comprobantePdfS3Key: string | null
+}
+
 interface CamionPropio {
   id: string
   patenteChasis: string
@@ -48,11 +60,20 @@ interface CamionPropio {
   choferActual: ChoferDisponible | null
   polizas: Poliza[]
   alertaPoliza: "SIN_COBERTURA" | "POR_VENCER" | null
+  infracciones: InfraccionFlota[]
+  infrasPendientes: number
+  montoInfrasPendientes: number
+}
+
+interface CuentaDisponible {
+  id: string
+  nombre: string
 }
 
 interface FlotaPropiaClientProps {
   camiones: CamionPropio[]
   choferes: ChoferDisponible[]
+  cuentas: CuentaDisponible[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -95,6 +116,10 @@ function estadoBadge(estado: Poliza["estadoPoliza"]) {
 
 function fmt(iso: string) {
   return new Date(iso).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })
+}
+
+function todayISO() {
+  return new Date().toISOString().slice(0, 10)
 }
 
 // ── Modales ───────────────────────────────────────────────────────────────────
@@ -140,7 +165,15 @@ function ModalCamion({
           })
       const data = await res.json()
       if (!res.ok) { setError(data.error ?? "Error"); return }
-      onSaved({ ...data, choferActual: camion?.choferActual ?? null, polizas: camion?.polizas ?? [], alertaPoliza: camion?.alertaPoliza ?? "SIN_COBERTURA" })
+      onSaved({
+        ...data,
+        choferActual: camion?.choferActual ?? null,
+        polizas: camion?.polizas ?? [],
+        alertaPoliza: camion?.alertaPoliza ?? "SIN_COBERTURA",
+        infracciones: camion?.infracciones ?? [],
+        infrasPendientes: camion?.infrasPendientes ?? 0,
+        montoInfrasPendientes: camion?.montoInfrasPendientes ?? 0,
+      })
     } catch {
       setError("Error de red")
     } finally {
@@ -274,27 +307,287 @@ function ModalAsignarChofer({
   )
 }
 
+function ModalNuevaInfraccion({
+  camionId,
+  onClose,
+  onSaved,
+}: {
+  camionId: string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [fecha, setFecha] = useState(todayISO())
+  const [organismo, setOrganismo] = useState("")
+  const [descripcion, setDescripcion] = useState("")
+  const [monto, setMonto] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    setError("")
+    try {
+      const res = await fetch("/api/mi-flota/infracciones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ camionId, fecha, organismo, descripcion, monto: parseFloat(monto) }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error ?? "Error"); return }
+      onSaved()
+    } catch {
+      setError("Error de red")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-lg">Nueva infracción</h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-sm font-medium">Fecha *</label>
+            <input
+              type="date"
+              className="mt-1 w-full border rounded px-3 py-2 text-sm"
+              value={fecha}
+              onChange={(e) => setFecha(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Organismo *</label>
+            <input
+              className="mt-1 w-full border rounded px-3 py-2 text-sm"
+              value={organismo}
+              onChange={(e) => setOrganismo(e.target.value)}
+              placeholder="Ej: Municipalidad de Rosario"
+              required
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Descripción *</label>
+            <textarea
+              className="mt-1 w-full border rounded px-3 py-2 text-sm resize-none"
+              rows={2}
+              value={descripcion}
+              onChange={(e) => setDescripcion(e.target.value)}
+              placeholder="Ej: Exceso de velocidad"
+              required
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Monto *</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              className="mt-1 w-full border rounded px-3 py-2 text-sm"
+              value={monto}
+              onChange={(e) => setMonto(e.target.value)}
+              placeholder="0.00"
+              required
+            />
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm border rounded hover:bg-gray-50">Cancelar</button>
+            <button type="submit" disabled={loading} className="px-4 py-2 text-sm bg-black text-white rounded hover:bg-gray-800 disabled:opacity-50">
+              {loading ? "Guardando..." : "Registrar"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function ModalPagoInfraccion({
+  infraccion,
+  cuentas,
+  onClose,
+  onSaved,
+}: {
+  infraccion: InfraccionFlota
+  cuentas: CuentaDisponible[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [medioPago, setMedioPago] = useState("TRANSFERENCIA")
+  const [cuentaId, setCuentaId] = useState("")
+  const [fechaPago, setFechaPago] = useState(todayISO())
+  const [comprobante, setComprobante] = useState<File | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
+
+  const mostrarCuenta = medioPago === "TRANSFERENCIA"
+  const mostrarComprobante = medioPago === "TRANSFERENCIA"
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    setError("")
+    try {
+      let comprobantePdfS3Key: string | undefined
+      if (comprobante && mostrarComprobante) {
+        const fd = new FormData()
+        fd.append("file", comprobante)
+        fd.append("prefijo", "comprobantes-infracciones")
+        const upRes = await fetch("/api/storage/upload", { method: "POST", body: fd })
+        if (!upRes.ok) {
+          const d = await upRes.json()
+          setError(d.error ?? "Error al subir comprobante")
+          return
+        }
+        const upData = await upRes.json()
+        comprobantePdfS3Key = upData.key
+      }
+
+      const res = await fetch(`/api/mi-flota/infracciones/${infraccion.id}/pagar`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          medioPago,
+          cuentaId: mostrarCuenta && cuentaId ? cuentaId : undefined,
+          fechaPago,
+          comprobantePdfS3Key,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error ?? "Error"); return }
+      onSaved()
+    } catch {
+      setError("Error de red")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-lg">Registrar pago de infracción</h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+        </div>
+
+        {/* Detalles de la infracción */}
+        <div className="mb-4 p-3 bg-gray-50 rounded text-sm space-y-1">
+          <p><span className="text-muted-foreground">Organismo:</span> <strong>{infraccion.organismo}</strong></p>
+          <p><span className="text-muted-foreground">Descripción:</span> {infraccion.descripcion}</p>
+          <p><span className="text-muted-foreground">Monto:</span> <strong>{formatearMoneda(infraccion.monto)}</strong></p>
+          <p><span className="text-muted-foreground">Fecha infracción:</span> {formatearFecha(infraccion.fecha)}</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-sm font-medium">Medio de pago *</label>
+            <select
+              className="mt-1 w-full border rounded px-3 py-2 text-sm"
+              value={medioPago}
+              onChange={(e) => setMedioPago(e.target.value)}
+              required
+            >
+              <option value="TRANSFERENCIA">Transferencia</option>
+              <option value="EFECTIVO">Efectivo</option>
+              <option value="TARJETA">Tarjeta</option>
+            </select>
+          </div>
+
+          {mostrarCuenta && (
+            <div>
+              <label className="text-sm font-medium">Cuenta</label>
+              <select
+                className="mt-1 w-full border rounded px-3 py-2 text-sm"
+                value={cuentaId}
+                onChange={(e) => setCuentaId(e.target.value)}
+              >
+                <option value="">Seleccionar cuenta...</option>
+                {cuentas.map((c) => (
+                  <option key={c.id} value={c.id}>{c.nombre}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="text-sm font-medium">Fecha de pago *</label>
+            <input
+              type="date"
+              className="mt-1 w-full border rounded px-3 py-2 text-sm"
+              value={fechaPago}
+              onChange={(e) => setFechaPago(e.target.value)}
+              required
+            />
+          </div>
+
+          {mostrarComprobante && (
+            <div>
+              <label className="text-sm font-medium">Comprobante PDF</label>
+              <input
+                type="file"
+                accept="application/pdf"
+                className="mt-1 w-full text-sm"
+                onChange={(e) => setComprobante(e.target.files?.[0] ?? null)}
+              />
+            </div>
+          )}
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm border rounded hover:bg-gray-50">Cancelar</button>
+            <button type="submit" disabled={loading} className="px-4 py-2 text-sm bg-black text-white rounded hover:bg-gray-800 disabled:opacity-50">
+              {loading ? "Guardando..." : "Registrar pago"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ── Panel de detalle de camión ─────────────────────────────────────────────────
 
 function PanelCamion({
   camion,
   choferes,
+  cuentas,
   onEditar,
   onEliminar,
   onCamionUpdate,
 }: {
   camion: CamionPropio
   choferes: ChoferDisponible[]
+  cuentas: CuentaDisponible[]
   onEditar: () => void
   onEliminar: () => void
   onCamionUpdate: (updated: CamionPropio) => void
 }) {
+  const router = useRouter()
   const [modalChofer, setModalChofer] = useState(false)
+  const [modalNuevaInfraccion, setModalNuevaInfraccion] = useState(false)
+  const [infraccionPago, setInfraccionPago] = useState<InfraccionFlota | null>(null)
 
   function handleChoferSaved(choferId: string) {
     const chofer = choferes.find((c) => c.id === choferId) ?? null
     onCamionUpdate({ ...camion, choferActual: chofer })
     setModalChofer(false)
+  }
+
+  function handleInfraccionSaved() {
+    setModalNuevaInfraccion(false)
+    router.refresh()
+  }
+
+  function handlePagoSaved() {
+    setInfraccionPago(null)
+    router.refresh()
   }
 
   const polizaActiva = camion.polizas.find((p) => p.estadoPoliza !== "VENCIDA")
@@ -306,10 +599,17 @@ function PanelCamion({
         <div className="flex items-center gap-3">
           <Truck className="h-5 w-5 text-muted-foreground shrink-0" />
           <div>
-            <p className="font-semibold">
-              {camion.patenteChasis}
-              {camion.patenteAcoplado && <span className="font-normal text-muted-foreground"> / {camion.patenteAcoplado}</span>}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="font-semibold">
+                {camion.patenteChasis}
+                {camion.patenteAcoplado && <span className="font-normal text-muted-foreground"> / {camion.patenteAcoplado}</span>}
+              </p>
+              {camion.infrasPendientes > 0 && (
+                <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                  ⚠ {camion.infrasPendientes} infrac.
+                </span>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">{camion.tipoCamion}</p>
           </div>
         </div>
@@ -393,6 +693,63 @@ function PanelCamion({
             Gestionar pólizas en Contabilidad →
           </Link>
         </div>
+
+        {/* Infracciones */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Infracciones</h4>
+            <button
+              type="button"
+              onClick={() => setModalNuevaInfraccion(true)}
+              className="inline-flex items-center gap-1 text-xs border rounded px-2 py-1 hover:bg-gray-50"
+            >
+              <Plus className="h-3 w-3" /> Nueva
+            </button>
+          </div>
+
+          {camion.infrasPendientes > 0 && (
+            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+              ⚠ {camion.infrasPendientes} pendiente{camion.infrasPendientes > 1 ? "s" : ""} — {formatearMoneda(camion.montoInfrasPendientes)}
+            </div>
+          )}
+
+          {camion.infracciones.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Sin infracciones registradas.</p>
+          ) : (
+            <div className="divide-y border rounded text-xs">
+              {camion.infracciones.map((inf) => (
+                <div key={inf.id} className="flex items-center gap-2 px-2 py-1.5">
+                  <span className="text-muted-foreground whitespace-nowrap">{formatearFecha(inf.fecha)}</span>
+                  <span className="flex-1 truncate">{inf.organismo} — {inf.descripcion}</span>
+                  <span className="font-medium whitespace-nowrap">{formatearMoneda(inf.monto)}</span>
+                  {inf.estado === "PENDIENTE" ? (
+                    <button
+                      type="button"
+                      onClick={() => setInfraccionPago(inf)}
+                      className="shrink-0 border rounded px-2 py-0.5 text-xs hover:bg-gray-50"
+                    >
+                      Registrar pago
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-green-700">Pagada</span>
+                      {inf.comprobantePdfS3Key && (
+                        <a
+                          href={`/api/storage/${inf.comprobantePdfS3Key}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary underline"
+                        >
+                          Ver comp.
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {modalChofer && (
@@ -403,13 +760,30 @@ function PanelCamion({
           onSaved={handleChoferSaved}
         />
       )}
+
+      {modalNuevaInfraccion && (
+        <ModalNuevaInfraccion
+          camionId={camion.id}
+          onClose={() => setModalNuevaInfraccion(false)}
+          onSaved={handleInfraccionSaved}
+        />
+      )}
+
+      {infraccionPago && (
+        <ModalPagoInfraccion
+          infraccion={infraccionPago}
+          cuentas={cuentas}
+          onClose={() => setInfraccionPago(null)}
+          onSaved={handlePagoSaved}
+        />
+      )}
     </div>
   )
 }
 
 // ── Componente principal ───────────────────────────────────────────────────────
 
-export function FlotaPropiaClient({ camiones: initialCamiones, choferes }: FlotaPropiaClientProps) {
+export function FlotaPropiaClient({ camiones: initialCamiones, choferes, cuentas }: FlotaPropiaClientProps) {
   const [camiones, setCamiones] = useState<CamionPropio[]>(initialCamiones)
   const [modalCamion, setModalCamion] = useState<CamionPropio | null | "nuevo">(null)
   const [confirmando, setConfirmando] = useState<string | null>(null)
@@ -484,6 +858,7 @@ export function FlotaPropiaClient({ camiones: initialCamiones, choferes }: Flota
               key={c.id}
               camion={c}
               choferes={choferes}
+              cuentas={cuentas}
               onEditar={() => setModalCamion(c)}
               onEliminar={() => setConfirmando(c.id)}
               onCamionUpdate={(updated) => setCamiones((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))}

@@ -41,8 +41,27 @@ export default async function MiFlotaPage() {
           take: 1,
         },
         polizas: { orderBy: { vigenciaHasta: "desc" } },
+        infracciones: {
+          orderBy: { fecha: "desc" },
+          take: 20,
+          select: {
+            id: true,
+            fecha: true,
+            organismo: true,
+            descripcion: true,
+            monto: true,
+            estado: true,
+            comprobantePdfS3Key: true,
+          },
+        },
       },
       orderBy: { patenteChasis: "asc" },
+    })
+
+    const cuentas = await prisma.cuenta.findMany({
+      where: { activa: true },
+      select: { id: true, nombre: true },
+      orderBy: { nombre: "asc" },
     })
 
     const camionesEnriquecidos = camiones.map((c) => {
@@ -60,6 +79,16 @@ export default async function MiFlotaPage() {
         creadoEn: p.creadoEn.toISOString(),
       }))
       const polizaVigente = polizasConEstado.find((p) => p.estadoPoliza !== "VENCIDA")
+      const infraccionesMapeadas = c.infracciones.map((inf) => ({
+        id: inf.id,
+        fecha: inf.fecha.toISOString(),
+        organismo: inf.organismo,
+        descripcion: inf.descripcion,
+        monto: inf.monto,
+        estado: inf.estado,
+        comprobantePdfS3Key: inf.comprobantePdfS3Key,
+      }))
+      const infrasPendientes = infraccionesMapeadas.filter((i) => i.estado === "PENDIENTE")
       return {
         id: c.id,
         patenteChasis: c.patenteChasis,
@@ -74,6 +103,9 @@ export default async function MiFlotaPage() {
           : polizaVigente.estadoPoliza === "POR_VENCER"
           ? "POR_VENCER"
           : null) as "SIN_COBERTURA" | "POR_VENCER" | null,
+        infracciones: infraccionesMapeadas,
+        infrasPendientes: infrasPendientes.length,
+        montoInfrasPendientes: infrasPendientes.reduce((sum, i) => sum + i.monto, 0),
       }
     })
 
@@ -90,7 +122,7 @@ export default async function MiFlotaPage() {
       orderBy: [{ apellido: "asc" }, { nombre: "asc" }],
     })
 
-    return <FlotaPropiaClient camiones={camionesEnriquecidos} choferes={choferes} />
+    return <FlotaPropiaClient camiones={camionesEnriquecidos} choferes={choferes} cuentas={cuentas} />
   }
 
   // ── FLETERO: su propia flota ───────────────────────────────────────────────

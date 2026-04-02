@@ -1,0 +1,73 @@
+/**
+ * PATCH /api/mi-flota/infracciones/[id]/pagar — registra el pago de una infracción
+ */
+
+import { NextRequest, NextResponse } from "next/server"
+import { auth } from "@/lib/auth"
+import { esRolInterno } from "@/lib/permissions"
+import { prisma } from "@/lib/prisma"
+import type { Rol } from "@/types"
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  const session = await auth()
+  if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+  const rol = (session.user.rol ?? "") as Rol
+  if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
+
+  const { id } = await params
+
+  let body: {
+    medioPago: string
+    cuentaId?: string
+    fechaPago: string
+    comprobantePdfS3Key?: string
+  }
+
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: "JSON inválido" }, { status: 400 })
+  }
+
+  const { medioPago, cuentaId, fechaPago, comprobantePdfS3Key } = body
+  if (!medioPago || !fechaPago) {
+    return NextResponse.json({ error: "Faltan campos requeridos" }, { status: 400 })
+  }
+
+  const infraccion = await prisma.infraccion.findUnique({ where: { id } })
+  if (!infraccion) return NextResponse.json({ error: "Infracción no encontrada" }, { status: 404 })
+  if (infraccion.estado === "PAGADA") {
+    return NextResponse.json({ error: "La infracción ya está pagada" }, { status: 400 })
+  }
+
+  const updated = await prisma.infraccion.update({
+    where: { id },
+    data: {
+      estado: "PAGADA",
+      fechaPago: new Date(fechaPago),
+      medioPago,
+      cuentaId: cuentaId ?? null,
+      comprobantePdfS3Key: comprobantePdfS3Key ?? null,
+    },
+  })
+
+  // Create MovimientoSinFactura EGRESO if transferencia + cuenta
+  if (medioPago === "TRANSFERENCIA" && cuentaId) {
+    await prisma.movimientoSinFactura.create({
+      data: {
+        cuentaId,
+        tipo: "EGRESO",
+        categoria: "PAGO_SERVICIO",
+        monto: infraccion.monto,
+        fecha: new Date(fechaPago),
+        descripcion: `Pago infracción — ${infraccion.organismo}`,
+        operadorId: session.user.id,
+      },
+    })
+  }
+
+  return NextResponse.json({ infraccion: updated })
+}
