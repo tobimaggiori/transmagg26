@@ -438,7 +438,13 @@ model Cuenta {
   tieneTarjetasPrepagasChoferes  Boolean             @default(false) @map("tiene_tarjetas_prepagas_choferes")
   formatoReconciliacion          String?             @map("formato_reconciliacion")
   esCuentaComitenteBroker        Boolean             @default(false) @map("es_cuenta_comitente_broker")
+  cuentaPadreId                  String?             @map("cuenta_padre_id")
+  nroCuenta                      String?             @map("nro_cuenta")
+  cbu                            String?
+  alias                          String?
 
+  cuentaPadre                    Cuenta?             @relation("SubCuentas", fields: [cuentaPadreId], references: [id])
+  subCuentas                     Cuenta[]            @relation("SubCuentas")
   fci                            Fci[]
   movimientosSinFactura          MovimientoSinFactura[] @relation("CuentaMovimientoSinFactura")
   movimientosComoDestino         MovimientoSinFactura[] @relation("CuentaDestinoMovimientoSinFactura")
@@ -482,8 +488,10 @@ model Fci {
   cuentaId          String         @map("cuenta_id")
   moneda            String
   activo            Boolean        @default(true)
-  diasHabilesAlerta Int            @default(1) @map("dias_habiles_alerta")
-  creadoEn          DateTime       @default(now()) @map("creado_en")
+  diasHabilesAlerta   Int            @default(1)  @map("dias_habiles_alerta")
+  saldoActual         Float          @default(0)  @map("saldo_actual")
+  saldoActualizadoEn  DateTime?                   @map("saldo_actualizado_en")
+  creadoEn            DateTime       @default(now()) @map("creado_en")
 
   cuenta      Cuenta          @relation(fields: [cuentaId], references: [id])
   movimientos MovimientoFci[]
