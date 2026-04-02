@@ -8,7 +8,6 @@
 import { Fragment, useState, useCallback, useEffect } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje, calcularFactura } from "@/lib/viajes"
-import { WorkflowNote } from "@/components/workflow/workflow-note"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { viajeEsFacturable, razonNoFacturable } from "@/lib/facturacion"
 import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
@@ -254,22 +253,7 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
         </p>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <WorkflowNote
-          titulo="Datos guardados"
-          descripcion="La factura guarda la tarifa a la empresa y los datos logísticos usados para ese comprobante."
-        />
-        <WorkflowNote
-          titulo="Edición previa"
-          descripcion="Antes de facturar podés corregir kilos, fecha y tarifa comercial a la empresa sin tocar facturas anteriores."
-        />
-        <WorkflowNote
-          titulo="Independencia"
-          descripcion="Un viaje puede estar facturado a la empresa aunque todavía no haya sido liquidado al fletero."
-        />
-      </div>
-
-      {/* Selector de Empresa + Tipo Comprobante */}
+{/* Selector de Empresa + Tipo Comprobante */}
       <div className="flex flex-wrap gap-4 p-4 bg-muted/40 rounded-lg border">
         <div className="flex flex-col gap-1 min-w-[300px]">
           <label className="text-xs font-medium text-muted-foreground">Empresa</label>

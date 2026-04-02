@@ -11,7 +11,6 @@ import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
 import { labelCondicionIva, formatearNroComprobante } from "@/lib/liquidacion-utils"
 import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
-import { WorkflowNote } from "@/components/workflow/workflow-note"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -446,11 +445,6 @@ export function LiquidarClient({ rol, fleteros, camiones, choferes, fleteroIdPro
         <p className="text-muted-foreground">Creación de liquidación al fletero</p>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <WorkflowNote titulo="Datos guardados" descripcion="La liquidación guarda los datos del viaje y la tarifa al fletero tal como están en ese momento." />
-        <WorkflowNote titulo="Edición previa" descripcion="Antes de generar el líquido producto podés ajustar kilos, fecha y tarifa específica del fletero." />
-        <WorkflowNote titulo="Independencia" descripcion="Un viaje puede estar liquidado al fletero y seguir pendiente de facturar a la empresa." />
-      </div>
 
       {exitoLiquidacion && (
         <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
