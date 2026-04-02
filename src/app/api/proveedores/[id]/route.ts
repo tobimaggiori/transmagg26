@@ -15,6 +15,7 @@ const actualizarSchema = z.object({
   razonSocial: z.string().min(1).optional(),
   condicionIva: z.string().min(1).optional(),
   rubro: z.string().optional(),
+  tipo: z.enum(["GENERAL", "ASEGURADORA"]).optional(),
   activo: z.boolean().optional(),
 })
 

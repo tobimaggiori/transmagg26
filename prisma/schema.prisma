@@ -929,6 +929,7 @@ model Proveedor {
   cuit         String  @unique
   condicionIva String  @map("condicion_iva")
   rubro        String?
+  tipo         String  @default("GENERAL")
   activo       Boolean @default(true)
 
   facturas               FacturaProveedor[]

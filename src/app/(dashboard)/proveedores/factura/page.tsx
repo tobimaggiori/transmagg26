@@ -32,7 +32,7 @@ export default async function ProveedoresFacturaPage() {
 
   const [proveedores, cuentas, tarjetas, chequesRaw] = await Promise.all([
     prisma.proveedor.findMany({
-      where: { activo: true },
+      where: { activo: true, tipo: "GENERAL" },
       select: { id: true, razonSocial: true, cuit: true },
       orderBy: { razonSocial: "asc" },
     }),

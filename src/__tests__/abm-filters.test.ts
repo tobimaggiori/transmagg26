@@ -120,7 +120,7 @@ describe("calcularFiltroUsuario", () => {
 
 // ─── calcularFiltroProveedor (ABM) ────────────────────────────────────────────
 describe("calcularFiltroProveedor", () => {
-    const proveedor = { id: "p1", razonSocial: "Gas del Sur SA", cuit: "30111222333", condicionIva: "RESPONSABLE_INSCRIPTO", rubro: "Combustible", activo: true }
+    const proveedor = { id: "p1", razonSocial: "Gas del Sur SA", cuit: "30111222333", condicionIva: "RESPONSABLE_INSCRIPTO", rubro: "Combustible", tipo: "GENERAL", activo: true }
 
   it("retorna true cuando coincide con razón social", () => {
     expect(calcularFiltroProveedor(proveedor, "gas")).toBe(true)

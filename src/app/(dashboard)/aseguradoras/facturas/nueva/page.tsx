@@ -19,7 +19,7 @@ export default async function NuevaFacturaSeguroPage() {
 
   const [proveedores, tarjetas, camiones, cuentas] = await Promise.all([
     prisma.proveedor.findMany({
-      where: { activo: true },
+      where: { activo: true, tipo: "ASEGURADORA" },
       select: { id: true, razonSocial: true, cuit: true },
       orderBy: { razonSocial: "asc" },
     }),
@@ -39,6 +39,20 @@ export default async function NuevaFacturaSeguroPage() {
       orderBy: { nombre: "asc" },
     }),
   ])
+
+  if (proveedores.length === 0) {
+    return (
+      <div className="p-6">
+        <p className="text-muted-foreground">
+          No hay aseguradoras registradas. Agregá una desde{" "}
+          <a href="/abm?tab=proveedores" className="text-primary underline">
+            ABM → Proveedores
+          </a>
+          .
+        </p>
+      </div>
+    )
+  }
 
   return (
     <NuevaFacturaSeguroClient

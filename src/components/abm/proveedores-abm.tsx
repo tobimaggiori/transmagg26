@@ -29,6 +29,7 @@ export interface ProveedorAbm {
   cuit: string
   condicionIva: string
   rubro: string | null
+  tipo: string
   activo: boolean
 }
 
@@ -60,6 +61,7 @@ function ProveedorFormModal({ proveedor, onSuccess }: { proveedor?: ProveedorAbm
     cuit: proveedor?.cuit ?? "",
     condicionIva: proveedor?.condicionIva ?? "RESPONSABLE_INSCRIPTO",
     rubro: proveedor?.rubro ?? "",
+    tipo: proveedor?.tipo ?? "GENERAL",
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -76,7 +78,7 @@ function ProveedorFormModal({ proveedor, onSuccess }: { proveedor?: ProveedorAbm
     try {
       const url = isEdit ? `/api/proveedores/${proveedor.id}` : "/api/proveedores"
       const body = isEdit
-        ? { razonSocial: form.razonSocial, condicionIva: form.condicionIva, rubro: form.rubro || undefined }
+        ? { razonSocial: form.razonSocial, condicionIva: form.condicionIva, rubro: form.rubro || undefined, tipo: form.tipo }
         : { ...form, rubro: form.rubro || undefined }
       const res = await fetch(url, {
         method: isEdit ? "PATCH" : "POST",
@@ -115,6 +117,19 @@ function ProveedorFormModal({ proveedor, onSuccess }: { proveedor?: ProveedorAbm
       <div className="space-y-1">
         <Label htmlFor="rubro">Rubro</Label>
         <Input id="rubro" name="rubro" value={form.rubro} onChange={handleChange} disabled={loading} placeholder="Combustible, Peajes, etc." />
+      </div>
+      <div className="space-y-1">
+        <Label>Tipo de proveedor</Label>
+        <div className="flex gap-4 pt-1">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="radio" value="GENERAL" checked={form.tipo === "GENERAL"} onChange={() => setForm((p) => ({ ...p, tipo: "GENERAL" }))} disabled={loading} />
+            Proveedor general
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="radio" value="ASEGURADORA" checked={form.tipo === "ASEGURADORA"} onChange={() => setForm((p) => ({ ...p, tipo: "ASEGURADORA" }))} disabled={loading} />
+            Aseguradora
+          </label>
+        </div>
       </div>
       <FormError message={error} />
       <div className="flex justify-end gap-2 pt-2">
@@ -195,7 +210,14 @@ export function ProveedoresAbm({ proveedores }: ProveedoresAbmProps) {
           {filtrados.map((p) => (
             <div key={p.id} className="flex items-center justify-between px-4 py-3">
               <div>
-                <p className="font-medium">{p.razonSocial}</p>
+                <p className="font-medium flex items-center gap-2">
+                  {p.razonSocial}
+                  {p.tipo === "ASEGURADORA" && (
+                    <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800">
+                      Aseguradora
+                    </span>
+                  )}
+                </p>
                 <p className="text-sm text-muted-foreground">
                   CUIT: {formatearCuit(p.cuit)}
                   {p.rubro ? ` · ${p.rubro}` : ""}

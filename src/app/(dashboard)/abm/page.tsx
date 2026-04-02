@@ -131,7 +131,7 @@ export default async function AbmPage({
     tabValido === "proveedores"
       ? prisma.proveedor.findMany({
           orderBy: [{ activo: "desc" }, { razonSocial: "asc" }],
-          select: { id: true, razonSocial: true, cuit: true, condicionIva: true, rubro: true, activo: true },
+          select: { id: true, razonSocial: true, cuit: true, condicionIva: true, rubro: true, tipo: true, activo: true },
         })
       : [],
     (tabValido === "cuentas" || tabValido === "fci")

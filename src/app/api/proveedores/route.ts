@@ -16,6 +16,7 @@ const crearProveedorSchema = z.object({
   cuit: z.string().regex(/^\d{11}$/, "CUIT debe tener 11 dígitos"),
   condicionIva: z.string().min(1),
   rubro: z.string().optional(),
+  tipo: z.enum(["GENERAL", "ASEGURADORA"]).default("GENERAL"),
 })
 
 /**
