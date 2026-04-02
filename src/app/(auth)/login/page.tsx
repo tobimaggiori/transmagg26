@@ -112,13 +112,12 @@ export default function LoginPage() {
                   autoComplete="email"
                   aria-invalid={error !== null}
                 />
+                {error && (
+                  <p className="text-sm text-destructive mt-1" role="alert">
+                    {error}
+                  </p>
+                )}
               </div>
-
-              {error && (
-                <p className="text-sm text-destructive" role="alert">
-                  {error}
-                </p>
-              )}
             </CardContent>
 
             <CardFooter>

@@ -28,17 +28,15 @@ const bodySchema = z.object({
 /**
  * POST: NextRequest -> Promise<NextResponse>
  *
- * Dado el body JSON { email }, genera un OTP de 6 dígitos, lo hashea,
- * lo persiste en la DB e invalida los OTPs anteriores del usuario.
- * Existe para iniciar el flujo de autenticación passwordless de Transmagg,
- * respondiendo siempre 200 independientemente de si el email existe
- * para no revelar qué emails están registrados.
+ * Dado el body JSON { email }, verifica que el usuario exista y esté activo,
+ * genera un OTP de 6 dígitos, lo hashea, lo persiste en la DB e invalida
+ * los OTPs anteriores del usuario.
  *
  * Ejemplos:
  * POST /api/auth/send-otp { email: "admin@transmagg.com.ar" }
  * // => 200 { message: "Si el email está registrado, recibirás un código de acceso." }
  * POST /api/auth/send-otp { email: "noexiste@x.com" }
- * // => 200 { message: "Si el email está registrado, recibirás un código de acceso." }
+ * // => 404 { error: "El email ingresado no pertenece a un usuario registrado" }
  * POST /api/auth/send-otp { email: "invalido" }
  * // => 400 { error: "Email inválido." }
  */
@@ -63,13 +61,9 @@ export async function POST(request: NextRequest) {
     })
 
     if (!usuario || !usuario.activo) {
-      // Respuesta genérica por seguridad (no revelar si el email existe)
       return NextResponse.json(
-        {
-          message:
-            "Si el email está registrado, recibirás un código de acceso.",
-        },
-        { status: 200 }
+        { error: "El email ingresado no pertenece a un usuario registrado" },
+        { status: 404 }
       )
     }
 
