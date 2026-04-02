@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 
 interface CiudadArgentinaInputProps {
   label: string
@@ -23,6 +24,7 @@ export function CiudadArgentinaInput({
   const [sugerencias, setSugerencias] = useState<Array<{ nombre: string; provincia: string }>>([])
   const [cargando, setCargando] = useState(false)
   const [abierto, setAbierto] = useState(false)
+  const [buscaTerminada, setBuscaTerminada] = useState(false)
   const prevValueRef = useRef(value)
 
   // Sync external value changes (e.g. edit mode loading)
@@ -36,25 +38,28 @@ export function CiudadArgentinaInput({
   useEffect(() => {
     if (busqueda.length < 2) {
       setSugerencias([])
+      setBuscaTerminada(false)
       return
     }
 
     const timer = setTimeout(async () => {
       setCargando(true)
+      setBuscaTerminada(false)
       try {
         const res = await fetch(
           `https://apis.datos.gob.ar/georef/api/municipios?nombre=${encodeURIComponent(busqueda)}&max=8&campos=nombre,provincia.nombre`
         )
         const data = await res.json()
-        setSugerencias(
-          (data.municipios ?? []).map((m: { nombre: string; provincia: { nombre: string } }) => ({
-            nombre: m.nombre.toUpperCase(),
-            provincia: m.provincia.nombre.toUpperCase(),
-          }))
-        )
-        setAbierto(true)
+        const resultados = (data.municipios ?? []).map((m: { nombre: string; provincia: { nombre: string } }) => ({
+          nombre: m.nombre.toUpperCase(),
+          provincia: m.provincia.nombre.toUpperCase(),
+        }))
+        setSugerencias(resultados)
+        setBuscaTerminada(true)
+        if (resultados.length > 0) setAbierto(true)
       } catch {
         setSugerencias([])
+        setBuscaTerminada(true)
       } finally {
         setCargando(false)
       }
@@ -62,6 +67,8 @@ export function CiudadArgentinaInput({
 
     return () => clearTimeout(timer)
   }, [busqueda])
+
+  const mostrarManual = buscaTerminada && sugerencias.length === 0 && busqueda.length >= 2 && !provincia
 
   return (
     <div className={className}>
@@ -75,7 +82,6 @@ export function CiudadArgentinaInput({
           onChange={(e) => {
             const val = e.target.value.toUpperCase()
             setBusqueda(val)
-            // If user edits text, clear provincia so they must re-select
             onSelect(val, "")
           }}
           style={{ textTransform: "uppercase" }}
@@ -102,6 +108,7 @@ export function CiudadArgentinaInput({
                   onSelect(s.nombre, s.provincia)
                   setBusqueda(s.nombre)
                   setAbierto(false)
+                  setBuscaTerminada(false)
                 }}
               >
                 <span className="font-medium">{s.nombre}</span>
@@ -111,10 +118,33 @@ export function CiudadArgentinaInput({
           </div>
         )}
       </div>
-      {provincia && (
+
+      {/* Provincia autocompletada */}
+      {provincia && !mostrarManual && (
         <p className="text-xs text-muted-foreground mt-1">
           Provincia: <span className="font-medium">{provincia}</span>
         </p>
+      )}
+
+      {/* Fallback: seleccionar provincia manualmente */}
+      {mostrarManual && (
+        <div className="mt-1">
+          <label className="text-[11px] text-muted-foreground">
+            No encontramos esa ciudad. Seleccioná la provincia manualmente:
+          </label>
+          <select
+            className="w-full h-8 rounded-md border bg-background px-2 text-sm mt-1"
+            value=""
+            onChange={(e) => {
+              onSelect(busqueda, e.target.value)
+            }}
+          >
+            <option value="">Seleccioná provincia...</option>
+            {PROVINCIAS_ARGENTINA.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </div>
       )}
     </div>
   )
