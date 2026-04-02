@@ -17,6 +17,7 @@ const SECCIONES = [
   { href: "/contabilidad/lp-vs-facturas", label: "LP vs Facturas", descripcion: "Comparación de subtotales LP vs facturas emitidas por viaje" },
   { href: "/contabilidad/viajes-sin-lp", label: "Viajes sin LP", descripcion: "Viajes facturados que no tienen liquidación asociada" },
   { href: "/contabilidad/notas-credito-debito", label: "Notas C/D", descripcion: "Notas de crédito y débito emitidas y recibidas" },
+  { href: "/contabilidad/polizas", label: "Pólizas de Seguro", descripcion: "Alta y consulta de pólizas de seguro de la empresa" },
 ]
 
 export default async function ContabilidadPage() {

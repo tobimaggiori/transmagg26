@@ -7,6 +7,7 @@
  */
 
 import { useState } from "react"
+import Link from "next/link"
 import { Truck, User, UserX, Plus, Pencil, Trash2, ShieldAlert, ShieldCheck, ShieldX, X } from "lucide-react"
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -27,7 +28,7 @@ interface ChoferDisponible {
 
 interface Poliza {
   id: string
-  camionId: string
+  camionId: string | null
   aseguradora: string
   nroPoliza: string
   cobertura: string | null
@@ -273,111 +274,6 @@ function ModalAsignarChofer({
   )
 }
 
-function ModalPoliza({
-  camionId,
-  poliza,
-  onClose,
-  onSaved,
-}: {
-  camionId: string
-  poliza: Poliza | null
-  onClose: () => void
-  onSaved: (p: Poliza) => void
-}) {
-  const [aseguradora, setAseguradora] = useState(poliza?.aseguradora ?? "")
-  const [nroPoliza, setNroPoliza] = useState(poliza?.nroPoliza ?? "")
-  const [cobertura, setCobertura] = useState(poliza?.cobertura ?? "")
-  const [montoMensual, setMontoMensual] = useState(poliza?.montoMensual?.toString() ?? "")
-  const [vigenciaDesde, setVigenciaDesde] = useState(poliza?.vigenciaDesde?.slice(0, 10) ?? "")
-  const [vigenciaHasta, setVigenciaHasta] = useState(poliza?.vigenciaHasta?.slice(0, 10) ?? "")
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState("")
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
-    setError("")
-    const body = {
-      aseguradora,
-      nroPoliza,
-      cobertura: cobertura || null,
-      montoMensual: montoMensual ? parseFloat(montoMensual) : null,
-      vigenciaDesde,
-      vigenciaHasta,
-    }
-    try {
-      const url = poliza
-        ? `/api/camiones/${camionId}/polizas/${poliza.id}`
-        : `/api/camiones/${camionId}/polizas`
-      const res = await fetch(url, {
-        method: poliza ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error ?? "Error"); return }
-      const now = new Date()
-      const vd = new Date(data.vigenciaDesde)
-      const vh = new Date(data.vigenciaHasta)
-      const estadoPoliza: Poliza["estadoPoliza"] =
-        vh < now ? "VENCIDA" : vh <= new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) ? "POR_VENCER" : "VIGENTE"
-      onSaved({ ...data, estadoPoliza, vigenciaDesde: vd.toISOString(), vigenciaHasta: vh.toISOString() })
-    } catch {
-      setError("Error de red")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-lg">{poliza ? "Editar póliza" : "Nueva póliza de seguro"}</h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium">Aseguradora *</label>
-              <input className="mt-1 w-full border rounded px-3 py-2 text-sm" value={aseguradora} onChange={(e) => setAseguradora(e.target.value)} required />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Nro. póliza *</label>
-              <input className="mt-1 w-full border rounded px-3 py-2 text-sm" value={nroPoliza} onChange={(e) => setNroPoliza(e.target.value)} required />
-            </div>
-          </div>
-          <div>
-            <label className="text-sm font-medium">Cobertura</label>
-            <input className="mt-1 w-full border rounded px-3 py-2 text-sm" value={cobertura} onChange={(e) => setCobertura(e.target.value)} placeholder="Ej: Todo riesgo" />
-          </div>
-          <div>
-            <label className="text-sm font-medium">Monto mensual ($)</label>
-            <input type="number" step="0.01" className="mt-1 w-full border rounded px-3 py-2 text-sm" value={montoMensual} onChange={(e) => setMontoMensual(e.target.value)} placeholder="Opcional" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium">Vigencia desde *</label>
-              <input type="date" className="mt-1 w-full border rounded px-3 py-2 text-sm" value={vigenciaDesde} onChange={(e) => setVigenciaDesde(e.target.value)} required />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Vigencia hasta *</label>
-              <input type="date" className="mt-1 w-full border rounded px-3 py-2 text-sm" value={vigenciaHasta} onChange={(e) => setVigenciaHasta(e.target.value)} required />
-            </div>
-          </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm border rounded hover:bg-gray-50">Cancelar</button>
-            <button type="submit" disabled={loading} className="px-4 py-2 text-sm bg-black text-white rounded hover:bg-gray-800 disabled:opacity-50">
-              {loading ? "Guardando..." : "Guardar"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
 // ── Panel de detalle de camión ─────────────────────────────────────────────────
 
 function PanelCamion({
@@ -394,41 +290,11 @@ function PanelCamion({
   onCamionUpdate: (updated: CamionPropio) => void
 }) {
   const [modalChofer, setModalChofer] = useState(false)
-  const [modalPoliza, setModalPoliza] = useState<Poliza | null | "nueva">(null)
-  const [deletingPoliza, setDeletingPoliza] = useState<string | null>(null)
 
   function handleChoferSaved(choferId: string) {
     const chofer = choferes.find((c) => c.id === choferId) ?? null
     onCamionUpdate({ ...camion, choferActual: chofer })
     setModalChofer(false)
-  }
-
-  function handlePolizaSaved(p: Poliza) {
-    const existing = camion.polizas.findIndex((x) => x.id === p.id)
-    const nuevas = existing >= 0
-      ? camion.polizas.map((x) => (x.id === p.id ? p : x))
-      : [p, ...camion.polizas]
-    const alerta = calcularAlerta(nuevas)
-    onCamionUpdate({ ...camion, polizas: nuevas, alertaPoliza: alerta })
-    setModalPoliza(null)
-  }
-
-  async function handleEliminarPoliza(polizaId: string) {
-    setDeletingPoliza(polizaId)
-    try {
-      await fetch(`/api/camiones/${camion.id}/polizas/${polizaId}`, { method: "DELETE" })
-      const nuevas = camion.polizas.filter((p) => p.id !== polizaId)
-      onCamionUpdate({ ...camion, polizas: nuevas, alertaPoliza: calcularAlerta(nuevas) })
-    } finally {
-      setDeletingPoliza(null)
-    }
-  }
-
-  function calcularAlerta(polizas: Poliza[]): CamionPropio["alertaPoliza"] {
-    const activa = polizas.find((p) => p.estadoPoliza !== "VENCIDA")
-    if (!activa) return "SIN_COBERTURA"
-    if (activa.estadoPoliza === "POR_VENCER") return "POR_VENCER"
-    return null
   }
 
   const polizaActiva = camion.polizas.find((p) => p.estadoPoliza !== "VENCIDA")
@@ -475,13 +341,16 @@ function PanelCamion({
           )}
         </div>
 
-        {/* Póliza vigente */}
+        {/* Póliza vigente (solo lectura — gestionar en Contabilidad) */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Seguro</p>
-            <button onClick={() => setModalPoliza("nueva")} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-              <Plus className="h-3.5 w-3.5" /> Nueva póliza
-            </button>
+            <Link
+              href={`/contabilidad/polizas/nueva?camionId=${camion.id}`}
+              className="text-xs text-blue-600 hover:underline"
+            >
+              + Nueva póliza
+            </Link>
           </div>
           {polizaActiva ? (
             <div className="text-sm space-y-0.5">
@@ -500,7 +369,7 @@ function PanelCamion({
           )}
         </div>
 
-        {/* Historial pólizas (colapsable, solo si hay vencidas) */}
+        {/* Historial pólizas */}
         {camion.polizas.filter((p) => p.estadoPoliza === "VENCIDA").length > 0 && (
           <div>
             <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wider mb-1.5">Pólizas anteriores</p>
@@ -508,31 +377,22 @@ function PanelCamion({
               {camion.polizas
                 .filter((p) => p.estadoPoliza === "VENCIDA")
                 .map((p) => (
-                  <div key={p.id} className="flex items-center justify-between text-xs text-muted-foreground border-b pb-1.5">
-                    <span>{p.aseguradora} · {p.nroPoliza} · {fmt(p.vigenciaDesde)}→{fmt(p.vigenciaHasta)}</span>
-                    <div className="flex gap-1">
-                      <button onClick={() => setModalPoliza(p)} className="hover:text-foreground" title="Editar"><Pencil className="h-3 w-3" /></button>
-                      <button
-                        onClick={() => handleEliminarPoliza(p.id)}
-                        disabled={deletingPoliza === p.id}
-                        className="hover:text-red-600 disabled:opacity-50"
-                        title="Eliminar"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
+                  <div key={p.id} className="text-xs text-muted-foreground border-b pb-1.5">
+                    {p.aseguradora} · {p.nroPoliza} · {fmt(p.vigenciaDesde)}→{fmt(p.vigenciaHasta)}
                   </div>
                 ))}
             </div>
           </div>
         )}
-        {polizaActiva && (
-          <div className="flex gap-2 justify-end">
-            <button onClick={() => setModalPoliza(polizaActiva)} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-              <Pencil className="h-3 w-3" /> Editar póliza vigente
-            </button>
-          </div>
-        )}
+
+        <div className="flex justify-end pt-1">
+          <Link
+            href="/contabilidad/polizas/consultar"
+            className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+          >
+            Gestionar pólizas en Contabilidad →
+          </Link>
+        </div>
       </div>
 
       {modalChofer && (
@@ -541,14 +401,6 @@ function PanelCamion({
           choferes={choferes}
           onClose={() => setModalChofer(false)}
           onSaved={handleChoferSaved}
-        />
-      )}
-      {modalPoliza !== null && (
-        <ModalPoliza
-          camionId={camion.id}
-          poliza={modalPoliza === "nueva" ? null : modalPoliza}
-          onClose={() => setModalPoliza(null)}
-          onSaved={handlePolizaSaved}
         />
       )}
     </div>

@@ -213,18 +213,24 @@ model Camion {
 }
 
 model PolizaSeguro {
-  id            String   @id @default(uuid())
-  camionId      String   @map("camion_id")
-  aseguradora   String
-  nroPoliza     String   @map("nro_poliza")
-  cobertura     String?
-  montoMensual  Float?   @map("monto_mensual")
-  vigenciaDesde DateTime @map("vigencia_desde")
-  vigenciaHasta DateTime @map("vigencia_hasta")
-  archivos      String?
-  creadoEn      DateTime @default(now()) @map("creado_en")
+  id              String   @id @default(uuid())
+  camionId        String?  @map("camion_id")
+  aseguradora     String
+  nroPoliza       String   @map("nro_poliza")
+  cobertura       String?
+  montoMensual    Float?   @map("monto_mensual")
+  vigenciaDesde   DateTime @map("vigencia_desde")
+  vigenciaHasta   DateTime @map("vigencia_hasta")
+  archivos        String?
+  creadoEn        DateTime @default(now()) @map("creado_en")
+  tipoBien        String   @default("CAMION") @map("tipo_bien")
+  proveedorId     String?  @map("proveedor_id")
+  descripcionBien String?  @map("descripcion_bien")
+  pdfS3Key        String?  @map("pdf_s3_key")
+  activa          Boolean  @default(true)
 
-  camion Camion @relation(fields: [camionId], references: [id], onDelete: Cascade)
+  camion    Camion?    @relation(fields: [camionId], references: [id], onDelete: Cascade)
+  proveedor Proveedor? @relation(fields: [proveedorId], references: [id])
 
   @@map("polizas_seguro")
 }
@@ -903,6 +909,7 @@ model Proveedor {
   facturas              FacturaProveedor[]
   chequesRecibidosEndoso ChequeRecibido[]  @relation("ProveedorEndosoChequeRecibido")
   chequesEmitidos        ChequeEmitido[]   @relation("ProveedorChequeEmitido")
+  polizas                PolizaSeguro[]
 
   @@map("proveedores")
 }

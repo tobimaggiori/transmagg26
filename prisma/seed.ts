@@ -1752,7 +1752,6 @@ async function main() {
         "9": "RECIBO",
         "10": "ORDEN_PAGO",
       }),
-      modalidadMiPymes: "SCA",
       activa: false,
     },
   })

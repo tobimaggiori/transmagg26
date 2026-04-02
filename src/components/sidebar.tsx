@@ -125,6 +125,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/contabilidad/lp-vs-facturas", label: "LP vs Facturas" },
       { href: "/contabilidad/viajes-sin-lp", label: "Viajes sin LP" },
       { href: "/contabilidad/notas-credito-debito", label: "Notas C/D" },
+      { href: "/contabilidad/polizas", label: "Pólizas de Seguro" },
     ],
   },
   {

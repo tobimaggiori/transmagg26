@@ -7,6 +7,7 @@
  */
 
 import { useState, useCallback, useEffect } from "react"
+import { ShieldAlert } from "lucide-react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje } from "@/lib/viajes"
 import { describirCircuitoViaje, resumirWorkflowViajes } from "@/lib/viaje-ui"
@@ -23,7 +24,7 @@ import type { Rol } from "@/types"
 
 type Fletero = { id: string; razonSocial: string; cuit: string; comisionDefault?: number }
 type Empresa = { id: string; razonSocial: string; cuit: string }
-type Camion = { id: string; patenteChasis: string; fleteroId: string | null; esPropio?: boolean }
+type Camion = { id: string; patenteChasis: string; fleteroId: string | null; esPropio?: boolean; polizaVigente?: boolean; choferActualId?: string | null }
 type Chofer = { id: string; nombre: string; apellido: string; fleteroId: string | null }
 
 type ViajeAPI = {
@@ -515,7 +516,14 @@ function ModalViaje({
               <label className="text-xs font-medium text-muted-foreground block mb-1">Camión *</label>
               <select
                 value={camionId}
-                onChange={(e) => setCamionId(e.target.value)}
+                onChange={(e) => {
+                  const id = e.target.value
+                  setCamionId(id)
+                  if (esCamionPropio && id) {
+                    const c = camiones.find((x) => x.id === id)
+                    if (c?.choferActualId) setChoferId(c.choferActualId)
+                  }
+                }}
                 required
                 className="w-full h-9 rounded-md border bg-background px-2 text-sm"
               >
@@ -538,6 +546,17 @@ function ModalViaje({
               </select>
             </div>
           </div>
+
+          {/* Aviso: camión propio sin cobertura vigente */}
+          {esCamionPropio && camionId && (() => {
+            const c = camiones.find((x) => x.id === camionId)
+            return c && c.polizaVigente === false ? (
+              <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800">
+                <ShieldAlert className="h-4 w-4 shrink-0" />
+                Este camión no tiene seguro vigente. Verificá la cobertura antes de registrar el viaje.
+              </div>
+            ) : null
+          })()}
 
           <div>
             <label className="text-xs font-medium text-muted-foreground block mb-1">Fecha de viaje *</label>

@@ -30,9 +30,31 @@ export default async function NuevoViajePage() {
     }),
     prisma.camion.findMany({
       where: { activo: true },
-      select: { id: true, patenteChasis: true, fleteroId: true, esPropio: true },
+      select: {
+        id: true,
+        patenteChasis: true,
+        fleteroId: true,
+        esPropio: true,
+        choferHistorial: {
+          where: { hasta: null },
+          select: { choferId: true },
+          take: 1,
+        },
+        polizas: {
+          where: { activa: true, vigenciaHasta: { gte: new Date() } },
+          select: { id: true },
+          take: 1,
+        },
+      },
       orderBy: { patenteChasis: "asc" },
-    }),
+    }).then((cs) => cs.map((c) => ({
+      id: c.id,
+      patenteChasis: c.patenteChasis,
+      fleteroId: c.fleteroId,
+      esPropio: c.esPropio,
+      choferActualId: c.choferHistorial[0]?.choferId ?? null,
+      polizaVigente: c.polizas.length > 0,
+    }))),
     prisma.usuario.findMany({
       where: { rol: "CHOFER", activo: true },
       select: { id: true, nombre: true, apellido: true, fleteroId: true },
