@@ -3,7 +3,7 @@ import { z } from "zod"
 import { requireFinancialAccess, notFoundResponse, serverErrorResponse } from "@/lib/financial-api"
 import { prisma } from "@/lib/prisma"
 import { generarHTMLOrdenPago } from "@/lib/pdf-orden-pago"
-import { enviarEmail, SmtpNoConfiguradoError } from "@/lib/email"
+import { enviarEmail } from "@/lib/email"
 
 const bodySchema = z.object({
   emailDestino: z.string().email().optional(),
@@ -49,26 +49,26 @@ export async function POST(
 
   try {
     const html = await generarHTMLOrdenPago(id)
-
-    if (process.env.NODE_ENV === "development") {
-      console.log(`[OP DEV] Enviar Orden de Pago Nro ${op.nro} a ${emailDestino}`)
-      return NextResponse.json({ ok: true, emailDestino, dev: true })
-    }
-
     const fecha = new Date(op.fecha).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })
 
-    await enviarEmail(acceso.session.user.id, {
-      to: emailDestino,
-      subject: `Orden de Pago Nro ${String(op.nro).padStart(8, "0")} — ${op.fletero.razonSocial} — ${fecha}`,
-      text: `Adjunto encontrará la Orden de Pago Nro ${op.nro} de Trans-Magg S.R.L.`,
+    const resultado = await enviarEmail({
+      para: emailDestino,
+      asunto: `Orden de Pago Nro ${String(op.nro).padStart(8, "0")} — ${op.fletero.razonSocial} — ${fecha}`,
+      texto: `Adjunto encontrará la Orden de Pago Nro ${op.nro} de Trans-Magg S.R.L.`,
       html,
+      tipo: "usuario",
+      usuarioId: acceso.session.user.id,
     })
+
+    if (!resultado.ok) {
+      return NextResponse.json(
+        { error: resultado.error ?? "No se pudo enviar el email" },
+        { status: 422 }
+      )
+    }
 
     return NextResponse.json({ ok: true, emailDestino })
   } catch (error) {
-    if (error instanceof SmtpNoConfiguradoError) {
-      return NextResponse.json({ error: "No tenés SMTP configurado. Configurá tu cuenta de email en ABM → Usuarios." }, { status: 422 })
-    }
     return serverErrorResponse("POST /api/ordenes-pago/[id]/enviar-email", error)
   }
 }

@@ -13,8 +13,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
-import { decrypt } from "@/lib/crypto"
-import nodemailer from "nodemailer"
+import { enviarEmail } from "@/lib/email"
 import {
   generarCodigoOtp,
   hashearCodigoOtp,
@@ -70,10 +69,7 @@ export async function POST(request: NextRequest) {
 
     // Marcar como usados los OTPs anteriores sin usar
     await prisma.otpCodigo.updateMany({
-      where: {
-        usuarioId: usuario.id,
-        usado: false,
-      },
+      where: { usuarioId: usuario.id, usado: false },
       data: { usado: true },
     })
 
@@ -84,67 +80,35 @@ export async function POST(request: NextRequest) {
 
     // Persistir el OTP hasheado
     await prisma.otpCodigo.create({
-      data: {
-        usuarioId: usuario.id,
-        codigoHash,
-        canal: "EMAIL",
-        expiraEn,
-      },
+      data: { usuarioId: usuario.id, codigoHash, canal: "EMAIL", expiraEn },
     })
 
-    // Enviar el código por email
-    const config = await prisma.configuracionOtp.findUnique({
-      where: { id: "singleton" },
-      select: {
-        host: true, puerto: true, usuario: true, passwordHash: true,
-        usarSsl: true, emailRemitente: true, nombreRemitente: true, activo: true,
-      },
+    // Enviar el código por email usando la config SMTP del sistema
+    const resultado = await enviarEmail({
+      para: email,
+      asunto: "Tu código de acceso — Trans-Magg S.R.L.",
+      texto: `Tu código de acceso es: ${codigo}\n\nVence en 10 minutos.`,
+      html: `
+        <div style="font-family: sans-serif; max-width: 400px; margin: 0 auto;">
+          <h2 style="color: #1a1a1a;">Trans-Magg S.R.L.</h2>
+          <p>Tu código de acceso es:</p>
+          <div style="font-size: 36px; font-weight: bold; letter-spacing: 8px;
+                      color: #1a1a1a; padding: 20px; background: #f5f5f5;
+                      border-radius: 8px; text-align: center;">
+            ${codigo}
+          </div>
+          <p style="color: #666; margin-top: 16px;">
+            Este código vence en 10 minutos.<br>
+            Si no solicitaste este código, ignorá este mensaje.
+          </p>
+        </div>
+      `,
+      tipo: "sistema",
     })
 
-    if (!config || !config.activo || !config.host || !config.passwordHash) {
-      console.log(`[OTP FALLBACK] Sin config SMTP activa. Email: ${email} | Código: ${codigo}`)
-    } else {
-      try {
-        const pass = decrypt(config.passwordHash)
-        const transporter = nodemailer.createTransport({
-          host: config.host,
-          port: config.puerto!,
-          secure: config.usarSsl,
-          auth: { user: config.usuario!, pass },
-          tls: { rejectUnauthorized: false },
-        })
-        const from = config.emailRemitente
-          ? config.nombreRemitente
-            ? `"${config.nombreRemitente}" <${config.emailRemitente}>`
-            : config.emailRemitente
-          : config.usuario!
-        await transporter.sendMail({
-          from,
-          to: email,
-          subject: "Tu código de acceso — Trans-Magg S.R.L.",
-          text: `Tu código de acceso es: ${codigo}\n\nVence en 10 minutos.`,
-          html: `
-            <div style="font-family: sans-serif; max-width: 400px; margin: 0 auto;">
-              <h2 style="color: #1a1a1a;">Trans-Magg S.R.L.</h2>
-              <p>Tu código de acceso es:</p>
-              <div style="font-size: 36px; font-weight: bold; letter-spacing: 8px;
-                          color: #1a1a1a; padding: 20px; background: #f5f5f5;
-                          border-radius: 8px; text-align: center;">
-                ${codigo}
-              </div>
-              <p style="color: #666; margin-top: 16px;">
-                Este código vence en 10 minutos.<br>
-                Si no solicitaste este código, ignorá este mensaje.
-              </p>
-            </div>
-          `,
-        })
-        console.log(`[OTP] Código enviado a ${email}`)
-      } catch (emailError) {
-        const msg = emailError instanceof Error ? emailError.message : String(emailError)
-        console.error(`[OTP] Error enviando mail a ${email}:`, msg)
-        console.log(`[OTP FALLBACK] Email: ${email} | Código: ${codigo}`)
-      }
+    if (!resultado.ok) {
+      // Fallback: loguear el código para que pueda usarse durante el setup inicial
+      console.log(`[OTP FALLBACK] Email: ${email} | Código: ${codigo}`)
     }
 
     return NextResponse.json({

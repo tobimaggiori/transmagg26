@@ -2,186 +2,124 @@ import nodemailer from "nodemailer"
 import { prisma } from "@/lib/prisma"
 import { decrypt } from "@/lib/crypto"
 
-/**
- * crearTransporter: -> Transporter
- *
- * Devuelve un transporter de nodemailer listo para enviar emails,
- * configurado a partir de variables de entorno.
- * Si EMAIL_SERVER existe como URL completa, la usa directamente;
- * si no, ensambla la configuración desde EMAIL_SERVER_HOST/PORT/USER/PASSWORD.
- */
-function crearTransporter() {
-  if (process.env.EMAIL_SERVER) {
-    return nodemailer.createTransport(process.env.EMAIL_SERVER)
-  }
-
-  return nodemailer.createTransport({
-    host: process.env.EMAIL_SERVER_HOST ?? "smtp.ethereal.email",
-    port: parseInt(process.env.EMAIL_SERVER_PORT ?? "587", 10),
-    secure: false,
-    auth: {
-      user: process.env.EMAIL_SERVER_USER ?? "",
-      pass: process.env.EMAIL_SERVER_PASSWORD ?? "",
-    },
-  })
-}
-
-interface EnviarOtpParams {
-  destinatario: string
-  nombre: string
-  codigo: string
-}
-
-/**
- * enviarEmailOtp: EnviarOtpParams -> Promise<void>
- *
- * Dados el email del destinatario, su nombre y el código OTP,
- * envía un email transaccional con el código formateado en texto y HTML.
- * Carga la configuración SMTP desde la BD (ConfiguracionOtp singleton);
- * si no hay configuración activa, cae al fallback de variables de entorno.
- */
-export async function enviarEmailOtp({
-  destinatario,
-  nombre,
-  codigo,
-}: EnviarOtpParams): Promise<void> {
-  if (process.env.NODE_ENV === "development") {
-    console.log(`[OTP DEV] Email: ${destinatario} | Código: ${codigo}`)
-    return
-  }
-
-  console.log("[OTP] Intentando enviar código a:", destinatario)
-
-  // Intentar cargar configuración desde BD
-  const dbConfig = await prisma.configuracionOtp.findUnique({
-    where: { id: "singleton" },
-    select: {
-      host: true, puerto: true, usuario: true, passwordHash: true,
-      usarSsl: true, emailRemitente: true, nombreRemitente: true, activo: true,
-    },
-  }).catch(() => null)
-
-  let transporter: ReturnType<typeof nodemailer.createTransport>
-  let from: string
-
-  if (dbConfig?.activo && dbConfig.host && dbConfig.passwordHash) {
-    console.log("[OTP] Usando config SMTP de BD:", dbConfig.host, dbConfig.puerto)
-    const pass = decrypt(dbConfig.passwordHash)
-    transporter = nodemailer.createTransport({
-      host: dbConfig.host,
-      port: dbConfig.puerto ?? 587,
-      secure: dbConfig.usarSsl,
-      auth: { user: dbConfig.usuario ?? "", pass },
-      tls: { rejectUnauthorized: false },
-    })
-    from = dbConfig.emailRemitente
-      ? dbConfig.nombreRemitente
-        ? `"${dbConfig.nombreRemitente}" <${dbConfig.emailRemitente}>`
-        : dbConfig.emailRemitente
-      : "noreply@transmagg.com.ar"
-  } else {
-    console.log("[OTP] Sin config SMTP en BD (activo:", dbConfig?.activo, ") — usando variables de entorno")
-    transporter = crearTransporter()
-    from = process.env.EMAIL_FROM ?? "noreply@transmagg.com.ar"
-  }
-
-  const info = await transporter.sendMail({
-    from,
-    to: destinatario,
-    subject: `Tu código de acceso Transmagg: ${codigo}`,
-    text: `
-Hola ${nombre},
-
-Tu código de acceso a Transmagg es: ${codigo}
-
-Este código es válido por 10 minutos.
-
-Si no solicitaste este código, ignorá este mensaje.
-
---
-Transmagg - Sistema de Gestión de Transporte
-`.trim(),
-    html: `
-<!DOCTYPE html>
-<html>
-<body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h2 style="color: #1a1a1a;">Tu código de acceso a Transmagg</h2>
-  <p>Hola <strong>${nombre}</strong>,</p>
-  <p>Tu código de acceso es:</p>
-  <div style="background: #f4f4f5; border-radius: 8px; padding: 20px; text-align: center; margin: 24px 0;">
-    <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #1a1a1a;">${codigo}</span>
-  </div>
-  <p style="color: #666; font-size: 14px;">Este código es válido por <strong>10 minutos</strong>.</p>
-  <p style="color: #666; font-size: 14px;">Si no solicitaste este código, ignorá este mensaje.</p>
-  <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 24px 0;">
-  <p style="color: #999; font-size: 12px;">Transmagg - Sistema de Gestión de Transporte</p>
-</body>
-</html>
-`.trim(),
-  })
-  console.log("[OTP] Email enviado exitosamente. MessageId:", info.messageId)
-}
-
 export interface OpcionesEmail {
-  to: string
-  subject: string
-  text: string
+  /** Destinatario */
+  para: string
+  /** Asunto del email */
+  asunto: string
+  /** Cuerpo HTML */
   html: string
+  /** Cuerpo texto plano (opcional) */
+  texto?: string
+  /** "sistema" usa ConfiguracionOtp; "usuario" usa config SMTP del Usuario */
+  tipo: "sistema" | "usuario"
+  /** Requerido cuando tipo === "usuario" */
+  usuarioId?: string
   attachments?: { filename: string; content: Buffer; contentType: string }[]
 }
 
-export class SmtpNoConfiguradoError extends Error {
-  constructor() {
-    super("El usuario no tiene SMTP configurado")
-    this.name = "SmtpNoConfiguradoError"
-  }
-}
-
 /**
- * enviarEmail: (usuarioId: string, opciones: OpcionesEmail) -> Promise<void>
+ * enviarEmail: OpcionesEmail -> Promise<{ ok: boolean; error?: string }>
  *
- * Envía un email usando la configuración SMTP del usuario indicado.
- * Descifra la contraseña SMTP almacenada en base de datos.
- * Lanza SmtpNoConfiguradoError si el usuario no tiene SMTP activo.
+ * Envía un email usando la configuración SMTP del sistema (ConfiguracionOtp singleton)
+ * o del usuario (campos smtpHost/etc. en Usuario), según `tipo`.
+ * Nunca lanza excepciones — siempre devuelve un resultado.
+ * Si no hay configuración activa, loguea el fallback y devuelve ok: false.
  *
  * Ejemplos:
- * await enviarEmail("usr_123", { to: "cliente@empresa.com", subject: "OP #42", text: "...", html: "..." })
- * // => void (envía desde la cuenta SMTP del usuario)
+ * await enviarEmail({ para: "x@acme.com", asunto: "Test", html: "<p>Hola</p>", tipo: "sistema" })
+ * // => { ok: true } | { ok: false, error: "..." }
+ * await enviarEmail({ para: "x@acme.com", asunto: "OP", html: "...", tipo: "usuario", usuarioId: "uuid" })
+ * // => { ok: true } | { ok: false, error: "Sin configuración SMTP activa" }
  */
-export async function enviarEmail(usuarioId: string, opciones: OpcionesEmail): Promise<void> {
-  const usuario = await prisma.usuario.findUnique({
-    where: { id: usuarioId },
-    select: {
-      email: true,
-      smtpHost: true,
-      smtpPuerto: true,
-      smtpUsuario: true,
-      smtpPassword: true,
-      smtpSsl: true,
-      smtpActivo: true,
-    },
-  })
+export async function enviarEmail(opciones: OpcionesEmail): Promise<{ ok: boolean; error?: string }> {
+  let host: string | null = null
+  let puerto: number | null = null
+  let smtpUser: string | null = null
+  let passwordEncrypted: string | null = null
+  let usarSsl = true
+  let emailRemitente: string | null = null
+  let nombreRemitente = "Trans-Magg S.R.L."
 
-  if (!usuario || !usuario.smtpActivo || !usuario.smtpHost || !usuario.smtpPassword) {
-    throw new SmtpNoConfiguradoError()
+  if (opciones.tipo === "sistema") {
+    const config = await prisma.configuracionOtp.findUnique({
+      where: { id: "singleton" },
+      select: {
+        host: true, puerto: true, usuario: true, passwordHash: true,
+        usarSsl: true, emailRemitente: true, nombreRemitente: true, activo: true,
+      },
+    }).catch(() => null)
+    if (config?.activo && config.host && config.passwordHash) {
+      host = config.host
+      puerto = config.puerto
+      smtpUser = config.usuario
+      passwordEncrypted = config.passwordHash
+      usarSsl = config.usarSsl
+      emailRemitente = config.emailRemitente
+      nombreRemitente = config.nombreRemitente ?? "Trans-Magg S.R.L."
+    }
+  } else if (opciones.tipo === "usuario" && opciones.usuarioId) {
+    const u = await prisma.usuario.findUnique({
+      where: { id: opciones.usuarioId },
+      select: {
+        email: true,
+        smtpHost: true, smtpPuerto: true, smtpUsuario: true,
+        smtpPassword: true, smtpSsl: true, smtpActivo: true,
+      },
+    }).catch(() => null)
+    if (u?.smtpActivo && u.smtpHost && u.smtpPassword) {
+      host = u.smtpHost
+      puerto = u.smtpPuerto
+      smtpUser = u.smtpUsuario ?? u.email
+      passwordEncrypted = u.smtpPassword
+      usarSsl = u.smtpSsl
+      emailRemitente = u.smtpUsuario ?? u.email
+    }
   }
 
-  const password = decrypt(usuario.smtpPassword)
+  if (!host || !puerto || !smtpUser || !passwordEncrypted || !emailRemitente) {
+    console.log(`[EMAIL FALLBACK] Para: ${opciones.para} | Asunto: ${opciones.asunto}`)
+    console.log(`[EMAIL FALLBACK] Sin configuración SMTP activa para tipo="${opciones.tipo}"`)
+    return { ok: false, error: "Sin configuración SMTP activa" }
+  }
+
+  let pass: string
+  try {
+    pass = decrypt(passwordEncrypted)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error("[EMAIL] Error descifrando contraseña SMTP:", msg)
+    return { ok: false, error: `Error de configuración SMTP: ${msg}` }
+  }
 
   const transporter = nodemailer.createTransport({
-    host: usuario.smtpHost,
-    port: usuario.smtpPuerto ?? 587,
-    secure: usuario.smtpSsl,
-    auth: {
-      user: usuario.smtpUsuario ?? usuario.email,
-      pass: password,
-    },
+    host,
+    port: puerto,
+    secure: usarSsl,
+    auth: { user: smtpUser, pass },
+    tls: { rejectUnauthorized: false },
   })
 
-  const from = usuario.smtpUsuario ?? usuario.email
+  const from = `"${nombreRemitente}" <${emailRemitente}>`
 
-  await transporter.sendMail({
-    from,
-    ...opciones,
-  })
+  try {
+    const info = await transporter.sendMail({
+      from,
+      to: opciones.para,
+      subject: opciones.asunto,
+      text: opciones.texto,
+      html: opciones.html,
+      attachments: opciones.attachments?.map((a) => ({
+        filename: a.filename,
+        content: a.content,
+        contentType: a.contentType,
+      })),
+    })
+    console.log(`[EMAIL] Enviado a ${opciones.para}: ${opciones.asunto} — ${info.messageId}`)
+    return { ok: true }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error(`[EMAIL] Error enviando a ${opciones.para}:`, msg)
+    return { ok: false, error: msg }
+  }
 }
