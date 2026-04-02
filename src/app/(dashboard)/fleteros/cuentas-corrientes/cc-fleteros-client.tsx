@@ -1,86 +1,207 @@
 "use client"
 
-import { useState } from "react"
-import { Printer } from "lucide-react"
+import { useState, useEffect, useCallback } from "react"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select } from "@/components/ui/select"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
+import { ExternalLink } from "lucide-react"
+
+// --- Tipos ---
 
 type Fletero = { id: string; razonSocial: string; cuit: string }
-type Movimiento = {
+
+type OrdenPago = {
+  id: string
+  nro: number
   fecha: string
-  concepto: string
-  comprobante: string
-  debe: number
-  haber: number
-  saldo: number
+  pdfS3Key: string | null
 }
+
+type LiquidacionRow = {
+  id: string
+  grabadaEn: string
+  nroComprobante: number | null
+  ptoVenta: number | null
+  pdfS3Key: string | null
+  total: number
+  estado: string
+  adelantosDesc: number
+  gastosDesc: number
+  ordenPago: OrdenPago | null
+}
+
 type CCData = {
   fletero: Fletero
-  movimientos: Movimiento[]
-  totalDebe: number
-  totalHaber: number
-  saldoFinal: number
+  liquidaciones: LiquidacionRow[]
+  totalEmitido: number
+  totalPagado: number
+  saldoPendiente: number
+}
+
+type ResumenFletero = {
+  fletero: Fletero
+  saldoAPagar: number
 }
 
 interface CCFleterosClientProps {
   fleteros: Fletero[]
 }
 
-/**
- * CCFleterosClient: CCFleterosClientProps -> JSX.Element
- *
- * Dado la lista de fleteros activos, permite seleccionar uno y un rango de fechas,
- * consulta la API de CC y muestra la tabla de movimientos cronológicos con saldo acumulado.
- * En fletero CC: DEBE = Transmagg le debe al fletero, HABER = ya fue pagado.
- * Saldo > 0 = Transmagg debe dinero al fletero.
- * Existe para visualizar la cuenta corriente individual de cada fletero.
- *
- * Ejemplos:
- * <CCFleterosClient fleteros={[{ id: "f1", razonSocial: "Juan Pérez", cuit: "20..." }]} />
- * // => buscador de fleteros + tabla de movimientos al filtrar
- */
+// --- Badge de estado ---
+
+function EstadoBadge({ estado }: { estado: string }) {
+  if (estado === "PAGADA") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+        Pagado ✓
+      </span>
+    )
+  }
+  if (estado === "PARCIALMENTE_PAGADA") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800">
+        Pago parcial
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
+      Pendiente de pago
+    </span>
+  )
+}
+
+// --- Formato LP ---
+
+function formatLP(ptoVenta: number | null, nro: number | null): string {
+  if (ptoVenta == null || nro == null) return "s/n"
+  return `${String(ptoVenta).padStart(4, "0")}-${String(nro).padStart(8, "0")}`
+}
+
+// --- Componente principal ---
+
 export function CCFleterosClient({ fleteros }: CCFleterosClientProps) {
   const hoy = new Date().toISOString().slice(0, 10)
-  const noventa = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const inicioAnio = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10)
 
   const [fleteroId, setFleteroId] = useState("")
-  const [desde, setDesde] = useState(noventa)
+  const [estadoFiltro, setEstadoFiltro] = useState("")
+  const [desde, setDesde] = useState(inicioAnio)
   const [hasta, setHasta] = useState(hoy)
   const [data, setData] = useState<CCData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function handleFiltrar() {
-    if (!fleteroId) return
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch(`/api/fleteros/${fleteroId}/cuenta-corriente?desde=${desde}&hasta=${hasta}`)
-      if (!res.ok) {
-        const body = await res.json()
-        throw new Error(body.error ?? "Error al cargar cuenta corriente")
+  // Resumen de todos los fleteros con saldo
+  const [resumenes, setResumenes] = useState<ResumenFletero[] | null>(null)
+  const [loadingResumenes, setLoadingResumenes] = useState(true)
+
+  useEffect(() => {
+    fetch("/api/cuentas-corrientes/fleteros")
+      .then((r) => r.json())
+      .then((d: ResumenFletero[]) => {
+        setResumenes(Array.isArray(d) ? d.filter((r) => r.saldoAPagar > 0) : [])
+        setLoadingResumenes(false)
+      })
+      .catch(() => setLoadingResumenes(false))
+  }, [])
+
+  const cargarCC = useCallback(
+    async (fId: string) => {
+      if (!fId) return
+      setLoading(true)
+      setError(null)
+      try {
+        const params = new URLSearchParams({
+          ...(estadoFiltro ? { estado: estadoFiltro } : {}),
+          ...(desde ? { desde } : {}),
+          ...(hasta ? { hasta } : {}),
+        })
+        const res = await fetch(`/api/fleteros/${fId}/cc-lps?${params}`)
+        if (!res.ok) {
+          const body = await res.json()
+          throw new Error(body.error ?? "Error al cargar")
+        }
+        setData(await res.json())
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Error desconocido")
+      } finally {
+        setLoading(false)
       }
-      const json = await res.json()
-      setData(json)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Error desconocido")
-    } finally {
-      setLoading(false)
-    }
+    },
+    [estadoFiltro, desde, hasta]
+  )
+
+  function handleFiltrar() {
+    cargarCC(fleteroId)
+  }
+
+  function seleccionarFletero(id: string) {
+    setFleteroId(id)
+    setData(null)
   }
 
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold">Cuentas Corrientes — Fleteros</h1>
 
-      {/* Buscador */}
+      {/* Resumen de saldos pendientes */}
+      {!loadingResumenes && resumenes && resumenes.length > 0 && (
+        <Card>
+          <CardContent className="p-0">
+            <div className="px-4 py-3 border-b bg-muted/30">
+              <p className="text-sm font-medium text-muted-foreground">Saldos pendientes</p>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground text-xs bg-muted/10">
+                  <th className="px-4 py-2 font-medium">Fletero</th>
+                  <th className="px-4 py-2 font-medium">CUIT</th>
+                  <th className="px-4 py-2 font-medium text-right">Saldo pendiente</th>
+                  <th className="px-4 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {resumenes.map((r) => (
+                  <tr
+                    key={r.fletero.id}
+                    className="border-b last:border-0 hover:bg-muted/30 cursor-pointer"
+                    onClick={() => seleccionarFletero(r.fletero.id)}
+                  >
+                    <td className="px-4 py-2 font-medium">{r.fletero.razonSocial}</td>
+                    <td className="px-4 py-2 text-muted-foreground">{formatearCuit(r.fletero.cuit)}</td>
+                    <td className="px-4 py-2 text-right font-semibold text-red-600">
+                      {formatearMoneda(r.saldoAPagar)}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setFleteroId(r.fletero.id)
+                          setData(null)
+                        }}
+                      >
+                        Ver CC
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Filtros */}
       <Card>
         <CardContent className="pt-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
             <div className="md:col-span-1">
               <Label>Fletero</Label>
               <SearchCombobox
@@ -90,9 +211,20 @@ export function CCFleterosClient({ fleteros }: CCFleterosClientProps) {
                   sublabel: formatearCuit(f.cuit),
                 }))}
                 value={fleteroId}
-                onChange={setFleteroId}
+                onChange={seleccionarFletero}
                 placeholder="Buscar fletero..."
               />
+            </div>
+            <div>
+              <Label>Estado</Label>
+              <Select
+                value={estadoFiltro}
+                onChange={(e) => setEstadoFiltro(e.target.value)}
+              >
+                <option value="">Todos</option>
+                <option value="pendientes">Pendientes</option>
+                <option value="pagados">Pagados</option>
+              </Select>
             </div>
             <div>
               <Label>Desde</Label>
@@ -120,120 +252,126 @@ export function CCFleterosClient({ fleteros }: CCFleterosClientProps) {
 
       {data && (
         <>
-          {/* Header fletero + saldo */}
+          {/* Header */}
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
               <h2 className="text-xl font-semibold">{data.fletero.razonSocial}</h2>
               <p className="text-muted-foreground text-sm">CUIT: {formatearCuit(data.fletero.cuit)}</p>
             </div>
-            <div className="text-right">
-              <p className="text-sm text-muted-foreground">Saldo actual</p>
-              <p
-                className={`text-2xl font-bold ${
-                  data.saldoFinal > 0
-                    ? "text-red-600"
-                    : data.saldoFinal < 0
-                    ? "text-green-600"
-                    : "text-muted-foreground"
-                }`}
-              >
-                {data.saldoFinal > 0
-                  ? formatearMoneda(data.saldoFinal)
-                  : data.saldoFinal < 0
-                  ? `- ${formatearMoneda(Math.abs(data.saldoFinal))}`
-                  : "$0"}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {data.saldoFinal > 0
-                  ? "Deuda de Transmagg al fletero"
-                  : data.saldoFinal < 0
-                  ? "Saldo a favor de Transmagg"
-                  : "Cuenta saldada"}
-              </p>
-            </div>
-            <Button variant="outline" onClick={() => window.print()}>
-              <Printer className="h-4 w-4 mr-2" /> Imprimir
-            </Button>
           </div>
 
-          {/* Tabla de movimientos */}
+          {/* Tabla de LPs */}
           <Card>
             <CardContent className="p-0">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="px-4 py-3 text-left">Fecha</th>
-                    <th className="px-4 py-3 text-left">Concepto</th>
-                    <th className="px-4 py-3 text-left">Comprobante</th>
-                    <th className="px-4 py-3 text-right">Debe</th>
-                    <th className="px-4 py-3 text-right text-green-700">Haber</th>
-                    <th className="px-4 py-3 text-right">Saldo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.movimientos.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                        Sin movimientos en el período
-                      </td>
+              {data.liquidaciones.length === 0 ? (
+                <p className="px-4 py-8 text-center text-muted-foreground">
+                  Este fletero no tiene Líquidos Productos en el período seleccionado.
+                </p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
+                      <th className="px-4 py-3">Fecha</th>
+                      <th className="px-4 py-3">LP Nro</th>
+                      <th className="px-4 py-3 text-right">Total LP</th>
+                      <th className="px-4 py-3 text-right">Adelantos desc.</th>
+                      <th className="px-4 py-3 text-right">Gastos desc.</th>
+                      <th className="px-4 py-3">OP</th>
+                      <th className="px-4 py-3">Estado</th>
+                      <th className="px-4 py-3"></th>
                     </tr>
-                  ) : (
-                    data.movimientos.map((mov, i) => (
-                      <tr key={i} className="border-b hover:bg-muted/30">
-                        <td className="px-4 py-2 text-muted-foreground">{formatearFecha(mov.fecha)}</td>
-                        <td className="px-4 py-2">{mov.concepto}</td>
-                        <td className="px-4 py-2 text-muted-foreground text-xs">{mov.comprobante}</td>
-                        <td className="px-4 py-2 text-right">
-                          {mov.debe > 0 ? formatearMoneda(mov.debe) : ""}
+                  </thead>
+                  <tbody>
+                    {data.liquidaciones.map((liq) => (
+                      <tr key={liq.id} className="border-b last:border-0 hover:bg-muted/20">
+                        <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                          {formatearFecha(liq.grabadaEn)}
                         </td>
-                        <td className="px-4 py-2 text-right text-green-700">
-                          {mov.haber > 0 ? formatearMoneda(mov.haber) : ""}
+                        <td className="px-4 py-3">
+                          {liq.pdfS3Key ? (
+                            <a
+                              href={`/api/storage/${liq.pdfS3Key}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-mono text-primary hover:underline inline-flex items-center gap-1"
+                            >
+                              LP {formatLP(liq.ptoVenta, liq.nroComprobante)}
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          ) : (
+                            <span className="font-mono text-muted-foreground">
+                              LP {formatLP(liq.ptoVenta, liq.nroComprobante)}
+                            </span>
+                          )}
                         </td>
-                        <td
-                          className={`px-4 py-2 text-right font-medium ${
-                            mov.saldo > 0 ? "text-red-600" : mov.saldo < 0 ? "text-green-600" : ""
-                          }`}
-                        >
-                          {mov.saldo < 0
-                            ? `- ${formatearMoneda(Math.abs(mov.saldo))}`
-                            : formatearMoneda(mov.saldo)}
+                        <td className="px-4 py-3 text-right font-medium tabular-nums">
+                          {formatearMoneda(liq.total)}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+                          {liq.adelantosDesc > 0 ? formatearMoneda(liq.adelantosDesc) : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+                          {liq.gastosDesc > 0 ? formatearMoneda(liq.gastosDesc) : "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          {liq.ordenPago ? (
+                            liq.ordenPago.pdfS3Key ? (
+                              <a
+                                href={`/api/storage/${liq.ordenPago.pdfS3Key}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline inline-flex items-center gap-1 whitespace-nowrap"
+                              >
+                                OP Nro {liq.ordenPago.nro}
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground whitespace-nowrap">
+                                OP Nro {liq.ordenPago.nro}
+                              </span>
+                            )
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <EstadoBadge estado={liq.estado} />
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {!liq.ordenPago && liq.estado !== "PAGADA" && (
+                            <a
+                              href={`/fleteros/ordenes-de-pago?fleteroId=${data.fletero.id}`}
+                              className="text-xs text-primary hover:underline whitespace-nowrap"
+                            >
+                              Ir a Órdenes de Pago →
+                            </a>
+                          )}
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-muted font-semibold border-t-2">
-                    <td colSpan={3} className="px-4 py-3 text-right">
-                      Totales del período
-                    </td>
-                    <td className="px-4 py-3 text-right">{formatearMoneda(data.totalDebe)}</td>
-                    <td className="px-4 py-3 text-right text-green-700">
-                      {formatearMoneda(data.totalHaber)}
-                    </td>
-                    <td
-                      className={`px-4 py-3 text-right ${
-                        data.saldoFinal > 0 ? "text-red-600" : data.saldoFinal < 0 ? "text-green-600" : ""
-                      }`}
-                    >
-                      {data.saldoFinal < 0
-                        ? `- ${formatearMoneda(Math.abs(data.saldoFinal))}`
-                        : formatearMoneda(data.saldoFinal)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </CardContent>
           </Card>
 
-          {/* Leyenda saldo */}
-          <p className="text-sm font-medium text-center py-2 rounded-md border">
-            {data.saldoFinal > 0
-              ? `Deuda de Transmagg: ${formatearMoneda(data.saldoFinal)} — Transmagg debe esta suma al fletero`
-              : data.saldoFinal < 0
-              ? `Saldo a favor de Transmagg: ${formatearMoneda(Math.abs(data.saldoFinal))} — El fletero tiene un saldo a favor`
-              : "Cuenta saldada — Sin deuda pendiente"}
-          </p>
+          {/* Totales al pie */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="border rounded p-4 text-center">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Total emitido</p>
+              <p className="text-xl font-bold mt-1">{formatearMoneda(data.totalEmitido)}</p>
+            </div>
+            <div className="border rounded p-4 text-center">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Total pagado</p>
+              <p className="text-xl font-bold mt-1 text-green-700">{formatearMoneda(data.totalPagado)}</p>
+            </div>
+            <div className={`border rounded p-4 text-center ${data.saldoPendiente > 0 ? "border-red-200 bg-red-50" : ""}`}>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Saldo pendiente</p>
+              <p className={`text-xl font-bold mt-1 ${data.saldoPendiente > 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                {formatearMoneda(data.saldoPendiente)}
+              </p>
+            </div>
+          </div>
         </>
       )}
     </div>
