@@ -313,7 +313,7 @@ export function FacturarEmpresaClient({ empresas, camiones, choferes }: Facturar
                       name="tipoCbte"
                       value="201"
                       checked={tipoCbteNum === 201}
-                      onChange={() => setTipoCbteNum(201)}
+                      onChange={() => { setTipoCbteNum(201); setModalidadMiPymes("SCA") }}
                       className="accent-primary"
                     />
                     Factura A MiPyme <span className="text-xs text-muted-foreground">(cód. 201)</span>
