@@ -62,6 +62,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             proveedor: { select: { razonSocial: true, cuit: true } },
           },
         },
+        facturaSeguro: {
+          select: {
+            id: true,
+            nroComprobante: true,
+            aseguradora: { select: { razonSocial: true } },
+          },
+        },
       },
       orderBy: [{ periodo: "asc" }],
     })
@@ -83,9 +90,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const filas = compras
       .map((a) => {
         const fp = a.facturaProveedor
+        const fs = a.facturaSeguro
         const fecha = fp?.fechaCbte ? fmtFecha(fp.fechaCbte) : a.periodo
-        const proveedor = fp?.proveedor.razonSocial ?? "—"
-        const cbte = fp ? `${fp.tipoCbte} ${fp.nroComprobante}` : "—"
+        const proveedor = fp?.proveedor.razonSocial ?? fs?.aseguradora.razonSocial ?? "—"
+        const cbte = fp ? `${fp.tipoCbte} ${fp.nroComprobante}` : fs ? `Seguro ${fs.nroComprobante}` : "—"
         const cuit = fp?.proveedor.cuit ? fmtCuit(fp.proveedor.cuit) : "—"
         return `<tr>
           <td>${fecha}</td>

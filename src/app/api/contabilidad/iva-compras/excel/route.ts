@@ -57,6 +57,13 @@ export async function GET(request: NextRequest): Promise<Response> {
             proveedor: { select: { razonSocial: true, cuit: true } },
           },
         },
+        facturaSeguro: {
+          select: {
+            id: true,
+            nroComprobante: true,
+            aseguradora: { select: { razonSocial: true } },
+          },
+        },
       },
       orderBy: [{ periodo: "asc" }],
     })
@@ -81,9 +88,10 @@ export async function GET(request: NextRequest): Promise<Response> {
 
     for (const a of compras) {
       const fp = a.facturaProveedor
+      const fs = a.facturaSeguro
       const fecha = fp?.fechaCbte ?? null
-      const proveedor = fp?.proveedor.razonSocial ?? "—"
-      const cbte = fp ? `${fp.tipoCbte} ${fp.nroComprobante}` : "—"
+      const proveedor = fp?.proveedor.razonSocial ?? fs?.aseguradora.razonSocial ?? "—"
+      const cbte = fp ? `${fp.tipoCbte} ${fp.nroComprobante}` : fs ? `Seguro ${fs.nroComprobante}` : "—"
       const cuit = fp?.proveedor.cuit ? fmtCuit(fp.proveedor.cuit) : "—"
       const row = ws.addRow([fecha, proveedor, cbte, a.baseImponible, a.montoIva, a.alicuota, cuit])
       if (fecha) row.getCell(1).numFmt = "dd/mm/yyyy"

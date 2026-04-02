@@ -26,6 +26,7 @@ import {
   ChevronDown,
   ChevronRight,
   ShieldAlert,
+  Shield,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
@@ -116,6 +117,17 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/contabilidad/reportes", label: "Reportes" },
       { href: "/contabilidad/polizas", label: "Pólizas de Seguro" },
+    ],
+  },
+  {
+    id: "aseguradoras",
+    label: "Aseguradoras",
+    icon: Shield,
+    seccion: "aseguradoras",
+    pathPrefix: "/aseguradoras",
+    items: [
+      { href: "/aseguradoras/facturas", label: "Facturas y Pólizas" },
+      { href: "/aseguradoras/resumen-tarjetas", label: "Resumen Tarjetas" },
     ],
   },
   {
