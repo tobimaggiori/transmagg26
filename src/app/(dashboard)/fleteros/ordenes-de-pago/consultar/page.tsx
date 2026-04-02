@@ -8,6 +8,8 @@
 import { useState, useEffect, useCallback } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
+import { PDFViewer } from "@/components/ui/pdf-viewer"
+import { usePDFViewer } from "@/hooks/use-pdf-viewer"
 
 interface OrdenPago {
   id: string
@@ -19,6 +21,7 @@ interface OrdenPago {
 }
 
 export default function ConsultarOrdenesDePagoPage() {
+  const { estado: estadoPDF, abrirPDF, cerrarPDF } = usePDFViewer()
   const [ordenes, setOrdenes] = useState<OrdenPago[]>([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -134,7 +137,10 @@ export default function ConsultarOrdenesDePagoPage() {
                   <td className="px-4 py-3 text-right font-medium">{formatearMoneda(op.total)}</td>
                   <td className="px-4 py-3 text-right">
                     <button
-                      onClick={() => window.open(`/api/ordenes-pago/${op.id}/pdf`, "_blank")}
+                      onClick={() => abrirPDF({
+                        url: `/api/ordenes-pago/${op.id}/pdf`,
+                        titulo: `Orden de Pago Nro ${op.nro.toLocaleString("es-AR")} — ${op.fletero.razonSocial}`,
+                      })}
                       className="h-7 px-3 rounded-md border text-xs font-medium hover:bg-accent"
                     >
                       Ver PDF
@@ -149,6 +155,8 @@ export default function ConsultarOrdenesDePagoPage() {
           </div>
         </div>
       )}
+
+      <PDFViewer {...estadoPDF} onClose={cerrarPDF} />
     </div>
   )
 }

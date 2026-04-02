@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
+import { PDFViewer } from "@/components/ui/pdf-viewer"
+import { usePDFViewer } from "@/hooks/use-pdf-viewer"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -60,6 +62,7 @@ function fmtNroRecibo(pto: number, nro: number) {
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function ConsultarRecibosClient({ empresas }: ConsultarRecibosClientProps) {
+  const { estado: estadoPDF, abrirPDF, cerrarPDF } = usePDFViewer()
   const [empresaId, setEmpresaId] = useState("")
   const [desde, setDesde] = useState("")
   const [hasta, setHasta] = useState("")
@@ -67,7 +70,7 @@ export function ConsultarRecibosClient({ empresas }: ConsultarRecibosClientProps
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [buscado, setBuscado] = useState(false)
-  const [loadingPDF, setLoadingPDF] = useState<string | null>(null)
+  // PDF viewer state managed by usePDFViewer hook
   const [reciboDetalle, setReciboDetalle] = useState<ReciboRow | null>(null)
 
   const empresaItems = empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: e.cuit }))
@@ -93,18 +96,11 @@ export function ConsultarRecibosClient({ empresas }: ConsultarRecibosClientProps
     }
   }, [empresaId, desde, hasta])
 
-  async function verPDF(recibo: ReciboRow) {
-    setLoadingPDF(recibo.id)
-    try {
-      const res = await fetch(`/api/recibos-cobranza/${recibo.id}/pdf`)
-      if (!res.ok) throw new Error("Error obteniendo PDF")
-      const { url } = await res.json()
-      window.open(url, "_blank")
-    } catch {
-      alert("No se pudo obtener el PDF")
-    } finally {
-      setLoadingPDF(null)
-    }
+  function verPDF(recibo: ReciboRow) {
+    abrirPDF({
+      fetchUrl: `/api/recibos-cobranza/${recibo.id}/pdf`,
+      titulo: `Recibo ${fmtNroRecibo(recibo.ptoVenta, recibo.nro)} — ${recibo.empresa.razonSocial}`,
+    })
   }
 
   const totalCobradoGeneral = recibos.reduce((s, r) => s + r.totalCobrado, 0)
@@ -207,13 +203,12 @@ export function ConsultarRecibosClient({ empresas }: ConsultarRecibosClientProps
                           <Button
                             size="sm"
                             variant="outline"
-                            disabled={loadingPDF === r.id}
                             onClick={(e) => {
                               e.stopPropagation()
                               verPDF(r)
                             }}
                           >
-                            {loadingPDF === r.id ? "..." : "PDF"}
+                            PDF
                           </Button>
                         </td>
                       </tr>
@@ -289,6 +284,8 @@ export function ConsultarRecibosClient({ empresas }: ConsultarRecibosClientProps
           </CardContent>
         </Card>
       )}
+
+      <PDFViewer {...estadoPDF} onClose={cerrarPDF} />
     </div>
   )
 }

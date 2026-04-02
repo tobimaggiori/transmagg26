@@ -12,6 +12,8 @@ import { formatearNroComprobante } from "@/lib/liquidacion-utils"
 import { SelectContactoEmail } from "@/components/forms/select-contacto-email"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { PDFViewer } from "@/components/ui/pdf-viewer"
+import { usePDFViewer } from "@/hooks/use-pdf-viewer"
 import { Check, ChevronsUpDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Rol } from "@/types"
@@ -228,6 +230,7 @@ function ModalDetalleLiquidacion({
   onEditarPago,
   onCerrar,
   cargando,
+  onAbrirPDF,
 }: {
   liq: Liquidacion
   onCambiarEstado: (estado: string) => void
@@ -235,6 +238,7 @@ function ModalDetalleLiquidacion({
   onEditarPago?: (pagoId: string) => void
   onCerrar: () => void
   cargando: boolean
+  onAbrirPDF?: (params: { url: string; titulo: string }) => void
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -329,22 +333,16 @@ function ModalDetalleLiquidacion({
                               <span className="text-xs text-muted-foreground whitespace-nowrap">
                                 OP Nro {String(p.ordenPago.nro).padStart(8, "0")} — {formatearFecha(new Date(p.ordenPago.fecha))}
                               </span>
-                              <a
-                                href={`/api/ordenes-pago/${p.ordenPago.id}/pdf`}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                              <button
+                                type="button"
+                                onClick={() => onAbrirPDF?.({
+                                  url: `/api/ordenes-pago/${p.ordenPago!.id}/pdf`,
+                                  titulo: `OP Nro ${String(p.ordenPago!.nro).padStart(8, "0")}`,
+                                })}
                                 className="h-5 px-1.5 rounded border text-xs font-medium hover:bg-accent inline-flex items-center"
                               >
                                 Ver
-                              </a>
-                              <a
-                                href={`/api/ordenes-pago/${p.ordenPago.id}/pdf?print=true`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="h-5 px-1.5 rounded border text-xs font-medium hover:bg-accent inline-flex items-center"
-                              >
-                                Imprimir
-                              </a>
+                              </button>
                               <EnviarEmailOP ordenPagoId={p.ordenPago.id} nro={p.ordenPago.nro} fleteroId={liq.fleteroId} />
                             </div>
                           )}
@@ -437,6 +435,7 @@ function ModalDetalleLiquidacion({
  */
 export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarLPClientProps) {
   const esInterno = rol === "ADMIN_TRANSMAGG" || rol === "OPERADOR_TRANSMAGG"
+  const { estado: estadoPDF, abrirPDF, cerrarPDF } = usePDFViewer()
 
   const [fleteroId, setFleteroId] = useState<string>(fleteroIdPropio ?? "")
   const [liquidaciones, setLiquidaciones] = useState<Liquidacion[]>([])
@@ -609,6 +608,7 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
           }}
           onCerrar={() => setLiquidacionDetalle(null)}
           cargando={cambioEstadoCargando}
+          onAbrirPDF={(params) => abrirPDF(params)}
         />
       )}
 
@@ -646,6 +646,7 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
         />
       )}
 
+      <PDFViewer {...estadoPDF} onClose={cerrarPDF} />
     </div>
   )
 }
