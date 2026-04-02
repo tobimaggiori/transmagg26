@@ -5,7 +5,7 @@
 
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
-import { puedeAcceder } from "@/lib/permissions"
+import { puedeAcceder, tienePermiso } from "@/lib/permissions"
 import { BancosClient } from "./bancos-client"
 import type { Rol } from "@/types"
 
@@ -15,6 +15,9 @@ export default async function BancosPage() {
 
   const rol = (session.user.rol ?? "OPERADOR_TRANSMAGG") as Rol
   if (!puedeAcceder(rol, "cuentas")) redirect("/dashboard")
+
+  const tieneAcceso = await tienePermiso(session.user.id, rol, "cuentas.bancos")
+  if (!tieneAcceso) redirect("/dashboard")
 
   return <BancosClient />
 }

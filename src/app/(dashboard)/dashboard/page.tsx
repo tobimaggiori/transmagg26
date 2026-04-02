@@ -8,7 +8,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { esRolInterno } from "@/lib/permissions"
+import { esRolInterno, getPermisosUsuario } from "@/lib/permissions"
 import { FinancialDashboardClient } from "./financial-dashboard-client"
 import { DashboardChoferTransmagg } from "./dashboard-chofer-transmagg"
 import type { Rol } from "@/types"
@@ -42,7 +42,8 @@ export default async function DashboardPage() {
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
 
   if (esRolInterno(rol)) {
-    return <FinancialDashboardClient />
+    const permisos = await getPermisosUsuario(session.user.id, rol)
+    return <FinancialDashboardClient permisos={permisos} />
   }
 
   // Panel personal para CHOFER empleado de Transmagg

@@ -7,7 +7,7 @@
  * si se requiere seleccionar una empresa o un fletero como contexto.
  */
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -244,6 +244,238 @@ function SmtpModal({
         </div>
       </div>
     </form>
+  )
+}
+
+// ─── Árbol de permisos y PermisosPanel ───────────────────────────────────────
+
+const ARBOL_PERMISOS = [
+  {
+    label: "Dashboard", seccion: "dashboard",
+    sub: [
+      { label: "Deuda de Empresas", seccion: "dashboard.deuda_empresas" },
+      { label: "Deuda a Fleteros", seccion: "dashboard.deuda_fleteros" },
+      { label: "Pendiente de Facturar", seccion: "dashboard.pendiente_facturar" },
+      { label: "Pendiente de Liquidar", seccion: "dashboard.pendiente_liquidar" },
+      { label: "Cheques en Cartera", seccion: "dashboard.cheques_cartera" },
+      { label: "Cheques Emitidos", seccion: "dashboard.cheques_emitidos" },
+      { label: "Efectivo en Caja", seccion: "dashboard.efectivo_caja" },
+      { label: "Cuentas — Bancos", seccion: "dashboard.cuentas_bancos" },
+      { label: "Cuentas — Brokers", seccion: "dashboard.cuentas_brokers" },
+      { label: "Cuentas — Billeteras", seccion: "dashboard.cuentas_billeteras" },
+    ]
+  },
+  {
+    label: "Fleteros", seccion: "fleteros",
+    sub: [
+      { label: "Viajes", seccion: "fleteros.viajes" },
+      { label: "Líquidos Productos", seccion: "fleteros.liquidos_productos" },
+      { label: "Órdenes de Pago", seccion: "fleteros.ordenes_pago" },
+      { label: "Gastos y Adelantos", seccion: "fleteros.gastos_adelantos" },
+      { label: "Cuentas Corrientes", seccion: "fleteros.cuentas_corrientes" },
+    ]
+  },
+  {
+    label: "Empresas", seccion: "empresas",
+    sub: [
+      { label: "Facturas", seccion: "empresas.facturas" },
+      { label: "Recibos", seccion: "empresas.recibos" },
+      { label: "Cuentas Corrientes", seccion: "empresas.cuentas_corrientes" },
+    ]
+  },
+  {
+    label: "Proveedores", seccion: "proveedores",
+    sub: [
+      { label: "Facturas", seccion: "proveedores.facturas" },
+      { label: "Registrar Pago", seccion: "proveedores.pagos" },
+      { label: "Cuentas Corrientes", seccion: "proveedores.cuentas_corrientes" },
+    ]
+  },
+  {
+    label: "Contabilidad", seccion: "contabilidad",
+    sub: [
+      { label: "Reportes", seccion: "contabilidad.reportes" },
+      { label: "Pólizas de Seguro", seccion: "contabilidad.polizas" },
+    ]
+  },
+  {
+    label: "Cuentas", seccion: "cuentas",
+    sub: [
+      { label: "Bancos", seccion: "cuentas.bancos" },
+      { label: "Brokers", seccion: "cuentas.brokers" },
+      { label: "Billeteras", seccion: "cuentas.billeteras" },
+    ]
+  },
+  {
+    label: "Aseguradoras", seccion: "aseguradoras",
+    sub: []
+  },
+]
+
+/**
+ * PermisosPanel: { usuarioId } -> JSX.Element
+ *
+ * Dado el id de un OPERADOR_TRANSMAGG, carga y permite editar sus permisos
+ * granulares por sección. Muestra un árbol de checkboxes con estado indeterminate
+ * en los padres cuando solo algunos hijos están habilitados.
+ * Existe para que el ADMIN_TRANSMAGG configure qué secciones puede ver cada operador.
+ */
+function PermisosPanel({ usuarioId }: { usuarioId: string }) {
+  const [permisos, setPermisos] = useState<Set<string>>(new Set())
+  const [loading, setLoading] = useState(true)
+  const [guardando, setGuardando] = useState(false)
+  const [resultado, setResultado] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    fetch(`/api/usuarios/${usuarioId}/permisos`)
+      .then(r => r.json())
+      .then((data: { permisos: string[] }) => {
+        setPermisos(new Set(data.permisos ?? []))
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [usuarioId])
+
+  function toggleSeccion(seccion: string) {
+    setPermisos(prev => {
+      const next = new Set(prev)
+      if (next.has(seccion)) next.delete(seccion)
+      else next.add(seccion)
+      return next
+    })
+    setResultado(null)
+  }
+
+  function toggleGrupo(grupo: typeof ARBOL_PERMISOS[number]) {
+    const secciones = grupo.sub.length > 0
+      ? grupo.sub.map(s => s.seccion)
+      : [grupo.seccion]
+    const todasChecked = secciones.every(s => permisos.has(s))
+    setPermisos(prev => {
+      const next = new Set(prev)
+      if (todasChecked) {
+        secciones.forEach(s => next.delete(s))
+        next.delete(grupo.seccion)
+      } else {
+        secciones.forEach(s => next.add(s))
+        if (grupo.sub.length === 0) next.add(grupo.seccion)
+      }
+      return next
+    })
+    setResultado(null)
+  }
+
+  async function handleGuardar() {
+    setGuardando(true)
+    setResultado(null)
+    try {
+      const res = await fetch(`/api/usuarios/${usuarioId}/permisos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ permisos: Array.from(permisos) }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setResultado({ ok: true, msg: "Permisos guardados correctamente" })
+      } else {
+        setResultado({ ok: false, msg: (data as { error?: string }).error ?? "Error al guardar" })
+      }
+    } catch {
+      setResultado({ ok: false, msg: "Error de red" })
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  if (loading) return <p className="text-sm text-muted-foreground">Cargando permisos...</p>
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+        {ARBOL_PERMISOS.map((grupo) => {
+          const secciones = grupo.sub.length > 0 ? grupo.sub.map(s => s.seccion) : [grupo.seccion]
+          const checkedCount = secciones.filter(s => permisos.has(s)).length
+          const allChecked = checkedCount === secciones.length
+          const someChecked = checkedCount > 0 && !allChecked
+
+          return (
+            <div key={grupo.seccion} className="space-y-1">
+              <GrupoCheckbox
+                label={grupo.label}
+                allChecked={allChecked}
+                someChecked={someChecked}
+                onChange={() => toggleGrupo(grupo)}
+              />
+              {grupo.sub.length > 0 && (
+                <div className="ml-5 space-y-0.5">
+                  {grupo.sub.map((item) => (
+                    <label key={item.seccion} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={permisos.has(item.seccion)}
+                        onChange={() => toggleSeccion(item.seccion)}
+                        className="h-3.5 w-3.5 rounded border-input"
+                      />
+                      <span>{item.label}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {resultado && (
+        <p className={`text-sm font-medium ${resultado.ok ? "text-green-600" : "text-destructive"}`}>
+          {resultado.ok ? "✓ " : "✗ "}{resultado.msg}
+        </p>
+      )}
+
+      <div className="flex justify-end pt-1">
+        <Button type="button" size="sm" onClick={handleGuardar} disabled={guardando}>
+          {guardando ? "Guardando..." : "Guardar permisos"}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * GrupoCheckbox: checkbox padre con soporte de estado indeterminate.
+ * Usa ref para setear la propiedad nativa `indeterminate` en el DOM.
+ */
+function GrupoCheckbox({
+  label,
+  allChecked,
+  someChecked,
+  onChange,
+}: {
+  label: string
+  allChecked: boolean
+  someChecked: boolean
+  onChange: () => void
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.indeterminate = someChecked
+    }
+  }, [someChecked])
+
+  return (
+    <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+      <input
+        ref={ref}
+        type="checkbox"
+        checked={allChecked}
+        onChange={onChange}
+        className="h-3.5 w-3.5 rounded border-input"
+      />
+      <span>{label}</span>
+    </label>
   )
 }
 
@@ -512,19 +744,27 @@ function ListaUsuarios({
       </Dialog>
 
       <Dialog open={!!dialogEditar} onOpenChange={(o) => { if (!o) setDialogEditar(null) }}>
-        <DialogContent>
+        <DialogContent className={dialogEditar?.rol === "OPERADOR_TRANSMAGG" ? "max-w-2xl" : undefined}>
           <DialogHeader>
             <DialogTitle>Editar usuario</DialogTitle>
             <DialogDescription>Modificá los datos del usuario.</DialogDescription>
           </DialogHeader>
           {dialogEditar && (
-            <UsuarioFormModal
-              usuario={dialogEditar}
-              empresas={empresas}
-              fleteros={fleteros}
-              tipo={tipo}
-              onSuccess={() => setDialogEditar(null)}
-            />
+            <>
+              <UsuarioFormModal
+                usuario={dialogEditar}
+                empresas={empresas}
+                fleteros={fleteros}
+                tipo={tipo}
+                onSuccess={() => setDialogEditar(null)}
+              />
+              {dialogEditar.rol === "OPERADOR_TRANSMAGG" && (
+                <div className="border-t pt-4 mt-2">
+                  <h3 className="text-sm font-semibold mb-3">Permisos</h3>
+                  <PermisosPanel usuarioId={dialogEditar.id} />
+                </div>
+              )}
+            </>
           )}
         </DialogContent>
       </Dialog>

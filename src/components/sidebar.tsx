@@ -44,6 +44,8 @@ interface SidebarProps {
   esChoferTransmagg?: boolean
   /** Cuando es false y el rol es ADMIN_TRANSMAGG, muestra alerta de config ARCA incompleta */
   arcaActiva?: boolean
+  /** Array de secciones habilitadas para OPERADOR_TRANSMAGG (granular) */
+  permisos?: string[]
 }
 
 /**
@@ -52,6 +54,8 @@ interface SidebarProps {
 interface SubItem {
   href: string
   label: string
+  /** Sección granular para filtrar por permisos. "" o undefined = siempre visible */
+  seccion?: string
 }
 
 /**
@@ -77,9 +81,9 @@ const NAV_GROUPS: NavGroup[] = [
     seccion: "facturas",
     pathPrefix: "/empresas",
     items: [
-      { href: "/empresas/facturas", label: "Facturas" },
-      { href: "/empresas/recibos", label: "Recibos por Cobranza" },
-      { href: "/empresas/cuentas-corrientes", label: "Cuentas Corrientes" },
+      { href: "/empresas/facturas",           label: "Facturas",             seccion: "empresas.facturas" },
+      { href: "/empresas/recibos",            label: "Recibos por Cobranza", seccion: "empresas.recibos" },
+      { href: "/empresas/cuentas-corrientes", label: "Cuentas Corrientes",   seccion: "empresas.cuentas_corrientes" },
     ],
   },
   {
@@ -89,11 +93,11 @@ const NAV_GROUPS: NavGroup[] = [
     seccion: "liquidaciones",
     pathPrefix: "/fleteros",
     items: [
-      { href: "/fleteros/viajes",               label: "Viajes" },
-      { href: "/fleteros/liquidos-productos", label: "Líquidos Productos" },
-      { href: "/fleteros/ordenes-de-pago",    label: "Órdenes de Pago" },
-      { href: "/fleteros/gastos-adelantos",   label: "Gastos y Adelantos" },
-      { href: "/fleteros/cuentas-corrientes", label: "Cuentas Corrientes" },
+      { href: "/fleteros/viajes",             label: "Viajes",               seccion: "fleteros.viajes" },
+      { href: "/fleteros/liquidos-productos", label: "Líquidos Productos",   seccion: "fleteros.liquidos_productos" },
+      { href: "/fleteros/ordenes-de-pago",    label: "Órdenes de Pago",      seccion: "fleteros.ordenes_pago" },
+      { href: "/fleteros/gastos-adelantos",   label: "Gastos y Adelantos",   seccion: "fleteros.gastos_adelantos" },
+      { href: "/fleteros/cuentas-corrientes", label: "Cuentas Corrientes",   seccion: "fleteros.cuentas_corrientes" },
     ],
   },
   {
@@ -103,9 +107,9 @@ const NAV_GROUPS: NavGroup[] = [
     seccion: "proveedores",
     pathPrefix: "/proveedores",
     items: [
-      { href: "/proveedores/facturas", label: "Facturas" },
-      { href: "/proveedores/pago", label: "Registrar Pago" },
-      { href: "/proveedores/cuentas-corrientes", label: "Cuentas Corrientes" },
+      { href: "/proveedores/facturas",           label: "Facturas",           seccion: "proveedores.facturas" },
+      { href: "/proveedores/pago",               label: "Registrar Pago",     seccion: "proveedores.pagos" },
+      { href: "/proveedores/cuentas-corrientes", label: "Cuentas Corrientes", seccion: "proveedores.cuentas_corrientes" },
     ],
   },
   {
@@ -115,8 +119,8 @@ const NAV_GROUPS: NavGroup[] = [
     seccion: "cuentas",
     pathPrefix: "/contabilidad",
     items: [
-      { href: "/contabilidad/reportes", label: "Reportes" },
-      { href: "/contabilidad/polizas", label: "Pólizas de Seguro" },
+      { href: "/contabilidad/reportes", label: "Reportes",          seccion: "contabilidad.reportes" },
+      { href: "/contabilidad/polizas",  label: "Pólizas de Seguro", seccion: "contabilidad.polizas" },
     ],
   },
   {
@@ -126,8 +130,8 @@ const NAV_GROUPS: NavGroup[] = [
     seccion: "aseguradoras",
     pathPrefix: "/aseguradoras",
     items: [
-      { href: "/aseguradoras/facturas", label: "Facturas y Pólizas" },
-      { href: "/aseguradoras/resumen-tarjetas", label: "Resumen Tarjetas" },
+      { href: "/aseguradoras/facturas",         label: "Facturas y Pólizas", seccion: "aseguradoras" },
+      { href: "/aseguradoras/resumen-tarjetas", label: "Resumen Tarjetas",   seccion: "aseguradoras" },
     ],
   },
   {
@@ -137,9 +141,9 @@ const NAV_GROUPS: NavGroup[] = [
     seccion: "abm",
     pathPrefix: "/abm",
     items: [
-      { href: "/abm/base-de-datos",  label: "Base de datos" },
-      { href: "/abm/contabilidad",   label: "Contabilidad" },
-      { href: "/abm/configuraciones", label: "Configuraciones" },
+      { href: "/abm/base-de-datos",   label: "Base de datos",   seccion: "" },
+      { href: "/abm/contabilidad",    label: "Contabilidad",    seccion: "" },
+      { href: "/abm/configuraciones", label: "Configuraciones", seccion: "" },
     ],
   },
 ]
@@ -193,7 +197,7 @@ function NavSimpleItem({
  * <Sidebar rol="ADMIN_EMPRESA" emailUsuario="empresa@x.com" />
  * // => sidebar con Dashboard, grupo Empresas
  */
-export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, arcaActiva = true }: SidebarProps) {
+export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, arcaActiva = true, permisos }: SidebarProps) {
   const pathname = usePathname()
 
   // Determine which group (if any) is currently active based on pathname
@@ -206,6 +210,16 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
 
   // Viajes is shown as top-level only for roles that don't have the Fleteros group
   const tieneGrupoFleteros = puedeAcceder(rol, "liquidaciones")
+
+  /**
+   * filtrarItems: items del grupo -> items visibles según permisos granulares.
+   * Solo filtra para OPERADOR_TRANSMAGG cuando se proveen permisos.
+   * Items con seccion === "" o sin seccion se muestran siempre.
+   */
+  function filtrarItems(items: SubItem[]): SubItem[] {
+    if (rol !== "OPERADOR_TRANSMAGG" || !permisos) return items
+    return items.filter(item => !item.seccion || item.seccion === "" || permisos.includes(item.seccion))
+  }
 
   return (
     <aside className="flex h-full w-64 flex-col bg-sidebar">
@@ -243,13 +257,19 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
           {/* Grupos colapsables */}
           {NAV_GROUPS.map((grupo) => {
             if (!puedeAcceder(rol, grupo.seccion)) return null
+
+            // Filtrar sub-items por permisos granulares
+            const itemsVisibles = filtrarItems(grupo.items)
+            // Si no quedan items visibles (para OPERADOR_TRANSMAGG), no mostrar el grupo
+            if (rol === "OPERADOR_TRANSMAGG" && permisos && itemsVisibles.length === 0) return null
+
             const Icon = grupo.icon
             const estaExpandido = expandido === grupo.id
             const grupoActivo =
               pathname.startsWith(grupo.pathPrefix + "/") ||
               pathname === grupo.pathPrefix ||
               // También activo si algún sub-item es la ruta actual
-              grupo.items.some(
+              itemsVisibles.some(
                 (it) => pathname === it.href || pathname.startsWith(it.href + "/")
               )
 
@@ -279,7 +299,7 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
                 {/* Sub-ítems del grupo */}
                 {estaExpandido && (
                   <div className="mt-0.5 space-y-0.5">
-                    {grupo.items.map((item) => (
+                    {itemsVisibles.map((item) => (
                       <NavSubItem key={item.href} href={item.href} label={item.label} />
                     ))}
                   </div>

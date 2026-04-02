@@ -5,7 +5,7 @@
 
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
-import { puedeAcceder } from "@/lib/permissions"
+import { puedeAcceder, tienePermiso } from "@/lib/permissions"
 import { ActionCard } from "@/components/ui/action-card"
 import type { Rol } from "@/types"
 
@@ -15,6 +15,9 @@ export default async function ReportesPage() {
 
   const rol = (session.user.rol ?? "OPERADOR_TRANSMAGG") as Rol
   if (!puedeAcceder(rol, "cuentas")) redirect("/dashboard")
+
+  const tieneAcceso = await tienePermiso(session.user.id, rol, "contabilidad.reportes")
+  if (!tieneAcceso) redirect("/dashboard")
 
   return (
     <div className="space-y-6">

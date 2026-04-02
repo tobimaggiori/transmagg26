@@ -8,6 +8,7 @@ import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { Sidebar } from "@/components/sidebar"
+import { getPermisosUsuario } from "@/lib/permissions"
 import type { Rol } from "@/types"
 
 /**
@@ -61,9 +62,14 @@ export default async function DashboardLayout({
     arcaActiva = arcaConfig?.activa ?? false
   }
 
+  // Permisos granulares para el sidebar (solo relevante para roles internos)
+  const permisos = (rol === "ADMIN_TRANSMAGG" || rol === "OPERADOR_TRANSMAGG")
+    ? await getPermisosUsuario(session.user.id, rol)
+    : []
+
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar rol={rol} nombreUsuario={nombre} emailUsuario={email} esChoferTransmagg={esChoferTransmagg} arcaActiva={arcaActiva} />
+      <Sidebar rol={rol} nombreUsuario={nombre} emailUsuario={email} esChoferTransmagg={esChoferTransmagg} arcaActiva={arcaActiva} permisos={permisos} />
       <main className="flex-1 overflow-auto">
         <div className="h-full p-6">{children}</div>
       </main>

@@ -97,8 +97,24 @@ model Usuario {
   ordenesPagoOpera           OrdenPago[]              @relation("OperadorOrdenPago")
   recibosOpera               ReciboCobranza[]         @relation("OperadorRecibo")
   facturasSeguroOpera        FacturaSeguro[]          @relation("OperadorFacturaSeguro")
+  permisos                   PermisoUsuario[]
 
   @@map("usuarios")
+}
+
+// ─── PERMISOS POR USUARIO ─────────────────────────────────────────────────────
+
+model PermisoUsuario {
+  id          String   @id @default(uuid())
+  usuarioId   String   @map("usuario_id")
+  seccion     String
+  habilitado  Boolean  @default(true)
+  creadoEn    DateTime @default(now()) @map("creado_en")
+
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id])
+
+  @@unique([usuarioId, seccion])
+  @@map("permisos_usuario")
 }
 
 // ─── OTP ──────────────────────────────────────────────────────────────────────

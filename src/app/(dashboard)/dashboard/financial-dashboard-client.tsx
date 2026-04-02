@@ -442,18 +442,17 @@ function PendienteModal({ url }: { url: string; titulo: string }) {
 // --- Componente principal ---
 
 /**
- * FinancialDashboardClient: () -> JSX.Element
+ * FinancialDashboardClient: { permisos: string[] } -> JSX.Element
  *
- * Dado [ningún parámetro], renderiza el dashboard financiero completo con tarjetas clickeables,
- * modales de detalle, alertas FCI y sección de cuentas.
+ * Dado el array de secciones habilitadas para el usuario, renderiza el dashboard
+ * financiero mostrando solo las tarjetas y cuentas permitidas.
  * Existe como componente client para poder hacer fetch de datos y manejar estado de modales.
  *
  * Ejemplos:
- * <FinancialDashboardClient /> // => dashboard con tarjetas de deudas, cheques, cuentas
- * <FinancialDashboardClient /> // => alertas FCI si hay FCIs sin actualizar
- * <FinancialDashboardClient /> // => modal al hacer click en cualquier tarjeta
+ * <FinancialDashboardClient permisos={["dashboard.deuda_empresas", ...]} />
+ * // => dashboard con tarjetas de deudas, cheques, cuentas permitidas
  */
-export function FinancialDashboardClient() {
+export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
   const router = useRouter()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -516,121 +515,142 @@ export function FinancialDashboardClient() {
 
       {/* Tarjetas principales */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card
-          className="cursor-pointer hover:border-primary transition-colors"
-          onClick={() => setModalAbierto("deuda-empresas")}
-        >
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Deuda de Empresas</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-destructive">{formatearMoneda(data.deudaEmpresas)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Total a cobrar — click para ver detalle</p>
-          </CardContent>
-        </Card>
+        {permisos.includes("dashboard.deuda_empresas") && (
+          <Card
+            className="cursor-pointer hover:border-primary transition-colors"
+            onClick={() => setModalAbierto("deuda-empresas")}
+          >
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Deuda de Empresas</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-destructive">{formatearMoneda(data.deudaEmpresas)}</p>
+              <p className="text-xs text-muted-foreground mt-1">Total a cobrar — click para ver detalle</p>
+            </CardContent>
+          </Card>
+        )}
 
-        <Card
-          className="cursor-pointer hover:border-primary transition-colors"
-          onClick={() => setModalAbierto("deuda-fleteros")}
-        >
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Deuda a Fleteros</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-orange-600">{formatearMoneda(data.deudaFleteros)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Total a pagar — click para ver detalle</p>
-          </CardContent>
-        </Card>
+        {permisos.includes("dashboard.deuda_fleteros") && (
+          <Card
+            className="cursor-pointer hover:border-primary transition-colors"
+            onClick={() => setModalAbierto("deuda-fleteros")}
+          >
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Deuda a Fleteros</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-orange-600">{formatearMoneda(data.deudaFleteros)}</p>
+              <p className="text-xs text-muted-foreground mt-1">Total a pagar — click para ver detalle</p>
+            </CardContent>
+          </Card>
+        )}
 
-        <Card
-          className="cursor-pointer hover:border-primary transition-colors"
-          onClick={() => setModalAbierto("pendiente-facturar")}
-        >
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Pendiente de Facturar</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{formatearMoneda(data.pendienteFacturar)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Viajes sin factura — click para ver detalle</p>
-          </CardContent>
-        </Card>
+        {permisos.includes("dashboard.pendiente_facturar") && (
+          <Card
+            className="cursor-pointer hover:border-primary transition-colors"
+            onClick={() => setModalAbierto("pendiente-facturar")}
+          >
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Pendiente de Facturar</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{formatearMoneda(data.pendienteFacturar)}</p>
+              <p className="text-xs text-muted-foreground mt-1">Viajes sin factura — click para ver detalle</p>
+            </CardContent>
+          </Card>
+        )}
 
-        <Card
-          className="cursor-pointer hover:border-primary transition-colors"
-          onClick={() => setModalAbierto("pendiente-liquidar")}
-        >
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Pendiente de Liquidar</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{formatearMoneda(data.pendienteLiquidar)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Viajes sin liquidación — click para ver detalle</p>
-          </CardContent>
-        </Card>
+        {permisos.includes("dashboard.pendiente_liquidar") && (
+          <Card
+            className="cursor-pointer hover:border-primary transition-colors"
+            onClick={() => setModalAbierto("pendiente-liquidar")}
+          >
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Pendiente de Liquidar</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{formatearMoneda(data.pendienteLiquidar)}</p>
+              <p className="text-xs text-muted-foreground mt-1">Viajes sin liquidación — click para ver detalle</p>
+            </CardContent>
+          </Card>
+        )}
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Cheques en Cartera</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{formatearMoneda(data.chequesEnCartera?.total ?? 0)}</p>
-            <div className="flex flex-wrap gap-2 mt-1">
-              <button
-                onClick={() => setModalAbierto("cheques-cartera-al-dia")}
-                className="text-xs text-green-700 bg-green-50 hover:bg-green-100 px-2 py-0.5 rounded transition-colors"
-              >
-                Al día: {formatearMoneda(data.chequesEnCartera?.alDia ?? 0)}
-              </button>
-              <button
-                onClick={() => setModalAbierto("cheques-cartera-no-al-dia")}
-                className="text-xs text-orange-700 bg-orange-50 hover:bg-orange-100 px-2 py-0.5 rounded transition-colors"
-              >
-                Vencidos: {formatearMoneda(data.chequesEnCartera?.noAlDia ?? 0)}
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-2 mt-1">
-              <span className="text-xs text-muted-foreground">
-                Físicos: {formatearMoneda(data.chequesEnCartera?.fisico ?? 0)}
-              </span>
-              <span className="text-xs text-violet-700">
-                ECheq: {formatearMoneda(data.chequesEnCartera?.electronico ?? 0)}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
+        {permisos.includes("dashboard.cheques_cartera") && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Cheques en Cartera</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{formatearMoneda(data.chequesEnCartera?.total ?? 0)}</p>
+              <div className="flex flex-wrap gap-2 mt-1">
+                <button
+                  onClick={() => setModalAbierto("cheques-cartera-al-dia")}
+                  className="text-xs text-green-700 bg-green-50 hover:bg-green-100 px-2 py-0.5 rounded transition-colors"
+                >
+                  Al día: {formatearMoneda(data.chequesEnCartera?.alDia ?? 0)}
+                </button>
+                <button
+                  onClick={() => setModalAbierto("cheques-cartera-no-al-dia")}
+                  className="text-xs text-orange-700 bg-orange-50 hover:bg-orange-100 px-2 py-0.5 rounded transition-colors"
+                >
+                  Vencidos: {formatearMoneda(data.chequesEnCartera?.noAlDia ?? 0)}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2 mt-1">
+                <span className="text-xs text-muted-foreground">
+                  Físicos: {formatearMoneda(data.chequesEnCartera?.fisico ?? 0)}
+                </span>
+                <span className="text-xs text-violet-700">
+                  ECheq: {formatearMoneda(data.chequesEnCartera?.electronico ?? 0)}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-        <Card
-          className="cursor-pointer hover:border-primary transition-colors"
-          onClick={() => setModalAbierto("cheques-emitidos")}
-        >
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Cheques Emitidos No Cobrados</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{formatearMoneda(data.chequesEmitidosNoCobrados)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Estado EMITIDO — click para ver detalle</p>
-          </CardContent>
-        </Card>
+        {permisos.includes("dashboard.cheques_emitidos") && (
+          <Card
+            className="cursor-pointer hover:border-primary transition-colors"
+            onClick={() => setModalAbierto("cheques-emitidos")}
+          >
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Cheques Emitidos No Cobrados</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{formatearMoneda(data.chequesEmitidosNoCobrados)}</p>
+              <p className="text-xs text-muted-foreground mt-1">Estado EMITIDO — click para ver detalle</p>
+            </CardContent>
+          </Card>
+        )}
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Efectivo en Caja</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className={`text-2xl font-bold ${efectivoCaja !== null && efectivoCaja < 0 ? "text-destructive" : ""}`}>
-              {efectivoCaja !== null ? formatearMoneda(efectivoCaja) : "—"}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">Cobros − Pagos en efectivo</p>
-          </CardContent>
-        </Card>
+        {permisos.includes("dashboard.efectivo_caja") && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Efectivo en Caja</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className={`text-2xl font-bold ${efectivoCaja !== null && efectivoCaja < 0 ? "text-destructive" : ""}`}>
+                {efectivoCaja !== null ? formatearMoneda(efectivoCaja) : "—"}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">Cobros − Pagos en efectivo</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Sección cuentas */}
-      {(data.cuentas?.length ?? 0) > 0 && (
+      {(data.cuentas?.length ?? 0) > 0 && permisos.some(p => p.startsWith("dashboard.cuentas_")) && (
         <div className="space-y-3">
           <h3 className="text-lg font-semibold">Cuentas Activas</h3>
           <div className="grid gap-4 md:grid-cols-2">
-            {(data.cuentas ?? []).map((cuenta) => (
+            {(data.cuentas ?? [])
+              .filter((cuenta) => {
+                if (cuenta.tipo === "BANCO") return permisos.includes("dashboard.cuentas_bancos")
+                if (cuenta.tipo === "BROKER") return permisos.includes("dashboard.cuentas_brokers")
+                if (cuenta.tipo === "BILLETERA_VIRTUAL") return permisos.includes("dashboard.cuentas_billeteras")
+                return false
+              })
+              .map((cuenta) => (
               <Card key={cuenta.id} className="cursor-pointer hover:border-primary transition-colors" onClick={() => router.push(`/cuentas?cuenta=${cuenta.id}`)}>
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">

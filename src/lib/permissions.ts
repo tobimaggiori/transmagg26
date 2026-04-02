@@ -7,6 +7,8 @@
  */
 
 import type { Rol } from "@/types"
+import { prisma } from "@/lib/prisma"
+import { SECCIONES } from "@/lib/secciones"
 
 export const ROLES_INTERNOS: Rol[] = ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"]
 export const ROLES_EXTERNOS: Rol[] = ["FLETERO", "CHOFER", "ADMIN_EMPRESA", "OPERADOR_EMPRESA"]
@@ -182,4 +184,52 @@ export function esRolFletero(rol: Rol): boolean {
  */
 export function puedeGestionarFlota(rol: Rol): boolean {
   return rol === "FLETERO"
+}
+
+/**
+ * tienePermiso: (usuarioId, rol, seccion) -> Promise<boolean>
+ *
+ * Dado el id y rol del usuario y el nombre de una sección granular,
+ * devuelve true si el usuario tiene permiso para acceder a esa sección.
+ * ADMIN_TRANSMAGG siempre tiene acceso. Para OPERADOR_TRANSMAGG consulta
+ * la tabla PermisoUsuario. Para otros roles devuelve false.
+ * Existe para el sistema de permisos granulares por sección y sub-sección.
+ *
+ * Ejemplos:
+ * tienePermiso("u1", "ADMIN_TRANSMAGG", "contabilidad.reportes") === true
+ * tienePermiso("u2", "OPERADOR_TRANSMAGG", "dashboard.deuda_empresas") === depende DB
+ */
+export async function tienePermiso(
+  usuarioId: string,
+  rol: string,
+  seccion: string
+): Promise<boolean> {
+  if (rol === "ADMIN_TRANSMAGG") return true
+  const permiso = await prisma.permisoUsuario.findUnique({
+    where: { usuarioId_seccion: { usuarioId, seccion } }
+  })
+  return permiso?.habilitado ?? false
+}
+
+/**
+ * getPermisosUsuario: (usuarioId, rol) -> Promise<string[]>
+ *
+ * Dado el id y rol del usuario, devuelve el array de secciones habilitadas.
+ * ADMIN_TRANSMAGG recibe todas las secciones. Para otros roles consulta DB.
+ * Existe para pasar la lista de permisos al Sidebar y al Dashboard.
+ *
+ * Ejemplos:
+ * getPermisosUsuario("u1", "ADMIN_TRANSMAGG") === todas las SECCIONES
+ * getPermisosUsuario("u2", "OPERADOR_TRANSMAGG") === secciones habilitadas en DB
+ */
+export async function getPermisosUsuario(
+  usuarioId: string,
+  rol: string
+): Promise<string[]> {
+  if (rol === "ADMIN_TRANSMAGG") return Object.values(SECCIONES)
+  const permisos = await prisma.permisoUsuario.findMany({
+    where: { usuarioId, habilitado: true },
+    select: { seccion: true }
+  })
+  return permisos.map(p => p.seccion)
 }
