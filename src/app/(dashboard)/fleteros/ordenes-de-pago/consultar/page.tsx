@@ -2,14 +2,23 @@
 
 /**
  * Propósito: Página de consulta de Órdenes de Pago emitidas.
- * Muestra un listado con filtros por fletero, número y rango de fechas.
+ * Muestra un listado con filtros por fletero (combobox), número y rango de fechas.
  */
 
-import { useState, useEffect, useCallback } from "react"
-import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { useState, useEffect, useCallback, useMemo } from "react"
+import { formatearMoneda, formatearFecha, cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { PDFViewer } from "@/components/ui/pdf-viewer"
 import { usePDFViewer } from "@/hooks/use-pdf-viewer"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Check, ChevronsUpDown } from "lucide-react"
+
+interface Fletero {
+  id: string
+  razonSocial: string
+  cuit: string
+}
 
 interface OrdenPago {
   id: string
@@ -20,16 +29,87 @@ interface OrdenPago {
   pdfS3Key: string | null
 }
 
+function ComboboxFletero({
+  fleteros,
+  value,
+  onChange,
+}: {
+  fleteros: Fletero[]
+  value: string
+  onChange: (v: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [busqueda, setBusqueda] = useState("")
+
+  const filtrados = useMemo(() => {
+    if (!busqueda) return fleteros
+    const q = busqueda.toLowerCase()
+    const qDigits = busqueda.replace(/\D/g, "")
+    return fleteros.filter(
+      (f) => f.razonSocial.toLowerCase().includes(q) || (qDigits && f.cuit.replace(/\D/g, "").includes(qDigits))
+    )
+  }, [fleteros, busqueda])
+
+  const seleccionado = fleteros.find((f) => f.id === value)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger className="flex h-8 w-52 items-center justify-between rounded-md border bg-background px-2 text-sm">
+        <span className="truncate">{seleccionado ? seleccionado.razonSocial : "Todos"}</span>
+        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+      </PopoverTrigger>
+      <PopoverContent className="w-[320px] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput placeholder="Buscar por razón social o CUIT..." value={busqueda} onValueChange={setBusqueda} />
+          <CommandList>
+            <CommandEmpty>No se encontraron fleteros.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem onSelect={() => { onChange(""); setOpen(false); setBusqueda("") }}>
+                <Check className={cn("mr-2 h-4 w-4", value === "" ? "opacity-100" : "opacity-0")} />
+                Todos los fleteros
+              </CommandItem>
+              {filtrados.map((f) => (
+                <CommandItem
+                  key={f.id}
+                  value={f.id}
+                  onSelect={() => { onChange(f.id); setOpen(false); setBusqueda("") }}
+                >
+                  <Check className={cn("mr-2 h-4 w-4", value === f.id ? "opacity-100" : "opacity-0")} />
+                  <div>
+                    <p className="font-medium">{f.razonSocial}</p>
+                    <p className="text-xs text-muted-foreground">CUIT: {f.cuit}</p>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 export default function ConsultarOrdenesDePagoPage() {
   const { estado: estadoPDF, abrirPDF, cerrarPDF } = usePDFViewer()
   const [ordenes, setOrdenes] = useState<OrdenPago[]>([])
+  const [fleteros, setFleteros] = useState<Fletero[]>([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const [filtroFletero, setFiltroFletero] = useState("")
+  const [filtroFleteroId, setFiltroFleteroId] = useState("")
   const [filtroNro, setFiltroNro] = useState("")
   const [filtroDesde, setFiltroDesde] = useState("")
   const [filtroHasta, setFiltroHasta] = useState("")
+
+  // Cargar fleteros al montar
+  useEffect(() => {
+    fetch("/api/fleteros?activo=true")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setFleteros(data)
+      })
+      .catch(() => {})
+  }, [])
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -52,9 +132,7 @@ export default function ConsultarOrdenesDePagoPage() {
   useEffect(() => { cargar() }, [cargar])
 
   const ordenesFiltradas = ordenes.filter((op) =>
-    filtroFletero
-      ? op.fletero.razonSocial.toLowerCase().includes(filtroFletero.toLowerCase())
-      : true
+    filtroFleteroId ? op.fletero.id === filtroFleteroId : true
   )
 
   return (
@@ -68,11 +146,10 @@ export default function ConsultarOrdenesDePagoPage() {
       <div className="flex flex-wrap gap-3">
         <div>
           <label className="text-xs font-medium block mb-1">Fletero</label>
-          <Input
-            value={filtroFletero}
-            onChange={(e) => setFiltroFletero(e.target.value)}
-            placeholder="Buscar por fletero..."
-            className="h-8 text-sm w-52"
+          <ComboboxFletero
+            fleteros={fleteros}
+            value={filtroFleteroId}
+            onChange={setFiltroFleteroId}
           />
         </div>
         <div>
