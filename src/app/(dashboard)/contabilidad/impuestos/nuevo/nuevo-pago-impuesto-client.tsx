@@ -2,8 +2,9 @@
 
 /**
  * Formulario para registrar un pago de impuesto (IIBB, IVA, Ganancias, Otro).
- * Sube comprobante PDF a R2 si el medio de pago es cuenta bancaria.
- * Crea PagoImpuesto y MovimientoSinFactura (EGRESO) si corresponde.
+ * - CUENTA_BANCARIA: sube comprobante PDF a R2 (obligatorio) + MovimientoSinFactura EGRESO.
+ * - TARJETA: requiere seleccionar tarjeta + MovimientoSinFactura EGRESO vinculado a tarjeta.
+ * - EFECTIVO: sin comprobante ni movimiento bancario.
  */
 
 import { useState } from "react"
@@ -15,21 +16,30 @@ interface Cuenta {
   tipo: string
 }
 
+interface Tarjeta {
+  id: string
+  nombre: string
+  banco: string
+  ultimos4: string
+  tipo: string
+}
+
 interface NuevoPagoImpuestoClientProps {
   cuentas: Cuenta[]
+  tarjetas: Tarjeta[]
 }
 
 const TIPOS_IMPUESTO = [
-  { value: "IIBB", label: "Ingresos Brutos" },
-  { value: "IVA", label: "IVA" },
+  { value: "IIBB",      label: "Ingresos Brutos" },
+  { value: "IVA",       label: "IVA" },
   { value: "GANANCIAS", label: "Imp. a las Ganancias" },
-  { value: "OTRO", label: "Otro impuesto" },
+  { value: "OTRO",      label: "Otro impuesto" },
 ]
 
 const MEDIOS_PAGO = [
   { value: "CUENTA_BANCARIA", label: "Desde cuenta bancaria" },
-  { value: "EFECTIVO", label: "Efectivo" },
-  { value: "TARJETA", label: "Tarjeta" },
+  { value: "EFECTIVO",        label: "Efectivo" },
+  { value: "TARJETA",         label: "Tarjeta" },
 ]
 
 const MESES = [
@@ -58,75 +68,98 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-export function NuevoPagoImpuestoClient({ cuentas }: NuevoPagoImpuestoClientProps) {
-  const [tipoImpuesto, setTipoImpuesto] = useState("IIBB")
-  const [descripcion, setDescripcion] = useState("")
-  const [mes, setMes] = useState("01")
-  const [anio, setAnio] = useState(String(new Date().getFullYear()))
-  const [monto, setMonto] = useState("")
-  const [medioPago, setMedioPago] = useState("CUENTA_BANCARIA")
-  const [cuentaId, setCuentaId] = useState("")
-  const [fechaPago, setFechaPago] = useState(todayISO())
-  const [comprobante, setComprobante] = useState<File | null>(null)
-  const [observaciones, setObservaciones] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState("")
-  const [success, setSuccess] = useState(false)
+const COMPROBANTE_PREFIX = "comprobantes-impuestos"
 
-  const usaMes = tipoImpuesto === "IIBB" || tipoImpuesto === "IVA"
-  const mostrarDescripcion = tipoImpuesto === "OTRO"
-  const mostrarCuenta = medioPago === "CUENTA_BANCARIA"
-  const mostrarComprobante = medioPago === "CUENTA_BANCARIA"
+export function NuevoPagoImpuestoClient({ cuentas, tarjetas }: NuevoPagoImpuestoClientProps) {
+  const [tipoImpuesto, setTipoImpuesto] = useState("IIBB")
+  const [descripcion, setDescripcion]   = useState("")
+  const [mes, setMes]                   = useState("01")
+  const [anio, setAnio]                 = useState(String(new Date().getFullYear()))
+  const [monto, setMonto]               = useState("")
+  const [medioPago, setMedioPago]       = useState("CUENTA_BANCARIA")
+  const [cuentaId, setCuentaId]         = useState("")
+  const [tarjetaId, setTarjetaId]       = useState("")
+  const [fechaPago, setFechaPago]       = useState(todayISO())
+  const [comprobante, setComprobante]   = useState<File | null>(null)
+  const [observaciones, setObservaciones] = useState("")
+  const [loading, setLoading]           = useState(false)
+  const [error, setError]               = useState("")
+  const [success, setSuccess]           = useState(false)
+
+  const usaMes              = tipoImpuesto === "IIBB" || tipoImpuesto === "IVA"
+  const mostrarDescripcion  = tipoImpuesto === "OTRO"
+  const esCuentaBancaria    = medioPago === "CUENTA_BANCARIA"
+  const esTarjeta           = medioPago === "TARJETA"
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setLoading(true)
     setError("")
 
+    // Validaciones client-side adicionales
+    if (esCuentaBancaria && !cuentaId) {
+      setError("Seleccioná una cuenta bancaria.")
+      return
+    }
+    if (esCuentaBancaria && !comprobante) {
+      setError("El comprobante PDF es obligatorio para pagos desde cuenta bancaria.")
+      return
+    }
+    if (esTarjeta && !tarjetaId) {
+      setError("Seleccioná la tarjeta con la que se realizó el pago.")
+      return
+    }
+
+    setLoading(true)
     try {
       const periodo = usaMes ? `${anio}-${mes}` : anio
 
+      // Subir comprobante a R2 solo para cuenta bancaria
       let comprobantePdfS3Key: string | undefined
-      if (comprobante && mostrarComprobante) {
+      if (esCuentaBancaria && comprobante) {
         const fd = new FormData()
         fd.append("file", comprobante)
-        fd.append("prefijo", "comprobantes-impuestos")
+        fd.append("prefijo", COMPROBANTE_PREFIX)
         const upRes = await fetch("/api/storage/upload", { method: "POST", body: fd })
         if (!upRes.ok) {
-          const d = await upRes.json()
-          setError(d.error ?? "Error al subir comprobante")
+          const d = await upRes.json() as { error?: string }
+          setError(d.error ?? "Error al subir comprobante.")
           return
         }
-        const upData = await upRes.json()
+        const upData = await upRes.json() as { key: string }
+        // Verificar que la key pertenece al prefijo correcto (defensa en profundidad)
+        if (!upData.key.startsWith(`${COMPROBANTE_PREFIX}/`)) {
+          setError("Error de seguridad: key de comprobante inválida.")
+          return
+        }
         comprobantePdfS3Key = upData.key
-      }
-
-      const body: Record<string, unknown> = {
-        tipoImpuesto,
-        descripcion: mostrarDescripcion ? descripcion : undefined,
-        periodo,
-        monto: parseFloat(monto),
-        fechaPago,
-        medioPago,
-        cuentaId: mostrarCuenta && cuentaId ? cuentaId : undefined,
-        comprobantePdfS3Key,
-        observaciones: observaciones || undefined,
       }
 
       const res = await fetch("/api/contabilidad/impuestos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          tipoImpuesto,
+          descripcion: mostrarDescripcion ? descripcion : undefined,
+          periodo,
+          monto: parseFloat(monto),
+          fechaPago,
+          medioPago,
+          cuentaId:            esCuentaBancaria ? cuentaId    : undefined,
+          tarjetaId:           esTarjeta        ? tarjetaId   : undefined,
+          comprobantePdfS3Key: esCuentaBancaria ? comprobantePdfS3Key : undefined,
+          observaciones: observaciones || undefined,
+        }),
       })
+
       if (!res.ok) {
-        const d = await res.json()
-        setError(d.error ?? "Error al guardar")
+        const d = await res.json() as { error?: string }
+        setError(d.error ?? "Error al guardar.")
         return
       }
 
       setSuccess(true)
     } catch {
-      setError("Error de red")
+      setError("Error de red.")
     } finally {
       setLoading(false)
     }
@@ -140,6 +173,7 @@ export function NuevoPagoImpuestoClient({ cuentas }: NuevoPagoImpuestoClientProp
     setMonto("")
     setMedioPago("CUENTA_BANCARIA")
     setCuentaId("")
+    setTarjetaId("")
     setFechaPago(todayISO())
     setComprobante(null)
     setObservaciones("")
@@ -239,7 +273,7 @@ export function NuevoPagoImpuestoClient({ cuentas }: NuevoPagoImpuestoClientProp
           <input
             type="number"
             step="0.01"
-            min="0"
+            min="0.01"
             className="mt-1 w-full border rounded px-3 py-2 text-sm"
             value={monto}
             onChange={(e) => setMonto(e.target.value)}
@@ -254,7 +288,7 @@ export function NuevoPagoImpuestoClient({ cuentas }: NuevoPagoImpuestoClientProp
           <select
             className="mt-1 w-full border rounded px-3 py-2 text-sm"
             value={medioPago}
-            onChange={(e) => setMedioPago(e.target.value)}
+            onChange={(e) => { setMedioPago(e.target.value); setCuentaId(""); setTarjetaId(""); setComprobante(null) }}
             required
           >
             {MEDIOS_PAGO.map((m) => (
@@ -264,17 +298,38 @@ export function NuevoPagoImpuestoClient({ cuentas }: NuevoPagoImpuestoClientProp
         </div>
 
         {/* Cuenta (solo CUENTA_BANCARIA) */}
-        {mostrarCuenta && (
+        {esCuentaBancaria && (
           <div>
-            <label className="text-sm font-medium">Cuenta bancaria</label>
+            <label className="text-sm font-medium">Cuenta bancaria *</label>
             <select
               className="mt-1 w-full border rounded px-3 py-2 text-sm"
               value={cuentaId}
               onChange={(e) => setCuentaId(e.target.value)}
+              required
             >
               <option value="">Seleccionar cuenta...</option>
               {cuentas.map((c) => (
                 <option key={c.id} value={c.id}>{c.nombre}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Tarjeta (solo TARJETA) */}
+        {esTarjeta && (
+          <div>
+            <label className="text-sm font-medium">Tarjeta *</label>
+            <select
+              className="mt-1 w-full border rounded px-3 py-2 text-sm"
+              value={tarjetaId}
+              onChange={(e) => setTarjetaId(e.target.value)}
+              required
+            >
+              <option value="">Seleccionar tarjeta...</option>
+              {tarjetas.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.nombre} — {t.banco} ···{t.ultimos4}
+                </option>
               ))}
             </select>
           </div>
@@ -292,16 +347,23 @@ export function NuevoPagoImpuestoClient({ cuentas }: NuevoPagoImpuestoClientProp
           />
         </div>
 
-        {/* Comprobante PDF (solo CUENTA_BANCARIA) */}
-        {mostrarComprobante && (
+        {/* Comprobante PDF — obligatorio para CUENTA_BANCARIA */}
+        {esCuentaBancaria && (
           <div>
-            <label className="text-sm font-medium">Comprobante PDF</label>
+            <label className="text-sm font-medium">
+              Comprobante PDF *
+              <span className="ml-1 text-xs font-normal text-muted-foreground">(obligatorio — máx. 10 MB)</span>
+            </label>
             <input
               type="file"
               accept="application/pdf"
               className="mt-1 w-full text-sm"
               onChange={(e) => setComprobante(e.target.files?.[0] ?? null)}
+              required
             />
+            {comprobante && (
+              <p className="text-xs text-green-700 mt-1">✓ {comprobante.name}</p>
+            )}
           </div>
         )}
 

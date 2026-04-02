@@ -17,6 +17,8 @@ interface PagoImpuesto {
   medioPago: string
   cuentaId: string | null
   cuentaNombre: string | null
+  tarjetaId: string | null
+  tarjetaNombre: string | null
   comprobantePdfS3Key: string | null
   observaciones: string | null
 }
@@ -161,7 +163,7 @@ export function ConsultarPagosImpuestoClient() {
                 <th className="px-3 py-2.5 text-left">Período</th>
                 <th className="px-3 py-2.5 text-right">Monto</th>
                 <th className="px-3 py-2.5 text-left">Medio</th>
-                <th className="px-3 py-2.5 text-left">Cuenta</th>
+                <th className="px-3 py-2.5 text-left">Cuenta / Tarjeta</th>
                 <th className="px-3 py-2.5 text-left">Comprobante</th>
                 <th className="px-3 py-2.5 text-left">Observaciones</th>
               </tr>
@@ -177,7 +179,9 @@ export function ConsultarPagosImpuestoClient() {
                   <td className="px-3 py-2">{p.periodo}</td>
                   <td className="px-3 py-2 text-right font-medium tabular-nums">{formatearMoneda(p.monto)}</td>
                   <td className="px-3 py-2">{labelMedio(p.medioPago)}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{p.cuentaNombre ?? "—"}</td>
+                  <td className="px-3 py-2 text-muted-foreground">
+                    {p.cuentaNombre ?? p.tarjetaNombre ?? "—"}
+                  </td>
                   <td className="px-3 py-2">
                     {p.comprobantePdfS3Key ? (
                       <a

@@ -283,12 +283,14 @@ model PagoImpuesto {
   fechaPago           DateTime  @map("fecha_pago")
   medioPago           String    @map("medio_pago")
   cuentaId            String?   @map("cuenta_id")
+  tarjetaId           String?   @map("tarjeta_id")
   comprobantePdfS3Key String?   @map("comprobante_pdf_s3_key")
   observaciones       String?
   operadorId          String    @map("operador_id")
   creadoEn            DateTime  @default(now()) @map("creado_en")
 
   cuenta    Cuenta?  @relation("CuentaPagoImpuesto", fields: [cuentaId], references: [id])
+  tarjeta   Tarjeta? @relation("TarjetaPagoImpuesto", fields: [tarjetaId], references: [id])
   operador  Usuario  @relation("OperadorPagoImpuesto", fields: [operadorId], references: [id])
 
   @@map("pagos_impuesto")
@@ -802,6 +804,7 @@ model Tarjeta {
   movimientosSinFact MovimientoSinFactura[] @relation("TarjetaMovimientoSinFactura")
   facturasSeguro     FacturaSeguro[]        @relation("TarjetaFacturaSeguro")
   cuotasSeguro       CuotaFacturaSeguro[]   @relation("TarjetaCuotasSeguro")
+  pagosImpuesto      PagoImpuesto[]         @relation("TarjetaPagoImpuesto")
 
   @@map("tarjetas")
 }
