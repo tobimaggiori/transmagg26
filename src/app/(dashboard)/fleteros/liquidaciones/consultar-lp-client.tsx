@@ -441,7 +441,7 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
     }
   }
 
-  const fleteroActual = fleteros.find((f) => f.id === (fleteroId || fleteroIdPropio))
+  const _fleteroActual = fleteros.find((f) => f.id === (fleteroId || fleteroIdPropio)); void _fleteroActual
 
   return (
     <div className="space-y-6">

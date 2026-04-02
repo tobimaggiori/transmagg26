@@ -1,27 +1,15 @@
 /**
- * Propósito: Página de cuentas bancarias (ruta /contabilidad/cuentas).
- * Reutiliza CuentasClient — misma lógica que /cuentas.
+ * Propósito: Página de gestión de cuentas bancarias de Transmagg (ruta /contabilidad/cuentas).
+ * Solo accesible para ADMIN_TRANSMAGG y OPERADOR_TRANSMAGG.
  */
 
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { puedeAcceder } from "@/lib/permissions"
-import { CuentasClient } from "../../cuentas/cuentas-client"
+import { CuentasClient } from "./cuentas-client"
 import type { Rol } from "@/types"
 
-/**
- * ContabilidadCuentasPage: ({ searchParams }) -> Promise<JSX.Element>
- *
- * Verifica auth y renderiza CuentasClient con los searchParams.
- * Existe como alias de /cuentas bajo la ruta /contabilidad/cuentas.
- *
- * Ejemplos:
- * // Sesión ADMIN_TRANSMAGG → lista de cuentas bancarias
- * <ContabilidadCuentasPage searchParams={{}} />
- * // Sin sesión → redirect /login
- * <ContabilidadCuentasPage searchParams={{}} />
- */
-export default async function ContabilidadCuentasPage({
+export default async function CuentasPage({
   searchParams,
 }: {
   searchParams: { cuenta?: string; tab?: string }
@@ -36,7 +24,6 @@ export default async function ContabilidadCuentasPage({
     <CuentasClient
       cuentaInicialId={searchParams.cuenta}
       tabInicial={searchParams.tab}
-      esAdmin={rol === "ADMIN_TRANSMAGG"}
     />
   )
 }

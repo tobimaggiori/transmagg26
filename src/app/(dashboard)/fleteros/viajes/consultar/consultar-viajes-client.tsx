@@ -238,7 +238,7 @@ function ModalCambiarEmpresa({
                   <div key={i} className="rounded-md border bg-muted/20 px-3 py-2 text-xs space-y-0.5">
                     <p className="text-muted-foreground">{formatearFecha(new Date(e.fecha))}</p>
                     <p><span className="font-medium">{e.valorAnterior}</span>{" → "}<span className="font-medium">{e.valorNuevo}</span></p>
-                    <p className="text-muted-foreground italic">"{e.motivo}"</p>
+                    <p className="text-muted-foreground italic">&ldquo;{e.motivo}&rdquo;</p>
                   </div>
                 ))}
               </div>
@@ -387,7 +387,7 @@ function ModalCambiarFletero({
                   <div key={i} className="rounded-md border bg-muted/20 px-3 py-2 text-xs space-y-0.5">
                     <p className="text-muted-foreground">{formatearFecha(new Date(e.fecha))}</p>
                     <p><span className="font-medium">{e.valorAnterior}</span>{" → "}<span className="font-medium">{e.valorNuevo}</span></p>
-                    <p className="text-muted-foreground italic">"{e.motivo}"</p>
+                    <p className="text-muted-foreground italic">&ldquo;{e.motivo}&rdquo;</p>
                   </div>
                 ))}
               </div>
@@ -456,7 +456,8 @@ function ModalEliminar({
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export function ConsultarViajesClient({
-  rol,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  rol: _rol,
   fleteros,
   empresas,
   camiones,

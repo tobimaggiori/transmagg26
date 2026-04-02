@@ -1345,7 +1345,8 @@ type LiquidacionesClientPropsExt = LiquidacionesClientProps & {
   cuentasBancarias: CuentaBancaria[]
 }
 
-export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fleteroIdPropio, cuentasBancarias, titulo = "Liquidaciones" }: LiquidacionesClientPropsExt) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fleteroIdPropio, cuentasBancarias: _cb, titulo = "Liquidaciones" }: LiquidacionesClientPropsExt) {
   const esInterno = rol === "ADMIN_TRANSMAGG" || rol === "OPERADOR_TRANSMAGG"
 
   const [fleteroId, setFleteroId] = useState<string>(fleteroIdPropio ?? "")

@@ -309,7 +309,7 @@ function ModalCambiarEmpresa({
                       {" → "}
                       <span className="font-medium">{e.valorNuevo}</span>
                     </p>
-                    <p className="text-muted-foreground italic">"{e.motivo}"</p>
+                    <p className="text-muted-foreground italic">&ldquo;{e.motivo}&rdquo;</p>
                   </div>
                 ))}
               </div>
