@@ -517,66 +517,12 @@ export function NuevaFacturaSeguroClient({ proveedores, tarjetas, camiones, cuen
           )}
 
           {formaPago === "TARJETA" && (
-            <>
-              <div>
-                <Label>Tarjeta de crédito</Label>
-                <select
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={tarjetaId}
-                  onChange={(e) => setTarjetaId(e.target.value)}
-                >
-                  <option value="">Seleccionar tarjeta</option>
-                  {tarjetas.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.nombre} — {t.banco} xxxx{t.ultimos4}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Cantidad de cuotas</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="36"
-                    value={cantCuotas}
-                    onChange={(e) => setCantCuotas(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label>Primer mes/año</Label>
-                  <Input
-                    type="month"
-                    value={primerMesAnio}
-                    onChange={(e) => setPrimerMesAnio(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {getCuotasPreview().length > 0 && (
-                <div className="rounded-md border">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted/50">
-                        <th className="px-3 py-2 text-left">Cuota</th>
-                        <th className="px-3 py-2 text-left">Período</th>
-                        <th className="px-3 py-2 text-right">Monto</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {getCuotasPreview().map((cuota) => (
-                        <tr key={cuota.nro} className="border-b last:border-0">
-                          <td className="px-3 py-2">{cuota.nro}/{cantCuotas}</td>
-                          <td className="px-3 py-2">{cuota.mesAnio}</td>
-                          <td className="px-3 py-2 text-right">{formatearMoneda(cuota.monto)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+              <p className="text-sm text-amber-800">
+                La factura quedará pendiente de pago con tarjeta.
+                Registrá el pago desde Contabilidad → Tarjetas al cerrar el resumen.
+              </p>
+            </div>
           )}
 
           <div className="pt-2 border-t text-sm text-muted-foreground">

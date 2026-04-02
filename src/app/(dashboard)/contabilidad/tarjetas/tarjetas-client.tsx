@@ -237,7 +237,7 @@ export function TarjetasClient({ tarjetasIniciales, cuentas, choferes }: Tarjeta
               <p>Seleccioná una tarjeta para ver su detalle.</p>
             </div>
           ) : (
-            <TarjetaDetalle tarjeta={tarjetaDetalle} onActualizar={recargarTarjetas} />
+            <TarjetaDetalle tarjeta={tarjetaDetalle} cuentas={cuentas} onActualizar={recargarTarjetas} />
           )}
         </div>
       </div>
@@ -321,10 +321,45 @@ export function TarjetasClient({ tarjetasIniciales, cuentas, choferes }: Tarjeta
   )
 }
 
+// --- Tipos adicionales ---
+
+interface FacturaPendiente {
+  id: string
+  tipo: "PROVEEDOR" | "SEGURO"
+  razonSocial: string
+  nroComprobante: string
+  fecha: string
+  total: number
+  pagado: number
+  pendiente: number
+  estadoPago: string
+}
+
+interface CierreResumen {
+  id: string
+  mesAnio: string
+  totalPagado: number
+  fechaPago: string
+  pdfS3Key: string | null
+  cuentaPago: { nombre: string }
+  pagos: Array<{
+    montoPagado: number
+    facturaProveedor: { nroComprobante: string; proveedor: { razonSocial: string } } | null
+    facturaSeguro: { nroComprobante: string; aseguradora: { razonSocial: string } } | null
+  }>
+}
+
+interface PagoCierre {
+  facturaId: string
+  tipo: "PROVEEDOR" | "SEGURO"
+  montoPagado: number
+  seleccionada: boolean
+}
+
 // --- Sub-componente: Detalle de tarjeta ---
 
-function TarjetaDetalle({ tarjeta, onActualizar }: { tarjeta: Tarjeta; onActualizar: () => Promise<void> }) {
-  const [tab, setTab] = useState<"resumenes" | "gastos">("resumenes")
+function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; cuentas: Cuenta[]; onActualizar: () => Promise<void> }) {
+  const [tab, setTab] = useState<"resumenes" | "gastos" | "pendientes" | "historial">("pendientes")
   const [resumenes, setResumenes] = useState<ResumenTarjeta[] | null>(null)
   const [gastos, setGastos] = useState<GastoTarjeta[] | null>(null)
   const [cargandoResumenes, setCargandoResumenes] = useState(false)
@@ -348,6 +383,104 @@ function TarjetaDetalle({ tarjeta, onActualizar }: { tarjeta: Tarjeta; onActuali
   })
   const [error, setError] = useState("")
   const [guardando, setGuardando] = useState(false)
+
+  // Facturas pendientes
+  const [facturasPendientes, setFacturasPendientes] = useState<FacturaPendiente[] | null>(null)
+  const [cargandoPendientes, setCargandoPendientes] = useState(false)
+
+  // Cierre resumen modal
+  const [modalCierre, setModalCierre] = useState(false)
+  const [cierreMesAnio, setCierreMesAnio] = useState(new Date().toISOString().slice(0, 7))
+  const [cierreCuentaId, setCierreCuentaId] = useState("")
+  const [cierreFechaPago, setCierreFechaPago] = useState(new Date().toISOString().slice(0, 10))
+  const [cierrePdfS3Key, setCierrePdfS3Key] = useState("")
+  const [pagosCierre, setPagosCierre] = useState<PagoCierre[]>([])
+  const [errorCierre, setErrorCierre] = useState("")
+  const [guardandoCierre, setGuardandoCierre] = useState(false)
+
+  // Historial cierres
+  const [cierres, setCierres] = useState<CierreResumen[] | null>(null)
+  const [cargandoCierres, setCargandoCierres] = useState(false)
+
+  async function cargarFacturasPendientes() {
+    setCargandoPendientes(true)
+    const r = await fetch("/api/tarjetas/facturas-pendientes")
+    const d = await r.json()
+    setFacturasPendientes(Array.isArray(d) ? d : [])
+    setCargandoPendientes(false)
+  }
+
+  async function cargarCierres() {
+    setCargandoCierres(true)
+    const r = await fetch(`/api/tarjetas/cierre-resumen?tarjetaId=${tarjeta.id}`)
+    const d = await r.json()
+    setCierres(Array.isArray(d) ? d : [])
+    setCargandoCierres(false)
+  }
+
+  function abrirModalCierre() {
+    if (!facturasPendientes) return
+    setPagosCierre(
+      facturasPendientes.map((f) => ({
+        facturaId: f.id,
+        tipo: f.tipo,
+        montoPagado: f.pendiente,
+        seleccionada: false,
+      }))
+    )
+    setCierreMesAnio(new Date().toISOString().slice(0, 7))
+    setCierreCuentaId("")
+    setCierreFechaPago(new Date().toISOString().slice(0, 10))
+    setCierrePdfS3Key("")
+    setErrorCierre("")
+    setModalCierre(true)
+  }
+
+  function togglePagoCierre(idx: number) {
+    setPagosCierre((prev) =>
+      prev.map((p, i) => i === idx ? { ...p, seleccionada: !p.seleccionada, montoPagado: !p.seleccionada ? (facturasPendientes?.[i]?.pendiente ?? 0) : 0 } : p)
+    )
+  }
+
+  function actualizarMontoCierre(idx: number, monto: number) {
+    setPagosCierre((prev) => prev.map((p, i) => i === idx ? { ...p, montoPagado: monto } : p))
+  }
+
+  const totalCierre = pagosCierre.filter((p) => p.seleccionada).reduce((sum, p) => sum + p.montoPagado, 0)
+
+  async function confirmarCierre() {
+    setErrorCierre("")
+    if (!cierreCuentaId) { setErrorCierre("Seleccioná una cuenta de pago."); return }
+    const pagosSeleccionados = pagosCierre.filter((p) => p.seleccionada && p.montoPagado > 0)
+    if (pagosSeleccionados.length === 0) { setErrorCierre("Seleccioná al menos una factura."); return }
+
+    setGuardandoCierre(true)
+    const res = await fetch("/api/tarjetas/cierre-resumen", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tarjetaId: tarjeta.id,
+        mesAnio: cierreMesAnio,
+        cuentaPagoId: cierreCuentaId,
+        fechaPago: cierreFechaPago,
+        pdfS3Key: cierrePdfS3Key || null,
+        pagos: pagosSeleccionados.map((p) => ({
+          facturaId: p.facturaId,
+          tipo: p.tipo,
+          montoPagado: p.montoPagado,
+        })),
+      }),
+    })
+    setGuardandoCierre(false)
+    if (res.ok) {
+      setModalCierre(false)
+      await cargarFacturasPendientes()
+      await cargarCierres()
+    } else {
+      const d = await res.json()
+      setErrorCierre(d.error ?? "Error al crear cierre")
+    }
+  }
 
   async function cargarResumenes() {
     if (resumenes !== null) return

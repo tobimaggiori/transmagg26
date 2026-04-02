@@ -189,7 +189,6 @@ export function FacturaProveedorIngresoClient({
       pagoTipo !== "" &&
       (!REQUIERE_CUENTA.has(pagoTipo) || pagoCuentaId !== "") &&
       (!REQUIERE_CHEQUE_CARTERA.has(pagoTipo) || pagoChequeRecibidoId !== "") &&
-      (!REQUIERE_TARJETA.has(pagoTipo) || pagoTarjetaId !== "") &&
       (!REQUIERE_COMPROBANTE.has(pagoTipo) || pagoComprobantePdfS3Key !== ""))
 
   const puedeRegistrar = cabeceraCompleta && tieneItemValido && tienePdf && pagoValido
@@ -885,29 +884,11 @@ export function FacturaProveedorIngresoClient({
 
               {/* TARJETA_* */}
               {REQUIERE_TARJETA.has(pagoTipo) && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="pagoTarjeta">Tarjeta *</Label>
-                  <select
-                    id="pagoTarjeta"
-                    value={pagoTarjetaId}
-                    onChange={(e) => setPagoTarjetaId(e.target.value)}
-                    className={SELECT_CLS}
-                  >
-                    <option value="">— Seleccionar tarjeta —</option>
-                    {tarjetas
-                      .filter(
-                        (t) =>
-                          (pagoTipo === "TARJETA_CREDITO" && t.tipo === "CREDITO") ||
-                          (pagoTipo === "TARJETA_DEBITO" && t.tipo === "DEBITO") ||
-                          (pagoTipo === "TARJETA_PREPAGA" && t.tipo === "PREPAGA") ||
-                          true // show all as fallback
-                      )
-                      .map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.nombre} — {t.banco} ...{t.ultimos4}
-                        </option>
-                      ))}
-                  </select>
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-sm text-amber-800">
+                    La factura quedará pendiente de pago con tarjeta.
+                    Registrá el pago desde Contabilidad → Tarjetas al cerrar el resumen.
+                  </p>
                 </div>
               )}
 

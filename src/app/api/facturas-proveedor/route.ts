@@ -347,7 +347,15 @@ export async function POST(request: NextRequest) {
 
       // 4. Pago opcional — dentro de la misma transacción atómica
       let pagoResult: { nuevoEstado: string } | null = null
-      if (data.pago) {
+      const esPagoTarjeta = data.pago && ["TARJETA_CREDITO", "TARJETA_DEBITO", "TARJETA_PREPAGA"].includes(data.pago.tipo)
+      if (data.pago && esPagoTarjeta) {
+        // Tarjeta: no crear pago ni movimiento, solo marcar como pendiente tarjeta
+        await tx.facturaProveedor.update({
+          where: { id: factura.id },
+          data: { estadoPago: "PENDIENTE_TARJETA" },
+        })
+        pagoResult = { nuevoEstado: "PENDIENTE_TARJETA" }
+      } else if (data.pago) {
         pagoResult = await procesarPagoProveedor(
           tx,
           {

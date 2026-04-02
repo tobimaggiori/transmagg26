@@ -136,7 +136,6 @@ const NAV_GROUPS: NavGroup[] = [
     pathPrefix: "/aseguradoras",
     items: [
       { href: "/aseguradoras/facturas",         label: "Facturas y Pólizas", seccion: "aseguradoras" },
-      { href: "/aseguradoras/resumen-tarjetas", label: "Resumen Tarjetas",   seccion: "aseguradoras" },
     ],
   },
   {

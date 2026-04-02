@@ -127,7 +127,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           cuentaId: data.cuentaId ?? null,
           tarjetaId: data.tarjetaId ?? null,
           cantCuotas: data.cantCuotas ?? null,
-          estadoPago: "PENDIENTE",
+          estadoPago: data.formaPago === "TARJETA" ? "PENDIENTE_TARJETA" : "PENDIENTE",
           operadorId,
         },
       })
@@ -205,33 +205,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         })
       }
 
-      // 5. Si TARJETA: crear cuotas
-      if (data.formaPago === "TARJETA" && data.tarjetaId && data.cantCuotas && data.primerMesAnio) {
-        const montoCuota = Math.round((data.total / data.cantCuotas) * 100) / 100
-        const cuotas = []
-
-        for (let i = 0; i < data.cantCuotas; i++) {
-          const [anio, mes] = data.primerMesAnio.split("-").map(Number)
-          const fecha = new Date(anio, mes - 1 + i, 1)
-          const mesAnio = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}`
-
-          cuotas.push({
-            facturaSeguroId: nuevaFactura.id,
-            tarjetaId: data.tarjetaId,
-            nroCuota: i + 1,
-            totalCuotas: data.cantCuotas,
-            monto: montoCuota,
-            mesAnio,
-            estado: "PENDIENTE",
-          })
-        }
-
-        await tx.cuotaFacturaSeguro.createMany({ data: cuotas })
-        await tx.facturaSeguro.update({
-          where: { id: nuevaFactura.id },
-          data: { montoCuota },
-        })
-      }
+      // 5. TARJETA: queda como PENDIENTE_TARJETA, se gestiona desde Contabilidad → Tarjetas
 
       return tx.facturaSeguro.findUnique({
         where: { id: nuevaFactura.id },

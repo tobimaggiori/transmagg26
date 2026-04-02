@@ -102,6 +102,7 @@ model Usuario {
   pagosImpuesto              PagoImpuesto[]          @relation("OperadorPagoImpuesto")
   infracciones               Infraccion[]            @relation("OperadorInfracciones")
   librosIva                  LibroIva[]              @relation("OperadorLibroIva")
+  cierresResumenTarjetaOpera CierreResumenTarjeta[]  @relation("OperadorCierreResumenTarjeta")
 
   @@map("usuarios")
 }
@@ -535,6 +536,7 @@ model Cuenta {
   facturasSeguro                 FacturaSeguro[]      @relation("CuentaFacturaSeguro")
   pagosImpuesto                  PagoImpuesto[]       @relation("CuentaPagoImpuesto")
   infracciones                   Infraccion[]         @relation("CuentaInfracciones")
+  cierresResumenTarjeta          CierreResumenTarjeta[] @relation("CuentaCierreResumenTarjeta")
 
   @@map("cuentas")
 }
@@ -807,6 +809,7 @@ model Tarjeta {
   facturasSeguro     FacturaSeguro[]        @relation("TarjetaFacturaSeguro")
   cuotasSeguro       CuotaFacturaSeguro[]   @relation("TarjetaCuotasSeguro")
   pagosImpuesto      PagoImpuesto[]         @relation("TarjetaPagoImpuesto")
+  cierresResumen     CierreResumenTarjeta[]
 
   @@map("tarjetas")
 }
@@ -1039,7 +1042,8 @@ model FacturaProveedor {
   pagos        PagoProveedor[]
   asientosIva  AsientoIva[]
   items        ItemFacturaProveedor[]
-  gastoFletero GastoFletero?
+  gastoFletero       GastoFletero?
+  pagosTarjeta       PagoFacturaTarjeta[] @relation("PagoTarjetaFacturaProveedor")
 
   @@map("facturas_proveedor")
 }
@@ -1313,7 +1317,8 @@ model FacturaSeguro {
   operador    Usuario          @relation("OperadorFacturaSeguro", fields: [operadorId], references: [id])
   polizas     PolizaSeguro[]
   cuotas      CuotaFacturaSeguro[]
-  asientoIva  AsientoIva?      @relation("FacturaSeguroAsientoIva")
+  asientoIva   AsientoIva?      @relation("FacturaSeguroAsientoIva")
+  pagosTarjeta PagoFacturaTarjeta[] @relation("PagoTarjetaFacturaSeguro")
 
   @@map("facturas_seguro")
 }
@@ -1335,6 +1340,43 @@ model CuotaFacturaSeguro {
   resumenTarjeta ResumenTarjeta? @relation("ResumenCuotasSeguro", fields: [resumenTarjetaId], references: [id])
 
   @@map("cuotas_facturas_seguro")
+}
+
+// ─── CIERRE RESUMEN TARJETA ──────────────────────────────────────────────────
+// estadoPago factura: PENDIENTE | PENDIENTE_TARJETA | PAGADA_PARCIAL | PAGADA
+
+model CierreResumenTarjeta {
+  id            String    @id @default(uuid())
+  tarjetaId     String    @map("tarjeta_id")
+  mesAnio       String    @map("mes_anio")
+  totalPagado   Float     @map("total_pagado")
+  cuentaPagoId  String    @map("cuenta_pago_id")
+  fechaPago     DateTime  @map("fecha_pago")
+  pdfS3Key      String?   @map("pdf_s3_key")
+  operadorId    String    @map("operador_id")
+  creadoEn      DateTime  @default(now()) @map("creado_en")
+
+  tarjeta       Tarjeta   @relation(fields: [tarjetaId], references: [id])
+  cuentaPago    Cuenta    @relation("CuentaCierreResumenTarjeta", fields: [cuentaPagoId], references: [id])
+  operador      Usuario   @relation("OperadorCierreResumenTarjeta", fields: [operadorId], references: [id])
+  pagos         PagoFacturaTarjeta[]
+
+  @@map("cierres_resumen_tarjeta")
+}
+
+model PagoFacturaTarjeta {
+  id                  String    @id @default(uuid())
+  cierreResumenId     String    @map("cierre_resumen_id")
+  facturaProveedorId  String?   @map("factura_proveedor_id")
+  facturaSeguroId     String?   @map("factura_seguro_id")
+  montoPagado         Float     @map("monto_pagado")
+  creadoEn            DateTime  @default(now()) @map("creado_en")
+
+  cierreResumen       CierreResumenTarjeta  @relation(fields: [cierreResumenId], references: [id])
+  facturaProveedor    FacturaProveedor?     @relation("PagoTarjetaFacturaProveedor", fields: [facturaProveedorId], references: [id])
+  facturaSeguro       FacturaSeguro?        @relation("PagoTarjetaFacturaSeguro", fields: [facturaSeguroId], references: [id])
+
+  @@map("pagos_factura_tarjeta")
 }
 
 // ─── HISTORIAL DE PAGOS ───────────────────────────────────────────────────────
