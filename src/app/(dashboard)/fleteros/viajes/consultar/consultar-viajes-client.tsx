@@ -10,6 +10,8 @@ import { useState, useCallback, useEffect, useMemo } from "react"
 import { formatearMoneda, formatearFecha, cn } from "@/lib/utils"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { PDFViewer } from "@/components/ui/pdf-viewer"
+import { usePDFViewer } from "@/hooks/use-pdf-viewer"
 import { Check, ChevronsUpDown, X } from "lucide-react"
 import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 import type { Rol } from "@/types"
@@ -137,34 +139,6 @@ function ComboboxEntidad<T extends { id: string; razonSocial: string; cuit: stri
         </Command>
       </PopoverContent>
     </Popover>
-  )
-}
-
-// ─── PDF Link ───────────────────────────────────────────────────────────────
-
-function PDFLink({ label, s3Key, className }: { label: string; s3Key: string; className?: string }) {
-  const [loading, setLoading] = useState(false)
-
-  async function abrir() {
-    setLoading(true)
-    try {
-      const res = await fetch(`/api/storage/signed-url?key=${encodeURIComponent(s3Key)}`)
-      const data = await res.json()
-      if (res.ok && data.url) window.open(data.url as string, "_blank", "noopener,noreferrer")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={abrir}
-      disabled={loading}
-      className={cn("text-xs text-primary hover:underline disabled:opacity-50 whitespace-nowrap", className)}
-    >
-      {loading ? "…" : label}
-    </button>
   )
 }
 
@@ -917,6 +891,9 @@ export function ConsultarViajesClient({
   empresas: Empresa[]
   camiones: Camion[]
 }) {
+  // PDF Viewer
+  const { estado: estadoPDF, abrirPDF, cerrarPDF } = usePDFViewer()
+
   // Filtros
   const [filtroFleteroId, setFiltroFleteroId] = useState("")
   const [filtroEmpresaId, setFiltroEmpresaId] = useState("")
@@ -1165,7 +1142,19 @@ export function ConsultarViajesClient({
                 <td className="px-3 py-2 whitespace-nowrap">
                   {v.nroCartaPorte ? (
                     v.cartaPorteS3Key
-                      ? <PDFLink label={v.nroCartaPorte} s3Key={v.cartaPorteS3Key} />
+                      ? <button
+                          type="button"
+                          className="text-xs text-primary hover:underline whitespace-nowrap"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            abrirPDF({
+                              s3Key: v.cartaPorteS3Key!,
+                              titulo: `Carta de Porte — ${v.nroCartaPorte}`,
+                            })
+                          }}
+                        >
+                          {v.nroCartaPorte}
+                        </button>
                       : <span className="text-xs">{v.nroCartaPorte}</span>
                   ) : <span className="text-muted-foreground">—</span>}
                 </td>
@@ -1277,6 +1266,8 @@ export function ConsultarViajesClient({
           error={errorModal}
         />
       )}
+
+      <PDFViewer {...estadoPDF} onClose={cerrarPDF} />
     </div>
   )
 }
