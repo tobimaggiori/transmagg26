@@ -79,6 +79,10 @@ export const crearCuentaSchema = z.object({
   tieneTarjetasPrepagasChoferes: z.boolean().default(false),
   formatoReconciliacion: formatoReconciliacionSchema.nullable().optional(),
   esCuentaComitenteBroker: z.boolean().default(false),
+  cuentaPadreId: z.string().uuid().nullable().optional(),
+  nroCuenta: z.string().nullable().optional(),
+  cbu: z.string().nullable().optional(),
+  alias: z.string().nullable().optional(),
 })
 
 export const actualizarCuentaSchema = crearCuentaSchema.partial()
