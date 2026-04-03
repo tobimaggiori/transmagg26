@@ -114,7 +114,16 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
       })
       const json = await res.json()
       if (!res.ok) {
-        setError(json.error ?? "Error al crear el viaje")
+        // Show field-level errors if available
+        if (json.detalles?.fieldErrors) {
+          const fields = json.detalles.fieldErrors as Record<string, string[]>
+          const msgs = Object.entries(fields)
+            .filter(([, errs]) => errs.length > 0)
+            .map(([campo, errs]) => `${campo}: ${errs.join(", ")}`)
+          setError(msgs.length > 0 ? msgs.join(" | ") : (json.error ?? "Error al crear el viaje"))
+        } else {
+          setError(json.error ?? "Error al crear el viaje")
+        }
         return
       }
       router.push("/fleteros/viajes/consultar")

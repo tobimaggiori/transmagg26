@@ -15,6 +15,13 @@ import { construirAvisosEdicionViaje } from "@/lib/viaje-workflow"
 import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 import type { Rol } from "@/types"
 
+function normalizarProvincia(valor: string): string {
+  const upper = valor.toUpperCase()
+  return PROVINCIAS_ARGENTINA.find((p) => p.toUpperCase() === upper) ?? valor
+}
+
+const provinciaOptSchema = z.string().transform(normalizarProvincia).nullable().optional()
+
 const actualizarViajeSchema = z.object({
   fechaViaje: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   remito: z.string().nullable().optional(),
@@ -22,9 +29,9 @@ const actualizarViajeSchema = z.object({
   cupo: z.string().nullable().optional(),
   mercaderia: z.string().nullable().optional(),
   procedencia: z.string().nullable().optional(),
-  provinciaOrigen: z.enum(PROVINCIAS_ARGENTINA as unknown as [string, ...string[]]).nullable().optional(),
+  provinciaOrigen: provinciaOptSchema,
   destino: z.string().nullable().optional(),
-  provinciaDestino: z.enum(PROVINCIAS_ARGENTINA as unknown as [string, ...string[]]).nullable().optional(),
+  provinciaDestino: provinciaOptSchema,
   kilos: z.number().positive().nullable().optional(),
   tarifa: z.number().positive().optional(),
   empresaId: z.string().optional(),

@@ -20,6 +20,14 @@ import { resolverOperadorId } from "@/lib/session-utils"
 import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 import type { Rol } from "@/types"
 
+/** Normaliza una provincia: busca match case-insensitive en la lista canónica */
+function normalizarProvincia(valor: string): string {
+  const upper = valor.toUpperCase()
+  return PROVINCIAS_ARGENTINA.find((p) => p.toUpperCase() === upper) ?? valor
+}
+
+const provinciaSchema = z.string().min(1, "La provincia es obligatoria").transform(normalizarProvincia)
+
 const crearViajeSchema = z.object({
   esCamionPropio: z.boolean().default(false),
   fleteroId: z.string().uuid().optional(),
@@ -32,9 +40,9 @@ const crearViajeSchema = z.object({
   cupo: z.string().nullable().optional(),
   mercaderia: z.string().optional(),
   procedencia: z.string().optional(),
-  provinciaOrigen: z.enum(PROVINCIAS_ARGENTINA as unknown as [string, ...string[]]),
+  provinciaOrigen: provinciaSchema,
   destino: z.string().optional(),
-  provinciaDestino: z.enum(PROVINCIAS_ARGENTINA as unknown as [string, ...string[]]),
+  provinciaDestino: provinciaSchema,
   kilos: z.number().positive().optional(),
   tarifa: z.number().positive("La tarifa debe ser mayor a 0"),
   estadoLiquidacion: z.string().default("PENDIENTE_LIQUIDAR"),
@@ -205,9 +213,12 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
+    console.log("[POST /api/viajes] Body recibido:", JSON.stringify(body))
     const parsed = crearViajeSchema.safeParse(body)
     if (!parsed.success) {
-      return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
+      const detalles = parsed.error.flatten()
+      console.log("[POST /api/viajes] Error de validación:", JSON.stringify(detalles))
+      return NextResponse.json({ error: "Datos inválidos", detalles }, { status: 400 })
     }
 
     const { esCamionPropio, fleteroId, camionId, choferId, empresaId, fechaViaje, tarifa, estadoLiquidacion, estadoFactura, ...resto } = parsed.data
