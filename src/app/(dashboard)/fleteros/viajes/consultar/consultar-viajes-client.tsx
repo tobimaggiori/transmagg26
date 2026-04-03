@@ -1068,14 +1068,16 @@ export function ConsultarViajesClient({
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hidden md:table-cell">Origen</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hidden md:table-cell">Destino</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Estado</th>
+              <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hidden lg:table-cell">Nro LP</th>
+              <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hidden lg:table-cell">Nro Factura</th>
               <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground"></th>
             </tr>
           </thead>
           <tbody>
             {cargandoViajes ? (
-              <tr><td colSpan={8} className="py-8 text-center text-sm text-muted-foreground">Cargando...</td></tr>
+              <tr><td colSpan={10} className="py-8 text-center text-sm text-muted-foreground">Cargando...</td></tr>
             ) : viajesPagina.length === 0 ? (
-              <tr><td colSpan={8} className="py-8 text-center text-sm text-muted-foreground">Sin viajes para los filtros seleccionados.</td></tr>
+              <tr><td colSpan={10} className="py-8 text-center text-sm text-muted-foreground">Sin viajes para los filtros seleccionados.</td></tr>
             ) : viajesPagina.map((v) => (
               <tr
                 key={v.id}
@@ -1122,6 +1124,49 @@ export function ConsultarViajesClient({
                       ? <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">Fact.</span>
                       : <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">Sin fact.</span>}
                   </div>
+                </td>
+                {/* NRO LP */}
+                <td className="px-3 py-2 whitespace-nowrap hidden lg:table-cell">
+                  {(() => {
+                    const liq = v.enLiquidaciones?.[0]?.liquidacion
+                    if (liq?.nroComprobante) {
+                      const nroLP = `${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${String(liq.nroComprobante).padStart(8, "0")}`
+                      return (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            abrirPDF({ fetchUrl: `/api/liquidaciones/${liq.id}/pdf`, titulo: `LP ${nroLP}` })
+                          }}
+                          className="text-primary hover:underline text-xs font-mono"
+                        >
+                          {nroLP}
+                        </button>
+                      )
+                    }
+                    return <span className="text-xs text-muted-foreground">Pendiente</span>
+                  })()}
+                </td>
+                {/* NRO FACTURA */}
+                <td className="px-3 py-2 whitespace-nowrap hidden lg:table-cell">
+                  {(() => {
+                    const fact = v.enFacturas?.[0]?.factura
+                    if (fact?.nroComprobante) {
+                      return (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            abrirPDF({ fetchUrl: `/api/facturas/${fact.id}/pdf`, titulo: `Factura ${fact.nroComprobante}` })
+                          }}
+                          className="text-primary hover:underline text-xs font-mono"
+                        >
+                          {fact.nroComprobante}
+                        </button>
+                      )
+                    }
+                    return <span className="text-xs text-muted-foreground">Pendiente</span>
+                  })()}
                 </td>
                 <td className="px-3 py-2 text-right">
                   <button

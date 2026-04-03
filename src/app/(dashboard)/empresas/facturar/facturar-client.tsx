@@ -2,18 +2,19 @@
 
 /**
  * Propósito: Componente cliente para creación de facturas a empresas (/empresas/facturar).
- * Flujo: seleccionar empresa -> ver LPs pendientes -> seleccionar LP -> ver viajes read-only -> emitir factura.
- * Modelo: 1 LP = 1 Factura.
+ * Flujo: seleccionar empresa -> ver viajes pendientes con checkboxes -> editar kilos/tarifa inline -> emitir factura.
+ * Modelo: N viajes seleccionados = 1 Factura.
  */
 
 import { useState, useCallback, useEffect } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
-import { calcularToneladas, calcularTotalViaje, calcularFactura } from "@/lib/viajes"
+import { calcularTotalViaje, calcularFactura } from "@/lib/viajes"
 import { SearchCombobox } from "@/components/ui/search-combobox"
+import { CeldaEditable } from "@/components/ui/celda-editable"
 
 // ---- Tipos ----
 
-type ViajeDeLP = {
+type ViajeParaFacturar = {
   id: string
   empresaId: string
   kilos: number | null
@@ -28,16 +29,10 @@ type ViajeDeLP = {
   fechaViaje: string
   nroCartaPorte: string | null
   tieneCpe: boolean
-}
-
-type LPPendiente = {
-  id: string
-  nroComprobante: number | null
-  ptoVenta: number | null
-  grabadaEn: string
-  total: number
-  fletero: { razonSocial: string }
-  viajes: Array<{ viaje: ViajeDeLP }>
+  fletero: { razonSocial: string } | null
+  enLiquidaciones: Array<{
+    liquidacion: { nroComprobante: number | null; ptoVenta: number | null; id: string }
+  }>
 }
 
 // ---- Props ----
@@ -74,14 +69,14 @@ export function TipoCbteBadge({ tipoCbte, modalidad }: { tipoCbte: number; modal
  * FacturarEmpresaClient: FacturarEmpresaClientProps -> JSX.Element
  *
  * Dado el listado de empresas, renderiza el flujo de creación de facturas:
- * selector de empresa con SearchCombobox, lista de LPs pendientes, detalle de viajes
- * read-only al seleccionar una LP, preview con neto/IVA/total, y confirmación.
- * Modelo 1 LP = 1 Factura: cada factura se crea a partir de una LP completa.
+ * selector de empresa con SearchCombobox, tabla de viajes pendientes con checkboxes,
+ * edición inline de kilos y tarifa empresa, preview con neto/IVA/total, y confirmación.
  */
 export function FacturarEmpresaClient({ empresas }: FacturarEmpresaClientProps) {
   const [empresaId, setEmpresaId] = useState("")
-  const [liquidaciones, setLiquidaciones] = useState<LPPendiente[]>([])
-  const [selectedLP, setSelectedLP] = useState<string | null>(null)
+  const [viajes, setViajes] = useState<ViajeParaFacturar[]>([])
+  const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
+  const [ediciones, setEdiciones] = useState<Record<string, { kilos?: number; tarifaEmpresa?: number }>>({})
   const [tipoCbteNum, setTipoCbteNum] = useState<number | null>(null)
   const [modalidadMiPymes, setModalidadMiPymes] = useState<"SCA" | "ADC" | null>(null)
   const [ivaPct, setIvaPct] = useState<number>(21)
@@ -97,7 +92,7 @@ export function FacturarEmpresaClient({ empresas }: FacturarEmpresaClientProps) 
       const res = await fetch(`/api/facturas?empresaId=${empresaId}`)
       if (res.ok) {
         const data = await res.json()
-        setLiquidaciones(data.liquidacionesPendientes ?? [])
+        setViajes(data.viajesPendientes ?? [])
       }
     } finally {
       setCargando(false)
@@ -117,27 +112,60 @@ export function FacturarEmpresaClient({ empresas }: FacturarEmpresaClientProps) 
     (!esRI && tipoCbteEfectivo === 6) ||
     (esRI && tipoCbteNum !== null && (tipoCbteNum !== 201 || modalidadMiPymes !== null))
 
-  const lpSeleccionada = liquidaciones.find((lp) => lp.id === selectedLP)
+  // Toggle individual viaje
+  function toggleViaje(id: string) {
+    setSeleccionados((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
-  // Calcular preview desde los viajes de la LP seleccionada
-  const viajesDeLP = lpSeleccionada?.viajes.map((vl) => vl.viaje) ?? []
-  const viajesParaCalc = viajesDeLP.map((v) => ({
-    kilos: v.kilos ?? 0,
-    tarifaEmpresa: v.tarifaEmpresa,
+  // Toggle todos
+  function toggleTodos() {
+    if (seleccionados.size === viajes.length) {
+      setSeleccionados(new Set())
+    } else {
+      setSeleccionados(new Set(viajes.map((v) => v.id)))
+    }
+  }
+
+  // Obtener valor efectivo de kilos/tarifa (con ediciones)
+  function getKilos(v: ViajeParaFacturar): number {
+    return ediciones[v.id]?.kilos ?? v.kilos ?? 0
+  }
+
+  function getTarifa(v: ViajeParaFacturar): number {
+    return ediciones[v.id]?.tarifaEmpresa ?? v.tarifaEmpresa
+  }
+
+  // Calcular preview solo para viajes seleccionados
+  const viajesSeleccionados = viajes.filter((v) => seleccionados.has(v.id))
+  const viajesParaCalc = viajesSeleccionados.map((v) => ({
+    kilos: getKilos(v),
+    tarifaEmpresa: getTarifa(v),
   }))
   const preview = viajesParaCalc.length > 0 ? calcularFactura(viajesParaCalc, ivaPct) : null
 
   async function confirmarFactura() {
-    if (!empresaId || !selectedLP || !tipoCbteEfectivo) return
+    if (!empresaId || seleccionados.size === 0 || !tipoCbteEfectivo) return
     setGenerando(true)
     setErrorGen(null)
     try {
+      // Solo enviar ediciones de viajes seleccionados que realmente fueron editados
+      const edicionesAEnviar: Record<string, { kilos?: number; tarifaEmpresa?: number }> = {}
+      for (const id of Array.from(seleccionados)) {
+        if (ediciones[id]) edicionesAEnviar[id] = ediciones[id]
+      }
+
       const body = {
         empresaId,
-        liquidacionId: selectedLP,
+        viajeIds: Array.from(seleccionados),
         tipoCbte: tipoCbteEfectivo,
         modalidadMiPymes: modalidadMiPymes ?? undefined,
         ivaPct,
+        ediciones: Object.keys(edicionesAEnviar).length > 0 ? edicionesAEnviar : undefined,
       }
       const res = await fetch("/api/facturas", {
         method: "POST",
@@ -149,7 +177,8 @@ export function FacturarEmpresaClient({ empresas }: FacturarEmpresaClientProps) 
         setErrorGen(err.error ?? "Error al generar factura")
         return
       }
-      setSelectedLP(null)
+      setSeleccionados(new Set())
+      setEdiciones({})
       setExitoMsg("Factura creada exitosamente.")
       cargarDatos()
     } finally {
@@ -159,7 +188,8 @@ export function FacturarEmpresaClient({ empresas }: FacturarEmpresaClientProps) 
 
   function resetearFormulario() {
     setExitoMsg(null)
-    setSelectedLP(null)
+    setSeleccionados(new Set())
+    setEdiciones({})
     setTipoCbteNum(null)
     setModalidadMiPymes(null)
     setIvaPct(21)
@@ -173,7 +203,7 @@ export function FacturarEmpresaClient({ empresas }: FacturarEmpresaClientProps) 
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Facturar a Empresa</h1>
         <p className="text-muted-foreground">
-          Selecciona una empresa para ver sus liquidaciones pendientes de facturación.
+          Selecciona una empresa para ver sus viajes pendientes de facturación.
         </p>
       </div>
 
@@ -186,7 +216,8 @@ export function FacturarEmpresaClient({ empresas }: FacturarEmpresaClientProps) 
             value={empresaId}
             onChange={(id) => {
               setEmpresaId(id)
-              setSelectedLP(null)
+              setSeleccionados(new Set())
+              setEdiciones({})
               setExitoMsg(null)
               setTipoCbteNum(null)
               setModalidadMiPymes(null)
@@ -275,7 +306,7 @@ export function FacturarEmpresaClient({ empresas }: FacturarEmpresaClientProps) 
 
       {!empresaId && (
         <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
-          <p className="text-lg">Selecciona una empresa para ver sus LPs pendientes</p>
+          <p className="text-lg">Selecciona una empresa para ver sus viajes pendientes</p>
         </div>
       )}
 
@@ -294,114 +325,112 @@ export function FacturarEmpresaClient({ empresas }: FacturarEmpresaClientProps) 
 
       {empresaId && !exitoMsg && (
         <>
-          {/* Lista de LPs pendientes */}
+          {/* Tabla de viajes pendientes con checkboxes */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <h3 className="text-base font-semibold">Liquidaciones pendientes de facturar</h3>
+              <h3 className="text-base font-semibold">Viajes pendientes de facturar</h3>
               <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800">
-                {liquidaciones.length}
+                {viajes.length}
               </span>
+              {seleccionados.size > 0 && (
+                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800">
+                  {seleccionados.size} seleccionado(s)
+                </span>
+              )}
             </div>
 
             {cargando ? (
               <div className="text-center py-6 text-muted-foreground">Cargando...</div>
-            ) : liquidaciones.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">Sin liquidaciones pendientes de facturación para esta empresa.</div>
+            ) : viajes.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground">Sin viajes pendientes de facturación para esta empresa.</div>
             ) : (
               <div className="overflow-x-auto rounded-lg border">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50">
                     <tr>
-                      <th className="px-3 py-2 text-left">Nro LP</th>
-                      <th className="px-3 py-2 text-left">Fletero</th>
-                      <th className="px-3 py-2 text-left">Fecha</th>
-                      <th className="px-3 py-2 text-right">Total LP</th>
-                      <th className="px-3 py-2 text-right">Viajes</th>
-                      <th className="px-3 py-2 text-center">Acción</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {liquidaciones.map((lp) => (
-                      <tr
-                        key={lp.id}
-                        className={selectedLP === lp.id ? "bg-blue-50" : "hover:bg-muted/30"}
-                      >
-                        <td className="px-3 py-2 font-mono text-xs">
-                          {formatNroLP(lp.ptoVenta, lp.nroComprobante)}
-                        </td>
-                        <td className="px-3 py-2">{lp.fletero.razonSocial}</td>
-                        <td className="px-3 py-2">{formatearFecha(lp.grabadaEn)}</td>
-                        <td className="px-3 py-2 text-right font-medium">{formatearMoneda(lp.total)}</td>
-                        <td className="px-3 py-2 text-right">{lp.viajes.length}</td>
-                        <td className="px-3 py-2 text-center">
-                          <button
-                            onClick={() => setSelectedLP(selectedLP === lp.id ? null : lp.id)}
-                            className={`h-8 px-3 rounded-md text-xs font-medium ${
-                              selectedLP === lp.id
-                                ? "bg-blue-600 text-white hover:bg-blue-700"
-                                : "border border-input bg-background hover:bg-accent"
-                            }`}
-                          >
-                            {selectedLP === lp.id ? "Seleccionada" : "Seleccionar"}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Detalle de viajes de la LP seleccionada (read-only) */}
-          {lpSeleccionada && (
-            <div className="space-y-3">
-              <h3 className="text-base font-semibold">
-                Viajes de la LP {formatNroLP(lpSeleccionada.ptoVenta, lpSeleccionada.nroComprobante)}
-                <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  ({lpSeleccionada.fletero.razonSocial})
-                </span>
-              </h3>
-              <div className="overflow-x-auto rounded-lg border">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50">
-                    <tr>
+                      <th className="px-3 py-2 text-center w-10">
+                        <input
+                          type="checkbox"
+                          checked={seleccionados.size === viajes.length && viajes.length > 0}
+                          onChange={toggleTodos}
+                          className="accent-primary"
+                        />
+                      </th>
                       <th className="px-3 py-2 text-left">Fecha</th>
                       <th className="px-3 py-2 text-left">CPE</th>
-                      <th className="px-3 py-2 text-left">Remito</th>
+                      <th className="px-3 py-2 text-left">Fletero</th>
                       <th className="px-3 py-2 text-left">Mercadería</th>
                       <th className="px-3 py-2 text-left">Origen</th>
                       <th className="px-3 py-2 text-left">Destino</th>
                       <th className="px-3 py-2 text-right">Kilos</th>
-                      <th className="px-3 py-2 text-right">Ton</th>
-                      <th className="px-3 py-2 text-right">Tarifa Emp. / ton</th>
+                      <th className="px-3 py-2 text-right">Tarifa Emp/ton</th>
                       <th className="px-3 py-2 text-right">Subtotal</th>
+                      <th className="px-3 py-2 text-left">Nro LP</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {viajesDeLP.map((v) => {
-                      const kilos = v.kilos ?? 0
-                      const ton = kilos > 0 ? calcularToneladas(kilos) : null
-                      const subtotal = kilos > 0 ? calcularTotalViaje(kilos, v.tarifaEmpresa) : null
+                    {viajes.map((v) => {
+                      const kilos = getKilos(v)
+                      const tarifa = getTarifa(v)
+                      const subtotal = kilos > 0 ? calcularTotalViaje(kilos, tarifa) : null
+                      const isSelected = seleccionados.has(v.id)
+                      const lp = v.enLiquidaciones?.[0]?.liquidacion
                       return (
-                        <tr key={v.id} className="hover:bg-muted/30">
+                        <tr
+                          key={v.id}
+                          className={isSelected ? "bg-blue-50" : "hover:bg-muted/30"}
+                        >
+                          <td className="px-3 py-2 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleViaje(v.id)}
+                              className="accent-primary"
+                            />
+                          </td>
                           <td className="px-3 py-2">{formatearFecha(v.fechaViaje)}</td>
                           <td className="px-3 py-2">
                             {v.tieneCpe
                               ? v.nroCartaPorte ?? "Si"
                               : <span className="text-muted-foreground">No</span>}
                           </td>
-                          <td className="px-3 py-2">{v.remito ?? "-"}</td>
+                          <td className="px-3 py-2">{v.fletero?.razonSocial ?? "-"}</td>
                           <td className="px-3 py-2">{v.mercaderia ?? "-"}</td>
                           <td className="px-3 py-2">{v.provinciaOrigen ?? v.procedencia ?? "-"}</td>
                           <td className="px-3 py-2">{v.destino ?? v.provinciaDestino ?? "-"}</td>
-                          <td className="px-3 py-2 text-right">{kilos > 0 ? kilos.toLocaleString("es-AR") : "-"}</td>
-                          <td className="px-3 py-2 text-right text-muted-foreground">
-                            {ton?.toLocaleString("es-AR") ?? "-"}
+                          <td className="px-3 py-1.5 text-right">
+                            <CeldaEditable
+                              valor={kilos}
+                              tipo="number"
+                              onGuardar={(val) =>
+                                setEdiciones((prev) => ({
+                                  ...prev,
+                                  [v.id]: { ...prev[v.id], kilos: Number(val) },
+                                }))
+                              }
+                              formatear={(val) => Number(val).toLocaleString("es-AR")}
+                              className="text-right"
+                            />
                           </td>
-                          <td className="px-3 py-2 text-right">{formatearMoneda(v.tarifaEmpresa)}</td>
+                          <td className="px-3 py-1.5 text-right">
+                            <CeldaEditable
+                              valor={tarifa}
+                              tipo="number"
+                              onGuardar={(val) =>
+                                setEdiciones((prev) => ({
+                                  ...prev,
+                                  [v.id]: { ...prev[v.id], tarifaEmpresa: Number(val) },
+                                }))
+                              }
+                              formatear={(val) => formatearMoneda(Number(val))}
+                              className="text-right"
+                            />
+                          </td>
                           <td className="px-3 py-2 text-right font-medium">
                             {subtotal != null ? formatearMoneda(subtotal) : "-"}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-xs">
+                            {lp ? formatNroLP(lp.ptoVenta, lp.nroComprobante) : <span className="text-muted-foreground">-</span>}
                           </td>
                         </tr>
                       )
@@ -409,64 +438,64 @@ export function FacturarEmpresaClient({ empresas }: FacturarEmpresaClientProps) 
                   </tbody>
                 </table>
               </div>
+            )}
+          </div>
 
-              {/* Preview de factura */}
-              {preview && (
-                <div className="p-4 bg-muted/40 rounded-lg border space-y-3">
-                  <h3 className="font-semibold">Preview de factura</h3>
-                  {errorGen && <div className="p-3 bg-red-50 text-red-700 rounded text-sm">{errorGen}</div>}
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <label className="text-xs font-medium text-muted-foreground block mb-1">Tipo de comprobante</label>
-                      <div className="flex items-center gap-2 h-8">
-                        <TipoCbteBadge tipoCbte={tipoCbteEfectivo ?? 1} modalidad={modalidadMiPymes ?? undefined} />
-                        <span className="text-xs text-muted-foreground">(código ARCA: {tipoCbteEfectivo})</span>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-muted-foreground block mb-1">IVA %</label>
-                      <input
-                        type="number"
-                        value={ivaPct}
-                        onChange={(e) => setIvaPct(parseFloat(e.target.value) || 0)}
-                        min="0"
-                        max="100"
-                        step="0.01"
-                        className="h-8 w-28 rounded border bg-background px-2 text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between font-medium">
-                      <span>Neto ({viajesDeLP.length} viaje(s)):</span>
-                      <span>{formatearMoneda(preview.neto)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>IVA ({ivaPct}%):</span>
-                      <span>+ {formatearMoneda(preview.ivaMonto)}</span>
-                    </div>
-                    <div className="flex justify-between font-bold text-base border-t pt-2">
-                      <span>TOTAL:</span>
-                      <span>{formatearMoneda(preview.total)}</span>
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <button
-                      onClick={() => setSelectedLP(null)}
-                      className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      onClick={confirmarFactura}
-                      disabled={generando || !tipoCbteValido}
-                      className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
-                    >
-                      {generando ? "Generando..." : "Emitir factura"}
-                    </button>
+          {/* Preview de factura (solo si hay viajes seleccionados) */}
+          {preview && (
+            <div className="p-4 bg-muted/40 rounded-lg border space-y-3">
+              <h3 className="font-semibold">Preview de factura</h3>
+              {errorGen && <div className="p-3 bg-red-50 text-red-700 rounded text-sm">{errorGen}</div>}
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Tipo de comprobante</label>
+                  <div className="flex items-center gap-2 h-8">
+                    <TipoCbteBadge tipoCbte={tipoCbteEfectivo ?? 1} modalidad={modalidadMiPymes ?? undefined} />
+                    <span className="text-xs text-muted-foreground">(código ARCA: {tipoCbteEfectivo})</span>
                   </div>
                 </div>
-              )}
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">IVA %</label>
+                  <input
+                    type="number"
+                    value={ivaPct}
+                    onChange={(e) => setIvaPct(parseFloat(e.target.value) || 0)}
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    className="h-8 w-28 rounded border bg-background px-2 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between font-medium">
+                  <span>Neto ({viajesSeleccionados.length} viaje(s)):</span>
+                  <span>{formatearMoneda(preview.neto)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>IVA ({ivaPct}%):</span>
+                  <span>+ {formatearMoneda(preview.ivaMonto)}</span>
+                </div>
+                <div className="flex justify-between font-bold text-base border-t pt-2">
+                  <span>TOTAL:</span>
+                  <span>{formatearMoneda(preview.total)}</span>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => { setSeleccionados(new Set()); setEdiciones({}) }}
+                  className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmarFactura}
+                  disabled={generando || !tipoCbteValido}
+                  className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {generando ? "Generando..." : "Emitir factura"}
+                </button>
+              </div>
             </div>
           )}
         </>

@@ -143,6 +143,7 @@ export async function GET(request: NextRequest) {
           select: {
             liquidacion: {
               select: {
+                id: true,
                 estado: true,
                 nroComprobante: true,
                 ptoVenta: true,

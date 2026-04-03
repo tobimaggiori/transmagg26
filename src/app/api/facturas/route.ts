@@ -1,10 +1,10 @@
 /**
  * API Routes para gestión de facturas emitidas.
- * GET  /api/facturas?empresaId=XXX - LPs pendientes de facturar + facturas emitidas
- * POST /api/facturas - Crea factura a partir de una LP (1 LP = 1 Factura)
+ * GET  /api/facturas?empresaId=XXX - Viajes pendientes de facturar + facturas emitidas
+ * POST /api/facturas - Crea factura a partir de viajes seleccionados
  *
  * SEGURIDAD: tarifaEmpresa en ViajeEnFactura es NUNCA visible para fleteros/choferes.
- * El POST marca los viajes de la LP como estadoFactura="FACTURADO" (NO toca estadoLiquidacion).
+ * El POST marca los viajes seleccionados como estadoFactura="FACTURADO" (NO toca estadoLiquidacion).
  */
 
 import { NextRequest, NextResponse } from "next/server"
@@ -19,28 +19,30 @@ import type { Rol } from "@/types"
 
 const crearFacturaSchema = z.object({
   empresaId: z.string().uuid(),
-  liquidacionId: z.string().uuid(),
+  viajeIds: z.array(z.string().uuid()).min(1),
   tipoCbte: z.number().int().refine((v) => [1, 6, 201].includes(v), {
     message: "tipoCbte debe ser 1 (Fact. A), 6 (Fact. B) o 201 (Fact. A MiPyme)",
   }),
   modalidadMiPymes: z.enum(["SCA", "ADC"]).optional(),
   ivaPct: z.number().min(0).max(100).default(21),
+  ediciones: z.record(z.string(), z.object({
+    kilos: z.number().positive().optional(),
+    tarifaEmpresa: z.number().positive().optional(),
+  })).optional(),
 })
 
 /**
  * GET: NextRequest -> Promise<NextResponse>
  *
- * Devuelve liquidaciones pendientes de facturar (estado="EMITIDA", facturaEmitidaId=null)
+ * Devuelve viajes pendientes de facturar (estadoFactura="PENDIENTE_FACTURAR")
  * y las facturas existentes de la empresa especificada.
- * Una LP es pendiente si está EMITIDA, no tiene factura asociada, y sus viajes
- * pertenecen a la empresa seleccionada.
  * Roles empresa solo ven los suyos; roles internos pueden filtrar por empresaId.
  *
  * Ejemplos:
  * GET /api/facturas?empresaId=e1 (sesión ADMIN_TRANSMAGG)
- * // => 200 { liquidacionesPendientes: [...], facturas: [...] }
+ * // => 200 { viajesPendientes: [...], facturas: [...] }
  * GET /api/facturas (sesión ADMIN_EMPRESA)
- * // => 200 { liquidacionesPendientes: [...], facturas: [...] } (solo los suyos)
+ * // => 200 { viajesPendientes: [...], facturas: [...] } (solo los suyos)
  * GET /api/facturas (sesión FLETERO)
  * // => 403 { error: "Acceso denegado" }
  */
@@ -64,7 +66,7 @@ export async function GET(request: NextRequest) {
       where: { usuario: { email: session.user.email ?? "" } },
       select: { empresaId: true },
     })
-    if (!empUsr) return NextResponse.json({ liquidacionesPendientes: [], facturas: [] })
+    if (!empUsr) return NextResponse.json({ viajesPendientes: [], facturas: [] })
     empresaIdReal = empUsr.empresaId
   }
 
@@ -72,45 +74,23 @@ export async function GET(request: NextRequest) {
   if (empresaIdReal) whereFacturas.empresaId = empresaIdReal
 
   try {
-    const [liquidacionesPendientes, facturas] = await Promise.all([
-      // LPs disponibles para facturación: EMITIDA, sin factura, con viajes de la empresa
+    const [viajesPendientes, facturas] = await Promise.all([
       empresaIdReal
-        ? prisma.liquidacion.findMany({
+        ? prisma.viaje.findMany({
             where: {
-              estado: "EMITIDA",
-              facturaEmitidaId: null,
-              viajes: {
-                some: {
-                  viaje: { empresaId: empresaIdReal },
-                },
-              },
+              empresaId: empresaIdReal,
+              estadoFactura: "PENDIENTE_FACTURAR",
             },
             include: {
+              empresa: { select: { razonSocial: true } },
               fletero: { select: { razonSocial: true } },
-              viajes: {
-                include: {
-                  viaje: {
-                    select: {
-                      id: true,
-                      empresaId: true,
-                      kilos: true,
-                      tarifaEmpresa: true,
-                      procedencia: true,
-                      provinciaOrigen: true,
-                      destino: true,
-                      provinciaDestino: true,
-                      mercaderia: true,
-                      remito: true,
-                      cupo: true,
-                      fechaViaje: true,
-                      nroCartaPorte: true,
-                      tieneCpe: true,
-                    },
-                  },
-                },
+              enLiquidaciones: {
+                include: { liquidacion: { select: { nroComprobante: true, ptoVenta: true, id: true } } },
+                take: 1,
               },
             },
-            orderBy: { grabadaEn: "desc" },
+            orderBy: { fechaViaje: "desc" },
+            take: 200,
           })
         : [],
       prisma.facturaEmitida.findMany({
@@ -125,7 +105,7 @@ export async function GET(request: NextRequest) {
       }),
     ])
 
-    return NextResponse.json({ liquidacionesPendientes, facturas })
+    return NextResponse.json({ viajesPendientes, facturas })
   } catch (error) {
     console.error("[GET /api/facturas]", error)
     return NextResponse.json(
@@ -138,16 +118,16 @@ export async function GET(request: NextRequest) {
 /**
  * POST: NextRequest -> Promise<NextResponse>
  *
- * Dado el body { empresaId, liquidacionId, tipoCbte, ivaPct, modalidadMiPymes? },
- * crea una factura a partir de la LP seleccionada (1 LP = 1 Factura).
- * Copia los datos de cada viaje de la LP al snapshot de ViajeEnFactura.
- * Actualiza liquidacion.facturaEmitidaId y estadoFactura="FACTURADO" en cada viaje.
+ * Dado el body { empresaId, viajeIds, tipoCbte, ivaPct, modalidadMiPymes?, ediciones? },
+ * crea una factura a partir de los viajes seleccionados.
+ * Copia los datos de cada viaje al snapshot de ViajeEnFactura.
+ * Marca cada viaje como estadoFactura="FACTURADO".
  *
  * Ejemplos:
- * POST /api/facturas { empresaId: "e1", liquidacionId: "liq1", tipoCbte: 1, ivaPct: 21 }
+ * POST /api/facturas { empresaId: "e1", viajeIds: ["v1","v2"], tipoCbte: 1, ivaPct: 21 }
  * // => 201 { id, estado: "BORRADOR", total, neto, ivaMonto }
- * POST /api/facturas { empresaId: "e1", liquidacionId: "liq-ya-facturada", tipoCbte: 1 }
- * // => 400 { error: "La liquidación ya tiene una factura asociada" }
+ * POST /api/facturas { empresaId: "e1", viajeIds: ["v-ya-facturado"], tipoCbte: 1 }
+ * // => 400 { error: "Viaje(s) no están pendientes de facturar" }
  */
 export async function POST(request: NextRequest) {
   const session = await auth()
@@ -169,7 +149,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { empresaId, liquidacionId, tipoCbte, modalidadMiPymes, ivaPct } = parsed.data
+    const { empresaId, viajeIds, tipoCbte, modalidadMiPymes, ivaPct, ediciones } = parsed.data
 
     const empresa = await prisma.empresa.findFirst({ where: { id: empresaId, activa: true } })
     if (!empresa) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 })
@@ -199,68 +179,72 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Buscar la liquidación con sus viajes
-    const liquidacion = await prisma.liquidacion.findUnique({
-      where: { id: liquidacionId },
-      include: {
-        viajes: {
-          include: {
-            viaje: {
-              select: {
-                id: true,
-                empresaId: true,
-                kilos: true,
-                tarifaEmpresa: true,
-                fechaViaje: true,
-                remito: true,
-                cupo: true,
-                mercaderia: true,
-                procedencia: true,
-                provinciaOrigen: true,
-                destino: true,
-                provinciaDestino: true,
-                fleteroId: true,
-                camionId: true,
-                choferId: true,
-              },
-            },
-          },
-        },
+    // Buscar todos los viajes seleccionados
+    const viajes = await prisma.viaje.findMany({
+      where: { id: { in: viajeIds } },
+      select: {
+        id: true,
+        empresaId: true,
+        kilos: true,
+        tarifaEmpresa: true,
+        fechaViaje: true,
+        remito: true,
+        cupo: true,
+        mercaderia: true,
+        procedencia: true,
+        provinciaOrigen: true,
+        destino: true,
+        provinciaDestino: true,
+        fleteroId: true,
+        camionId: true,
+        choferId: true,
+        estadoFactura: true,
       },
     })
 
-    if (!liquidacion) {
-      return NextResponse.json({ error: "Liquidación no encontrada" }, { status: 404 })
+    // Verificar que todos los viajes existen
+    if (viajes.length !== viajeIds.length) {
+      const encontrados = new Set(viajes.map((v) => v.id))
+      const faltantes = viajeIds.filter((id) => !encontrados.has(id))
+      return NextResponse.json(
+        { error: `Viaje(s) no encontrado(s): ${faltantes.join(", ")}` },
+        { status: 404 }
+      )
     }
 
-    // Verificar que está EMITIDA y no tiene factura asociada
-    if (liquidacion.estado !== "EMITIDA") {
-      return NextResponse.json({ error: "La liquidación no está en estado EMITIDA" }, { status: 400 })
-    }
-
-    if (liquidacion.facturaEmitidaId) {
-      return NextResponse.json({ error: "La liquidación ya tiene una factura asociada" }, { status: 400 })
-    }
-
-    // Verificar que todos los viajes pertenecen a la empresa
-    const viajesDeLP = liquidacion.viajes.map((vl) => vl.viaje)
-    const viajesNoPertenecen = viajesDeLP.filter((v) => v.empresaId !== empresaId)
+    // Verificar que todos pertenecen a la empresa
+    const viajesNoPertenecen = viajes.filter((v) => v.empresaId !== empresaId)
     if (viajesNoPertenecen.length > 0) {
       return NextResponse.json(
-        { error: "Uno o más viajes de la LP no pertenecen a la empresa seleccionada" },
+        { error: "Uno o más viajes no pertenecen a la empresa seleccionada" },
         { status: 400 }
       )
     }
 
-    // Calcular totales desde los viajes de la LP
-    const viajesParaCalc = viajesDeLP.map((v) => ({
-      kilos: v.kilos ?? 0,
-      tarifaEmpresa: v.tarifaEmpresa,
+    // Verificar que todos tienen estadoFactura = PENDIENTE_FACTURAR
+    const viajesNoFacturables = viajes.filter((v) => v.estadoFactura !== "PENDIENTE_FACTURAR")
+    if (viajesNoFacturables.length > 0) {
+      return NextResponse.json(
+        { error: "Uno o más viajes no están pendientes de facturar" },
+        { status: 400 }
+      )
+    }
+
+    // Aplicar ediciones y calcular totales
+    const viajesConEdiciones = viajes.map((v) => {
+      const edit = ediciones?.[v.id]
+      const kilos = edit?.kilos ?? v.kilos ?? 0
+      const tarifaEmpresa = edit?.tarifaEmpresa ?? v.tarifaEmpresa
+      return { ...v, kilosEfectivos: kilos, tarifaEmpresaEfectiva: tarifaEmpresa }
+    })
+
+    const viajesParaCalc = viajesConEdiciones.map((v) => ({
+      kilos: v.kilosEfectivos,
+      tarifaEmpresa: v.tarifaEmpresaEfectiva,
     }))
     const { neto, ivaMonto, total } = calcularFactura(viajesParaCalc, ivaPct)
 
-    const periodo = viajesDeLP[0].fechaViaje.toISOString().slice(0, 7)
-    const viajeIds = viajesDeLP.map((v) => v.id)
+    const periodo = viajes[0].fechaViaje.toISOString().slice(0, 7)
 
     const factura = await prisma.$transaction(async (tx) => {
       const fact = await tx.facturaEmitida.create({
@@ -290,8 +274,10 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      for (const viaje of viajesDeLP) {
-        const subtotalViaje = calcularTotalViaje(viaje.kilos ?? 0, viaje.tarifaEmpresa)
+      for (const viaje of viajesConEdiciones) {
+        const kilos = viaje.kilosEfectivos
+        const tarifaEmpresa = viaje.tarifaEmpresaEfectiva
+        const subtotalViaje = calcularTotalViaje(kilos, tarifaEmpresa)
 
         const enFact = await tx.viajeEnFactura.create({
           data: {
@@ -305,8 +291,8 @@ export async function POST(request: NextRequest) {
             provinciaOrigen: viaje.provinciaOrigen ?? null,
             destino: viaje.destino ?? null,
             provinciaDestino: viaje.provinciaDestino ?? null,
-            kilos: viaje.kilos,
-            tarifaEmpresa: viaje.tarifaEmpresa,
+            kilos,
+            tarifaEmpresa,
             subtotal: subtotalViaje,
           },
         })
@@ -324,12 +310,6 @@ export async function POST(request: NextRequest) {
           })
         }
       }
-
-      // Vincular la LP con la factura
-      await tx.liquidacion.update({
-        where: { id: liquidacionId },
-        data: { facturaEmitidaId: fact.id },
-      })
 
       // Marcar viajes como FACTURADO (sin tocar estadoLiquidacion)
       await tx.viaje.updateMany({
