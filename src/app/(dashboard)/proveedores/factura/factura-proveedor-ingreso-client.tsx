@@ -43,6 +43,38 @@ type ExitoData = {
   pagoRegistrado?: number | null
 }
 
+type PercepcionForm = {
+  id: string
+  tipo: string
+  descripcion: string
+  monto: string
+}
+
+const PERCEPCION_OPTIONS = [
+  { group: "PERCEPCIONES", value: "PERCEPCION_IVA", label: "Percepcion IVA" },
+  { group: "PERCEPCIONES", value: "PERCEPCION_IIBB", label: "Percepcion IIBB" },
+  { group: "PERCEPCIONES", value: "PERCEPCION_GANANCIAS", label: "Percepcion Ganancias" },
+  { group: "PERCEPCIONES", value: "PERCEPCION_SUSS", label: "Percepcion SUSS" },
+  { group: "IMPUESTOS", value: "ICL", label: "ICL (Combustibles)" },
+  { group: "IMPUESTOS", value: "CO2", label: "CO2" },
+  { group: "IMPUESTOS", value: "IMPUESTO_INTERNO", label: "Impuesto Interno" },
+  { group: "IMPUESTOS", value: "OTRO", label: "Otro" },
+] as const
+
+function categoriaPercepcion(tipo: string): string {
+  const impuestos = new Set(["ICL", "CO2", "IMPUESTO_INTERNO", "OTRO"])
+  return impuestos.has(tipo) ? "IMPUESTO_INTERNO" : "PERCEPCION"
+}
+
+function nuevaPercepcion(): PercepcionForm {
+  return {
+    id: Math.random().toString(36).slice(2),
+    tipo: "PERCEPCION_IVA",
+    descripcion: "",
+    monto: "",
+  }
+}
+
 const TIPOS_CBTE = ["A", "B", "C", "M", "X", "LIQ_PROD"] as const
 const TIPOS_CON_IVA = new Set(["A", "M", "LIQ_PROD"])
 const CONCEPTOS = [
@@ -126,6 +158,9 @@ export function FacturaProveedorIngresoClient({
   // ── PDF factura ───────────────────────────────────────────────────────────
   const [pdfS3Key, setPdfS3Key] = useState("")
 
+  // ── Percepciones e Impuestos ─────────────────────────────────────────────
+  const [percepcionesExtra, setPercepcionesExtra] = useState<PercepcionForm[]>([])
+
   // ── Pago opcional ─────────────────────────────────────────────────────────
   const [registrarPago, setRegistrarPago] = useState(false)
   const [pagoFecha, setPagoFecha] = useState(todayStr())
@@ -154,7 +189,9 @@ export function FacturaProveedorIngresoClient({
   const percIIBBNum = parseFloat(percepcionIIBB) || 0
   const percIVANum = parseFloat(percepcionIVA) || 0
   const percGananciasNum = parseFloat(percepcionGanancias) || 0
-  const totalPercepciones = percIIBBNum + percIVANum + percGananciasNum
+  const totalPercepcionesLegacy = percIIBBNum + percIVANum + percGananciasNum
+  const totalPercepcionesExtra = percepcionesExtra.reduce((acc, p) => acc + (parseFloat(p.monto) || 0), 0)
+  const totalPercepciones = totalPercepcionesLegacy + totalPercepcionesExtra
   const totalFinal = totalNeto + totalIva + totalPercepciones
 
   const pagoMontoNum = parseFloat(pagoMonto) || 0
@@ -188,6 +225,11 @@ export function FacturaProveedorIngresoClient({
   const eliminarItem = (id: string) => setItems((prev) => prev.filter((i) => i.id !== id))
   const actualizarItem = (id: string, campo: keyof ItemForm, valor: string) =>
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, [campo]: valor } : i)))
+
+  const agregarPercepcion = () => setPercepcionesExtra((prev) => [...prev, nuevaPercepcion()])
+  const eliminarPercepcion = (id: string) => setPercepcionesExtra((prev) => prev.filter((p) => p.id !== id))
+  const actualizarPercepcion = (id: string, campo: keyof PercepcionForm, valor: string) =>
+    setPercepcionesExtra((prev) => prev.map((p) => (p.id === id ? { ...p, [campo]: valor } : p)))
 
   const handleTipoPagoChange = (tipo: string) => {
     setPagoTipo(tipo)
@@ -225,6 +267,7 @@ export function FacturaProveedorIngresoClient({
     setPercepcionIVA("")
     setPercepcionGanancias("")
     setItems([nuevoItem()])
+    setPercepcionesExtra([])
     setPdfS3Key("")
     handleRegistrarPagoChange(false)
     setRegistrarPago(false)
@@ -294,6 +337,14 @@ export function FacturaProveedorIngresoClient({
           percepcionGanancias: percGananciasNum > 0 ? percGananciasNum : undefined,
           pdfS3Key,
           items: itemsPayload,
+          percepciones: percepcionesExtra
+            .filter((p) => parseFloat(p.monto) > 0)
+            .map((p) => ({
+              tipo: p.tipo,
+              categoria: categoriaPercepcion(p.tipo),
+              descripcion: p.tipo === "OTRO" ? p.descripcion || null : null,
+              monto: parseFloat(p.monto),
+            })),
           pago: pagoPayload,
         }),
       })
@@ -576,6 +627,73 @@ export function FacturaProveedorIngresoClient({
                 <span className="w-28 text-right">{formatearMoneda(totalFinal)}</span>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* ── Percepciones e Impuestos adicionales ──────────────────────── */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Percepciones e Impuestos adicionales</CardTitle>
+            <Button type="button" variant="outline" size="sm" onClick={agregarPercepcion}>
+              <Plus className="h-4 w-4 mr-1" /> Agregar percepcion/impuesto
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {percepcionesExtra.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                Sin percepciones ni impuestos adicionales. Usa el boton para agregar.
+              </p>
+            )}
+            {percepcionesExtra.map((p) => (
+              <div key={p.id} className="grid grid-cols-[1.5fr_1fr_0.8fr_auto] gap-2 items-center">
+                <select
+                  value={p.tipo}
+                  onChange={(e) => actualizarPercepcion(p.id, "tipo", e.target.value)}
+                  className={SELECT_CLS}
+                >
+                  <optgroup label="Percepciones">
+                    {PERCEPCION_OPTIONS.filter((o) => o.group === "PERCEPCIONES").map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Impuestos">
+                    {PERCEPCION_OPTIONS.filter((o) => o.group === "IMPUESTOS").map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </optgroup>
+                </select>
+                {p.tipo === "OTRO" ? (
+                  <Input
+                    value={p.descripcion}
+                    onChange={(e) => actualizarPercepcion(p.id, "descripcion", e.target.value)}
+                    placeholder="Descripcion..."
+                  />
+                ) : (
+                  <span className="text-sm text-muted-foreground">—</span>
+                )}
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={p.monto}
+                  onChange={(e) => actualizarPercepcion(p.id, "monto", e.target.value)}
+                  placeholder="0.00"
+                />
+                <button
+                  type="button"
+                  onClick={() => eliminarPercepcion(p.id)}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+            {totalPercepcionesExtra > 0 && (
+              <div className="flex justify-end gap-8 text-sm font-medium border-t pt-2">
+                <span>Total percepciones/impuestos adicionales</span>
+                <span className="w-28 text-right">{formatearMoneda(totalPercepcionesExtra)}</span>
+              </div>
+            )}
           </CardContent>
         </Card>
 

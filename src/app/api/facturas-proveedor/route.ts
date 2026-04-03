@@ -53,6 +53,13 @@ const pagoOpcionalSchema = z.object({
   }).optional().nullable(),
 })
 
+const percepcionSchema = z.object({
+  tipo: z.string().min(1),
+  categoria: z.enum(["PERCEPCION", "IMPUESTO_INTERNO"]),
+  descripcion: z.string().nullable().optional(),
+  monto: z.number().positive("El monto de la percepción debe ser mayor a 0"),
+})
+
 const crearFacturaProveedorV2Schema = z.object({
   proveedorId: z.string().min(1, "Proveedor requerido"),
   tipoCbte: z.enum(["A", "B", "C", "M", "X", "LIQ_PROD"]),
@@ -65,6 +72,7 @@ const crearFacturaProveedorV2Schema = z.object({
   percepcionGanancias: z.number().min(0).optional(),
   pdfS3Key: z.string().min(1, "El PDF de la factura es obligatorio"),
   items: z.array(itemSchema).min(1, "Debe cargar al menos un ítem"),
+  percepciones: z.array(percepcionSchema).optional(),
   pago: pagoOpcionalSchema.optional().nullable(),
 })
 
@@ -226,7 +234,8 @@ export async function POST(request: NextRequest) {
     const percIIBB = data.percepcionIIBB ?? 0
     const percIVA = data.percepcionIVA ?? 0
     const percGanancias = data.percepcionGanancias ?? 0
-    const totalPercepciones = percIIBB + percIVA + percGanancias
+    const totalPercepcionesExtra = (data.percepciones ?? []).reduce((acc, p) => acc + p.monto, 0)
+    const totalPercepciones = percIIBB + percIVA + percGanancias + totalPercepcionesExtra
     const total = totalNeto + totalIvaMonto + totalPercepciones
 
     const nroComprobanteFormateado =
@@ -343,7 +352,21 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 4. Pago opcional — dentro de la misma transacción atómica
+      // 4. Percepciones e Impuestos adicionales (PercepcionImpuesto)
+      if (data.percepciones && data.percepciones.length > 0) {
+        await tx.percepcionImpuesto.createMany({
+          data: data.percepciones.map((p) => ({
+            facturaProveedorId: factura.id,
+            tipo: p.tipo,
+            categoria: p.categoria,
+            descripcion: p.descripcion ?? null,
+            monto: p.monto,
+            periodo,
+          })),
+        })
+      }
+
+      // 5. Pago opcional — dentro de la misma transacción atómica
       let pagoResult: { nuevoEstado: string } | null = null
       const esPagoTarjeta = data.pago && data.pago.tipo === "TARJETA"
       if (data.pago && esPagoTarjeta) {

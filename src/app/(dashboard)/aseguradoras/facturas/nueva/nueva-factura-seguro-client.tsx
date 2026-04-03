@@ -65,6 +65,41 @@ const TIPO_BIEN_OPTIONS = [
   { value: "CARGA_GENERAL", label: "Carga General" },
 ]
 
+interface PercepcionForm {
+  id: string
+  tipo: string
+  descripcion: string
+  monto: string
+}
+
+const PERCEPCION_OPTIONS = [
+  { group: "PERCEPCIONES", value: "PERCEPCION_IVA", label: "Percepcion IVA" },
+  { group: "PERCEPCIONES", value: "PERCEPCION_IIBB", label: "Percepcion IIBB" },
+  { group: "PERCEPCIONES", value: "PERCEPCION_GANANCIAS", label: "Percepcion Ganancias" },
+  { group: "PERCEPCIONES", value: "PERCEPCION_SUSS", label: "Percepcion SUSS" },
+  { group: "IMPUESTOS", value: "ICL", label: "ICL (Combustibles)" },
+  { group: "IMPUESTOS", value: "CO2", label: "CO2" },
+  { group: "IMPUESTOS", value: "IMPUESTO_INTERNO", label: "Impuesto Interno" },
+  { group: "IMPUESTOS", value: "OTRO", label: "Otro" },
+] as const
+
+function categoriaPercepcion(tipo: string): string {
+  const impuestos = new Set(["ICL", "CO2", "IMPUESTO_INTERNO", "OTRO"])
+  return impuestos.has(tipo) ? "IMPUESTO_INTERNO" : "PERCEPCION"
+}
+
+function nuevaPercepcion(): PercepcionForm {
+  return {
+    id: Math.random().toString(36).slice(2),
+    tipo: "PERCEPCION_IVA",
+    descripcion: "",
+    monto: "",
+  }
+}
+
+const SELECT_CLS =
+  "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+
 export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Props) {
   const router = useRouter()
   const today = new Date().toISOString().split("T")[0]
@@ -83,7 +118,19 @@ export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Pro
   const [periodoHasta, setPeriodoHasta] = useState("")
   const [neto, setNeto] = useState("")
   const ivaCalc = neto ? Math.round(parseFloat(neto) * 0.21 * 100) / 100 : 0
-  const totalCalc = neto ? Math.round((parseFloat(neto) + ivaCalc) * 100) / 100 : 0
+
+  // Percepciones e impuestos adicionales
+  const [percepcionesExtra, setPercepcionesExtra] = useState<PercepcionForm[]>([])
+  const totalPercepcionesExtra = percepcionesExtra.reduce((acc, p) => acc + (parseFloat(p.monto) || 0), 0)
+  const totalCalc = neto ? Math.round((parseFloat(neto) + ivaCalc + totalPercepcionesExtra) * 100) / 100 : 0
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const agregarPercepcionSeguro = () => setPercepcionesExtra((prev) => [...prev, nuevaPercepcion()])
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const eliminarPercepcionSeguro = (id: string) => setPercepcionesExtra((prev) => prev.filter((p) => p.id !== id))
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const actualizarPercepcionSeguro = (id: string, campo: keyof PercepcionForm, valor: string) =>
+    setPercepcionesExtra((prev) => prev.map((p) => (p.id === id ? { ...p, [campo]: valor } : p)))
 
   // Step 2 state
   const [polizas, setPolizas] = useState<PolizaForm[]>([
@@ -165,6 +212,14 @@ export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Pro
       neto: parseFloat(neto),
       iva: ivaCalc,
       total: totalCalc,
+      percepciones: percepcionesExtra
+        .filter((p) => parseFloat(p.monto) > 0)
+        .map((p) => ({
+          tipo: p.tipo,
+          categoria: categoriaPercepcion(p.tipo),
+          descripcion: p.tipo === "OTRO" ? p.descripcion || null : null,
+          monto: parseFloat(p.monto),
+        })),
       formaPago,
       medioPagoContado: formaPago === "CONTADO" ? medioPagoContado : undefined,
       cuentaId: formaPago === "CONTADO" && cuentaId ? cuentaId : undefined,
@@ -221,6 +276,7 @@ export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Pro
               setPeriodoDesde("")
               setPeriodoHasta("")
               setNeto("")
+              setPercepcionesExtra([])
               setPolizas([{ tipoBien: "CAMION", nroPoliza: "", vigenciaDesde: "", vigenciaHasta: "" }])
               setFormaPago("CONTADO")
               setMedioPagoContado("TRANSFERENCIA")
@@ -341,6 +397,71 @@ export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Pro
               <Label>Total (calculado)</Label>
               <Input value={neto ? formatearMoneda(totalCalc) : ""} readOnly className="bg-muted" />
             </div>
+          </div>
+
+          {/* Percepciones e Impuestos adicionales */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-semibold">Percepciones e Impuestos adicionales</Label>
+              <Button type="button" variant="outline" size="sm" onClick={agregarPercepcionSeguro}>
+                <Plus className="h-4 w-4 mr-1" /> Agregar percepcion/impuesto
+              </Button>
+            </div>
+            {percepcionesExtra.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                Sin percepciones ni impuestos adicionales.
+              </p>
+            )}
+            {percepcionesExtra.map((p) => (
+              <div key={p.id} className="grid grid-cols-[1.5fr_1fr_0.8fr_auto] gap-2 items-center">
+                <select
+                  value={p.tipo}
+                  onChange={(e) => actualizarPercepcionSeguro(p.id, "tipo", e.target.value)}
+                  className={SELECT_CLS}
+                >
+                  <optgroup label="Percepciones">
+                    {PERCEPCION_OPTIONS.filter((o) => o.group === "PERCEPCIONES").map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Impuestos">
+                    {PERCEPCION_OPTIONS.filter((o) => o.group === "IMPUESTOS").map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </optgroup>
+                </select>
+                {p.tipo === "OTRO" ? (
+                  <Input
+                    value={p.descripcion}
+                    onChange={(e) => actualizarPercepcionSeguro(p.id, "descripcion", e.target.value)}
+                    placeholder="Descripcion..."
+                  />
+                ) : (
+                  <span className="text-sm text-muted-foreground">&mdash;</span>
+                )}
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={p.monto}
+                  onChange={(e) => actualizarPercepcionSeguro(p.id, "monto", e.target.value)}
+                  placeholder="0.00"
+                />
+                <button
+                  type="button"
+                  onClick={() => eliminarPercepcionSeguro(p.id)}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+            {totalPercepcionesExtra > 0 && (
+              <div className="flex justify-end gap-4 text-sm font-medium border-t pt-2">
+                <span>Total percepciones/impuestos</span>
+                <span>{formatearMoneda(totalPercepcionesExtra)}</span>
+              </div>
+            )}
           </div>
 
           <Button

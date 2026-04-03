@@ -103,6 +103,7 @@ model Usuario {
   infracciones               Infraccion[]            @relation("OperadorInfracciones")
   librosIva                  LibroIva[]              @relation("OperadorLibroIva")
   librosIIBB                 LibroIIBB[]             @relation("OperadorLibroIIBB")
+  librosPercepciones         LibroPercepciones[]     @relation("OperadorLibroPercepciones")
   cierresResumenTarjetaOpera CierreResumenTarjeta[]  @relation("OperadorCierreResumenTarjeta")
 
   @@map("usuarios")
@@ -1054,6 +1055,7 @@ model FacturaProveedor {
   items        ItemFacturaProveedor[]
   gastoFletero       GastoFletero?
   pagosTarjeta       PagoFacturaTarjeta[] @relation("PagoTarjetaFacturaProveedor")
+  percepciones       PercepcionImpuesto[]
 
   @@map("facturas_proveedor")
 }
@@ -1167,6 +1169,35 @@ model LibroIIBB {
   operador   Usuario  @relation("OperadorLibroIIBB", fields: [operadorId], references: [id])
 
   @@map("libros_iibb")
+}
+
+model PercepcionImpuesto {
+  id                  String    @id @default(uuid())
+  facturaProveedorId  String?   @map("factura_proveedor_id")
+  facturaSeguroId     String?   @map("factura_seguro_id")
+  tipo                String    // PERCEPCION_IVA | PERCEPCION_IIBB | PERCEPCION_GANANCIAS | PERCEPCION_SUSS | ICL | CO2 | IMPUESTO_INTERNO | OTRO
+  categoria           String    // PERCEPCION | IMPUESTO_INTERNO
+  descripcion         String?
+  monto               Float
+  periodo             String    // "2026-03"
+  creadoEn            DateTime  @default(now()) @map("creado_en")
+
+  facturaProveedor    FacturaProveedor? @relation(fields: [facturaProveedorId], references: [id])
+  facturaSeguro       FacturaSeguro?    @relation(fields: [facturaSeguroId], references: [id])
+
+  @@map("percepciones_impuestos")
+}
+
+model LibroPercepciones {
+  id         String   @id @default(uuid())
+  mesAnio    String   @unique @map("mes_anio")
+  pdfS3Key   String?  @map("pdf_s3_key")
+  generadoEn DateTime @default(now()) @map("generado_en")
+  operadorId String   @map("operador_id")
+
+  operador   Usuario  @relation("OperadorLibroPercepciones", fields: [operadorId], references: [id])
+
+  @@map("libros_percepciones")
 }
 
 // ─── NOTAS DE CRÉDITO / DÉBITO ────────────────────────────────────────────────
@@ -1341,6 +1372,7 @@ model FacturaSeguro {
   cuotas      CuotaFacturaSeguro[]
   asientoIva   AsientoIva?      @relation("FacturaSeguroAsientoIva")
   pagosTarjeta PagoFacturaTarjeta[] @relation("PagoTarjetaFacturaSeguro")
+  percepciones PercepcionImpuesto[]
 
   @@map("facturas_seguro")
 }

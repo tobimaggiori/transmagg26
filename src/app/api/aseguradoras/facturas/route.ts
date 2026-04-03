@@ -67,6 +67,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     neto: number
     iva: number
     total: number
+    percepciones?: Array<{
+      tipo: string
+      categoria: string
+      descripcion?: string | null
+      monto: number
+    }>
     formaPago: string
     medioPagoContado?: string
     cuentaId?: string
@@ -184,6 +190,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           facturaSeguroId: nuevaFactura.id,
         },
       })
+
+      // 3b. Percepciones e Impuestos adicionales
+      if (data.percepciones && data.percepciones.length > 0) {
+        const periodo = new Date(data.fecha).toISOString().slice(0, 7)
+        await tx.percepcionImpuesto.createMany({
+          data: data.percepciones.map((p) => ({
+            facturaSeguroId: nuevaFactura.id,
+            tipo: p.tipo,
+            categoria: p.categoria,
+            descripcion: p.descripcion ?? null,
+            monto: p.monto,
+            periodo,
+          })),
+        })
+      }
 
       // 4. Si CONTADO y tiene cuenta: crear MovimientoSinFactura
       if (data.formaPago === "CONTADO" && data.cuentaId) {
