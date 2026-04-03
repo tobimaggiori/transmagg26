@@ -213,13 +213,13 @@ export async function GET(request: NextRequest) {
         : Promise.resolve([]),
     ])
 
-    console.log(`[GET /api/liquidaciones] fleteroId=${fleteroIdReal}, viajesRaw=${viajesRaw.length}, liquidaciones=${liquidaciones.length}`)
-    if (viajesRaw.length === 0 && fleteroIdReal) {
-      // Debug: check total viajes for this fletero regardless of estado
-      const totalViajes = await prisma.viaje.count({ where: { fleteroId: fleteroIdReal } })
-      const porEstado = await prisma.viaje.groupBy({ by: ["estadoLiquidacion"], where: { fleteroId: fleteroIdReal }, _count: true })
-      console.log(`[GET /api/liquidaciones] Debug: total viajes fletero=${totalViajes}, porEstado=${JSON.stringify(porEstado)}`)
-    }
+    // Debug: info para diagnosticar desde el browser
+    const totalViajes = await prisma.viaje.count({ where: { fleteroId: fleteroIdReal ?? undefined } })
+    const porEstado = await prisma.viaje.groupBy({
+      by: ["estadoLiquidacion"],
+      where: { fleteroId: fleteroIdReal ?? undefined },
+      _count: true,
+    })
 
     // Calcular toneladas y total en los viajes pendientes
     const viajesPendientes = viajesRaw.map((v) => ({
@@ -229,7 +229,19 @@ export async function GET(request: NextRequest) {
       total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifa) : null,
     }))
 
-    return NextResponse.json({ viajesPendientes, liquidaciones, fletero: fleteroData, nroProximoComprobante, gastosPendientes })
+    return NextResponse.json({
+      viajesPendientes,
+      liquidaciones,
+      fletero: fleteroData,
+      nroProximoComprobante,
+      gastosPendientes,
+      _debug: {
+        total: totalViajes,
+        pendientes: viajesRaw.length,
+        filtros: { fleteroId: fleteroIdReal, estadoLiquidacion: EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR },
+        estadosEncontrados: porEstado.map((e) => ({ estado: e.estadoLiquidacion, count: e._count })),
+      },
+    })
   } catch (error) {
     console.error("[GET /api/liquidaciones]", error)
     return NextResponse.json(
