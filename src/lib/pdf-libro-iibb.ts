@@ -49,9 +49,11 @@ interface FilaActividad {
   facturaNro: string
   empresa: string
   fechaFactura: Date
+  remito: string
+  subtotalFactura: number
   totalEmpresa: number
   totalFletero: number
-  difTarifa: number
+  comisionFact: number
   comisionViaje: number
   baseIIBB: number
 }
@@ -123,7 +125,7 @@ async function obtenerDatosActividad(desde: Date, hasta: Date): Promise<FilaActi
     const vel = vf.viaje.enLiquidaciones[0]
     const tarifaFletero = vel?.tarifaFletero ?? 0
     const totalFletero = (kilos / 1000) * tarifaFletero
-    const difTarifa = totalEmpresa - totalFletero
+    const comisionFact = totalEmpresa - totalFletero
 
     let comisionViaje = 0
     if (vel?.liquidacion) {
@@ -133,16 +135,18 @@ async function obtenerDatosActividad(desde: Date, hasta: Date): Promise<FilaActi
       }
     }
 
-    const baseIIBB = difTarifa + comisionViaje
+    const baseIIBB = comisionFact + comisionViaje
 
     filas.push({
       provincia: vf.provinciaOrigen ?? "Sin provincia",
       facturaNro: vf.factura.nroComprobante ?? "Borrador",
       empresa: vf.factura.empresa.razonSocial,
       fechaFactura: vf.factura.emitidaEn,
+      remito: vf.remito ?? "—",
+      subtotalFactura: totalEmpresa,
       totalEmpresa,
       totalFletero,
-      difTarifa,
+      comisionFact,
       comisionViaje,
       baseIIBB,
     })
@@ -217,9 +221,9 @@ function checkPage(doc: PDFKit.PDFDocument) {
 }
 
 /* Seccion 1: 7 columns */
-const S1_X = [40, 100, 185, 250, 320, 390, 460]
-const S1_W = [60, 85, 65, 70, 70, 70, 70]
-const S1_HEADERS = ["Factura", "Empresa", "Fecha", "Total Emp.", "Total Flet.", "Comision", "Base IIBB"]
+const S1_X = [40, 85, 125, 190, 245, 310, 375, 440, 500]
+const S1_W = [45, 40, 65, 55, 65, 65, 65, 60, 55]
+const S1_HEADERS = ["Fecha", "Remito", "Empresa", "Mercad.", "Proced.", "Sub. Fact.", "Com. Fact.", "Com. LP", "Base IIBB"]
 
 function drawS1Header(doc: PDFKit.PDFDocument) {
   checkPage(doc)
@@ -227,7 +231,7 @@ function drawS1Header(doc: PDFKit.PDFDocument) {
   doc.moveTo(40, y).lineTo(555, y).strokeColor("#1e40af").lineWidth(1).stroke()
   doc.font("Helvetica-Bold").fontSize(7).fillColor("#000")
   for (let i = 0; i < S1_HEADERS.length; i++) {
-    const align = i >= 3 ? "right" : "left"
+    const align = i >= 5 ? "right" : "left"
     doc.text(S1_HEADERS[i], S1_X[i], y + 3, { width: S1_W[i], align, lineBreak: false })
   }
   const y2 = y + 14
@@ -241,7 +245,7 @@ function drawS1Row(doc: PDFKit.PDFDocument, cells: string[], bold = false) {
   const y = doc.y
   doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(7).fillColor("#000")
   for (let i = 0; i < cells.length; i++) {
-    const align = i >= 3 ? "right" : "left"
+    const align = i >= 5 ? "right" : "left"
     doc.text(cells[i], S1_X[i], y + 1, { width: S1_W[i], align, lineBreak: false })
   }
   doc.y = y + 12
@@ -257,14 +261,16 @@ function drawS1ProvinciaHeader(doc: PDFKit.PDFDocument, provincia: string) {
   doc.y = y + 16
 }
 
-function drawS1SubtotalRow(doc: PDFKit.PDFDocument, label: string, totalFact: string, baseIIBB: string) {
+function drawS1SubtotalRow(doc: PDFKit.PDFDocument, label: string, subFact: string, comFact: string, comLP: string, baseIIBB: string) {
   checkPage(doc)
   const y = doc.y
   doc.rect(40, y, 515, 14).fill("#f1f5f9")
   doc.font("Helvetica-Bold").fontSize(7).fillColor("#000")
-  doc.text(label, S1_X[0], y + 3, { width: S1_X[3] - S1_X[0], align: "right" })
-  doc.text(totalFact, S1_X[3], y + 3, { width: S1_W[3], align: "right" })
-  doc.text(baseIIBB, S1_X[6], y + 3, { width: S1_W[6], align: "right" })
+  doc.text(label, S1_X[0], y + 3, { width: S1_X[5] - S1_X[0], align: "right" })
+  doc.text(subFact, S1_X[5], y + 3, { width: S1_W[5], align: "right" })
+  doc.text(comFact, S1_X[6], y + 3, { width: S1_W[6], align: "right" })
+  doc.text(comLP, S1_X[7], y + 3, { width: S1_W[7], align: "right" })
+  doc.text(baseIIBB, S1_X[8], y + 3, { width: S1_W[8], align: "right" })
   doc.y = y + 16
 }
 
@@ -432,25 +438,33 @@ export async function generarPDFLibroIIBB(mesAnio: string): Promise<Buffer> {
     for (const [provincia, filas] of Array.from(porProvincia.entries()).sort((a, b) => a[0].localeCompare(b[0]))) {
       let provTotalFacturado = 0
       let provBaseIIBB = 0
+      let provSubtotalFact = 0
+      let provComisionFact = 0
+      let provComisionLP = 0
 
       drawS1ProvinciaHeader(doc, provincia)
 
       for (const fila of filas) {
         provTotalFacturado += fila.totalEmpresa
+        provSubtotalFact += fila.subtotalFactura
+        provComisionFact += fila.comisionFact
+        provComisionLP += fila.comisionViaje
         provBaseIIBB += fila.baseIIBB
 
         drawS1Row(doc, [
-          fila.facturaNro,
-          fila.empresa,
           fmtFecha(fila.fechaFactura),
-          fmtNumero(fila.totalEmpresa),
-          fmtNumero(fila.totalFletero),
+          fila.remito,
+          fila.empresa,
+          "",
+          "",
+          fmtNumero(fila.subtotalFactura),
+          fmtNumero(fila.comisionFact),
           fmtNumero(fila.comisionViaje),
           fmtNumero(fila.baseIIBB),
         ])
       }
 
-      drawS1SubtotalRow(doc, `Subtotal ${provincia}`, fmtNumero(provTotalFacturado), fmtNumero(provBaseIIBB))
+      drawS1SubtotalRow(doc, `Subtotal ${provincia}`, fmtNumero(provSubtotalFact), fmtNumero(provComisionFact), fmtNumero(provComisionLP), fmtNumero(provBaseIIBB))
       provinciaTotales.set(provincia, { totalFacturado: provTotalFacturado, baseIIBB: provBaseIIBB })
     }
 

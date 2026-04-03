@@ -23,11 +23,13 @@ interface FilaActividad {
   facturaNro: string
   empresa: string
   fechaFactura: Date
+  remito: string
   mercaderia: string
   procedencia: string
+  subtotalFactura: number
   totalEmpresa: number
   totalFletero: number
-  difTarifa: number
+  comisionFact: number
   comisionViaje: number
   baseIIBB: number
 }
@@ -91,13 +93,14 @@ async function obtenerDatosActividad(desde: Date, hasta: Date): Promise<FilaActi
   const filas: FilaActividad[] = []
 
   for (const vf of viajesConLP) {
+    const subtotalFactura = vf.subtotal // (kilos/1000) × tarifaEmpresa
     const totalEmpresa = vf.subtotal
     const kilos = vf.kilos ?? 0
 
     const vel = vf.viaje.enLiquidaciones[0]
     const tarifaFletero = vel?.tarifaFletero ?? 0
     const totalFletero = (kilos / 1000) * tarifaFletero
-    const difTarifa = totalEmpresa - totalFletero
+    const comisionFact = totalEmpresa - totalFletero // diferencia de tarifa = comisión de la factura
 
     let comisionViaje = 0
     if (vel?.liquidacion) {
@@ -107,18 +110,20 @@ async function obtenerDatosActividad(desde: Date, hasta: Date): Promise<FilaActi
       }
     }
 
-    const baseIIBB = difTarifa + comisionViaje
+    const baseIIBB = comisionFact + comisionViaje
 
     filas.push({
       provincia: vf.provinciaOrigen ?? "Sin provincia",
       facturaNro: vf.factura.nroComprobante ?? "Borrador",
       empresa: vf.factura.empresa.razonSocial,
       fechaFactura: vf.factura.emitidaEn,
+      remito: vf.remito ?? "—",
       mercaderia: vf.mercaderia ?? "—",
       procedencia: vf.procedencia ?? "—",
+      subtotalFactura,
       totalEmpresa,
       totalFletero,
-      difTarifa,
+      comisionFact,
       comisionViaje,
       baseIIBB,
     })
@@ -325,7 +330,7 @@ export default async function ContabilidadIibbPage({
         ) : (
           <div className="space-y-4">
             {provinciasOrdenadas.map(([provincia, filas]) => {
-              const provDifTarifa = filas.reduce((s, f) => s + f.difTarifa, 0)
+              const provDifTarifa = filas.reduce((s, f) => s + f.comisionFact, 0)
               const provComision = filas.reduce((s, f) => s + f.comisionViaje, 0)
               const provBaseIIBB = filas.reduce((s, f) => s + f.baseIIBB, 0)
 
@@ -344,10 +349,12 @@ export default async function ContabilidadIibbPage({
                       <thead>
                         <tr className="bg-slate-50">
                           <th className="px-3 py-2 text-left text-xs uppercase text-muted-foreground font-medium">Fecha</th>
+                          <th className="px-3 py-2 text-left text-xs uppercase text-muted-foreground font-medium">Remito</th>
                           <th className="px-3 py-2 text-left text-xs uppercase text-muted-foreground font-medium">Empresa</th>
                           <th className="px-3 py-2 text-left text-xs uppercase text-muted-foreground font-medium">Mercaderia</th>
                           <th className="px-3 py-2 text-left text-xs uppercase text-muted-foreground font-medium">Procedencia</th>
-                          <th className="px-3 py-2 text-right text-xs uppercase text-muted-foreground font-medium">Dif. Tarifa</th>
+                          <th className="px-3 py-2 text-right text-xs uppercase text-muted-foreground font-medium">Subtotal Factura</th>
+                          <th className="px-3 py-2 text-right text-xs uppercase text-muted-foreground font-medium">Comision Fact</th>
                           <th className="px-3 py-2 text-right text-xs uppercase text-muted-foreground font-medium">Comision LP</th>
                           <th className="px-3 py-2 text-right text-xs uppercase text-muted-foreground font-medium">Base IIBB</th>
                         </tr>
@@ -358,11 +365,15 @@ export default async function ContabilidadIibbPage({
                             <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
                               {formatearFecha(fila.fechaFactura)}
                             </td>
+                            <td className="px-3 py-2 text-muted-foreground">{fila.remito}</td>
                             <td className="px-3 py-2">{fila.empresa}</td>
                             <td className="px-3 py-2 text-muted-foreground">{fila.mercaderia}</td>
                             <td className="px-3 py-2 text-muted-foreground">{fila.procedencia}</td>
                             <td className="px-3 py-2 text-right tabular-nums">
-                              {formatearMoneda(fila.difTarifa)}
+                              {formatearMoneda(fila.subtotalFactura)}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums">
+                              {formatearMoneda(fila.comisionFact)}
                             </td>
                             <td className="px-3 py-2 text-right tabular-nums">
                               {formatearMoneda(fila.comisionViaje)}
@@ -375,8 +386,11 @@ export default async function ContabilidadIibbPage({
                       </tbody>
                       <tfoot>
                         <tr className="bg-muted font-semibold border-t">
-                          <td colSpan={4} className="px-3 py-2 text-right text-xs text-muted-foreground uppercase">
+                          <td colSpan={5} className="px-3 py-2 text-right text-xs text-muted-foreground uppercase">
                             Subtotal {provincia}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {formatearMoneda(filas.reduce((s, f) => s + f.subtotalFactura, 0))}
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums">
                             {formatearMoneda(provDifTarifa)}
