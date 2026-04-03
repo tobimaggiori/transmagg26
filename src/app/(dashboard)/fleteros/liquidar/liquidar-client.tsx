@@ -11,6 +11,8 @@ import Link from "next/link"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
 import { labelCondicionIva, formatearNroComprobante } from "@/lib/liquidacion-utils"
+import { PDFViewer } from "@/components/ui/pdf-viewer"
+import { usePDFViewer } from "@/hooks/use-pdf-viewer"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -195,6 +197,7 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
   const [errorGen, setErrorGen] = useState<string | null>(null)
   const [fleteroInfo, setFleteroInfo] = useState<FleteroInfo | null>(null)
   const [exitoLiquidacion, setExitoLiquidacion] = useState(false)
+  const { estado: estadoPDF, abrirPDF, cerrarPDF } = usePDFViewer()
 
   const cargarDatos = useCallback(async () => {
     if (!fleteroId) return
@@ -279,10 +282,31 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
         setErrorGen(err.error ?? "Error al generar liquidación")
         return
       }
+      const liqCreada = await res.json() as { id: string; nroComprobante?: number; ptoVenta?: number }
       setEnPreview(false)
       setSeleccionados(new Set())
       setExitoLiquidacion(true)
       cargarDatos()
+
+      // Abrir PDFViewer del LP recién creado
+      const nroLP = liqCreada.nroComprobante
+        ? `${String(liqCreada.ptoVenta ?? 1).padStart(4, "0")}-${formatearNroComprobante(liqCreada.nroComprobante)}`
+        : "LP"
+      abrirPDF({
+        fetchUrl: `/api/liquidaciones/${liqCreada.id}/pdf`,
+        titulo: `LP ${nroLP} — ${fleteroInfo?.razonSocial ?? ""}`,
+        onEnviarMail: async (email: string) => {
+          const r = await fetch(`/api/liquidaciones/${liqCreada.id}/enviar-email`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ emailDestino: email }),
+          })
+          if (!r.ok) {
+            const err = await r.json()
+            throw new Error(err.error ?? "Error al enviar email")
+          }
+        },
+      })
     } finally {
       setGenerando(false)
     }
@@ -414,6 +438,8 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
           onConfirmar={confirmarLiquidacion}
         />
       )}
+
+      <PDFViewer {...estadoPDF} onClose={cerrarPDF} />
     </div>
   )
 }
