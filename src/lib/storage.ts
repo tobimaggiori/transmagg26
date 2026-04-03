@@ -36,6 +36,7 @@ export type StoragePrefijo =
   | "comprobantes-impuestos"
   | "comprobantes-infracciones"
   | "libros-iva"
+  | "libros-iibb"
   | "cierres-resumen"
 
 export const PREFIJOS_VALIDOS: StoragePrefijo[] = [
@@ -52,6 +53,7 @@ export const PREFIJOS_VALIDOS: StoragePrefijo[] = [
   "comprobantes-impuestos",
   "comprobantes-infracciones",
   "libros-iva",
+  "libros-iibb",
   "cierres-resumen",
 ]
 

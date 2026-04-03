@@ -11,6 +11,7 @@ import { puedeAcceder } from "@/lib/permissions"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FiltroPeriodo } from "@/components/contabilidad/filtro-periodo"
+import { LibroIibbClient } from "./libro-iibb-client"
 import type { Rol } from "@/types"
 
 function construirWherePeriodo({
@@ -261,6 +262,11 @@ export default async function ContabilidadIibbPage({
           </div>
         </div>
       )}
+
+      {/* Separador visual */}
+      <div className="border-t pt-6">
+        <LibroIibbClient libros={[]} />
+      </div>
     </div>
   )
 }

@@ -102,6 +102,7 @@ model Usuario {
   pagosImpuesto              PagoImpuesto[]          @relation("OperadorPagoImpuesto")
   infracciones               Infraccion[]            @relation("OperadorInfracciones")
   librosIva                  LibroIva[]              @relation("OperadorLibroIva")
+  librosIIBB                 LibroIIBB[]             @relation("OperadorLibroIIBB")
   cierresResumenTarjetaOpera CierreResumenTarjeta[]  @relation("OperadorCierreResumenTarjeta")
 
   @@map("usuarios")
@@ -1154,6 +1155,18 @@ model AsientoIibb {
   viajeEnFactura     ViajeEnFactura?     @relation(fields: [viajeEnFactId], references: [id])
 
   @@map("asientos_iibb")
+}
+
+model LibroIIBB {
+  id         String   @id @default(uuid())
+  mesAnio    String   @unique @map("mes_anio")
+  pdfS3Key   String?  @map("pdf_s3_key")
+  generadoEn DateTime @default(now()) @map("generado_en")
+  operadorId String   @map("operador_id")
+
+  operador   Usuario  @relation("OperadorLibroIIBB", fields: [operadorId], references: [id])
+
+  @@map("libros_iibb")
 }
 
 // ─── NOTAS DE CRÉDITO / DÉBITO ────────────────────────────────────────────────
