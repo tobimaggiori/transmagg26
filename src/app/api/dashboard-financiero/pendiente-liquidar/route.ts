@@ -1,24 +1,13 @@
 /**
  * API Route: GET /api/dashboard-financiero/pendiente-liquidar
- * Devuelve los viajes PENDIENTES sin liquidación agrupados por fletero.
- * Solo accesible para ADMIN_TRANSMAGG y OPERADOR_TRANSMAGG.
+ * Devuelve los viajes sin liquidación emitida, agrupados por fletero.
  */
 
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
+import { calcularTotalViaje } from "@/lib/viajes"
 
-/**
- * GET: -> Promise<NextResponse>
- *
- * Dado [ningún parámetro], devuelve [los viajes pendientes de liquidar agrupados por fletero con totales].
- * Esta función existe para poblar el modal de "Pendiente de Liquidar" del dashboard financiero.
- *
- * Ejemplos:
- * GET() === NextResponse.json([{ fleteroId, razonSocial, totalTarifaBase, cantidadViajes, viajes }])
- * GET() === NextResponse.json([{ fleteroId: "...", totalTarifaBase: 150000, cantidadViajes: 3 }])
- * GET() === NextResponse.json([])
- */
 export async function GET() {
   const access = await requireFinancialAccess()
   if (!access.ok) return access.response
@@ -35,18 +24,19 @@ export async function GET() {
       orderBy: { fechaViaje: "desc" },
     })
 
-    // Agrupar por fletero
     const porFletero = new Map<string, {
       fleteroId: string
       razonSocial: string
-      totalTarifaBase: number
+      total: number
       cantidadViajes: number
       viajes: Array<{
         id: string
         fechaViaje: string
         procedencia: string | null
         destino: string | null
-        tarifa: number
+        nroCartaPorte: string | null
+        cartaPorteS3Key: string | null
+        total: number | null
       }>
     }>()
 
@@ -57,26 +47,28 @@ export async function GET() {
         porFletero.set(key, {
           fleteroId: v.fleteroId,
           razonSocial: v.fletero.razonSocial,
-          totalTarifaBase: 0,
+          total: 0,
           cantidadViajes: 0,
           viajes: [],
         })
       }
       const entry = porFletero.get(key)!
-      const tarifaVal = v.tarifa ?? 0
-      entry.totalTarifaBase += tarifaVal
+      const viajeTotal = v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifa) : null
+      entry.total += viajeTotal ?? 0
       entry.cantidadViajes += 1
       entry.viajes.push({
         id: v.id,
         fechaViaje: v.fechaViaje.toISOString(),
         procedencia: v.procedencia,
         destino: v.destino,
-        tarifa: tarifaVal,
+        nroCartaPorte: v.nroCartaPorte,
+        cartaPorteS3Key: v.cartaPorteS3Key,
+        total: viajeTotal,
       })
     }
 
     const resultado = Array.from(porFletero.values())
-      .sort((a, b) => b.totalTarifaBase - a.totalTarifaBase)
+      .sort((a, b) => b.total - a.total)
 
     return NextResponse.json(resultado)
   } catch (error) {

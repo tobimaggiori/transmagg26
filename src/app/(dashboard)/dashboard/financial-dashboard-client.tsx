@@ -9,6 +9,8 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { PDFViewer } from "@/components/ui/pdf-viewer"
+import { usePDFViewer } from "@/hooks/use-pdf-viewer"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
 
 // --- Tipos ---
@@ -102,11 +104,21 @@ interface GrupoPendiente {
   empresaId?: string
   fleteroId?: string
   razonSocial: string
-  totalTarifaBase: number
+  totalTarifaBase?: number
+  total?: number
   cantidadViajes: number
   listosParaFacturar?: number
   bloqueados?: number
-  viajes: Array<{ id: string; fechaViaje: string; procedencia: string | null; destino: string | null; tarifa: number }>
+  viajes: Array<{
+    id: string
+    fechaViaje: string
+    procedencia: string | null
+    destino: string | null
+    tarifa?: number
+    total?: number | null
+    nroCartaPorte?: string | null
+    cartaPorteS3Key?: string | null
+  }>
 }
 
 type ModalTipo =
@@ -404,7 +416,7 @@ function PendienteModal({ url }: { url: string; titulo: string }) {
           <div className="flex justify-between items-center">
             <p className="font-semibold">{grupo.razonSocial}</p>
             <div className="text-right">
-              <p className="font-bold">{formatearMoneda(grupo.totalTarifaBase)}</p>
+              <p className="font-bold">{formatearMoneda(grupo.totalTarifaBase ?? grupo.total ?? 0)}</p>
               <p className="text-xs text-muted-foreground">{grupo.cantidadViajes} viaje(s)</p>
               {grupo.listosParaFacturar != null && (
                 <div className="flex gap-1 justify-end mt-0.5">
@@ -428,7 +440,7 @@ function PendienteModal({ url }: { url: string; titulo: string }) {
                   <td className="py-1">{formatearFecha(v.fechaViaje)}</td>
                   <td className="py-1">{v.procedencia ?? "-"}</td>
                   <td className="py-1">{v.destino ?? "-"}</td>
-                  <td className="text-right py-1">{formatearMoneda(v.tarifa)}</td>
+                  <td className="text-right py-1">{formatearMoneda(v.tarifa ?? v.total ?? 0)}</td>
                 </tr>
               ))}
             </tbody>
@@ -436,6 +448,78 @@ function PendienteModal({ url }: { url: string; titulo: string }) {
         </div>
       ))}
     </div>
+  )
+}
+
+// --- Modal Pendiente de Liquidar (con NRO CPE clickeable) ---
+
+function PendienteLiquidarModal() {
+  const [data, setData] = useState<GrupoPendiente[] | null>(null)
+  const { estado: estadoPDF, abrirPDF, cerrarPDF } = usePDFViewer()
+
+  useEffect(() => {
+    fetch("/api/dashboard-financiero/pendiente-liquidar").then(r => r.json()).then(setData)
+  }, [])
+
+  if (!data) return <p className="text-muted-foreground">Cargando...</p>
+  if (data.length === 0) return <p className="text-muted-foreground">Sin viajes pendientes.</p>
+
+  return (
+    <>
+      <div className="space-y-4">
+        {data.map((grupo) => (
+          <div key={grupo.fleteroId} className="border rounded p-3 space-y-2">
+            <div className="flex justify-between items-center">
+              <p className="font-semibold">{grupo.razonSocial}</p>
+              <div className="text-right">
+                <p className="font-bold">{formatearMoneda(grupo.total ?? 0)}</p>
+                <p className="text-xs text-muted-foreground">{grupo.cantidadViajes} viaje(s)</p>
+              </div>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-muted-foreground text-xs border-b uppercase">
+                  <th className="text-left py-1">Fecha</th>
+                  <th className="text-left py-1">Procedencia</th>
+                  <th className="text-left py-1">Destino</th>
+                  <th className="text-left py-1">Nro CPE</th>
+                  <th className="text-right py-1">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {grupo.viajes.map((v) => (
+                  <tr key={v.id} className="border-b last:border-0">
+                    <td className="py-1">{formatearFecha(v.fechaViaje)}</td>
+                    <td className="py-1">{v.procedencia ?? "—"}</td>
+                    <td className="py-1">{v.destino ?? "—"}</td>
+                    <td className="py-1">
+                      {v.nroCartaPorte ? (
+                        v.cartaPorteS3Key ? (
+                          <button
+                            type="button"
+                            onClick={() => abrirPDF({
+                              s3Key: v.cartaPorteS3Key!,
+                              titulo: `Carta de Porte — ${v.nroCartaPorte}`,
+                            })}
+                            className="text-primary hover:underline font-medium text-xs"
+                          >
+                            {v.nroCartaPorte}
+                          </button>
+                        ) : (
+                          <span className="text-xs">{v.nroCartaPorte}</span>
+                        )
+                      ) : "—"}
+                    </td>
+                    <td className="text-right py-1">{v.total != null ? formatearMoneda(v.total) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+      <PDFViewer {...estadoPDF} onClose={cerrarPDF} />
+    </>
   )
 }
 
@@ -730,7 +814,7 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
       )}
       {modalAbierto === "pendiente-liquidar" && (
         <Modal titulo="Pendiente de Liquidar" onClose={() => setModalAbierto(null)}>
-          <PendienteModal url="/api/dashboard-financiero/pendiente-liquidar" titulo="Pendiente de Liquidar" />
+          <PendienteLiquidarModal />
         </Modal>
       )}
       {modalAbierto === "cheques-cartera-al-dia" && (
