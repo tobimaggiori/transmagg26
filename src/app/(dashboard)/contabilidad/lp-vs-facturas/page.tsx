@@ -139,7 +139,7 @@ export default async function ContabilidadLpVsFacturasPage({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">LP vs Facturas</h2>
+        <h2 className="text-2xl font-bold tracking-tight">Conciliación de Viajes</h2>
         <p className="text-muted-foreground">Comparación de subtotales por viaje entre liquidaciones y facturas emitidas</p>
       </div>
 

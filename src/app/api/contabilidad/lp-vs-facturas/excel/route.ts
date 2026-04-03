@@ -96,7 +96,7 @@ export async function GET(request: NextRequest): Promise<Response> {
 
     const wb = new ExcelJS.Workbook()
     wb.creator = "Transmagg"
-    const ws = wb.addWorksheet("LP vs Facturas")
+    const ws = wb.addWorksheet("Conciliación de Viajes")
     ws.columns = [
       { width: 14 }, // Remito
       { width: 10 }, // Nro LP

@@ -42,8 +42,8 @@ export default async function ReportesPage() {
           href="/contabilidad/gastos"
         />
         <ActionCard
-          title="LP VS"
-          subtitle="FACTURAS"
+          title="CONCILIACIÓN"
+          subtitle="DE VIAJES"
           href="/contabilidad/lp-vs-facturas"
         />
         <ActionCard

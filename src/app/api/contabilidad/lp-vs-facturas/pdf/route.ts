@@ -156,7 +156,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>LP vs Facturas — ${periodoLabel}</title>
+  <title>Conciliación de Viajes — ${periodoLabel}</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     @page { size: A4 landscape; margin: 10mm; }
