@@ -1,14 +1,9 @@
-/**
- * Propósito: Página para crear un nuevo viaje desde la sección Fleteros.
- * Reutiliza ViajesClient con autoOpenModal=true para abrir el modal de carga al entrar.
- */
-
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder, esRolInterno } from "@/lib/permissions"
 import type { Rol } from "@/types"
-import { ViajesClient } from "@/app/(dashboard)/viajes/viajes-client"
+import { NuevoViajeClient } from "./nuevo-viaje-client"
 
 export default async function NuevoViajePage() {
   const session = await auth()
@@ -63,17 +58,11 @@ export default async function NuevoViajePage() {
   ])
 
   return (
-    <ViajesClient
-      rol={rol}
+    <NuevoViajeClient
       fleteros={fleteros}
       empresas={empresas}
       camiones={camiones}
       choferes={choferes}
-      fleteroIdPropio={null}
-      empresaIdPropio={null}
-      initialFleteroId={null}
-      initialEmpresaId={null}
-      autoOpenModal={true}
     />
   )
 }
