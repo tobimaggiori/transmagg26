@@ -312,7 +312,7 @@ export async function POST(request: NextRequest) {
           neto,
           ivaMonto,
           total: totalFinal,
-          estado: EstadoLiquidacionDocumento.BORRADOR,
+          estado: EstadoLiquidacionDocumento.EMITIDA,
           nroComprobante,
           ptoVenta: 1,
           tipoCbte: 186,
