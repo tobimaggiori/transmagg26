@@ -87,10 +87,18 @@ export async function GET(request: NextRequest) {
     empresaIdReal = empUsr.empresaId
   }
 
-  const whereViajes: Record<string, unknown> = {
-    estadoFactura: EstadoFacturaViaje.PENDIENTE_FACTURAR,
+  // Un viaje es "pendiente de facturar" si NO tiene facturas en estado EMITIDA/PAGADA/PARCIALMENTE_PAGADA.
+  // Facturas en BORRADOR o ANULADA no bloquean — el viaje sigue apareciendo como pendiente.
+  const whereViajes = {
+    empresaId: empresaIdReal ? empresaIdReal : undefined,
+    enFacturas: {
+      none: {
+        factura: {
+          estado: { in: ["EMITIDA", "PAGADA", "PARCIALMENTE_PAGADA"] as string[] },
+        },
+      },
+    },
   }
-  if (empresaIdReal) whereViajes.empresaId = empresaIdReal
 
   const whereFacturas: Record<string, unknown> = {}
   if (empresaIdReal) whereFacturas.empresaId = empresaIdReal
@@ -240,7 +248,15 @@ export async function POST(request: NextRequest) {
     // Verificar que todos los viajes existen, pertenecen a la empresa y están pendientes de facturar
     const viajeIds = viajes.map((v) => v.viajeId)
     const viajesExistentes = await prisma.viaje.findMany({
-      where: { id: { in: viajeIds }, empresaId, estadoFactura: EstadoFacturaViaje.PENDIENTE_FACTURAR },
+      where: {
+        id: { in: viajeIds },
+        empresaId,
+        enFacturas: {
+          none: {
+            factura: { estado: { in: ["EMITIDA", "PAGADA", "PARCIALMENTE_PAGADA"] as string[] } },
+          },
+        },
+      },
       include: {
         enLiquidaciones: {
           select: {

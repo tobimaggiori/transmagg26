@@ -106,11 +106,18 @@ export async function GET(request: NextRequest) {
     fleteroIdReal = fletero.id
   }
 
-  const whereViajes: Record<string, unknown> = {
-    estadoLiquidacion: EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR,
-    fleteroId: { not: null },
+  // Un viaje es "pendiente de liquidar" si NO tiene liquidaciones en estado EMITIDA/PAGADA/PARCIALMENTE_PAGADA.
+  // Liquidaciones en BORRADOR o ANULADA no bloquean — el viaje sigue apareciendo como pendiente.
+  const whereViajes = {
+    fleteroId: fleteroIdReal ? fleteroIdReal : { not: null },
+    enLiquidaciones: {
+      none: {
+        liquidacion: {
+          estado: { in: ["EMITIDA", "PAGADA", "PARCIALMENTE_PAGADA"] as string[] },
+        },
+      },
+    },
   }
-  if (fleteroIdReal) whereViajes.fleteroId = fleteroIdReal
 
   const whereLiquidaciones: Record<string, unknown> = {}
   if (fleteroIdReal) whereLiquidaciones.fleteroId = fleteroIdReal
@@ -238,7 +245,7 @@ export async function GET(request: NextRequest) {
       _debug: {
         total: totalViajes,
         pendientes: viajesRaw.length,
-        filtros: { fleteroId: fleteroIdReal, estadoLiquidacion: EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR },
+        filtros: { fleteroId: fleteroIdReal, logica: "sin liquidaciones EMITIDA/PAGADA/PARCIALMENTE_PAGADA" },
         estadosEncontrados: porEstado.map((e) => ({ estado: e.estadoLiquidacion, count: e._count })),
       },
     })
@@ -297,7 +304,15 @@ export async function POST(request: NextRequest) {
     // Verificar que todos los viajes existen, pertenecen al fletero y están pendientes de liquidar
     const viajeIds = viajes.map((v) => v.viajeId)
     const viajesExistentes = await prisma.viaje.findMany({
-      where: { id: { in: viajeIds }, fleteroId, estadoLiquidacion: EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR },
+      where: {
+        id: { in: viajeIds },
+        fleteroId,
+        enLiquidaciones: {
+          none: {
+            liquidacion: { estado: { in: ["EMITIDA", "PAGADA", "PARCIALMENTE_PAGADA"] as string[] } },
+          },
+        },
+      },
     })
 
     if (viajesExistentes.length !== viajes.length) {
