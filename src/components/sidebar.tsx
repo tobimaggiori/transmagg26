@@ -58,8 +58,8 @@ interface NavGroup {
 
 /**
  * Orden del sidebar:
- * Dashboard, Viajes, Empresas, Proveedores, Aseguradoras, Contabilidad,
- * Fleteros, ABM (con Mi Flota), Configuracion (ARCA, OTP)
+ * Dashboard, Viajes, Empresas, Fleteros, Proveedores, Aseguradoras,
+ * Contabilidad, ABM (con Mi Flota), Configuracion (ARCA, OTP)
  */
 const NAV_GROUPS: NavGroup[] = [
   {
@@ -72,6 +72,19 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/empresas/facturas",           label: "Facturas",             seccion: "empresas.facturas" },
       { href: "/empresas/recibos",            label: "Recibos por Cobranza", seccion: "empresas.recibos" },
       { href: "/empresas/cuentas-corrientes", label: "Cuentas Corrientes",   seccion: "empresas.cuentas_corrientes" },
+    ],
+  },
+  {
+    id: "fleteros",
+    label: "Fleteros",
+    icon: Truck,
+    seccion: "liquidaciones",
+    pathPrefix: "/fleteros",
+    items: [
+      { href: "/fleteros/liquidos-productos", label: "Líquidos Productos",   seccion: "fleteros.liquidos_productos" },
+      { href: "/fleteros/ordenes-de-pago",    label: "Órdenes de Pago",      seccion: "fleteros.ordenes_pago" },
+      { href: "/fleteros/gastos-adelantos",   label: "Gastos y Adelantos",   seccion: "fleteros.gastos_adelantos" },
+      { href: "/fleteros/cuentas-corrientes", label: "Cuentas Corrientes",   seccion: "fleteros.cuentas_corrientes" },
     ],
   },
   {
@@ -108,19 +121,6 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/contabilidad/tarjetas",  label: "Tarjetas",   seccion: "contabilidad.reportes" },
       { href: "/contabilidad/cuentas",   label: "Cuentas",    seccion: "contabilidad.reportes" },
       { href: "/contabilidad/impuestos", label: "Impuestos",  seccion: "contabilidad.impuestos" },
-    ],
-  },
-  {
-    id: "fleteros",
-    label: "Fleteros",
-    icon: Truck,
-    seccion: "liquidaciones",
-    pathPrefix: "/fleteros",
-    items: [
-      { href: "/fleteros/liquidos-productos", label: "Líquidos Productos",   seccion: "fleteros.liquidos_productos" },
-      { href: "/fleteros/ordenes-de-pago",    label: "Órdenes de Pago",      seccion: "fleteros.ordenes_pago" },
-      { href: "/fleteros/gastos-adelantos",   label: "Gastos y Adelantos",   seccion: "fleteros.gastos_adelantos" },
-      { href: "/fleteros/cuentas-corrientes", label: "Cuentas Corrientes",   seccion: "fleteros.cuentas_corrientes" },
     ],
   },
   {
