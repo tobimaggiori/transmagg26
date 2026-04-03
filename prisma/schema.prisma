@@ -348,6 +348,7 @@ model Viaje {
   estadoLiquidacion   String   @default("PENDIENTE_LIQUIDAR") @map("estado_liquidacion")
   estadoFactura       String   @default("PENDIENTE_FACTURAR") @map("estado_factura")
   // Carta de porte — número único + PDF en R2
+  tieneCpe            Boolean  @default(true) @map("tiene_cpe")
   nroCartaPorte       String?  @map("nro_carta_porte")
   cartaPorteS3Key     String?  @map("carta_porte_s3_key")
   historialCambios    String?  @default("[]") @map("historial_cambios")

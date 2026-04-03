@@ -1083,7 +1083,7 @@ export function ViajesClient({
                             {v.nroCartaPorte ? (
                               <CartaPorteCell nro={v.nroCartaPorte} s3Key={v.cartaPorteS3Key ?? undefined} />
                             ) : (
-                              <span className="text-muted-foreground text-xs">-</span>
+                              <span className="text-muted-foreground text-xs">N/A</span>
                             )}
                           </td>
                           <td className="px-3 py-2">

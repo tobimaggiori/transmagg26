@@ -129,7 +129,7 @@ function ModalPreviewLiquidacion({
                 return (
                   <tr key={v.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                     <td className="px-2 py-1.5 text-xs whitespace-nowrap">{formatearFecha(new Date(v.fechaViaje))}</td>
-                    <td className="px-2 py-1.5 text-xs">{v.nroCartaPorte ?? "—"}</td>
+                    <td className="px-2 py-1.5 text-xs">{v.nroCartaPorte ?? "N/A"}</td>
                     <td className="px-2 py-1.5 text-xs">{v.remito ?? "—"}</td>
                     <td className="px-2 py-1.5 text-xs">{v.cupo ?? "—"}</td>
                     <td className="px-2 py-1.5 text-xs">{v.mercaderia ?? "—"}</td>
@@ -382,7 +382,7 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
                           <input type="checkbox" checked={seleccionados.has(v.id)} onChange={() => toggleSeleccion(v.id)} />
                         </td>
                         <td className="px-3 py-2">{formatearFecha(new Date(v.fechaViaje))}</td>
-                        <td className="px-3 py-2">{v.nroCartaPorte ?? "—"}</td>
+                        <td className="px-3 py-2">{v.nroCartaPorte ?? "N/A"}</td>
                         <td className="px-3 py-2">{v.remito ?? "—"}</td>
                         <td className="px-3 py-2">{v.cupo ?? "—"}</td>
                         <td className="px-3 py-2">{v.mercaderia ?? "—"}</td>

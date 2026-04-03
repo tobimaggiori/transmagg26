@@ -41,6 +41,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const [provinciaDestino, setProvinciaDestino] = useState("")
   const [kilos, setKilos] = useState("")
   const [tarifaInput, setTarifaBase] = useState("")
+  const [tieneCpe, setTieneCpe] = useState(true)
   const [nroCartaPorte, setNroCartaPorte] = useState("")
   const [cartaPorteS3Key, setCartaPorteS3Key] = useState("")
   const [cargando, setCargando] = useState(false)
@@ -67,7 +68,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const puedeGuardar =
     (esCamionPropio || fleteroId) && camionId && choferId && empresaId && fechaViaje &&
     provinciaOrigen && provinciaDestino && tarifaNum > 0 &&
-    nroCartaPorte.trim() !== "" && cartaPorteS3Key !== ""
+    (!tieneCpe || (nroCartaPorte.trim() !== "" && cartaPorteS3Key !== ""))
 
   const fieldErrors = intentoEnviar ? {
     fleteroId: !esCamionPropio && !fleteroId ? "Campo requerido" : null,
@@ -78,8 +79,8 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
     provinciaOrigen: !provinciaOrigen ? "Campo requerido" : null,
     provinciaDestino: !provinciaDestino ? "Campo requerido" : null,
     tarifa: tarifaNum <= 0 ? "Campo requerido" : null,
-    nroCartaPorte: !nroCartaPorte.trim() ? "Campo requerido" : null,
-    cartaPorteS3Key: !cartaPorteS3Key ? "Debés subir el PDF" : null,
+    nroCartaPorte: tieneCpe && !nroCartaPorte.trim() ? "Campo requerido" : null,
+    cartaPorteS3Key: tieneCpe && !cartaPorteS3Key ? "Debés subir el PDF" : null,
   } : {} as Record<string, string | null>
 
   async function handleSubmit(e: React.FormEvent) {
@@ -108,8 +109,9 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
           provinciaDestino: provinciaDestino || undefined,
           kilos: kilosNum > 0 ? kilosNum : undefined,
           tarifa: tarifaNum > 0 ? tarifaNum : undefined,
-          nroCartaPorte: nroCartaPorte.trim(),
-          cartaPorteS3Key,
+          tieneCpe,
+          nroCartaPorte: tieneCpe ? nroCartaPorte.trim() : null,
+          cartaPorteS3Key: tieneCpe ? cartaPorteS3Key : null,
         }),
       })
       const json = await res.json()
@@ -350,33 +352,55 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
 
           {/* Carta de Porte */}
           <div className="space-y-3 border-t pt-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Carta de Porte</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Nro. de carta de porte *</label>
-                <input
-                  type="text"
-                  value={nroCartaPorte}
-                  onChange={(e) => setNroCartaPorte(e.target.value)}
-                  placeholder="Ej: 12345678"
-                  className="w-full h-9 rounded-md border bg-background px-2 text-sm"
-                />
-                <FormError message={fieldErrors.nroCartaPorte} className="text-xs mt-1" />
-                {!fieldErrors.nroCartaPorte && (
-                  <p className="text-[11px] text-muted-foreground mt-1">Debe ser único en el sistema.</p>
-                )}
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">PDF de la carta de porte *</label>
-                <UploadPDF
-                  prefijo="cartas-de-porte"
-                  onUpload={(key) => setCartaPorteS3Key(key)}
-                  label="Subir PDF"
-                  s3Key={cartaPorteS3Key || undefined}
-                />
-                <FormError message={fieldErrors.cartaPorteS3Key} className="text-xs mt-1" />
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Carta de Porte</p>
+              <div className="flex rounded-md border overflow-hidden h-8 w-fit">
+                <button
+                  type="button"
+                  onClick={() => setTieneCpe(true)}
+                  className={`px-3 text-xs font-medium border-r ${tieneCpe ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                >
+                  Sí
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setTieneCpe(false); setNroCartaPorte(""); setCartaPorteS3Key("") }}
+                  className={`px-3 text-xs font-medium ${!tieneCpe ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                >
+                  No
+                </button>
               </div>
             </div>
+            {tieneCpe ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Nro. de carta de porte *</label>
+                  <input
+                    type="text"
+                    value={nroCartaPorte}
+                    onChange={(e) => setNroCartaPorte(e.target.value)}
+                    placeholder="Ej: 12345678"
+                    className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+                  />
+                  <FormError message={fieldErrors.nroCartaPorte} className="text-xs mt-1" />
+                  {!fieldErrors.nroCartaPorte && (
+                    <p className="text-[11px] text-muted-foreground mt-1">Debe ser único en el sistema.</p>
+                  )}
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">PDF de la carta de porte *</label>
+                  <UploadPDF
+                    prefijo="cartas-de-porte"
+                    onUpload={(key) => setCartaPorteS3Key(key)}
+                    label="Subir PDF"
+                    s3Key={cartaPorteS3Key || undefined}
+                  />
+                  <FormError message={fieldErrors.cartaPorteS3Key} className="text-xs mt-1" />
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">El viaje se creará sin carta de porte.</p>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

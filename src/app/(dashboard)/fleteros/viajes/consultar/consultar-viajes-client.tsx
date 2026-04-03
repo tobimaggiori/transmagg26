@@ -1162,7 +1162,7 @@ export function ConsultarViajesClient({
                           {v.nroCartaPorte}
                         </button>
                       : <span className="text-xs">{v.nroCartaPorte}</span>
-                  ) : <span className="text-muted-foreground">—</span>}
+                  ) : <span className="text-muted-foreground text-xs">N/A</span>}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-xs hidden md:table-cell">{v.procedencia ?? "—"}</td>
                 <td className="px-3 py-2 whitespace-nowrap text-xs hidden md:table-cell">{v.destino ?? "—"}</td>

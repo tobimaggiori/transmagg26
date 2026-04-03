@@ -47,14 +47,21 @@ const crearViajeSchema = z.object({
   tarifa: z.number().positive("La tarifa debe ser mayor a 0"),
   estadoLiquidacion: z.string().default("PENDIENTE_LIQUIDAR"),
   estadoFactura: z.string().default("PENDIENTE_FACTURAR"),
-  nroCartaPorte: z.string().min(1, "El número de carta de porte es obligatorio"),
-  cartaPorteS3Key: z.string().min(1, "El PDF de la carta de porte es obligatorio"),
+  tieneCpe: z.boolean().default(true),
+  nroCartaPorte: z.string().nullable().optional(),
+  cartaPorteS3Key: z.string().nullable().optional(),
 }).refine(
   (data) => data.esCamionPropio || !!data.fleteroId,
   { message: "El fletero es obligatorio para viajes con transportista externo", path: ["fleteroId"] }
 ).refine(
   (data) => !data.tieneCupo || (data.cupo != null && data.cupo.trim().length > 0),
   { message: "El número de cupo es obligatorio cuando el viaje lleva cupo", path: ["cupo"] }
+).refine(
+  (data) => !data.tieneCpe || (data.nroCartaPorte && data.nroCartaPorte.trim().length > 0),
+  { message: "El número de carta de porte es obligatorio", path: ["nroCartaPorte"] }
+).refine(
+  (data) => !data.tieneCpe || (data.cartaPorteS3Key && data.cartaPorteS3Key.trim().length > 0),
+  { message: "El PDF de la carta de porte es obligatorio", path: ["cartaPorteS3Key"] }
 )
 
 /**
@@ -237,12 +244,14 @@ export async function POST(request: NextRequest) {
     if (!empresa) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 })
 
     const { nroCartaPorte } = parsed.data
-    const existente = await prisma.viaje.findFirst({ where: { nroCartaPorte } })
-    if (existente) {
-      return NextResponse.json(
-        { error: `Ya existe un viaje con la carta de porte ${nroCartaPorte}` },
-        { status: 409 }
-      )
+    if (nroCartaPorte) {
+      const existente = await prisma.viaje.findFirst({ where: { nroCartaPorte } })
+      if (existente) {
+        return NextResponse.json(
+          { error: `Ya existe un viaje con la carta de porte ${nroCartaPorte}` },
+          { status: 409 }
+        )
+      }
     }
 
     const viaje = await prisma.viaje.create({

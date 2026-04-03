@@ -509,7 +509,7 @@ function PendienteLiquidarModal() {
                         ) : (
                           <span className="text-xs">{v.nroCartaPorte}</span>
                         )
-                      ) : "—"}
+                      ) : <span className="text-xs text-muted-foreground">N/A</span>}
                     </td>
                     <td className="text-right py-1">{v.total != null ? formatearMoneda(v.total) : "—"}</td>
                   </tr>

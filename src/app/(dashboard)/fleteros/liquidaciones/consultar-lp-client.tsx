@@ -200,7 +200,7 @@ function ModalDetalleLP({
                         ) : (
                           v.viaje.nroCartaPorte
                         )
-                      ) : "—"}
+                      ) : <span className="text-muted-foreground">N/A</span>}
                     </td>
                     <td className="px-3 py-2">{v.remito ?? "—"}</td>
                     <td className="px-3 py-2">{v.cupo ?? "—"}</td>
