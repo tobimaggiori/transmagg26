@@ -52,23 +52,29 @@ type ViajeAPI = {
   camion: { patenteChasis: string; tipoCamion?: string }
   chofer: { nombre: string; apellido: string }
   enLiquidaciones?: Array<{
+    kilos: number | null
+    tarifaFletero: number
+    subtotal: number
     liquidacion: {
       id: string
       estado: string
-      cae: string | null
-      arcaEstado: string | null
       nroComprobante: number | null
       ptoVenta: number | null
+      comisionPct: number
+      ivaPct: number
       pdfS3Key: string | null
     } | null
   }>
   enFacturas?: Array<{
+    kilos: number | null
+    tarifaEmpresa: number
+    subtotal: number
     factura: {
       id: string
       nroComprobante: string | null
-      pdfS3Key: string | null
       estado: string
-      tipoCbte: string
+      ivaPct: number
+      pdfS3Key: string | null
     } | null
   }>
 }
@@ -211,6 +217,7 @@ function PanelDetalle({
 
   const tieneLP = viaje.estadoLiquidacion === "LIQUIDADO"
   const tieneFactura = viaje.estadoFactura === "FACTURADO"
+  const liquidadoYFacturado = tieneLP && tieneFactura
   const cambios = hayCambios(form, viaje)
 
   function setField<K extends keyof FormViaje>(key: K, value: FormViaje[K]) {
@@ -281,15 +288,23 @@ function PanelDetalle({
         <div className="px-6 py-4 space-y-5">
           {/* Badges de estado */}
           <div className="flex flex-wrap gap-2">
-            {tieneLP && (
-              <span className="inline-flex items-center rounded-full border border-orange-300 bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">
-                LP emitido — algunos campos no editables
+            {liquidadoYFacturado ? (
+              <span className="inline-flex items-center rounded-full border border-green-300 bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
+                Viaje completado — solo lectura
               </span>
-            )}
-            {tieneFactura && (
-              <span className="inline-flex items-center rounded-full border border-orange-300 bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">
-                Factura emitida — algunos campos no editables
-              </span>
+            ) : (
+              <>
+                {tieneLP && (
+                  <span className="inline-flex items-center rounded-full border border-orange-300 bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">
+                    LP emitido — algunos campos no editables
+                  </span>
+                )}
+                {tieneFactura && (
+                  <span className="inline-flex items-center rounded-full border border-orange-300 bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">
+                    Factura emitida — algunos campos no editables
+                  </span>
+                )}
+              </>
             )}
           </div>
 
@@ -298,7 +313,7 @@ function PanelDetalle({
             <div>
               <p className={labelCls}>Fletero</p>
               <p className="text-sm font-medium">{viaje.fletero?.razonSocial ?? "Camión propio"}</p>
-              {!tieneLP && viaje.estadoLiquidacion !== "LIQUIDADO" && (
+              {!liquidadoYFacturado && !tieneLP && viaje.estadoLiquidacion !== "LIQUIDADO" && (
                 <button type="button" onClick={onCambiarFletero} className="text-xs text-primary hover:underline mt-0.5">
                   Cambiar fletero
                 </button>
@@ -307,7 +322,7 @@ function PanelDetalle({
             <div>
               <p className={labelCls}>Empresa</p>
               <p className="text-sm font-medium">{viaje.empresa.razonSocial}</p>
-              {!tieneFactura && viaje.estadoFactura !== "FACTURADO" && (
+              {!liquidadoYFacturado && !tieneFactura && viaje.estadoFactura !== "FACTURADO" && (
                 <button type="button" onClick={onCambiarEmpresa} className="text-xs text-primary hover:underline mt-0.5">
                   Cambiar empresa
                 </button>
@@ -333,7 +348,8 @@ function PanelDetalle({
                 type="date"
                 value={form.fechaViaje}
                 onChange={(e) => setField("fechaViaje", e.target.value)}
-                className={inputCls}
+                className={cn(inputCls, liquidadoYFacturado && disabledCls)}
+                disabled={liquidadoYFacturado}
               />
             </div>
             <div>
@@ -342,7 +358,8 @@ function PanelDetalle({
                 type="text"
                 value={form.remito}
                 onChange={(e) => setField("remito", e.target.value)}
-                className={inputCls}
+                className={cn(inputCls, liquidadoYFacturado && disabledCls)}
+                disabled={liquidadoYFacturado}
                 placeholder="Nro remito"
               />
             </div>
@@ -351,10 +368,12 @@ function PanelDetalle({
               <div className="flex items-center gap-2 mt-1">
                 <button
                   type="button"
-                  onClick={() => setField("tieneCupo", !form.tieneCupo)}
+                  onClick={() => !liquidadoYFacturado && setField("tieneCupo", !form.tieneCupo)}
+                  disabled={liquidadoYFacturado}
                   className={cn(
                     "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
-                    form.tieneCupo ? "bg-primary" : "bg-muted"
+                    form.tieneCupo ? "bg-primary" : "bg-muted",
+                    liquidadoYFacturado && disabledCls
                   )}
                 >
                   <span className={cn(
@@ -372,7 +391,8 @@ function PanelDetalle({
                   type="text"
                   value={form.cupo}
                   onChange={(e) => setField("cupo", e.target.value)}
-                  className={inputCls}
+                  className={cn(inputCls, liquidadoYFacturado && disabledCls)}
+                  disabled={liquidadoYFacturado}
                 />
               </div>
             )}
@@ -382,7 +402,8 @@ function PanelDetalle({
                 type="text"
                 value={form.mercaderia}
                 onChange={(e) => setField("mercaderia", e.target.value)}
-                className={inputCls}
+                className={cn(inputCls, liquidadoYFacturado && disabledCls)}
+                disabled={liquidadoYFacturado}
               />
             </div>
             <div>
@@ -391,7 +412,8 @@ function PanelDetalle({
                 type="text"
                 value={form.procedencia}
                 onChange={(e) => setField("procedencia", e.target.value)}
-                className={inputCls}
+                className={cn(inputCls, liquidadoYFacturado && disabledCls)}
+                disabled={liquidadoYFacturado}
               />
             </div>
             <div>
@@ -399,7 +421,8 @@ function PanelDetalle({
               <select
                 value={form.provinciaOrigen}
                 onChange={(e) => setField("provinciaOrigen", e.target.value)}
-                className={inputCls}
+                className={cn(inputCls, liquidadoYFacturado && disabledCls)}
+                disabled={liquidadoYFacturado}
               >
                 <option value="">—</option>
                 {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
@@ -411,7 +434,8 @@ function PanelDetalle({
                 type="text"
                 value={form.destino}
                 onChange={(e) => setField("destino", e.target.value)}
-                className={inputCls}
+                className={cn(inputCls, liquidadoYFacturado && disabledCls)}
+                disabled={liquidadoYFacturado}
               />
             </div>
             <div>
@@ -419,7 +443,8 @@ function PanelDetalle({
               <select
                 value={form.provinciaDestino}
                 onChange={(e) => setField("provinciaDestino", e.target.value)}
-                className={inputCls}
+                className={cn(inputCls, liquidadoYFacturado && disabledCls)}
+                disabled={liquidadoYFacturado}
               >
                 <option value="">—</option>
                 {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
@@ -431,8 +456,8 @@ function PanelDetalle({
                 type="number"
                 value={form.kilos}
                 onChange={(e) => setField("kilos", e.target.value)}
-                className={cn(inputCls, tieneLP && disabledCls)}
-                disabled={tieneLP}
+                className={cn(inputCls, (tieneLP || liquidadoYFacturado) && disabledCls)}
+                disabled={tieneLP || liquidadoYFacturado}
               />
             </div>
             <div>
@@ -442,8 +467,8 @@ function PanelDetalle({
                 step="0.01"
                 value={form.tarifa}
                 onChange={(e) => setField("tarifa", e.target.value)}
-                className={cn(inputCls, tieneFactura && disabledCls)}
-                disabled={tieneFactura}
+                className={cn(inputCls, (tieneFactura || liquidadoYFacturado) && disabledCls)}
+                disabled={tieneFactura || liquidadoYFacturado}
               />
               {tieneLP && (
                 <p className="text-xs text-amber-600 mt-1">
@@ -459,7 +484,7 @@ function PanelDetalle({
 
           {/* Acciones */}
           <div className="flex items-center gap-2">
-            {cambios && (
+            {!liquidadoYFacturado && cambios && (
               <button
                 type="button"
                 onClick={handleGuardar}
@@ -479,6 +504,117 @@ function PanelDetalle({
               </button>
             )}
           </div>
+
+          {/* Conciliación del viaje */}
+          {liquidadoYFacturado && (() => {
+            const vel = viaje.enLiquidaciones?.[0]
+            const vef = viaje.enFacturas?.[0]
+            if (!vel?.liquidacion || !vef?.factura) return null
+
+            const comisionPct = vel.liquidacion.comisionPct ?? 0
+            const ivaPctLP = vel.liquidacion.ivaPct ?? 21
+            const kilosLP = vel.kilos ?? viaje.kilos ?? 0
+            const tarifaLP = vel.tarifaFletero ?? viaje.tarifa ?? 0
+            const subtotalLP = (kilosLP / 1000) * tarifaLP
+            const comisionLP = Math.round(subtotalLP * (comisionPct / 100) * 100) / 100
+            const netoLP = Math.round((subtotalLP - comisionLP) * 100) / 100
+            const ivaLP = Math.round(netoLP * (ivaPctLP / 100) * 100) / 100
+            const totalLP = Math.round((netoLP + ivaLP) * 100) / 100
+
+            const ivaPctFact = vef.factura.ivaPct ?? 21
+            const kilosFact = vef.kilos ?? viaje.kilos ?? 0
+            const tarifaFact = vef.tarifaEmpresa ?? viaje.tarifaEmpresa ?? 0
+            const subtotalFact = (kilosFact / 1000) * tarifaFact
+            const ivaFact = Math.round(subtotalFact * (ivaPctFact / 100) * 100) / 100
+            const totalFact = Math.round((subtotalFact + ivaFact) * 100) / 100
+
+            const diferencia = Math.round((subtotalFact - netoLP) * 100) / 100
+
+            const fmtNroLP = vel.liquidacion.nroComprobante
+              ? `${String(vel.liquidacion.ptoVenta ?? 1).padStart(4, "0")}-${String(vel.liquidacion.nroComprobante).padStart(8, "0")}`
+              : "LP"
+            const fmtNroFact = vef.factura.nroComprobante ?? "Factura"
+
+            const cellCls = "px-3 py-1.5 text-sm"
+            const headerCls = "px-3 py-1.5 text-xs font-medium text-muted-foreground text-left"
+
+            return (
+              <div className="mt-6 border-t pt-6">
+                <h3 className="text-sm font-medium uppercase tracking-wide text-muted-foreground mb-4">
+                  Conciliación del viaje
+                </h3>
+
+                {/* Liquidación al fletero */}
+                <p className="text-xs font-medium text-muted-foreground mb-1">Liquidación al fletero ({fmtNroLP})</p>
+                <table className="w-full text-left border rounded-md overflow-hidden mb-4">
+                  <thead className="bg-muted/40">
+                    <tr>
+                      <th className={headerCls}>Concepto</th>
+                      <th className={cn(headerCls, "text-right")}>Importe</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr>
+                      <td className={cellCls}>Subtotal ({formatearMoneda(kilosLP)} kg x {formatearMoneda(tarifaLP)}/tn)</td>
+                      <td className={cn(cellCls, "text-right")}>{formatearMoneda(subtotalLP)}</td>
+                    </tr>
+                    <tr>
+                      <td className={cellCls}>Comisión ({comisionPct}%)</td>
+                      <td className={cn(cellCls, "text-right")}>-{formatearMoneda(comisionLP)}</td>
+                    </tr>
+                    <tr>
+                      <td className={cn(cellCls, "font-medium")}>Neto</td>
+                      <td className={cn(cellCls, "text-right font-medium")}>{formatearMoneda(netoLP)}</td>
+                    </tr>
+                    <tr>
+                      <td className={cellCls}>IVA ({ivaPctLP}%)</td>
+                      <td className={cn(cellCls, "text-right")}>{formatearMoneda(ivaLP)}</td>
+                    </tr>
+                    <tr className="bg-muted/20">
+                      <td className={cn(cellCls, "font-semibold")}>Total LP</td>
+                      <td className={cn(cellCls, "text-right font-semibold")}>{formatearMoneda(totalLP)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {/* Factura a la empresa */}
+                <p className="text-xs font-medium text-muted-foreground mb-1">Factura a la empresa ({fmtNroFact})</p>
+                <table className="w-full text-left border rounded-md overflow-hidden mb-4">
+                  <thead className="bg-muted/40">
+                    <tr>
+                      <th className={headerCls}>Concepto</th>
+                      <th className={cn(headerCls, "text-right")}>Importe</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr>
+                      <td className={cellCls}>Subtotal ({formatearMoneda(kilosFact)} kg x {formatearMoneda(tarifaFact)}/tn)</td>
+                      <td className={cn(cellCls, "text-right")}>{formatearMoneda(subtotalFact)}</td>
+                    </tr>
+                    <tr>
+                      <td className={cellCls}>IVA ({ivaPctFact}%)</td>
+                      <td className={cn(cellCls, "text-right")}>{formatearMoneda(ivaFact)}</td>
+                    </tr>
+                    <tr className="bg-muted/20">
+                      <td className={cn(cellCls, "font-semibold")}>Total Factura</td>
+                      <td className={cn(cellCls, "text-right font-semibold")}>{formatearMoneda(totalFact)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {/* Margen */}
+                <div className="rounded-md border bg-muted/20 px-4 py-3 flex items-center justify-between">
+                  <span className="text-sm font-medium">Margen (Factura neto - LP neto)</span>
+                  <span className={cn(
+                    "text-sm font-semibold",
+                    diferencia >= 0 ? "text-green-700" : "text-red-600"
+                  )}>
+                    {formatearMoneda(diferencia)}
+                  </span>
+                </div>
+              </div>
+            )
+          })()}
         </div>
       </div>
     </div>

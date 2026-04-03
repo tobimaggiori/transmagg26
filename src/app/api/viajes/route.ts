@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
         empresa: { select: { razonSocial: true } },
         operador: { select: { nombre: true, apellido: true } },
         enLiquidaciones: {
-          select: {
+          include: {
             liquidacion: {
               select: {
                 id: true,
@@ -148,12 +148,14 @@ export async function GET(request: NextRequest) {
                 nroComprobante: true,
                 ptoVenta: true,
                 pdfS3Key: true,
+                comisionPct: true,
+                ivaPct: true,
               },
             },
           },
         },
         enFacturas: {
-          select: {
+          include: {
             factura: {
               select: {
                 id: true,
@@ -161,6 +163,7 @@ export async function GET(request: NextRequest) {
                 pdfS3Key: true,
                 estado: true,
                 tipoCbte: true,
+                ivaPct: true,
               },
             },
           },

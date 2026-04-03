@@ -75,10 +75,26 @@ export async function GET(
         empresa: { select: { razonSocial: true, cuit: true } },
         operador: { select: { nombre: true, apellido: true } },
         enLiquidaciones: {
-          include: { liquidacion: { select: { id: true, estado: true, grabadaEn: true } } },
+          include: {
+            liquidacion: {
+              select: {
+                id: true, estado: true, grabadaEn: true,
+                nroComprobante: true, ptoVenta: true,
+                comisionPct: true, ivaPct: true,
+                pdfS3Key: true,
+              },
+            },
+          },
         },
         enFacturas: {
-          include: { factura: { select: { id: true, estado: true, nroComprobante: true } } },
+          include: {
+            factura: {
+              select: {
+                id: true, estado: true, nroComprobante: true,
+                ivaPct: true, pdfS3Key: true, tipoCbte: true,
+              },
+            },
+          },
         },
       },
     })
