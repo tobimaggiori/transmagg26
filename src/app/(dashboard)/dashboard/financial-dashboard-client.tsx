@@ -114,10 +114,10 @@ type ModalTipo =
 
 // --- Modal ---
 
-function Modal({ titulo, onClose, children }: { titulo: string; onClose: () => void; children: React.ReactNode }) {
+function Modal({ titulo, onClose, children, wide }: { titulo: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-background rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className={`bg-background rounded-lg shadow-xl w-full max-h-[90vh] flex flex-col ${wide ? "max-w-[95vw]" : "max-w-3xl"}`}>
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <h2 className="text-lg font-semibold">{titulo}</h2>
           <div className="flex gap-2">
@@ -437,28 +437,28 @@ function PendienteLiquidarModal() {
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="text-muted-foreground text-xs border-b uppercase">
-                    <th className="text-left py-1">Fecha</th>
-                    <th className="text-left py-1">CPE</th>
-                    <th className="text-left py-1">Remito</th>
-                    <th className="text-left py-1">Cupo</th>
-                    <th className="text-left py-1">Mercadería</th>
-                    <th className="text-left py-1">Origen</th>
-                    <th className="text-left py-1">Destino</th>
-                    <th className="text-right py-1">Kilos</th>
-                    <th className="text-right py-1">Tarifa</th>
-                    <th className="text-right py-1">Subtotal</th>
-                    <th className="text-right py-1">IVA</th>
-                    <th className="text-right py-1">Total</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap" style={{ minWidth: 100 }}>Fecha</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap" style={{ minWidth: 110 }}>CPE</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap" style={{ minWidth: 80 }}>Remito</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap" style={{ minWidth: 80 }}>Cupo</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap" style={{ minWidth: 100 }}>Mercadería</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap" style={{ minWidth: 100 }}>Origen</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap" style={{ minWidth: 120 }}>Destino</th>
+                    <th className="text-right px-3 py-2 whitespace-nowrap" style={{ minWidth: 90 }}>Kilos</th>
+                    <th className="text-right px-3 py-2 whitespace-nowrap" style={{ minWidth: 100 }}>Tarifa</th>
+                    <th className="text-right px-3 py-2 whitespace-nowrap" style={{ minWidth: 120 }}>Subtotal</th>
+                    <th className="text-right px-3 py-2 whitespace-nowrap" style={{ minWidth: 110 }}>IVA</th>
+                    <th className="text-right px-3 py-2 whitespace-nowrap" style={{ minWidth: 120 }}>Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {grupo.viajes.map((v) => (
                     <tr key={v.id} className="border-b last:border-0">
-                      <td className="py-1 whitespace-nowrap">{formatearFecha(v.fechaViaje)}</td>
-                      <td className="py-1">
+                      <td className="px-3 py-2 whitespace-nowrap">{formatearFecha(v.fechaViaje)}</td>
+                      <td className="px-3 py-2">
                         {v.tieneCpe && v.nroCartaPorte ? (
                           v.cartaPorteS3Key ? (
                             <button
@@ -476,16 +476,16 @@ function PendienteLiquidarModal() {
                           )
                         ) : <span className="text-xs text-muted-foreground">N/A</span>}
                       </td>
-                      <td className="py-1">{v.remito ?? "—"}</td>
-                      <td className="py-1">{v.tieneCupo && v.cupo ? v.cupo : <span className="text-muted-foreground">N/A</span>}</td>
-                      <td className="py-1">{v.mercaderia ?? "—"}</td>
-                      <td className="py-1">{v.procedencia ?? "—"}</td>
-                      <td className="py-1">{v.destino ?? "—"}</td>
-                      <td className="text-right py-1">{v.kilos?.toLocaleString("es-AR") ?? "—"}</td>
-                      <td className="text-right py-1">{formatearMoneda(v.tarifa)}</td>
-                      <td className="text-right py-1">{formatearMoneda(v.subtotal)}</td>
-                      <td className="text-right py-1">{formatearMoneda(v.iva)}</td>
-                      <td className="text-right py-1 font-medium">{formatearMoneda(v.total)}</td>
+                      <td className="px-3 py-2">{v.remito ?? "—"}</td>
+                      <td className="px-3 py-2">{v.tieneCupo && v.cupo ? v.cupo : <span className="text-muted-foreground">N/A</span>}</td>
+                      <td className="px-3 py-2">{v.mercaderia ?? "—"}</td>
+                      <td className="px-3 py-2">{v.procedencia ?? "—"}</td>
+                      <td className="px-3 py-2">{v.destino ?? "—"}</td>
+                      <td className="text-right px-3 py-2 tabular-nums">{v.kilos?.toLocaleString("es-AR") ?? "—"}</td>
+                      <td className="text-right px-3 py-2 tabular-nums">{formatearMoneda(v.tarifa)}</td>
+                      <td className="text-right px-3 py-2 tabular-nums">{formatearMoneda(v.subtotal)}</td>
+                      <td className="text-right px-3 py-2 tabular-nums">{formatearMoneda(v.iva)}</td>
+                      <td className="text-right px-3 py-2 tabular-nums font-medium">{formatearMoneda(v.total)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -913,7 +913,7 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
         </Modal>
       )}
       {modalAbierto === "pendiente-liquidar" && (
-        <Modal titulo="Pendiente de Liquidar" onClose={() => setModalAbierto(null)}>
+        <Modal titulo="Pendiente de Liquidar" onClose={() => setModalAbierto(null)} wide>
           <PendienteLiquidarModal />
         </Modal>
       )}
