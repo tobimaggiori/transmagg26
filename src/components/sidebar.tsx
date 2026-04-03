@@ -1,7 +1,7 @@
 /**
  * Propósito: Barra lateral de navegación principal de Transmagg.
  * Muestra solo las secciones a las que tiene acceso el usuario según su rol.
- * Implementa las reglas de RBAC definidas en permissions.ts con grupos colapsables.
+ * Soporta modo colapsado (solo íconos) en desktop.
  */
 
 "use client"
@@ -24,9 +24,11 @@ import {
   LogOut,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   ShieldAlert,
   Shield,
   Cog,
+  PanelLeftOpen,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
@@ -38,6 +40,8 @@ interface SidebarProps {
   arcaActiva?: boolean
   permisos?: string[]
   onClose?: () => void
+  collapsed?: boolean
+  onToggleCollapse?: () => void
 }
 
 interface SubItem {
@@ -55,11 +59,6 @@ interface NavGroup {
   items: SubItem[]
 }
 
-/**
- * Orden del sidebar:
- * Dashboard, Viajes, Empresas, Fleteros, Proveedores, Aseguradoras,
- * Contabilidad, ABM (con Mi Flota), Configuracion (ARCA, OTP)
- */
 const NAV_GROUPS: NavGroup[] = [
   {
     id: "empresas",
@@ -153,31 +152,36 @@ function NavSimpleItem({
   icon: Icon,
   pathname,
   onClose,
+  collapsed,
 }: {
   href: string
   label: string
   icon: LucideIcon
   pathname: string
   onClose?: () => void
+  collapsed?: boolean
 }) {
   const isActive = pathname === href || pathname.startsWith(href + "/")
   return (
     <Link
       href={href}
       onClick={onClose}
+      title={collapsed ? label : undefined}
       className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+        collapsed ? "justify-center" : ""
+      } ${
         isActive
           ? "bg-primary/20 text-white"
           : "text-slate-200 hover:bg-white/10 hover:text-white"
       }`}
     >
       <Icon className="h-4 w-4 shrink-0" />
-      <span>{label}</span>
+      {!collapsed && <span>{label}</span>}
     </Link>
   )
 }
 
-export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, arcaActiva = true, permisos, onClose }: SidebarProps) {
+export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, arcaActiva = true, permisos, onClose, collapsed = false, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname()
 
   const grupoActivoPorRuta =
@@ -202,13 +206,33 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
     if (rol === "OPERADOR_TRANSMAGG" && permisos && itemsVisibles.length === 0) return null
 
     const Icon = grupo.icon
-    const estaExpandido = expandido === grupo.id
+    const estaExpandido = expandido === grupo.id && !collapsed
     const grupoActivo =
       pathname.startsWith(grupo.pathPrefix + "/") ||
       pathname === grupo.pathPrefix ||
       itemsVisibles.some(
         (it) => pathname === it.href || pathname.startsWith(it.href + "/")
       )
+
+    if (collapsed) {
+      // In collapsed mode, render the group icon as a link to the first sub-item
+      const firstHref = itemsVisibles[0]?.href ?? grupo.pathPrefix
+      return (
+        <Link
+          key={grupo.id}
+          href={firstHref}
+          onClick={onClose}
+          title={grupo.label}
+          className={`flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+            grupoActivo
+              ? "bg-primary/20 text-white"
+              : "text-slate-200 hover:bg-white/10 hover:text-white"
+          }`}
+        >
+          <Icon className="h-4 w-4 shrink-0" />
+        </Link>
+      )
+    }
 
     return (
       <div key={grupo.id}>
@@ -241,41 +265,33 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
   }
 
   return (
-    <aside className="flex h-full w-64 flex-col bg-sidebar">
-      <div className="flex h-16 items-center border-b border-white/10 px-6">
-        <div className="flex items-center gap-2">
-          <Truck className="h-6 w-6 text-primary-foreground" />
-          <span className="text-lg font-bold text-white">Transmagg</span>
+    <aside className={`flex h-full flex-col bg-sidebar transition-all duration-200 ${collapsed ? "w-16" : "w-64"}`}>
+      {/* Logo */}
+      <div className="flex h-16 items-center border-b border-white/10 px-4">
+        <div className={`flex items-center gap-2 ${collapsed ? "justify-center w-full" : ""}`}>
+          <Truck className="h-6 w-6 text-primary-foreground shrink-0" />
+          {!collapsed && <span className="text-lg font-bold text-white">Transmagg</span>}
         </div>
       </div>
 
-      <nav className="flex-1 overflow-auto px-3 py-4">
+      {/* Navigation */}
+      <nav className="flex-1 overflow-auto px-2 py-4">
         <div className="space-y-1">
           {esChoferTransmagg ? (
-            <NavSimpleItem
-              href="/dashboard"
-              label="Mi Panel"
-              icon={LayoutDashboard}
-              pathname={pathname}
-              onClose={onClose}
-            />
+            <NavSimpleItem href="/dashboard" label="Mi Panel" icon={LayoutDashboard} pathname={pathname} onClose={onClose} collapsed={collapsed} />
           ) : (
           <>
-          {/* Dashboard */}
           {puedeAcceder(rol, "dashboard") && (
-            <NavSimpleItem href="/dashboard" label="Dashboard" icon={LayoutDashboard} pathname={pathname} onClose={onClose} />
+            <NavSimpleItem href="/dashboard" label="Dashboard" icon={LayoutDashboard} pathname={pathname} onClose={onClose} collapsed={collapsed} />
           )}
 
-          {/* Viajes — top level */}
           {puedeAcceder(rol, "viajes") && (
-            <NavSimpleItem href="/fleteros/viajes" label="Viajes" icon={Route} pathname={pathname} onClose={onClose} />
+            <NavSimpleItem href="/fleteros/viajes" label="Viajes" icon={Route} pathname={pathname} onClose={onClose} collapsed={collapsed} />
           )}
 
-          {/* Grupos colapsables en orden: Empresas, Proveedores, Aseguradoras, Contabilidad, Fleteros, ABM, Configuración */}
           {NAV_GROUPS.map((grupo) => renderGrupo(grupo))}
 
-          {/* Alerta ARCA para ADMIN_TRANSMAGG cuando config está incompleta */}
-          {rol === "ADMIN_TRANSMAGG" && !arcaActiva && (
+          {!collapsed && rol === "ADMIN_TRANSMAGG" && !arcaActiva && (
             <a
               href="/abm/arca"
               className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs text-yellow-300 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors ml-2"
@@ -289,21 +305,44 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
         </div>
       </nav>
 
-      <div className="border-t border-white/10 p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold uppercase">
+      {/* Footer */}
+      <div className="border-t border-white/10 p-3 space-y-2">
+        {/* Collapse toggle — only visible on desktop */}
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="hidden md:flex w-full items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+            title={collapsed ? "Expandir menú" : "Colapsar menú"}
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="h-4 w-4" />
+            ) : (
+              <>
+                <ChevronLeft className="h-4 w-4" />
+                <span>Colapsar</span>
+              </>
+            )}
+          </button>
+        )}
+
+        {/* User info */}
+        <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold uppercase shrink-0">
             {(nombreUsuario ?? emailUsuario ?? "U").charAt(0)}
           </div>
-          <div className="flex-1 overflow-hidden">
-            {nombreUsuario && (
-              <p className="truncate text-sm font-medium text-white">{nombreUsuario}</p>
-            )}
-            <p className="truncate text-xs text-slate-400">{emailUsuario}</p>
-          </div>
+          {!collapsed && (
+            <div className="flex-1 overflow-hidden">
+              {nombreUsuario && (
+                <p className="truncate text-sm font-medium text-white">{nombreUsuario}</p>
+              )}
+              <p className="truncate text-xs text-slate-400">{emailUsuario}</p>
+            </div>
+          )}
           <button
             type="button"
             onClick={() => signOut({ callbackUrl: "/login" })}
-            className="ml-auto text-slate-400 hover:text-white transition-colors"
+            className={`text-slate-400 hover:text-white transition-colors ${collapsed ? "mt-2" : "ml-auto"}`}
             title="Cerrar sesión"
           >
             <LogOut className="h-4 w-4" />

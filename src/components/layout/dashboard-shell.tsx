@@ -1,9 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Menu } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
 import type { Rol } from "@/types"
+
+const STORAGE_KEY = "transmagg-sidebar-collapsed"
 
 interface DashboardShellProps {
   children: React.ReactNode
@@ -19,6 +21,23 @@ export function DashboardShell({
   children, rol, nombreUsuario, emailUsuario, esChoferTransmagg, arcaActiva, permisos
 }: DashboardShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+
+  // Restore collapsed state from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored === "true") setCollapsed(true)
+    } catch { /* SSR / private browsing */ }
+  }, [])
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev
+      try { localStorage.setItem(STORAGE_KEY, String(next)) } catch {}
+      return next
+    })
+  }
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -32,7 +51,7 @@ export function DashboardShell({
 
       {/* Sidebar — hidden off-screen on mobile, fixed on desktop */}
       <div className={`
-        fixed inset-y-0 left-0 z-50 transition-transform duration-200 ease-in-out
+        fixed inset-y-0 left-0 z-50 transition-all duration-200 ease-in-out
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
         md:relative md:translate-x-0 md:flex md:flex-shrink-0
       `}>
@@ -44,6 +63,8 @@ export function DashboardShell({
           arcaActiva={arcaActiva}
           permisos={permisos}
           onClose={() => setSidebarOpen(false)}
+          collapsed={collapsed}
+          onToggleCollapse={toggleCollapsed}
         />
       </div>
 
