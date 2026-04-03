@@ -458,6 +458,8 @@ model Liquidacion {
   gastoDescuentos      GastoDescuento[]
   notasCreditoDebito   NotaCreditoDebito[]
   asientoIva           AsientoIva?
+  facturaEmitidaId     String?              @unique @map("factura_emitida_id")
+  facturaEmitida       FacturaEmitida?      @relation("LiquidacionFactura", fields: [facturaEmitidaId], references: [id])
 
   @@map("liquidaciones")
 }
@@ -492,6 +494,7 @@ model FacturaEmitida {
   chequesRecibidos     ChequeRecibido[]
   notasCreditoDebito   NotaCreditoDebito[]
   recibo               ReciboCobranza?     @relation("FacturasRecibo", fields: [reciboId], references: [id])
+  liquidacion          Liquidacion?        @relation("LiquidacionFactura")
 
   @@map("facturas_emitidas")
 }
