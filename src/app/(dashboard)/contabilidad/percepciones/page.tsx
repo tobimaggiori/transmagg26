@@ -44,28 +44,21 @@ async function obtenerPercepcionesSufridas(
   const filas: FilaPercepcion[] = []
 
   // 1. PercepcionImpuesto con categoria=PERCEPCION
-  const registros = await prisma.percepcionImpuesto.findMany({
-    where: {
-      periodo: mesAnio,
-      categoria: "PERCEPCION",
-    },
-    include: {
-      facturaProveedor: {
-        select: {
-          nroComprobante: true,
-          fechaCbte: true,
-          proveedor: { select: { razonSocial: true } },
-        },
+  // Wrapped in try-catch: table may not exist in Turso yet
+  let registros: Array<{
+    tipo: string; monto: number;
+    facturaProveedor: { nroComprobante: string; fechaCbte: Date; proveedor: { razonSocial: string } } | null;
+    facturaSeguro: { nroComprobante: string; fecha: Date; aseguradora: { razonSocial: string } } | null;
+  }> = []
+  try {
+    registros = await prisma.percepcionImpuesto.findMany({
+      where: { periodo: mesAnio, categoria: "PERCEPCION" },
+      include: {
+        facturaProveedor: { select: { nroComprobante: true, fechaCbte: true, proveedor: { select: { razonSocial: true } } } },
+        facturaSeguro: { select: { nroComprobante: true, fecha: true, aseguradora: { select: { razonSocial: true } } } },
       },
-      facturaSeguro: {
-        select: {
-          nroComprobante: true,
-          fecha: true,
-          aseguradora: { select: { razonSocial: true } },
-        },
-      },
-    },
-  })
+    })
+  } catch (e) { console.error("[percepciones] Error querying percepcionImpuesto (table may not exist):", e) }
 
   for (const r of registros) {
     if (r.facturaProveedor) {
@@ -146,28 +139,20 @@ async function obtenerPercepcionesSufridas(
 }
 
 async function obtenerImpuestosInternos(mesAnio: string): Promise<FilaImpuestoInterno[]> {
-  const registros = await prisma.percepcionImpuesto.findMany({
-    where: {
-      periodo: mesAnio,
-      categoria: "IMPUESTO_INTERNO",
-    },
-    include: {
-      facturaProveedor: {
-        select: {
-          nroComprobante: true,
-          fechaCbte: true,
-          proveedor: { select: { razonSocial: true } },
-        },
-      },
-      facturaSeguro: {
-        select: {
-          nroComprobante: true,
-          fecha: true,
-          aseguradora: { select: { razonSocial: true } },
-        },
-      },
+  let registros: Array<{
+    tipo: string; monto: number; descripcion: string | null;
+    facturaProveedor: { nroComprobante: string; fechaCbte: Date; proveedor: { razonSocial: string } } | null;
+    facturaSeguro: { nroComprobante: string; fecha: Date; aseguradora: { razonSocial: string } } | null;
+  }> = []
+  try {
+    registros = await prisma.percepcionImpuesto.findMany({
+      where: { periodo: mesAnio, categoria: "IMPUESTO_INTERNO" },
+      include: {
+        facturaProveedor: { select: { nroComprobante: true, fechaCbte: true, proveedor: { select: { razonSocial: true } } } },
+        facturaSeguro: { select: { nroComprobante: true, fecha: true, aseguradora: { select: { razonSocial: true } } } },
     },
   })
+  } catch (e) { console.error("[percepciones] Error querying percepcionImpuesto internos:", e) }
 
   return registros.map((r) => {
     if (r.facturaProveedor) {
