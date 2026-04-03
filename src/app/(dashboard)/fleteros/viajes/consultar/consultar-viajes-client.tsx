@@ -8,7 +8,6 @@
 
 import { useState, useCallback, useEffect, useMemo } from "react"
 import { formatearMoneda, formatearFecha, cn } from "@/lib/utils"
-import { calcularTotalViaje } from "@/lib/viajes"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { PDFViewer } from "@/components/ui/pdf-viewer"
@@ -215,19 +214,6 @@ function PanelDetalle({
   const tieneLP = viaje.estadoLiquidacion === "LIQUIDADO"
   const tieneFactura = viaje.estadoFactura === "FACTURADO"
   const cambios = hayCambios(form, viaje)
-
-  // Cálculos del resumen
-  const kilos = parseFloat(form.kilos) || 0
-  const tarifa = parseFloat(form.tarifa) || 0
-  const subtotal = kilos > 0 && tarifa > 0 ? calcularTotalViaje(kilos, tarifa) : 0
-  // Buscar comisión del fletero
-  const fletero = fleteros.find((f) => f.id === viaje.fleteroId)
-  const comisionPct = fletero?.comisionDefault ?? 0
-  const comisionMonto = subtotal * (comisionPct / 100)
-  const totalNeto = subtotal - comisionMonto
-  const iva = totalNeto * 0.21
-  const totalFletero = totalNeto + iva
-  const totalEmpresa = subtotal
 
   function setField<K extends keyof FormViaje>(key: K, value: FormViaje[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -467,44 +453,6 @@ function PanelDetalle({
                 </p>
               )}
             </div>
-          </div>
-
-          <hr />
-
-          {/* Resumen de cálculo */}
-          <div className="rounded-lg border bg-muted/30 p-4 space-y-2 text-sm font-mono">
-            <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground mb-2">Resumen del viaje</p>
-            <div className="flex justify-between">
-              <span>Subtotal (ton x tarifa):</span>
-              <span>{formatearMoneda(subtotal)}</span>
-            </div>
-            {viaje.fleteroId && comisionPct > 0 && (
-              <>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Comisión ({comisionPct}%):</span>
-                  <span>-{formatearMoneda(comisionMonto)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Total neto:</span>
-                  <span>{formatearMoneda(totalNeto)}</span>
-                </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>IVA (21%):</span>
-                  <span>{formatearMoneda(iva)}</span>
-                </div>
-                <hr />
-                <div className="flex justify-between font-bold">
-                  <span>TOTAL FLETERO:</span>
-                  <span>{formatearMoneda(totalFletero)}</span>
-                </div>
-              </>
-            )}
-            <hr />
-            <div className="flex justify-between font-bold">
-              <span>TOTAL EMPRESA:</span>
-              <span>{formatearMoneda(totalEmpresa)}</span>
-            </div>
-            <p className="text-xs text-muted-foreground">(ton x tarifa)</p>
           </div>
 
           {/* Errores y éxito */}
