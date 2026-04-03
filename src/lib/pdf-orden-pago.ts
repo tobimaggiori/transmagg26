@@ -1,19 +1,17 @@
 /**
- * Propósito: Generación del HTML imprimible de la Orden de Pago a Fletero.
- * Replica fielmente el layout del documento real de Transmagg.
- * El HTML generado incluye estilos de impresión para que el navegador
- * pueda exportarlo como PDF usando la función de impresión nativa.
+ * Propósito: Generación del PDF de la Orden de Pago a Fletero.
+ * Replica fielmente el layout del documento real de Transmagg
+ * usando pdfkit para generación directa de PDF (sin Puppeteer).
  */
 
 import { prisma } from "@/lib/prisma"
-import puppeteer from "puppeteer"
+import PDFDocument from "pdfkit"
+import QRCode from "qrcode"
 
-function fmt(monto: number): string {
-  return new Intl.NumberFormat("es-AR", {
-    style: "currency",
-    currency: "ARS",
-    minimumFractionDigits: 2,
-  }).format(monto)
+/* ── Helpers de formato ─────────────────────────────────────────────────── */
+
+function fmt(n: number): string {
+  return "$ " + n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 function fmtFecha(fecha: Date): string {
@@ -33,21 +31,33 @@ function fmtNroComprobante(ptoVenta: number | null, nro: number | null): string 
   return `${String(ptoVenta).padStart(4, "0")}-${String(nro).padStart(8, "0")}`
 }
 
-/**
- * generarHTMLOrdenPago: (ordenPagoId: string) -> Promise<string>
- *
- * Dado el id de una Orden de Pago, carga todos los datos necesarios y genera
- * el HTML imprimible que replica el documento real de Trans-Magg S.R.L.
- * Incluye: datos del emisor, datos del fletero, facturas aplicadas,
- * cheques propios, cheques de tercero, adelantos y totales del pago.
- * Existe para generar el comprobante de pago que se entrega al fletero
- * y queda como respaldo del pago del Líquido Producto.
- *
- * Ejemplos:
- * const html = await generarHTMLOrdenPago("uuid-de-op")
- * // => string HTML completo con la Orden de Pago lista para imprimir
- */
-export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string> {
+function fmtCuit(cuit: string): string {
+  const c = cuit.replace(/\D/g, "")
+  if (c.length !== 11) return cuit
+  return `${c.slice(0, 2)}-${c.slice(2, 10)}-${c.slice(10)}`
+}
+
+const condicionIvaLabel: Record<string, string> = {
+  RESPONSABLE_INSCRIPTO: "Responsable Inscripto",
+  MONOTRIBUTISTA: "Monotributista",
+  EXENTO: "Exento",
+  CONSUMIDOR_FINAL: "Consumidor Final",
+}
+
+/* ── Constantes de layout ───────────────────────────────────────────────── */
+
+const LEFT = 40
+const RIGHT = 555
+const PAGE_W = RIGHT - LEFT // 515
+const BLUE = "#1e40af"
+const GREY_BG = "#f0f0f0"
+const HEADER_BG = "#e8e8e8"
+const DARK_BG = "#1a1a1a"
+const MUTED = "#999999"
+
+/* ── Carga de datos (compartida) ────────────────────────────────────────── */
+
+async function loadOP(ordenPagoId: string) {
   const op = await prisma.ordenPago.findUnique({
     where: { id: ordenPagoId },
     include: {
@@ -117,7 +127,7 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
 
   if (!op) throw new Error(`OrdenPago ${ordenPagoId} no encontrada`)
 
-  // ── Estructurar secciones ──────────────────────────────────────────────────
+  // ── Estructurar secciones ──────────────────────────────────────────
 
   // Facturas aplicadas (una fila por liquidación única)
   const liquidacionesUnicas = new Map<string, { fecha: Date; ptoVenta: number | null; nro: number | null; total: number }>()
@@ -134,7 +144,7 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
   const facturas = Array.from(liquidacionesUnicas.values())
   const totalFacturas = facturas.reduce((s, f) => s + f.total, 0)
 
-  // Cheques propios — deduplicar por chequeEmitidoId (un cheque puede cubrir varios LPs)
+  // Cheques propios — deduplicar por chequeEmitidoId
   type ChequePropioRow = { cuenta: string; vencimiento: Date; nro: string; monto: number }
   const chequesPropiosMap = new Map<string, ChequePropioRow>()
   for (const p of op.pagos) {
@@ -202,7 +212,7 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
   const totalAdelantosFaltante = adelantos.reduce((s, a) => s + a.faltante, 0)
   const totalAdelantosGeneral = totalAdelantosEfectivo + totalAdelantosGasOil + totalAdelantosFaltante
 
-  // Gastos descontados (deduplicados por gastoId × liquidacion)
+  // Gastos descontados (deduplicados por gastoId x liquidacion)
   type GastoRow = { proveedor: string; cbte: string; montoDescontado: number }
   const gastosMap = new Map<string, GastoRow>()
   for (const pago of op.pagos) {
@@ -219,72 +229,183 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
   const gastos = Array.from(gastosMap.values())
   const totalGastosDescontados = gastos.reduce((s, g) => s + g.montoDescontado, 0)
 
-  // Formatear condición IVA
-  const condicionIvaLabel: Record<string, string> = {
-    RESPONSABLE_INSCRIPTO: "Responsable Inscripto",
-    MONOTRIBUTISTA: "Monotributista",
-    EXENTO: "Exento",
-    CONSUMIDOR_FINAL: "Consumidor Final",
-  }
   const condicionIva = condicionIvaLabel[op.fletero.condicionIva] ?? op.fletero.condicionIva
 
-  // Formatear CUIT con guiones: 20-12345678-9
-  function fmtCuit(cuit: string): string {
-    const c = cuit.replace(/\D/g, "")
-    if (c.length !== 11) return cuit
-    return `${c.slice(0, 2)}-${c.slice(2, 10)}-${c.slice(10)}`
+  return {
+    op,
+    facturas,
+    totalFacturas,
+    chequesPropios,
+    totalChequesPropios,
+    chequesTercero,
+    totalChequesTercero,
+    totalTransferencia,
+    totalEfectivo,
+    adelantos,
+    totalAdelantosEfectivo,
+    totalAdelantosGasOil,
+    totalAdelantosFaltante,
+    totalAdelantosGeneral,
+    gastos,
+    totalGastosDescontados,
+    condicionIva,
+  }
+}
+
+/* ── PDF helpers ────────────────────────────────────────────────────────── */
+
+function blueLine(doc: PDFKit.PDFDocument) {
+  doc.moveTo(LEFT, doc.y).lineTo(RIGHT, doc.y).strokeColor(BLUE).lineWidth(1.5).stroke()
+  doc.moveDown(0.3)
+}
+
+function sectionTitle(doc: PDFKit.PDFDocument, title: string) {
+  const h = 16
+  const startY = doc.y
+  doc.rect(LEFT, startY, PAGE_W, h).fill(GREY_BG)
+  doc.fillColor("#000").fontSize(8).font("Helvetica-Bold")
+    .text(title.toUpperCase(), LEFT + 8, startY + 4, { width: PAGE_W - 16 })
+  doc.y = startY + h
+}
+
+/**
+ * Draws a table with header row and data rows.
+ * cols: array of { label, width, align }
+ * rows: array of arrays of strings (one per col)
+ * subtotalRow: optional subtotal row (array of strings, same length as cols)
+ */
+function drawTable(
+  doc: PDFKit.PDFDocument,
+  cols: { label: string; width: number; align?: "left" | "center" | "right" }[],
+  rows: string[][],
+  subtotalRow?: string[],
+) {
+  const ROW_H = 16
+  const FONT_SIZE = 8
+  const PAD = 6
+
+  // Header
+  let x = LEFT
+  const headerY = doc.y
+  for (const col of cols) {
+    doc.rect(x, headerY, col.width, ROW_H).fill(HEADER_BG)
+    doc.fillColor("#000").fontSize(FONT_SIZE).font("Helvetica-Bold")
+      .text(col.label, x + PAD, headerY + 4, { width: col.width - PAD * 2, align: col.align ?? "left" })
+    x += col.width
+  }
+  doc.y = headerY + ROW_H
+
+  // Data rows
+  for (const row of rows) {
+    x = LEFT
+    const startY = doc.y
+    for (let i = 0; i < cols.length; i++) {
+      const col = cols[i]
+      const val = row[i] ?? ""
+      doc.fontSize(FONT_SIZE).font("Helvetica").fillColor("#000")
+        .text(val, x + PAD, startY + 4, { width: col.width - PAD * 2, align: col.align ?? "left" })
+      doc.y = startY // keep alignment
+      x += col.width
+    }
+    doc.y = startY + ROW_H
   }
 
-  // ── Construir HTML ─────────────────────────────────────────────────────────
+  // Empty-state row
+  if (rows.length === 0) {
+    doc.fontSize(FONT_SIZE).font("Helvetica-Oblique").fillColor(MUTED)
+    doc.text("-- Sin registros --", LEFT + PAD, doc.y + 4, { width: PAGE_W - PAD * 2, align: "center" })
+    doc.y += ROW_H
+    doc.fillColor("#000").font("Helvetica")
+  }
 
-  const filaFacturas = facturas.map((f) => `
+  // Subtotal row
+  if (subtotalRow) {
+    x = LEFT
+    const subY = doc.y
+    doc.rect(LEFT, subY, PAGE_W, ROW_H).fill("#f9f9f9")
+    for (let i = 0; i < cols.length; i++) {
+      const col = cols[i]
+      const val = subtotalRow[i] ?? ""
+      doc.fontSize(FONT_SIZE).font("Helvetica-Bold").fillColor("#000")
+        .text(val, x + PAD, subY + 4, { width: col.width - PAD * 2, align: col.align ?? "left" })
+      x += col.width
+    }
+    doc.y = subY + ROW_H
+  }
+
+  doc.moveDown(0.5)
+}
+
+/* ── generarHTMLOrdenPago (conservada para rutas que sirven HTML) ──────── */
+
+/**
+ * generarHTMLOrdenPago: (ordenPagoId: string) -> Promise<string>
+ *
+ * Dado el id de una Orden de Pago, carga todos los datos necesarios y genera
+ * el HTML imprimible que replica el documento real de Trans-Magg S.R.L.
+ * Incluye: datos del emisor, datos del fletero, facturas aplicadas,
+ * cheques propios, cheques de tercero, adelantos y totales del pago.
+ */
+export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string> {
+  const d = await loadOP(ordenPagoId)
+  const { op } = d
+
+  function fmtHtml(n: number): string {
+    return new Intl.NumberFormat("es-AR", {
+      style: "currency",
+      currency: "ARS",
+      minimumFractionDigits: 2,
+    }).format(n)
+  }
+
+  const filaFacturas = d.facturas.map((f) => `
     <tr>
       <td>${fmtFecha(f.fecha)}</td>
       <td class="center">${f.ptoVenta ?? "-"}</td>
       <td>${fmtNroComprobante(f.ptoVenta, f.nro)}</td>
-      <td class="right">${fmt(f.total)}</td>
+      <td class="right">${fmtHtml(f.total)}</td>
     </tr>
   `).join("")
 
-  const filasChequesPropios = chequesPropios.length > 0
-    ? chequesPropios.map((c) => `
+  const filasChequesPropios = d.chequesPropios.length > 0
+    ? d.chequesPropios.map((c) => `
       <tr>
         <td>${c.cuenta}</td>
         <td class="center">${fmtFecha(c.vencimiento)}</td>
         <td>${c.nro}</td>
-        <td class="right">${fmt(c.monto)}</td>
+        <td class="right">${fmtHtml(c.monto)}</td>
       </tr>
     `).join("")
     : `<tr><td colspan="4" class="center muted">— Sin cheques propios —</td></tr>`
 
-  const filasChequesTercero = chequesTercero.length > 0
-    ? chequesTercero.map((c) => `
+  const filasChequesTercero = d.chequesTercero.length > 0
+    ? d.chequesTercero.map((c) => `
       <tr>
         <td>${c.banco}</td>
         <td class="center">${fmtFecha(c.vencimiento)}</td>
         <td>${c.nro}</td>
-        <td class="right">${fmt(c.monto)}</td>
+        <td class="right">${fmtHtml(c.monto)}</td>
       </tr>
     `).join("")
     : `<tr><td colspan="4" class="center muted">— Sin cheques de tercero —</td></tr>`
 
-  const filasAdelantos = adelantos.length > 0
-    ? adelantos.map((a) => `
+  const filasAdelantos = d.adelantos.length > 0
+    ? d.adelantos.map((a) => `
       <tr>
         <td>${a.descripcion}</td>
-        <td class="right">${fmt(a.efectivo)}</td>
-        <td class="right">${fmt(a.gasOil)}</td>
-        <td class="right">${fmt(a.faltante)}</td>
+        <td class="right">${fmtHtml(a.efectivo)}</td>
+        <td class="right">${fmtHtml(a.gasOil)}</td>
+        <td class="right">${fmtHtml(a.faltante)}</td>
       </tr>
     `).join("")
     : `<tr><td colspan="4" class="center muted">— Sin adelantos descontados —</td></tr>`
 
-  const filasGastos = gastos.length > 0
-    ? gastos.map((g) => `
+  const filasGastos = d.gastos.length > 0
+    ? d.gastos.map((g) => `
       <tr>
         <td>${g.proveedor}</td>
         <td>${g.cbte}</td>
-        <td class="right">${fmt(g.montoDescontado)}</td>
+        <td class="right">${fmtHtml(g.montoDescontado)}</td>
       </tr>
     `).join("")
     : `<tr><td colspan="3" class="center muted">— Sin gastos descontados —</td></tr>`
@@ -299,7 +420,6 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
     body { font-family: Arial, sans-serif; font-size: 11px; color: #000; padding: 15mm 18mm; }
 
     .encabezado { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; border-bottom: 2px solid #000; padding-bottom: 10px; }
-    .encabezado-empresa { }
     .encabezado-empresa .nombre { font-size: 16px; font-weight: bold; }
     .encabezado-empresa .datos { font-size: 10px; color: #333; margin-top: 2px; }
     .encabezado-op { text-align: right; }
@@ -308,7 +428,6 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
     .encabezado-op .fecha { font-size: 11px; margin-top: 2px; }
 
     .fletero-box { border: 1px solid #ccc; padding: 8px 12px; margin-bottom: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-    .fletero-box .fila { display: contents; }
     .fletero-box .lbl { color: #555; font-size: 10px; text-transform: uppercase; }
     .fletero-box .val { font-weight: bold; }
 
@@ -341,7 +460,6 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
 </head>
 <body>
 
-  <!-- Encabezado -->
   <div class="encabezado">
     <div class="encabezado-empresa">
       <div class="nombre">TRANS-MAGG S.R.L.</div>
@@ -355,19 +473,17 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
     </div>
   </div>
 
-  <!-- Datos del fletero -->
   <div class="fletero-box">
     <div class="lbl">Fletero</div>
     <div class="val">${op.fletero.razonSocial}</div>
-    <div class="lbl">Dirección</div>
+    <div class="lbl">Direccion</div>
     <div class="val">${op.fletero.direccion ?? "—"}</div>
     <div class="lbl">Cond. IVA</div>
-    <div class="val">${condicionIva}</div>
+    <div class="val">${d.condicionIva}</div>
     <div class="lbl">CUIT</div>
     <div class="val">${fmtCuit(op.fletero.cuit)}</div>
   </div>
 
-  <!-- Facturas aplicadas -->
   <div class="seccion">
     <div class="seccion-titulo">Facturas Aplicadas</div>
     <table>
@@ -381,13 +497,12 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
         ${filaFacturas}
         <tr class="subtotal">
           <td colspan="3">Total Facturas Aplicadas</td>
-          <td class="right">${fmt(totalFacturas)}</td>
+          <td class="right">${fmtHtml(d.totalFacturas)}</td>
         </tr>
       </tbody>
     </table>
   </div>
 
-  <!-- Cheques propios -->
   <div class="seccion">
     <div class="seccion-titulo">Detalle de Cheques Propios</div>
     <table>
@@ -401,13 +516,12 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
         ${filasChequesPropios}
         <tr class="subtotal">
           <td colspan="3">Total Cheques Propios</td>
-          <td class="right">${fmt(totalChequesPropios)}</td>
+          <td class="right">${fmtHtml(d.totalChequesPropios)}</td>
         </tr>
       </tbody>
     </table>
   </div>
 
-  <!-- Cheques de tercero -->
   <div class="seccion">
     <div class="seccion-titulo">Detalle de Cheques de Tercero</div>
     <table>
@@ -421,13 +535,12 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
         ${filasChequesTercero}
         <tr class="subtotal">
           <td colspan="3">Total Cheques de Tercero</td>
-          <td class="right">${fmt(totalChequesTercero)}</td>
+          <td class="right">${fmtHtml(d.totalChequesTercero)}</td>
         </tr>
       </tbody>
     </table>
   </div>
 
-  <!-- Adelantos -->
   <div class="seccion">
     <div class="seccion-titulo">Detalle de Adelantos</div>
     <table>
@@ -441,15 +554,14 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
         ${filasAdelantos}
         <tr class="subtotal">
           <td>Total Adelantos</td>
-          <td class="right">${fmt(totalAdelantosEfectivo)}</td>
-          <td class="right">${fmt(totalAdelantosGasOil)}</td>
-          <td class="right">${fmt(totalAdelantosFaltante)}</td>
+          <td class="right">${fmtHtml(d.totalAdelantosEfectivo)}</td>
+          <td class="right">${fmtHtml(d.totalAdelantosGasOil)}</td>
+          <td class="right">${fmtHtml(d.totalAdelantosFaltante)}</td>
         </tr>
       </tbody>
     </table>
   </div>
 
-  <!-- Gastos descontados -->
   <div class="seccion">
     <div class="seccion-titulo">Gastos Descontados</div>
     <table>
@@ -462,13 +574,12 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
         ${filasGastos}
         <tr class="subtotal">
           <td colspan="2">Total Gastos Descontados</td>
-          <td class="right">${fmt(totalGastosDescontados)}</td>
+          <td class="right">${fmtHtml(d.totalGastosDescontados)}</td>
         </tr>
       </tbody>
     </table>
   </div>
 
-  <!-- Totales del pago -->
   <div class="seccion">
     <table class="totales-finales">
       <thead><tr>
@@ -482,23 +593,22 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
         <th class="right">Gastos Desc.</th>
       </tr></thead>
       <tbody><tr>
-        <td class="right">${fmt(totalEfectivo)}</td>
-        <td class="right">${fmt(totalTransferencia)}</td>
-        <td class="right">${fmt(totalChequesPropios)}</td>
-        <td class="right">${fmt(totalChequesTercero)}</td>
-        <td class="right">${fmt(totalAdelantosGeneral)}</td>
-        <td class="right">${fmt(totalAdelantosGasOil)}</td>
-        <td class="right">${fmt(totalAdelantosFaltante)}</td>
-        <td class="right">${fmt(totalGastosDescontados)}</td>
+        <td class="right">${fmtHtml(d.totalEfectivo)}</td>
+        <td class="right">${fmtHtml(d.totalTransferencia)}</td>
+        <td class="right">${fmtHtml(d.totalChequesPropios)}</td>
+        <td class="right">${fmtHtml(d.totalChequesTercero)}</td>
+        <td class="right">${fmtHtml(d.totalAdelantosGeneral)}</td>
+        <td class="right">${fmtHtml(d.totalAdelantosGasOil)}</td>
+        <td class="right">${fmtHtml(d.totalAdelantosFaltante)}</td>
+        <td class="right">${fmtHtml(d.totalGastosDescontados)}</td>
       </tr></tbody>
     </table>
   </div>
 
-  <!-- Firma -->
   <div class="firma">
     <div class="firma-linea">
       <div class="linea"></div>
-      <div class="texto">Firma y aclaración del receptor</div>
+      <div class="texto">Firma y aclaracion del receptor</div>
     </div>
   </div>
 
@@ -512,35 +622,259 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
   return html
 }
 
+/* ── generarPDFOrdenPago (pdfkit, sin Puppeteer) ────────────────────────── */
+
 /**
  * generarPDFOrdenPago: (ordenPagoId: string) -> Promise<Buffer>
  *
- * Dado el id de una Orden de Pago, genera el HTML con generarHTMLOrdenPago
- * y lo convierte a PDF usando Puppeteer (formato A4 sin márgenes extra).
- * Existe para adjuntar el comprobante como PDF en el email al fletero.
- *
- * Ejemplos:
- * const buf = await generarPDFOrdenPago("uuid-de-op")
- * // => Buffer con el PDF de la Orden de Pago listo para enviar como adjunto
+ * Dado el id de una Orden de Pago, genera el PDF directamente con pdfkit.
+ * Replica la estructura visual del documento real de Trans-Magg S.R.L.
  */
 export async function generarPDFOrdenPago(ordenPagoId: string): Promise<Buffer> {
-  const html = await generarHTMLOrdenPago(ordenPagoId)
+  const d = await loadOP(ordenPagoId)
+  const { op } = d
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  // QR con link a la OP
+  const qrUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://transmagg.com"}/ordenes-pago/${ordenPagoId}`
+  const qrBuffer = await QRCode.toBuffer(qrUrl, { width: 80 })
+
+  const doc = new PDFDocument({ size: "A4", margin: 40 })
+  const chunks: Buffer[] = []
+  doc.on("data", (c: Buffer) => chunks.push(c))
+
+  const finished = new Promise<Buffer>((resolve, reject) => {
+    doc.on("end", () => resolve(Buffer.concat(chunks)))
+    doc.on("error", reject)
   })
 
-  try {
-    const page = await browser.newPage()
-    await page.setContent(html, { waitUntil: "networkidle0" })
-    const pdf = await page.pdf({
-      format: "A4",
-      printBackground: true,
-      margin: { top: "10mm", bottom: "10mm", left: "14mm", right: "14mm" },
-    })
-    return Buffer.from(pdf)
-  } finally {
-    await browser.close()
+  // ── Encabezado ────────────────────────────────────────────────────────
+
+  doc.font("Helvetica-Bold").fontSize(16).fillColor("#000")
+    .text("TRANS-MAGG S.R.L.", LEFT, 40)
+  doc.font("Helvetica").fontSize(9).fillColor("#333")
+    .text("C.U.I.T. 30-70938168-3", LEFT, doc.y + 2)
+    .text("Belgrano 184 — 2109 Acebal (S.F.)")
+
+  // OP number — right aligned
+  const opY = 40
+  doc.font("Helvetica").fontSize(8).fillColor("#555")
+    .text("ORDEN DE PAGO NRO:", RIGHT - 160, opY, { width: 160, align: "right" })
+  doc.font("Helvetica-Bold").fontSize(18).fillColor("#000")
+    .text(fmtNro(op.nro), RIGHT - 160, opY + 10, { width: 160, align: "right" })
+  doc.font("Helvetica").fontSize(9).fillColor("#000")
+    .text(`Fecha: ${fmtFecha(op.fecha)}`, RIGHT - 160, opY + 30, { width: 160, align: "right" })
+
+  // QR
+  doc.image(qrBuffer, RIGHT - 80, opY + 44, { width: 60 })
+
+  doc.y = Math.max(doc.y, opY + 106)
+
+  // Blue separator
+  blueLine(doc)
+
+  // ── Datos del fletero ─────────────────────────────────────────────────
+
+  const fleteroY = doc.y
+  const col1 = LEFT
+  const col2 = LEFT + 80
+  const col3 = LEFT + PAGE_W / 2
+  const col4 = col3 + 80
+  const LBL_SIZE = 7
+  const VAL_SIZE = 9
+
+  doc.font("Helvetica").fontSize(LBL_SIZE).fillColor("#555")
+    .text("FLETERO", col1, fleteroY)
+  doc.font("Helvetica-Bold").fontSize(VAL_SIZE).fillColor("#000")
+    .text(op.fletero.razonSocial, col2, fleteroY)
+
+  doc.font("Helvetica").fontSize(LBL_SIZE).fillColor("#555")
+    .text("CUIT", col3, fleteroY)
+  doc.font("Helvetica-Bold").fontSize(VAL_SIZE).fillColor("#000")
+    .text(fmtCuit(op.fletero.cuit), col4, fleteroY)
+
+  const row2Y = fleteroY + 14
+  doc.font("Helvetica").fontSize(LBL_SIZE).fillColor("#555")
+    .text("DIRECCION", col1, row2Y)
+  doc.font("Helvetica-Bold").fontSize(VAL_SIZE).fillColor("#000")
+    .text(op.fletero.direccion ?? "—", col2, row2Y)
+
+  doc.font("Helvetica").fontSize(LBL_SIZE).fillColor("#555")
+    .text("COND. IVA", col3, row2Y)
+  doc.font("Helvetica-Bold").fontSize(VAL_SIZE).fillColor("#000")
+    .text(d.condicionIva, col4, row2Y)
+
+  doc.y = row2Y + 18
+  blueLine(doc)
+
+  // ── Facturas Aplicadas ────────────────────────────────────────────────
+
+  sectionTitle(doc, "Facturas Aplicadas")
+  drawTable(
+    doc,
+    [
+      { label: "Fecha", width: 100 },
+      { label: "Pto. Vta.", width: 80, align: "center" },
+      { label: "Nro. Fact.", width: 170 },
+      { label: "Importe", width: 165, align: "right" },
+    ],
+    d.facturas.map((f) => [
+      fmtFecha(f.fecha),
+      String(f.ptoVenta ?? "-"),
+      fmtNroComprobante(f.ptoVenta, f.nro),
+      fmt(f.total),
+    ]),
+    ["Total Facturas Aplicadas", "", "", fmt(d.totalFacturas)],
+  )
+
+  // ── Cheques Propios ───────────────────────────────────────────────────
+
+  sectionTitle(doc, "Detalle de Cheques Propios")
+  drawTable(
+    doc,
+    [
+      { label: "Cuenta", width: 170 },
+      { label: "Vencimiento", width: 100, align: "center" },
+      { label: "Nro. Cheque", width: 120 },
+      { label: "Importe", width: 125, align: "right" },
+    ],
+    d.chequesPropios.map((c) => [
+      c.cuenta,
+      fmtFecha(c.vencimiento),
+      c.nro,
+      fmt(c.monto),
+    ]),
+    ["Total Cheques Propios", "", "", fmt(d.totalChequesPropios)],
+  )
+
+  // ── Cheques de Tercero ────────────────────────────────────────────────
+
+  sectionTitle(doc, "Detalle de Cheques de Tercero")
+  drawTable(
+    doc,
+    [
+      { label: "Banco", width: 170 },
+      { label: "Vencimiento", width: 100, align: "center" },
+      { label: "Nro. Cheque", width: 120 },
+      { label: "Importe", width: 125, align: "right" },
+    ],
+    d.chequesTercero.map((c) => [
+      c.banco,
+      fmtFecha(c.vencimiento),
+      c.nro,
+      fmt(c.monto),
+    ]),
+    ["Total Cheques de Tercero", "", "", fmt(d.totalChequesTercero)],
+  )
+
+  // ── Adelantos ─────────────────────────────────────────────────────────
+
+  sectionTitle(doc, "Detalle de Adelantos")
+  drawTable(
+    doc,
+    [
+      { label: "Concepto", width: 215 },
+      { label: "Efectivo", width: 100, align: "right" },
+      { label: "Gas-Oil", width: 100, align: "right" },
+      { label: "Faltante", width: 100, align: "right" },
+    ],
+    d.adelantos.map((a) => [
+      a.descripcion,
+      fmt(a.efectivo),
+      fmt(a.gasOil),
+      fmt(a.faltante),
+    ]),
+    ["Total Adelantos", fmt(d.totalAdelantosEfectivo), fmt(d.totalAdelantosGasOil), fmt(d.totalAdelantosFaltante)],
+  )
+
+  // ── Gastos Descontados ────────────────────────────────────────────────
+
+  sectionTitle(doc, "Gastos Descontados")
+  drawTable(
+    doc,
+    [
+      { label: "Proveedor", width: 215 },
+      { label: "Comprobante", width: 170 },
+      { label: "Monto Descontado", width: 130, align: "right" },
+    ],
+    d.gastos.map((g) => [
+      g.proveedor,
+      g.cbte,
+      fmt(g.montoDescontado),
+    ]),
+    ["Total Gastos Descontados", "", fmt(d.totalGastosDescontados)],
+  )
+
+  // ── Totales del Pago ──────────────────────────────────────────────────
+
+  const totCols = [
+    { label: "Efectivo", width: 64, align: "right" as const },
+    { label: "Transf.", width: 64, align: "right" as const },
+    { label: "Ch. Propios", width: 66, align: "right" as const },
+    { label: "Ch. Terc.", width: 66, align: "right" as const },
+    { label: "Adelantos", width: 64, align: "right" as const },
+    { label: "Gas-Oil", width: 64, align: "right" as const },
+    { label: "Faltantes", width: 64, align: "right" as const },
+    { label: "Gastos Desc.", width: 63, align: "right" as const },
+  ]
+  const TOT_ROW_H = 18
+  const TOT_PAD = 4
+
+  // Dark header
+  let tx = LEFT
+  const thY = doc.y
+  for (const col of totCols) {
+    doc.rect(tx, thY, col.width, TOT_ROW_H).fill(DARK_BG)
+    doc.font("Helvetica-Bold").fontSize(7).fillColor("#ffffff")
+      .text(col.label, tx + TOT_PAD, thY + 5, { width: col.width - TOT_PAD * 2, align: "right" })
+    tx += col.width
   }
+  doc.y = thY + TOT_ROW_H
+
+  // Values row
+  const totValues = [
+    fmt(d.totalEfectivo),
+    fmt(d.totalTransferencia),
+    fmt(d.totalChequesPropios),
+    fmt(d.totalChequesTercero),
+    fmt(d.totalAdelantosGeneral),
+    fmt(d.totalAdelantosGasOil),
+    fmt(d.totalAdelantosFaltante),
+    fmt(d.totalGastosDescontados),
+  ]
+  tx = LEFT
+  const tvY = doc.y
+  for (let i = 0; i < totCols.length; i++) {
+    const col = totCols[i]
+    doc.font("Helvetica-Bold").fontSize(8).fillColor("#000")
+      .text(totValues[i], tx + TOT_PAD, tvY + 5, { width: col.width - TOT_PAD * 2, align: "right" })
+    doc.y = tvY
+    tx += col.width
+  }
+  doc.y = tvY + TOT_ROW_H + 4
+
+  // Border around totals
+  doc.rect(LEFT, thY, PAGE_W, TOT_ROW_H * 2).strokeColor("#000").lineWidth(1.5).stroke()
+
+  // ── Firma ─────────────────────────────────────────────────────────────
+
+  doc.y += 30
+  const firmaX = RIGHT - 200
+  doc.moveTo(firmaX, doc.y).lineTo(RIGHT, doc.y).strokeColor("#000").lineWidth(0.5).stroke()
+  doc.font("Helvetica").fontSize(8).fillColor("#555")
+    .text("Firma y aclaracion del receptor", firmaX, doc.y + 4, { width: 200, align: "center" })
+
+  // ── Footer ────────────────────────────────────────────────────────────
+
+  doc.y += 20
+  doc.moveTo(LEFT, doc.y).lineTo(RIGHT, doc.y).strokeColor("#eeeeee").lineWidth(0.5).stroke()
+  doc.font("Helvetica").fontSize(7).fillColor("#aaaaaa")
+    .text(
+      `Trans-Magg S.R.L. — Orden de Pago generada el ${fmtFecha(new Date())} — Operador: ${op.operador.nombre} ${op.operador.apellido}`,
+      LEFT,
+      doc.y + 4,
+      { width: PAGE_W, align: "center" },
+    )
+
+  doc.end()
+  return finished
 }

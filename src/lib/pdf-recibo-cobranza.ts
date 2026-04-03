@@ -1,11 +1,34 @@
 /**
- * Propósito: Generación del HTML imprimible del Recibo por Cobranza a Empresa.
+ * Proposito: Generacion del PDF del Recibo por Cobranza a Empresa.
  * Replica el layout de un recibo oficial de Trans-Magg S.R.L.
- * El HTML generado se convierte a PDF con Puppeteer (A4).
+ * Genera el PDF directamente con pdfkit (A4).
  */
 
 import { prisma } from "@/lib/prisma"
-import puppeteer from "puppeteer"
+import PDFDocument from "pdfkit"
+// QRCode not used in recibos (no QR code in this document type)
+// import QRCode from "qrcode"
+
+// ─── Constantes de layout ────────────────────────────────────────────────────
+
+const PAGE_MARGIN = 40         // ~14mm
+const A4_WIDTH = 595.28
+const A4_HEIGHT = 841.89
+const CONTENT_WIDTH = A4_WIDTH - PAGE_MARGIN * 2
+const FONT_SIZE_NORMAL = 9
+const FONT_SIZE_SMALL = 8
+const FONT_SIZE_XS = 7
+const FONT_SIZE_TITLE = 14
+const FONT_SIZE_SECTION = 8
+const FONT_SIZE_NRO = 16
+const LINE_COLOR = "#cccccc"
+const HEADER_BG = "#e8e8e8"
+const SECTION_BG = "#f0f0f0"
+const SUBTOTAL_BG = "#f9f9f9"
+const TOTALES_HEADER_BG = "#1a1a1a"
+// const MUTED_COLOR = "#999999"
+
+// ─── Helpers de formato ──────────────────────────────────────────────────────
 
 function fmt(n: number): string {
   return new Intl.NumberFormat("es-AR", {
@@ -53,17 +76,17 @@ function condicionIvaLabel(c: string): string {
 function tipoMedioLabel(t: string): string {
   if (t === "TRANSFERENCIA") return "Transferencia"
   if (t === "ECHEQ") return "ECheq"
-  if (t === "CHEQUE_FISICO") return "Cheque Físico"
+  if (t === "CHEQUE_FISICO") return "Cheque Fisico"
   return t
 }
 
-// ─── Número a letras (español, pesos argentinos) ─────────────────────────────
+// ─── Numero a letras (espanol, pesos argentinos) ─────────────────────────────
 
 const UNIDADES = [
   "", "UNO", "DOS", "TRES", "CUATRO", "CINCO", "SEIS", "SIETE", "OCHO", "NUEVE",
-  "DIEZ", "ONCE", "DOCE", "TRECE", "CATORCE", "QUINCE", "DIECISÉIS", "DIECISIETE",
-  "DIECIOCHO", "DIECINUEVE", "VEINTE", "VEINTIUNO", "VEINTIDÓS", "VEINTITRÉS",
-  "VEINTICUATRO", "VEINTICINCO", "VEINTISÉIS", "VEINTISIETE", "VEINTIOCHO", "VEINTINUEVE",
+  "DIEZ", "ONCE", "DOCE", "TRECE", "CATORCE", "QUINCE", "DIECISEIS", "DIECISIETE",
+  "DIECIOCHO", "DIECINUEVE", "VEINTE", "VEINTIUNO", "VEINTIDOS", "VEINTITRES",
+  "VEINTICUATRO", "VEINTICINCO", "VEINTISEIS", "VEINTISIETE", "VEINTIOCHO", "VEINTINUEVE",
 ]
 
 const DECENAS = [
@@ -99,12 +122,12 @@ function miles(n: number): string {
 /**
  * numeroALetras: number -> string
  *
- * Convierte un número entero positivo a su representación en palabras en español.
+ * Convierte un numero entero positivo a su representacion en palabras en espanol.
  * Solo parte entera — el uso en el recibo es para los pesos (sin centavos en texto).
  *
  * Ejemplos:
  * numeroALetras(1000)    === "MIL"
- * numeroALetras(1270000) === "UN MILLÓN DOSCIENTOS SETENTA MIL"
+ * numeroALetras(1270000) === "UN MILLON DOSCIENTOS SETENTA MIL"
  * numeroALetras(2500000) === "DOS MILLONES QUINIENTOS MIL"
  */
 export function numeroALetras(n: number): string {
@@ -119,7 +142,7 @@ export function numeroALetras(n: number): string {
   const partes: string[] = []
 
   if (millones > 0) {
-    if (millones === 1) partes.push("UN MILLÓN")
+    if (millones === 1) partes.push("UN MILLON")
     else partes.push(`${centenas(millones)} MILLONES`)
   }
   if (milesPart > 0) partes.push(miles(milesPart))
@@ -128,9 +151,113 @@ export function numeroALetras(n: number): string {
   return partes.join(" ")
 }
 
-// ─── Generación HTML ──────────────────────────────────────────────────────────
+// ─── PDFKit drawing helpers ──────────────────────────────────────────────────
 
-function generarHTMLRecibo(
+/** Draw a horizontal line across full content width */
+function drawHLine(doc: PDFKit.PDFDocument, y: number, color = LINE_COLOR, width = 0.5) {
+  doc.save()
+    .moveTo(PAGE_MARGIN, y)
+    .lineTo(A4_WIDTH - PAGE_MARGIN, y)
+    .lineWidth(width)
+    .strokeColor(color)
+    .stroke()
+    .restore()
+}
+
+/** Draw a filled rectangle */
+function drawRect(doc: PDFKit.PDFDocument, x: number, y: number, w: number, h: number, fill: string) {
+  doc.save().rect(x, y, w, h).fill(fill).restore()
+}
+
+/** Draw a stroked rectangle */
+function drawStrokeRect(doc: PDFKit.PDFDocument, x: number, y: number, w: number, h: number, color = LINE_COLOR, width = 0.5) {
+  doc.save().rect(x, y, w, h).lineWidth(width).strokeColor(color).stroke().restore()
+}
+
+/**
+ * Draw a table with headers and rows.
+ * Returns the Y position after the table.
+ */
+function drawTable(
+  doc: PDFKit.PDFDocument,
+  startY: number,
+  columns: { label: string; width: number; align?: "left" | "right" | "center" }[],
+  rows: string[][],
+  options?: { subtotalRow?: string[]; subtotalLabel?: string }
+): number {
+  const x0 = PAGE_MARGIN
+  const rowHeight = 16
+  const headerHeight = 16
+  const cellPadding = 4
+
+  // Header background
+  drawRect(doc, x0, startY, CONTENT_WIDTH, headerHeight, HEADER_BG)
+  drawStrokeRect(doc, x0, startY, CONTENT_WIDTH, headerHeight)
+
+  // Header text
+  let cx = x0
+  for (const col of columns) {
+    const textOpts: PDFKit.Mixins.TextOptions = {
+      width: col.width - cellPadding * 2,
+      align: col.align ?? "left",
+      lineBreak: false,
+    }
+    doc.font("Helvetica-Bold").fontSize(FONT_SIZE_SMALL)
+      .fillColor("#000")
+      .text(col.label, cx + cellPadding, startY + 4, textOpts)
+    cx += col.width
+  }
+
+  let y = startY + headerHeight
+
+  // Data rows
+  for (const row of rows) {
+    // Cell borders
+    drawStrokeRect(doc, x0, y, CONTENT_WIDTH, rowHeight)
+
+    cx = x0
+    for (let i = 0; i < columns.length; i++) {
+      const col = columns[i]
+      const cellText = row[i] ?? ""
+      doc.font("Helvetica").fontSize(FONT_SIZE_NORMAL)
+        .fillColor("#000")
+        .text(cellText, cx + cellPadding, y + 4, {
+          width: col.width - cellPadding * 2,
+          align: col.align ?? "left",
+          lineBreak: false,
+        })
+      cx += col.width
+    }
+    y += rowHeight
+  }
+
+  // Subtotal row
+  if (options?.subtotalRow) {
+    drawRect(doc, x0, y, CONTENT_WIDTH, rowHeight, SUBTOTAL_BG)
+    drawStrokeRect(doc, x0, y, CONTENT_WIDTH, rowHeight)
+
+    cx = x0
+    for (let i = 0; i < columns.length; i++) {
+      const col = columns[i]
+      const cellText = options.subtotalRow[i] ?? ""
+      doc.font("Helvetica-Bold").fontSize(FONT_SIZE_NORMAL)
+        .fillColor("#000")
+        .text(cellText, cx + cellPadding, y + 4, {
+          width: col.width - cellPadding * 2,
+          align: col.align ?? "left",
+          lineBreak: false,
+        })
+      cx += col.width
+    }
+    y += rowHeight
+  }
+
+  return y
+}
+
+// ─── PDF generation ──────────────────────────────────────────────────────────
+
+function buildPDF(
   recibo: {
     nro: number
     ptoVenta: number
@@ -157,250 +284,294 @@ function generarHTMLRecibo(
     }[]
   },
   cuentaMap: Record<string, { nombre: string; bancoOEntidad: string }>
-): string {
-  const nroTexto = fmtNroRecibo(recibo.ptoVenta, recibo.nro)
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: "A4",
+      margins: { top: PAGE_MARGIN, bottom: PAGE_MARGIN, left: PAGE_MARGIN, right: PAGE_MARGIN },
+      info: {
+        Title: `Recibo de Cobranza Nro ${fmtNroRecibo(recibo.ptoVenta, recibo.nro)} - Trans-Magg S.R.L.`,
+        Author: "Trans-Magg S.R.L.",
+      },
+    })
 
-  const filasFacturas = recibo.facturas
-    .map(
-      (f) => `
-    <tr>
-      <td>${fmtFecha(f.emitidaEn)}</td>
-      <td>${tipoCbteLabel(f.tipoCbte)}</td>
-      <td>${f.nroComprobante ?? "—"}</td>
-      <td class="right">${fmt(f.total)}</td>
-    </tr>`
-    )
-    .join("")
+    const chunks: Uint8Array[] = []
+    doc.on("data", (chunk: Uint8Array) => chunks.push(chunk))
+    doc.on("end", () => resolve(Buffer.concat(chunks)))
+    doc.on("error", reject)
 
-  const filasMedios = recibo.mediosPago
-    .map((m) => {
+    const nroTexto = fmtNroRecibo(recibo.ptoVenta, recibo.nro)
+    let y = PAGE_MARGIN
+
+    // ─── Encabezado ────────────────────────────────────────────────────────
+
+    // Left side: company info
+    doc.font("Helvetica-Bold").fontSize(FONT_SIZE_TITLE).fillColor("#000")
+      .text("TRANS-MAGG S.R.L.", PAGE_MARGIN, y)
+
+    doc.font("Helvetica").fontSize(FONT_SIZE_SMALL).fillColor("#333333")
+      .text("C.U.I.T. 30-70938168-3", PAGE_MARGIN, y + 18)
+      .text("Belgrano 184 - 2109 Acebal (S.F.)", PAGE_MARGIN, y + 28)
+      .text("Responsable Inscripto", PAGE_MARGIN, y + 38)
+
+    // Right side: document info
+    const rightX = A4_WIDTH - PAGE_MARGIN - 200
+    doc.font("Helvetica-Bold").fontSize(11).fillColor("#000")
+      .text("RECIBO DE COBRANZA", rightX, y, { width: 200, align: "right" })
+
+    doc.font("Helvetica").fontSize(FONT_SIZE_SMALL).fillColor("#555555")
+      .text("Nro:", rightX, y + 16, { width: 200, align: "right" })
+
+    doc.font("Courier-Bold").fontSize(FONT_SIZE_NRO).fillColor("#000")
+      .text(nroTexto, rightX, y + 27, { width: 200, align: "right" })
+
+    doc.font("Helvetica").fontSize(FONT_SIZE_NORMAL).fillColor("#000")
+      .text(`Fecha: ${fmtFecha(recibo.fecha)}`, rightX, y + 46, { width: 200, align: "right" })
+
+    y += 58
+    // Separator line
+    drawHLine(doc, y, "#000000", 2)
+    y += 8
+
+    // ─── Datos de la empresa receptora ─────────────────────────────────────
+
+    const boxY = y
+    const boxHeight = 52
+    drawStrokeRect(doc, PAGE_MARGIN, boxY, CONTENT_WIDTH, boxHeight)
+
+    const col1LblX = PAGE_MARGIN + 8
+    const col1ValX = PAGE_MARGIN + 80
+    const col2LblX = PAGE_MARGIN + CONTENT_WIDTH / 2 + 8
+    const col2ValX = PAGE_MARGIN + CONTENT_WIDTH / 2 + 80
+
+    // Row 1
+    doc.font("Helvetica").fontSize(FONT_SIZE_XS).fillColor("#555555")
+      .text("EMPRESA", col1LblX, boxY + 6)
+    doc.font("Helvetica-Bold").fontSize(FONT_SIZE_NORMAL).fillColor("#000")
+      .text(recibo.empresa.razonSocial, col1ValX, boxY + 5, { width: CONTENT_WIDTH / 2 - 90, lineBreak: false })
+
+    doc.font("Helvetica").fontSize(FONT_SIZE_XS).fillColor("#555555")
+      .text("CUIT", col2LblX, boxY + 6)
+    doc.font("Helvetica-Bold").fontSize(FONT_SIZE_NORMAL).fillColor("#000")
+      .text(fmtCuit(recibo.empresa.cuit), col2ValX, boxY + 5)
+
+    // Row 2
+    doc.font("Helvetica").fontSize(FONT_SIZE_XS).fillColor("#555555")
+      .text("DIRECCION", col1LblX, boxY + 28)
+    doc.font("Helvetica-Bold").fontSize(FONT_SIZE_NORMAL).fillColor("#000")
+      .text(recibo.empresa.direccion ?? "-", col1ValX, boxY + 27, { width: CONTENT_WIDTH / 2 - 90, lineBreak: false })
+
+    doc.font("Helvetica").fontSize(FONT_SIZE_XS).fillColor("#555555")
+      .text("COND. IVA", col2LblX, boxY + 28)
+    doc.font("Helvetica-Bold").fontSize(FONT_SIZE_NORMAL).fillColor("#000")
+      .text(condicionIvaLabel(recibo.empresa.condicionIva), col2ValX, boxY + 27)
+
+    y = boxY + boxHeight + 10
+
+    // ─── Comprobantes cobrados ─────────────────────────────────────────────
+
+    // Section title
+    drawRect(doc, PAGE_MARGIN, y, CONTENT_WIDTH, 14, SECTION_BG)
+    drawStrokeRect(doc, PAGE_MARGIN, y, CONTENT_WIDTH, 14)
+    doc.font("Helvetica-Bold").fontSize(FONT_SIZE_SECTION).fillColor("#000")
+      .text("COMPROBANTES COBRADOS", PAGE_MARGIN + 6, y + 3)
+    y += 14
+
+    const factColWidths = [
+      CONTENT_WIDTH * 0.20,
+      CONTENT_WIDTH * 0.25,
+      CONTENT_WIDTH * 0.30,
+      CONTENT_WIDTH * 0.25,
+    ]
+    const factColumns = [
+      { label: "Fecha", width: factColWidths[0] },
+      { label: "Tipo", width: factColWidths[1] },
+      { label: "Nro. Comprobante", width: factColWidths[2] },
+      { label: "Importe", width: factColWidths[3], align: "right" as const },
+    ]
+    const factRows = recibo.facturas.map((f) => [
+      fmtFecha(f.emitidaEn),
+      tipoCbteLabel(f.tipoCbte),
+      f.nroComprobante ?? "-",
+      fmt(f.total),
+    ])
+    const factSubtotal = ["Total Comprobantes", "", "", fmt(recibo.totalComprobantes)]
+
+    y = drawTable(doc, y, factColumns, factRows, { subtotalRow: factSubtotal })
+    y += 10
+
+    // ─── Retenciones (solo si hay) ─────────────────────────────────────────
+
+    if (recibo.totalRetenciones > 0) {
+      drawRect(doc, PAGE_MARGIN, y, CONTENT_WIDTH, 14, SECTION_BG)
+      drawStrokeRect(doc, PAGE_MARGIN, y, CONTENT_WIDTH, 14)
+      doc.font("Helvetica-Bold").fontSize(FONT_SIZE_SECTION).fillColor("#000")
+        .text("RETENCIONES APLICADAS", PAGE_MARGIN + 6, y + 3)
+      y += 14
+
+      const retColumns = [
+        { label: "Concepto", width: CONTENT_WIDTH * 0.6 },
+        { label: "Importe", width: CONTENT_WIDTH * 0.4, align: "right" as const },
+      ]
+      const retRows: string[][] = []
+      if (recibo.retencionGanancias > 0) retRows.push(["Ret. Ganancias", fmt(recibo.retencionGanancias)])
+      if (recibo.retencionIIBB > 0) retRows.push(["Ret. IIBB", fmt(recibo.retencionIIBB)])
+      if (recibo.retencionSUSS > 0) retRows.push(["Ret. SUSS", fmt(recibo.retencionSUSS)])
+
+      const retSubtotal = ["Total Retenciones", fmt(recibo.totalRetenciones)]
+
+      y = drawTable(doc, y, retColumns, retRows, { subtotalRow: retSubtotal })
+      y += 10
+    }
+
+    // ─── Medios de pago ────────────────────────────────────────────────────
+
+    drawRect(doc, PAGE_MARGIN, y, CONTENT_WIDTH, 14, SECTION_BG)
+    drawStrokeRect(doc, PAGE_MARGIN, y, CONTENT_WIDTH, 14)
+    doc.font("Helvetica-Bold").fontSize(FONT_SIZE_SECTION).fillColor("#000")
+      .text("DETALLE DE MEDIOS DE PAGO", PAGE_MARGIN + 6, y + 3)
+    y += 14
+
+    const medColumns = [
+      { label: "Tipo", width: CONTENT_WIDTH * 0.20 },
+      { label: "Detalle", width: CONTENT_WIDTH * 0.55 },
+      { label: "Importe", width: CONTENT_WIDTH * 0.25, align: "right" as const },
+    ]
+    const medRows = recibo.mediosPago.map((m) => {
       let detalle = ""
       if (m.tipo === "TRANSFERENCIA") {
         const cuenta = m.cuentaId ? cuentaMap[m.cuentaId] : null
         const cuentaStr = cuenta ? `${cuenta.nombre} (${cuenta.bancoOEntidad})` : ""
         const fechaStr = m.fechaTransferencia ? fmtFecha(m.fechaTransferencia) : ""
-        const refStr = m.referencia ? ` Ref: ${m.referencia}` : ""
-        detalle = [cuentaStr, fechaStr, refStr].filter(Boolean).join(" — ")
+        const refStr = m.referencia ? `Ref: ${m.referencia}` : ""
+        detalle = [cuentaStr, fechaStr, refStr].filter(Boolean).join(" - ")
       } else if (m.tipo === "ECHEQ" || m.tipo === "CHEQUE_FISICO") {
         const nroStr = m.nroCheque ? `Nro ${m.nroCheque}` : ""
         const bancoStr = m.bancoEmisor ?? ""
         const vencStr = m.fechaPago ? `Vto ${fmtFecha(m.fechaPago)}` : ""
-        detalle = [nroStr, bancoStr, vencStr].filter(Boolean).join(" — ")
+        detalle = [nroStr, bancoStr, vencStr].filter(Boolean).join(" - ")
       }
-      return `
-    <tr>
-      <td>${tipoMedioLabel(m.tipo)}</td>
-      <td>${detalle}</td>
-      <td class="right">${fmt(m.monto)}</td>
-    </tr>`
+      return [tipoMedioLabel(m.tipo), detalle, fmt(m.monto)]
     })
-    .join("")
+    const medSubtotal = ["Total Cobrado", "", fmt(recibo.totalCobrado)]
 
-  const filasRetenciones: string[] = []
-  if (recibo.retencionGanancias > 0) {
-    filasRetenciones.push(`<tr><td>Ret. Ganancias</td><td class="right">${fmt(recibo.retencionGanancias)}</td></tr>`)
-  }
-  if (recibo.retencionIIBB > 0) {
-    filasRetenciones.push(`<tr><td>Ret. IIBB</td><td class="right">${fmt(recibo.retencionIIBB)}</td></tr>`)
-  }
-  if (recibo.retencionSUSS > 0) {
-    filasRetenciones.push(`<tr><td>Ret. SUSS</td><td class="right">${fmt(recibo.retencionSUSS)}</td></tr>`)
-  }
+    y = drawTable(doc, y, medColumns, medRows, { subtotalRow: medSubtotal })
+    y += 10
 
-  const importeLetras = numeroALetras(Math.floor(recibo.totalCobrado))
-  const centavos = Math.round((recibo.totalCobrado % 1) * 100)
-  const totalLetras = `${importeLetras} PESOS${centavos > 0 ? ` CON ${centavos}/100` : " CON 00/100"}`
+    // ─── Importe en letras ─────────────────────────────────────────────────
 
-  return `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <title>Recibo de Cobranza Nro ${nroTexto} — Trans-Magg S.R.L.</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; font-size: 11px; color: #000; padding: 15mm 18mm; }
+    const importeLetras = numeroALetras(Math.floor(recibo.totalCobrado))
+    const centavos = Math.round((recibo.totalCobrado % 1) * 100)
+    const totalLetras = `${importeLetras} PESOS${centavos > 0 ? ` CON ${centavos}/100` : " CON 00/100"}`
 
-    .encabezado { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; border-bottom: 2px solid #000; padding-bottom: 10px; }
-    .encabezado-empresa .nombre { font-size: 16px; font-weight: bold; }
-    .encabezado-empresa .datos { font-size: 10px; color: #333; margin-top: 2px; }
-    .encabezado-doc { text-align: right; }
-    .encabezado-doc .tipo { font-size: 13px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
-    .encabezado-doc .label { font-size: 10px; color: #555; text-transform: uppercase; margin-top: 4px; }
-    .encabezado-doc .nro { font-size: 20px; font-weight: bold; font-family: monospace; }
-    .encabezado-doc .fecha { font-size: 11px; margin-top: 2px; }
+    const letrasBoxH = 30
+    drawStrokeRect(doc, PAGE_MARGIN, y, CONTENT_WIDTH, letrasBoxH)
+    doc.font("Helvetica").fontSize(FONT_SIZE_XS).fillColor("#555555")
+      .text("SON:", PAGE_MARGIN + 8, y + 5)
+    doc.font("Helvetica-Bold").fontSize(FONT_SIZE_NORMAL).fillColor("#000")
+      .text(totalLetras, PAGE_MARGIN + 8, y + 15, { width: CONTENT_WIDTH - 16 })
+    y += letrasBoxH + 10
 
-    .receptor-box { border: 1px solid #ccc; padding: 8px 12px; margin-bottom: 12px; display: grid; grid-template-columns: 120px 1fr 120px 1fr; gap: 4px 8px; align-items: baseline; }
-    .receptor-box .lbl { color: #555; font-size: 10px; text-transform: uppercase; }
-    .receptor-box .val { font-weight: bold; }
+    // ─── Totales finales ───────────────────────────────────────────────────
 
-    .seccion { margin-bottom: 12px; }
-    .seccion-titulo { font-size: 10px; font-weight: bold; text-transform: uppercase; background: #f0f0f0; padding: 4px 8px; border: 1px solid #ccc; border-bottom: none; letter-spacing: 0.5px; }
-    table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    th { background: #e8e8e8; padding: 4px 8px; text-align: left; font-size: 10px; border: 1px solid #ccc; }
-    td { padding: 4px 8px; border: 1px solid #ddd; }
-    tr.subtotal { background: #f9f9f9; font-weight: bold; }
-    .right { text-align: right; }
-    .center { text-align: center; }
-    .muted { color: #999; font-style: italic; font-size: 10px; }
+    const totColumns = [
+      { label: "Total Comprobantes", width: CONTENT_WIDTH / 3, align: "right" as const },
+      { label: "Total Retenciones", width: CONTENT_WIDTH / 3, align: "right" as const },
+      { label: "Total Cobrado", width: CONTENT_WIDTH / 3, align: "right" as const },
+    ]
 
-    .importe-letras { border: 1px solid #ccc; padding: 8px 12px; margin-bottom: 12px; }
-    .importe-letras .lbl { font-size: 10px; color: #555; text-transform: uppercase; margin-bottom: 3px; }
-    .importe-letras .val { font-size: 12px; font-weight: bold; text-transform: uppercase; }
+    // Dark header
+    const totHeaderH = 18
+    drawRect(doc, PAGE_MARGIN, y, CONTENT_WIDTH, totHeaderH, TOTALES_HEADER_BG)
+    drawStrokeRect(doc, PAGE_MARGIN, y, CONTENT_WIDTH, totHeaderH, "#000", 2)
 
-    .totales-box { border: 2px solid #000; margin-top: 12px; }
-    .totales-box thead th { background: #1a1a1a; color: #fff; font-size: 10px; padding: 5px 8px; }
-    .totales-box tbody td { padding: 6px 8px; font-weight: bold; font-size: 12px; }
-
-    .firma { margin-top: 40px; display: flex; justify-content: space-between; }
-    .firma-linea { text-align: center; }
-    .firma-linea .linea { border-top: 1px solid #000; width: 180px; margin: 0 auto 4px; }
-    .firma-linea .texto { font-size: 10px; color: #555; }
-
-    .footer { margin-top: 20px; text-align: center; font-size: 9px; color: #aaa; border-top: 1px solid #eee; padding-top: 8px; }
-
-    @media print {
-      body { padding: 10mm 14mm; }
-      @page { margin: 10mm; }
+    let tcx = PAGE_MARGIN
+    for (const col of totColumns) {
+      doc.font("Helvetica-Bold").fontSize(FONT_SIZE_SMALL).fillColor("#ffffff")
+        .text(col.label, tcx + 4, y + 4, { width: col.width - 8, align: "right" })
+      tcx += col.width
     }
-  </style>
-</head>
-<body>
+    y += totHeaderH
 
-  <!-- Encabezado -->
-  <div class="encabezado">
-    <div class="encabezado-empresa">
-      <div class="nombre">TRANS-MAGG S.R.L.</div>
-      <div class="datos">C.U.I.T. 30-70938168-3</div>
-      <div class="datos">Belgrano 184 — 2109 Acebal (S.F.)</div>
-      <div class="datos">Responsable Inscripto</div>
-    </div>
-    <div class="encabezado-doc">
-      <div class="tipo">Recibo de Cobranza</div>
-      <div class="label">Nro:</div>
-      <div class="nro">${nroTexto}</div>
-      <div class="fecha">Fecha: ${fmtFecha(recibo.fecha)}</div>
-    </div>
-  </div>
+    // Values row
+    const totRowH = 22
+    drawStrokeRect(doc, PAGE_MARGIN, y, CONTENT_WIDTH, totRowH, "#000", 2)
 
-  <!-- Datos de la empresa receptora -->
-  <div class="receptor-box">
-    <div class="lbl">Empresa</div>
-    <div class="val">${recibo.empresa.razonSocial}</div>
-    <div class="lbl">CUIT</div>
-    <div class="val">${fmtCuit(recibo.empresa.cuit)}</div>
-    <div class="lbl">Dirección</div>
-    <div class="val">${recibo.empresa.direccion ?? "—"}</div>
-    <div class="lbl">Cond. IVA</div>
-    <div class="val">${condicionIvaLabel(recibo.empresa.condicionIva)}</div>
-  </div>
+    const totValues = [fmt(recibo.totalComprobantes), fmt(recibo.totalRetenciones), fmt(recibo.totalCobrado)]
+    tcx = PAGE_MARGIN
+    for (let i = 0; i < totColumns.length; i++) {
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#000")
+        .text(totValues[i], tcx + 4, y + 6, { width: totColumns[i].width - 8, align: "right" })
+      tcx += totColumns[i].width
+    }
+    y += totRowH + 30
 
-  <!-- Comprobantes cobrados -->
-  <div class="seccion">
-    <div class="seccion-titulo">Comprobantes Cobrados</div>
-    <table>
-      <thead><tr>
-        <th>Fecha</th>
-        <th>Tipo</th>
-        <th>Nro. Comprobante</th>
-        <th class="right">Importe</th>
-      </tr></thead>
-      <tbody>
-        ${filasFacturas}
-        <tr class="subtotal">
-          <td colspan="3">Total Comprobantes</td>
-          <td class="right">${fmt(recibo.totalComprobantes)}</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+    // ─── Firmas ────────────────────────────────────────────────────────────
 
-  ${recibo.totalRetenciones > 0 ? `
-  <!-- Retenciones -->
-  <div class="seccion">
-    <div class="seccion-titulo">Retenciones Aplicadas</div>
-    <table>
-      <thead><tr>
-        <th>Concepto</th>
-        <th class="right">Importe</th>
-      </tr></thead>
-      <tbody>
-        ${filasRetenciones.join("")}
-        <tr class="subtotal">
-          <td>Total Retenciones</td>
-          <td class="right">${fmt(recibo.totalRetenciones)}</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>` : ""}
+    const firmaLineWidth = 150
+    const firmaLeftX = PAGE_MARGIN + 40
+    const firmaRightX = A4_WIDTH - PAGE_MARGIN - 40 - firmaLineWidth
 
-  <!-- Medios de pago -->
-  <div class="seccion">
-    <div class="seccion-titulo">Detalle de Medios de Pago</div>
-    <table>
-      <thead><tr>
-        <th>Tipo</th>
-        <th>Detalle</th>
-        <th class="right">Importe</th>
-      </tr></thead>
-      <tbody>
-        ${filasMedios}
-        <tr class="subtotal">
-          <td colspan="2">Total Cobrado</td>
-          <td class="right">${fmt(recibo.totalCobrado)}</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+    // Ensure enough space for signatures
+    if (y + 40 > A4_HEIGHT - PAGE_MARGIN - 40) {
+      doc.addPage()
+      y = PAGE_MARGIN
+    }
 
-  <!-- Importe en letras -->
-  <div class="importe-letras">
-    <div class="lbl">Son:</div>
-    <div class="val">${totalLetras}</div>
-  </div>
+    // Left firma line - draw manually to constrain width
+    doc.save()
+      .moveTo(firmaLeftX, y)
+      .lineTo(firmaLeftX + firmaLineWidth, y)
+      .lineWidth(0.5)
+      .strokeColor("#000")
+      .stroke()
+      .restore()
 
-  <!-- Totales finales -->
-  <div class="seccion">
-    <table class="totales-box">
-      <thead><tr>
-        <th class="right">Total Comprobantes</th>
-        <th class="right">Total Retenciones</th>
-        <th class="right">Total Cobrado</th>
-      </tr></thead>
-      <tbody><tr>
-        <td class="right">${fmt(recibo.totalComprobantes)}</td>
-        <td class="right">${fmt(recibo.totalRetenciones)}</td>
-        <td class="right">${fmt(recibo.totalCobrado)}</td>
-      </tr></tbody>
-    </table>
-  </div>
+    doc.font("Helvetica").fontSize(FONT_SIZE_XS).fillColor("#555555")
+      .text("Firma autorizada Trans-Magg S.R.L.", firmaLeftX, y + 4, {
+        width: firmaLineWidth,
+        align: "center",
+      })
 
-  <!-- Firmas -->
-  <div class="firma">
-    <div class="firma-linea">
-      <div class="linea"></div>
-      <div class="texto">Firma autorizada Trans-Magg S.R.L.</div>
-    </div>
-    <div class="firma-linea">
-      <div class="linea"></div>
-      <div class="texto">Conformidad del receptor</div>
-    </div>
-  </div>
+    // Right firma line
+    doc.save()
+      .moveTo(firmaRightX, y)
+      .lineTo(firmaRightX + firmaLineWidth, y)
+      .lineWidth(0.5)
+      .strokeColor("#000")
+      .stroke()
+      .restore()
 
-  <div class="footer">
-    Trans-Magg S.R.L. — Recibo generado el ${fmtFecha(new Date())} — Operador: ${recibo.operador.nombre} ${recibo.operador.apellido}
-  </div>
+    doc.font("Helvetica").fontSize(FONT_SIZE_XS).fillColor("#555555")
+      .text("Conformidad del receptor", firmaRightX, y + 4, {
+        width: firmaLineWidth,
+        align: "center",
+      })
 
-</body>
-</html>`
+    y += 30
+
+    // ─── Footer ────────────────────────────────────────────────────────────
+
+    drawHLine(doc, y, "#eeeeee", 0.5)
+    doc.font("Helvetica").fontSize(7).fillColor("#aaaaaa")
+      .text(
+        `Trans-Magg S.R.L. - Recibo generado el ${fmtFecha(new Date())} - Operador: ${recibo.operador.nombre} ${recibo.operador.apellido}`,
+        PAGE_MARGIN,
+        y + 6,
+        { width: CONTENT_WIDTH, align: "center" }
+      )
+
+    doc.end()
+  })
 }
 
-// ─── Función principal ────────────────────────────────────────────────────────
+// ─── Funcion principal ───────────────────────────────────────────────────────
 
 /**
  * generarPDFReciboCobranza: (reciboId: string) -> Promise<Buffer>
  *
  * Dado el id de un Recibo de Cobranza, carga todos sus datos desde la DB,
- * genera el HTML y lo convierte a PDF usando Puppeteer (formato A4).
+ * y genera el PDF directamente con pdfkit (formato A4).
  * Existe para generar el comprobante que se entrega a la empresa cliente.
  *
  * Ejemplos:
@@ -443,23 +614,5 @@ export async function generarPDFReciboCobranza(reciboId: string): Promise<Buffer
       : []
   const cuentaMap = Object.fromEntries(cuentas.map((c) => [c.id, c]))
 
-  const html = generarHTMLRecibo(recibo, cuentaMap)
-
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  })
-
-  try {
-    const page = await browser.newPage()
-    await page.setContent(html, { waitUntil: "networkidle0" })
-    const pdf = await page.pdf({
-      format: "A4",
-      printBackground: true,
-      margin: { top: "10mm", bottom: "10mm", left: "14mm", right: "14mm" },
-    })
-    return Buffer.from(pdf)
-  } finally {
-    await browser.close()
-  }
+  return buildPDF(recibo, cuentaMap)
 }
