@@ -675,8 +675,10 @@ model ChequeRecibido {
   // false = cheque físico recibido de empresa cliente; true = ECheq electrónico recibido
   esElectronico       Boolean         @default(false) @map("es_electronico")
   reciboCobranzaId    String?         @map("recibo_cobranza_id")
+  proveedorOrigenId   String?         @map("proveedor_origen_id")
 
   empresa               Empresa?            @relation(fields: [empresaId], references: [id])
+  proveedorOrigen       Proveedor?          @relation("ProveedorOrigenChequeRecibido", fields: [proveedorOrigenId], references: [id])
   brokerOrigen          Broker?             @relation("BrokerOrigenChequeRecibido", fields: [brokerOrigenId], references: [id])
   factura               FacturaEmitida?     @relation(fields: [facturaId], references: [id], onDelete: SetNull)
   reciboCobranza        ReciboCobranza?     @relation("ChequesRecibo", fields: [reciboCobranzaId], references: [id], onDelete: SetNull)
@@ -1009,6 +1011,7 @@ model Proveedor {
   activo       Boolean @default(true)
 
   facturas               FacturaProveedor[]
+  chequesRecibidosOrigen ChequeRecibido[]  @relation("ProveedorOrigenChequeRecibido")
   chequesRecibidosEndoso ChequeRecibido[]  @relation("ProveedorEndosoChequeRecibido")
   chequesEmitidos        ChequeEmitido[]   @relation("ProveedorChequeEmitido")
   polizas                PolizaSeguro[]

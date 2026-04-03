@@ -46,7 +46,8 @@ interface ChequeRecibido {
   esElectronico: boolean
   endosadoABrokerId: string | null
   fechaDepositoBroker: string | null
-  empresa: { id: string; razonSocial: string }
+  empresa: { id: string; razonSocial: string } | null
+  proveedorOrigen: { id: string; razonSocial: string } | null
   factura: { id: string; nroComprobante: string; tipoCbte: string } | null
   reciboCobranza: { id: string; nro: number } | null
   endosadoAFletero: { id: string; razonSocial: string } | null
@@ -567,8 +568,9 @@ function TabRecibidos() {
 
   const [modalAdelanto, setModalAdelanto] = useState(false)
   const [empresas, setEmpresas] = useState<Empresa[]>([])
+  const [tipoOrigenAdelanto, setTipoOrigenAdelanto] = useState<"EMPRESA" | "PROVEEDOR">("EMPRESA")
   const [formAdelanto, setFormAdelanto] = useState({
-    empresaId: "", esElectronico: false, nroCheque: "", bancoEmisor: "",
+    empresaId: "", proveedorId: "", esElectronico: false, nroCheque: "", bancoEmisor: "",
     monto: "", fechaEmision: hoy(), fechaCobro: hoy(), observaciones: "",
   })
   const [errorAdelanto, setErrorAdelanto] = useState("")
@@ -609,6 +611,7 @@ function TabRecibidos() {
 
   useEffect(() => {
     fetch("/api/empresas").then(r => r.json()).then(d => setEmpresas(Array.isArray(d) ? d : []))
+    fetch("/api/proveedores").then(r => r.json()).then(d => setProveedores(Array.isArray(d) ? d : []))
   }, [])
 
   // Alertas client-side a partir de los datos cargados
@@ -655,15 +658,24 @@ function TabRecibidos() {
   async function guardarAdelanto() {
     setErrorAdelanto("")
     setGuardandoAdelanto(true)
+    const { empresaId, proveedorId, ...rest } = formAdelanto
+    const payload = {
+      ...rest,
+      tipoOrigen: tipoOrigenAdelanto,
+      ...(tipoOrigenAdelanto === "EMPRESA" ? { empresaId } : { proveedorId }),
+      monto: parseFloat(formAdelanto.monto),
+      observaciones: formAdelanto.observaciones || null,
+    }
     const res = await fetch("/api/cheques-recibidos/adelanto", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...formAdelanto, monto: parseFloat(formAdelanto.monto), observaciones: formAdelanto.observaciones || null }),
+      body: JSON.stringify(payload),
     })
     setGuardandoAdelanto(false)
     if (res.ok) {
       setModalAdelanto(false)
-      setFormAdelanto({ empresaId: "", esElectronico: false, nroCheque: "", bancoEmisor: "", monto: "", fechaEmision: hoy(), fechaCobro: hoy(), observaciones: "" })
+      setTipoOrigenAdelanto("EMPRESA")
+      setFormAdelanto({ empresaId: "", proveedorId: "", esElectronico: false, nroCheque: "", bancoEmisor: "", monto: "", fechaEmision: hoy(), fechaCobro: hoy(), observaciones: "" })
       cargar()
     } else {
       const d = await res.json(); setErrorAdelanto(d.error ?? "Error al guardar")
@@ -844,7 +856,7 @@ function TabRecibidos() {
                     </td>
                     <td className="px-3 py-2 font-mono text-xs">{c.nroCheque}</td>
                     <td className="px-3 py-2 text-xs">{c.bancoEmisor}</td>
-                    <td className="px-3 py-2">{c.empresa.razonSocial}</td>
+                    <td className="px-3 py-2">{c.empresa?.razonSocial ?? c.proveedorOrigen?.razonSocial ?? "—"}</td>
                     <td className="px-3 py-2 text-xs">
                       {c.reciboCobranza
                         ? (
@@ -902,11 +914,40 @@ function TabRecibidos() {
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label>Empresa</Label>
-              <Select value={formAdelanto.empresaId} onChange={e => setFormAdelanto(f => ({ ...f, empresaId: e.target.value }))}>
-                <option value="">Seleccionar...</option>
-                {empresas.map(e => <option key={e.id} value={e.id}>{e.razonSocial}</option>)}
-              </Select>
+              <Label>Origen del cheque</Label>
+              <div className="flex rounded-md border overflow-hidden h-9 w-fit mt-1 mb-2">
+                <button
+                  type="button"
+                  onClick={() => { setTipoOrigenAdelanto("EMPRESA"); setFormAdelanto(f => ({ ...f, proveedorId: "" })) }}
+                  className={`px-4 text-xs font-medium border-r ${tipoOrigenAdelanto === "EMPRESA" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                >
+                  Empresa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setTipoOrigenAdelanto("PROVEEDOR"); setFormAdelanto(f => ({ ...f, empresaId: "" })) }}
+                  className={`px-4 text-xs font-medium ${tipoOrigenAdelanto === "PROVEEDOR" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                >
+                  Proveedor
+                </button>
+              </div>
+              {tipoOrigenAdelanto === "EMPRESA" ? (
+                <>
+                  <Label>Empresa</Label>
+                  <Select value={formAdelanto.empresaId} onChange={e => setFormAdelanto(f => ({ ...f, empresaId: e.target.value }))}>
+                    <option value="">Seleccionar...</option>
+                    {empresas.map(e => <option key={e.id} value={e.id}>{e.razonSocial}</option>)}
+                  </Select>
+                </>
+              ) : (
+                <>
+                  <Label>Proveedor</Label>
+                  <Select value={formAdelanto.proveedorId} onChange={e => setFormAdelanto(f => ({ ...f, proveedorId: e.target.value }))}>
+                    <option value="">Seleccionar...</option>
+                    {proveedores.map(p => <option key={p.id} value={p.id}>{p.razonSocial}</option>)}
+                  </Select>
+                </>
+              )}
             </div>
             <div className="flex items-center gap-4">
               <Label className="text-sm font-medium">Tipo cheque:</Label>
@@ -1118,7 +1159,7 @@ function TabRecibidos() {
                 ["Nro. Cheque", accion.cheque.nroCheque],
                 ["Tipo", accion.cheque.esElectronico ? "ECheq" : "Físico"],
                 ["Banco", accion.cheque.bancoEmisor],
-                ["Empresa", accion.cheque.empresa.razonSocial],
+                ["Origen", accion.cheque.empresa?.razonSocial ?? accion.cheque.proveedorOrigen?.razonSocial ?? "—"],
                 ["Factura", accion.cheque.factura ? `${accion.cheque.factura.tipoCbte} ${accion.cheque.factura.nroComprobante}` : "Sin factura"],
                 ["Monto", formatearMoneda(accion.cheque.monto)],
                 ["F. Cobro", formatearFecha(accion.cheque.fechaCobro)],

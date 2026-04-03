@@ -56,6 +56,7 @@ export async function GET(request: NextRequest) {
         where,
         include: {
           empresa: { select: { id: true, razonSocial: true } },
+          proveedorOrigen: { select: { id: true, razonSocial: true } },
           factura: { select: { id: true, nroComprobante: true, tipoCbte: true } },
           reciboCobranza: { select: { id: true, nro: true } },
           cuentaDeposito: { select: { id: true, nombre: true } },
