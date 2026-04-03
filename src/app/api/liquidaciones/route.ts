@@ -151,7 +151,7 @@ export async function GET(request: NextRequest) {
           fletero: { select: { razonSocial: true, cuit: true } },
           viajes: {
             include: {
-              viaje: { select: { nroCartaPorte: true } },
+              viaje: { select: { nroCartaPorte: true, cartaPorteS3Key: true } },
             },
           },
           pagos: {

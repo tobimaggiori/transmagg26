@@ -34,7 +34,7 @@ type ViajeEnLiquidacion = {
   kilos: number | null
   tarifaFletero: number
   subtotal: number
-  viaje?: { nroCartaPorte: string | null }
+  viaje?: { nroCartaPorte: string | null; cartaPorteS3Key: string | null }
 }
 
 type Liquidacion = {
@@ -137,9 +137,11 @@ function resolverEstadoLP(liq: Liquidacion): "EMITIDO" | "PAGADO" | "NO_PAGADO" 
 function ModalDetalleLP({
   liq,
   onCerrar,
+  onAbrirPDF,
 }: {
   liq: Liquidacion
   onCerrar: () => void
+  onAbrirPDF: (params: { s3Key: string; titulo: string }) => void
 }) {
   const nroLP = liq.nroComprobante
     ? `${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${formatearNroComprobante(liq.nroComprobante)}`
@@ -182,7 +184,24 @@ function ModalDetalleLP({
                 {liq.viajes.map((v, i) => (
                   <tr key={v.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                     <td className="px-3 py-2 whitespace-nowrap">{formatearFecha(new Date(v.fechaViaje))}</td>
-                    <td className="px-3 py-2">{v.viaje?.nroCartaPorte ?? "—"}</td>
+                    <td className="px-3 py-2">
+                      {v.viaje?.nroCartaPorte ? (
+                        v.viaje.cartaPorteS3Key ? (
+                          <button
+                            type="button"
+                            onClick={() => onAbrirPDF({
+                              s3Key: v.viaje!.cartaPorteS3Key!,
+                              titulo: `Carta de Porte — ${v.viaje!.nroCartaPorte}`,
+                            })}
+                            className="text-primary hover:underline font-medium"
+                          >
+                            {v.viaje.nroCartaPorte}
+                          </button>
+                        ) : (
+                          v.viaje.nroCartaPorte
+                        )
+                      ) : "—"}
+                    </td>
                     <td className="px-3 py-2">{v.remito ?? "—"}</td>
                     <td className="px-3 py-2">{v.cupo ?? "—"}</td>
                     <td className="px-3 py-2">{v.mercaderia ?? "—"}</td>
@@ -471,6 +490,7 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
         <ModalDetalleLP
           liq={liquidacionDetalle}
           onCerrar={() => setLiquidacionDetalle(null)}
+          onAbrirPDF={(params) => abrirPDF(params)}
         />
       )}
 
