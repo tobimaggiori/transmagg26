@@ -403,55 +403,6 @@ function ChequesEmitidosModal() {
   )
 }
 
-function PendienteModal({ url }: { url: string; titulo: string }) {
-  const [data, setData] = useState<GrupoPendiente[] | null>(null)
-  useEffect(() => {
-    fetch(url).then(r => r.json()).then(setData)
-  }, [url])
-  if (!data) return <p className="text-muted-foreground">Cargando...</p>
-  if (data.length === 0) return <p className="text-muted-foreground">Sin viajes pendientes.</p>
-  return (
-    <div className="space-y-4">
-      {data.map((grupo) => (
-        <div key={grupo.empresaId ?? grupo.fleteroId} className="border rounded p-3 space-y-2">
-          <div className="flex justify-between items-center">
-            <p className="font-semibold">{grupo.razonSocial}</p>
-            <div className="text-right">
-              <p className="font-bold">{formatearMoneda(grupo.totalTarifaBase ?? grupo.total ?? 0)}</p>
-              <p className="text-xs text-muted-foreground">{grupo.cantidadViajes} viaje(s)</p>
-              {grupo.listosParaFacturar != null && (
-                <div className="flex gap-1 justify-end mt-0.5">
-                  <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-800">
-                    {grupo.listosParaFacturar} listos
-                  </span>
-                  {(grupo.bloqueados ?? 0) > 0 && (
-                    <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-800">
-                      {grupo.bloqueados} bloqueados
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-          <table className="w-full text-sm">
-            <thead><tr className="text-muted-foreground text-xs border-b"><th className="text-left py-1">Fecha</th><th className="text-left py-1">Procedencia</th><th className="text-left py-1">Destino</th><th className="text-right py-1">Tarifa base</th></tr></thead>
-            <tbody>
-              {grupo.viajes.map((v) => (
-                <tr key={v.id} className="border-b last:border-0">
-                  <td className="py-1">{formatearFecha(v.fechaViaje)}</td>
-                  <td className="py-1">{v.procedencia ?? "-"}</td>
-                  <td className="py-1">{v.destino ?? "-"}</td>
-                  <td className="text-right py-1">{formatearMoneda(v.tarifa ?? v.total ?? 0)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // --- Modal Pendiente de Liquidar (con NRO CPE clickeable) ---
 
 function PendienteLiquidarModal() {
