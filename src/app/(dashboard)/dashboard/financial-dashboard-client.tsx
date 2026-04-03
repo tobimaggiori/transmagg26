@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { PDFViewer } from "@/components/ui/pdf-viewer"
 import { usePDFViewer } from "@/hooks/use-pdf-viewer"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
+import { formatearNroComprobante } from "@/lib/liquidacion-utils"
 
 // --- Tipos ---
 
@@ -523,6 +524,130 @@ function PendienteLiquidarModal() {
   )
 }
 
+// --- Modal Pendiente de Facturar (con LP y NRO CPE clickeables) ---
+
+interface ViajeFacturar {
+  id: string
+  fechaViaje: string
+  procedencia: string | null
+  destino: string | null
+  nroCartaPorte: string | null
+  cartaPorteS3Key: string | null
+  empresaRazonSocial: string
+  totalEmpresa: number | null
+  liquidacion: {
+    id: string
+    nroComprobante: number | null
+    ptoVenta: number | null
+    pdfS3Key: string | null
+  } | null
+}
+
+interface GrupoFacturar {
+  empresaId: string
+  razonSocial: string
+  total: number
+  cantidadViajes: number
+  viajes: ViajeFacturar[]
+}
+
+function PendienteFacturarModal() {
+  const [data, setData] = useState<GrupoFacturar[] | null>(null)
+  const { estado: estadoPDF, abrirPDF, cerrarPDF } = usePDFViewer()
+
+  useEffect(() => {
+    fetch("/api/dashboard-financiero/pendiente-facturar").then(r => r.json()).then(setData)
+  }, [])
+
+  if (!data) return <p className="text-muted-foreground">Cargando...</p>
+  if (data.length === 0) return <p className="text-muted-foreground">Sin viajes pendientes.</p>
+
+  function formatLP(liq: ViajeFacturar["liquidacion"]): string | null {
+    if (!liq?.nroComprobante) return null
+    return `${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${formatearNroComprobante(liq.nroComprobante)}`
+  }
+
+  return (
+    <>
+      <div className="space-y-4">
+        {data.map((grupo) => (
+          <div key={grupo.empresaId} className="border rounded p-3 space-y-2">
+            <div className="flex justify-between items-center">
+              <p className="font-semibold">{grupo.razonSocial}</p>
+              <div className="text-right">
+                <p className="font-bold">{formatearMoneda(grupo.total)}</p>
+                <p className="text-xs text-muted-foreground">{grupo.cantidadViajes} viaje(s)</p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-muted-foreground text-xs border-b uppercase">
+                    <th className="text-left py-1">Fecha</th>
+                    <th className="text-left py-1">Liquidación</th>
+                    <th className="text-left py-1">Procedencia</th>
+                    <th className="text-left py-1">Destino</th>
+                    <th className="text-left py-1">Nro CPE</th>
+                    <th className="text-left py-1">Empresa</th>
+                    <th className="text-right py-1">Total Empresa</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {grupo.viajes.map((v) => {
+                    const nroLP = formatLP(v.liquidacion)
+                    return (
+                      <tr key={v.id} className="border-b last:border-0">
+                        <td className="py-1 whitespace-nowrap">{formatearFecha(v.fechaViaje)}</td>
+                        <td className="py-1">
+                          {nroLP && v.liquidacion ? (
+                            <button
+                              type="button"
+                              onClick={() => abrirPDF({
+                                fetchUrl: `/api/liquidaciones/${v.liquidacion!.id}/pdf`,
+                                titulo: `LP ${nroLP}`,
+                              })}
+                              className="text-primary hover:underline font-medium text-xs font-mono"
+                            >
+                              {nroLP}
+                            </button>
+                          ) : "—"}
+                        </td>
+                        <td className="py-1">{v.procedencia ?? "—"}</td>
+                        <td className="py-1">{v.destino ?? "—"}</td>
+                        <td className="py-1">
+                          {v.nroCartaPorte ? (
+                            v.cartaPorteS3Key ? (
+                              <button
+                                type="button"
+                                onClick={() => abrirPDF({
+                                  s3Key: v.cartaPorteS3Key!,
+                                  titulo: `Carta de Porte — ${v.nroCartaPorte}`,
+                                })}
+                                className="text-primary hover:underline font-medium text-xs"
+                              >
+                                {v.nroCartaPorte}
+                              </button>
+                            ) : (
+                              <span className="text-xs">{v.nroCartaPorte}</span>
+                            )
+                          ) : "—"}
+                        </td>
+                        <td className="py-1">{v.empresaRazonSocial}</td>
+                        <td className="text-right py-1">{v.totalEmpresa != null ? formatearMoneda(v.totalEmpresa) : "—"}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+      </div>
+      <PDFViewer {...estadoPDF} onClose={cerrarPDF} />
+    </>
+  )
+}
+
 // --- Componente principal ---
 
 /**
@@ -809,7 +934,7 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
       )}
       {modalAbierto === "pendiente-facturar" && (
         <Modal titulo="Pendiente de Facturar" onClose={() => setModalAbierto(null)}>
-          <PendienteModal url="/api/dashboard-financiero/pendiente-facturar" titulo="Pendiente de Facturar" />
+          <PendienteFacturarModal />
         </Modal>
       )}
       {modalAbierto === "pendiente-liquidar" && (

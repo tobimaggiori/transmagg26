@@ -1,25 +1,13 @@
 /**
  * API Route: GET /api/dashboard-financiero/pendiente-facturar
- * Devuelve los viajes PENDIENTES sin factura agrupados por empresa.
- * Solo accesible para ADMIN_TRANSMAGG y OPERADOR_TRANSMAGG.
+ * Devuelve los viajes sin factura emitida, agrupados por empresa.
  */
 
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
-import { viajeEsFacturable } from "@/lib/facturacion"
+import { calcularTotalViaje } from "@/lib/viajes"
 
-/**
- * GET: -> Promise<NextResponse>
- *
- * Dado [ningún parámetro], devuelve [los viajes pendientes de facturar agrupados por empresa con totales].
- * Esta función existe para poblar el modal de "Pendiente de Facturar" del dashboard financiero.
- *
- * Ejemplos:
- * GET() === NextResponse.json([{ empresaId, razonSocial, totalTarifaBase, cantidadViajes, viajes }])
- * GET() === NextResponse.json([{ empresaId: "...", totalTarifaBase: 200000, cantidadViajes: 5 }])
- * GET() === NextResponse.json([])
- */
 export async function GET() {
   const access = await requireFinancialAccess()
   if (!access.ok) return access.response
@@ -32,8 +20,8 @@ export async function GET() {
       include: {
         empresa: { select: { id: true, razonSocial: true } },
         enLiquidaciones: {
-          select: {
-            liquidacion: { select: { estado: true, cae: true, arcaEstado: true } },
+          include: {
+            liquidacion: { select: { id: true, estado: true, nroComprobante: true, ptoVenta: true, pdfS3Key: true } },
           },
         },
       },
@@ -45,19 +33,25 @@ export async function GET() {
       fechaViaje: string
       procedencia: string | null
       destino: string | null
-      tarifa: number
+      nroCartaPorte: string | null
+      cartaPorteS3Key: string | null
+      empresaRazonSocial: string
+      totalEmpresa: number | null
+      liquidacion: {
+        id: string
+        nroComprobante: number | null
+        ptoVenta: number | null
+        pdfS3Key: string | null
+      } | null
     }
     type EmpresaEntry = {
       empresaId: string
       razonSocial: string
-      totalTarifaBase: number
+      total: number
       cantidadViajes: number
-      listosParaFacturar: number
-      bloqueados: number
       viajes: ViajeEntry[]
     }
 
-    // Agrupar por empresa
     const porEmpresa = new Map<string, EmpresaEntry>()
 
     for (const v of viajes) {
@@ -66,33 +60,39 @@ export async function GET() {
         porEmpresa.set(key, {
           empresaId: v.empresaId,
           razonSocial: v.empresa.razonSocial,
-          totalTarifaBase: 0,
+          total: 0,
           cantidadViajes: 0,
-          listosParaFacturar: 0,
-          bloqueados: 0,
           viajes: [],
         })
       }
       const entry = porEmpresa.get(key)!
-      const tarifaEmpresa = v.tarifaEmpresa ?? 0
-      entry.totalTarifaBase += tarifaEmpresa
+      const totalEmpresa = v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaEmpresa) : null
+      entry.total += totalEmpresa ?? 0
       entry.cantidadViajes += 1
-      if (viajeEsFacturable(v)) {
-        entry.listosParaFacturar += 1
-      } else {
-        entry.bloqueados += 1
-      }
+
+      // Find the active (non-ANULADA) liquidación if any
+      const liqActiva = v.enLiquidaciones.find((el) => el.liquidacion.estado !== "ANULADA")
+
       entry.viajes.push({
         id: v.id,
         fechaViaje: v.fechaViaje.toISOString(),
         procedencia: v.procedencia,
         destino: v.destino,
-        tarifa: tarifaEmpresa,
+        nroCartaPorte: v.nroCartaPorte,
+        cartaPorteS3Key: v.cartaPorteS3Key,
+        empresaRazonSocial: v.empresa.razonSocial,
+        totalEmpresa,
+        liquidacion: liqActiva ? {
+          id: liqActiva.liquidacion.id,
+          nroComprobante: liqActiva.liquidacion.nroComprobante,
+          ptoVenta: liqActiva.liquidacion.ptoVenta,
+          pdfS3Key: liqActiva.liquidacion.pdfS3Key,
+        } : null,
       })
     }
 
     const resultado = Array.from(porEmpresa.values())
-      .sort((a, b) => b.totalTarifaBase - a.totalTarifaBase)
+      .sort((a, b) => b.total - a.total)
 
     return NextResponse.json(resultado)
   } catch (error) {
