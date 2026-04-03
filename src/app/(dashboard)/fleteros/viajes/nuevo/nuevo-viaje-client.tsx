@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { ShieldAlert } from "lucide-react"
 import { formatearMoneda } from "@/lib/utils"
+import { FormError } from "@/components/ui/form-error"
 import { calcularToneladas, calcularTotalViaje } from "@/lib/viajes"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { CiudadArgentinaInput } from "@/components/ui/ciudad-argentina-input"
@@ -44,6 +45,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const [cartaPorteS3Key, setCartaPorteS3Key] = useState("")
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [intentoEnviar, setIntentoEnviar] = useState(false)
 
   const camionesDelFletero = esCamionPropio
     ? camiones.filter((c) => c.esPropio)
@@ -67,16 +69,22 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
     provinciaOrigen && provinciaDestino && tarifaNum > 0 &&
     nroCartaPorte.trim() !== "" && cartaPorteS3Key !== ""
 
-  const tooltipDeshabilitado = !puedeGuardar
-    ? !cartaPorteS3Key
-      ? "Debés subir el PDF de la carta de porte para continuar"
-      : !nroCartaPorte.trim()
-        ? "Ingresá el número de carta de porte"
-        : "Completá todos los campos obligatorios"
-    : undefined
+  const fieldErrors = intentoEnviar ? {
+    fleteroId: !esCamionPropio && !fleteroId ? "Campo requerido" : null,
+    empresaId: !empresaId ? "Campo requerido" : null,
+    camionId: !camionId ? "Campo requerido" : null,
+    choferId: !choferId ? "Campo requerido" : null,
+    fechaViaje: !fechaViaje ? "Campo requerido" : null,
+    provinciaOrigen: !provinciaOrigen ? "Campo requerido" : null,
+    provinciaDestino: !provinciaDestino ? "Campo requerido" : null,
+    tarifa: tarifaNum <= 0 ? "Campo requerido" : null,
+    nroCartaPorte: !nroCartaPorte.trim() ? "Campo requerido" : null,
+    cartaPorteS3Key: !cartaPorteS3Key ? "Debés subir el PDF" : null,
+  } : {} as Record<string, string | null>
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    setIntentoEnviar(true)
     if (!puedeGuardar) return
     setCargando(true)
     setError(null)
@@ -129,7 +137,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
           <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md text-sm">{error}</div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           {/* Toggle camión propio */}
           <div>
             <label className="text-xs font-medium text-muted-foreground block mb-1">Tipo de viaje</label>
@@ -160,8 +168,8 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                   value={fleteroId}
                   onChange={(id) => { setFleteroId(id); setCamionId("") }}
                   placeholder="Buscar por nombre o CUIT..."
-                  required={!esCamionPropio}
                 />
+                <FormError message={fieldErrors.fleteroId} className="text-xs mt-1" />
               </div>
             )}
             <div>
@@ -171,8 +179,8 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                 value={empresaId}
                 onChange={setEmpresaId}
                 placeholder="Buscar por nombre o CUIT..."
-                required
               />
+              <FormError message={fieldErrors.empresaId} className="text-xs mt-1" />
             </div>
           </div>
 
@@ -189,7 +197,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                     if (c?.choferActualId) setChoferId(c.choferActualId)
                   }
                 }}
-                required
                 className="w-full h-9 rounded-md border bg-background px-2 text-sm"
               >
                 <option value="">Seleccionar...</option>
@@ -197,18 +204,19 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                   <option key={c.id} value={c.id}>{c.patenteChasis}</option>
                 ))}
               </select>
+              <FormError message={fieldErrors.camionId} className="text-xs mt-1" />
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Chofer *</label>
               <select
                 value={choferId}
                 onChange={(e) => setChoferId(e.target.value)}
-                required
                 className="w-full h-9 rounded-md border bg-background px-2 text-sm"
               >
                 <option value="">Seleccionar...</option>
                 {choferesDelFletero.map((c) => <option key={c.id} value={c.id}>{c.apellido}, {c.nombre}</option>)}
               </select>
+              <FormError message={fieldErrors.choferId} className="text-xs mt-1" />
             </div>
           </div>
 
@@ -228,9 +236,9 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
               type="date"
               value={fechaViaje}
               onChange={(e) => setFechaViaje(e.target.value)}
-              required
               className="w-full h-9 rounded-md border bg-background px-2 text-sm"
             />
+            <FormError message={fieldErrors.fechaViaje} className="text-xs mt-1" />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -275,20 +283,26 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <CiudadArgentinaInput
-              label="Ciudad de origen"
-              value={procedencia}
-              provincia={provinciaOrigen}
-              onSelect={(ciudad, prov) => { setProcedencia(ciudad); setProvinciaOrigen(prov) }}
-              required
-            />
-            <CiudadArgentinaInput
-              label="Ciudad de destino"
-              value={destino}
-              provincia={provinciaDestino}
-              onSelect={(ciudad, prov) => { setDestino(ciudad); setProvinciaDestino(prov) }}
-              required
-            />
+            <div>
+              <CiudadArgentinaInput
+                label="Ciudad de origen"
+                value={procedencia}
+                provincia={provinciaOrigen}
+                onSelect={(ciudad, prov) => { setProcedencia(ciudad); setProvinciaOrigen(prov) }}
+                required
+              />
+              <FormError message={fieldErrors.provinciaOrigen} className="text-xs mt-1" />
+            </div>
+            <div>
+              <CiudadArgentinaInput
+                label="Ciudad de destino"
+                value={destino}
+                provincia={provinciaDestino}
+                onSelect={(ciudad, prov) => { setDestino(ciudad); setProvinciaDestino(prov) }}
+                required
+              />
+              <FormError message={fieldErrors.provinciaDestino} className="text-xs mt-1" />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -314,9 +328,9 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                 onChange={(e) => setTarifaBase(e.target.value)}
                 min="0"
                 step="0.01"
-                required
                 className="w-full h-9 rounded-md border bg-background px-2 text-sm"
               />
+              <FormError message={fieldErrors.tarifa} className="text-xs mt-1" />
               {totalCalc != null && (
                 <p className="text-xs text-muted-foreground mt-1">
                   Referencia inicial del viaje: {formatearMoneda(totalCalc)}
@@ -338,7 +352,10 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                   placeholder="Ej: 12345678"
                   className="w-full h-9 rounded-md border bg-background px-2 text-sm"
                 />
-                <p className="text-[11px] text-muted-foreground mt-1">Debe ser único en el sistema.</p>
+                <FormError message={fieldErrors.nroCartaPorte} className="text-xs mt-1" />
+                {!fieldErrors.nroCartaPorte && (
+                  <p className="text-[11px] text-muted-foreground mt-1">Debe ser único en el sistema.</p>
+                )}
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1">PDF de la carta de porte *</label>
@@ -347,8 +364,8 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                   onUpload={(key) => setCartaPorteS3Key(key)}
                   label="Subir PDF"
                   s3Key={cartaPorteS3Key || undefined}
-                  required
                 />
+                <FormError message={fieldErrors.cartaPorteS3Key} className="text-xs mt-1" />
               </div>
             </div>
           </div>
@@ -361,15 +378,13 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
             >
               Cancelar
             </button>
-            <span title={tooltipDeshabilitado}>
-              <button
-                type="submit"
-                disabled={cargando || !puedeGuardar}
-                className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
-              >
-                {cargando ? "Guardando..." : "Crear viaje"}
-              </button>
-            </span>
+            <button
+              type="submit"
+              disabled={cargando}
+              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+            >
+              {cargando ? "Guardando..." : "Crear viaje"}
+            </button>
           </div>
         </form>
       </div>
