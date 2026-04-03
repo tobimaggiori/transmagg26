@@ -87,17 +87,10 @@ export async function GET(request: NextRequest) {
     empresaIdReal = empUsr.empresaId
   }
 
-  // Un viaje es "pendiente de facturar" si NO tiene facturas en estado EMITIDA/PAGADA/PARCIALMENTE_PAGADA.
-  // Facturas en BORRADOR o ANULADA no bloquean — el viaje sigue apareciendo como pendiente.
+  // Un viaje es "pendiente de facturar" si su estadoFactura = PENDIENTE_FACTURAR.
   const whereViajes = {
     empresaId: empresaIdReal ? empresaIdReal : undefined,
-    enFacturas: {
-      none: {
-        factura: {
-          estado: { in: ["EMITIDA", "PAGADA", "PARCIALMENTE_PAGADA"] as string[] },
-        },
-      },
-    },
+    estadoFactura: "PENDIENTE_FACTURAR",
   }
 
   const whereFacturas: Record<string, unknown> = {}
@@ -251,11 +244,7 @@ export async function POST(request: NextRequest) {
       where: {
         id: { in: viajeIds },
         empresaId,
-        enFacturas: {
-          none: {
-            factura: { estado: { in: ["EMITIDA", "PAGADA", "PARCIALMENTE_PAGADA"] as string[] } },
-          },
-        },
+        estadoFactura: "PENDIENTE_FACTURAR",
       },
       include: {
         enLiquidaciones: {

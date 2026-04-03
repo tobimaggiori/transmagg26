@@ -106,17 +106,11 @@ export async function GET(request: NextRequest) {
     fleteroIdReal = fletero.id
   }
 
-  // Un viaje es "pendiente de liquidar" si NO tiene liquidaciones en estado EMITIDA/PAGADA/PARCIALMENTE_PAGADA.
-  // Liquidaciones en BORRADOR o ANULADA no bloquean — el viaje sigue apareciendo como pendiente.
+  // Un viaje es "pendiente de liquidar" si su estadoLiquidacion = PENDIENTE_LIQUIDAR.
+  // Al emitir un LP, el POST marca los viajes como LIQUIDADO para excluirlos.
   const whereViajes = {
     fleteroId: fleteroIdReal ? fleteroIdReal : { not: null },
-    enLiquidaciones: {
-      none: {
-        liquidacion: {
-          estado: { in: ["EMITIDA", "PAGADA", "PARCIALMENTE_PAGADA"] as string[] },
-        },
-      },
-    },
+    estadoLiquidacion: EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR,
   }
 
   const whereLiquidaciones: Record<string, unknown> = {}
@@ -287,11 +281,7 @@ export async function POST(request: NextRequest) {
       where: {
         id: { in: viajeIds },
         fleteroId,
-        enLiquidaciones: {
-          none: {
-            liquidacion: { estado: { in: ["EMITIDA", "PAGADA", "PARCIALMENTE_PAGADA"] as string[] } },
-          },
-        },
+        estadoLiquidacion: EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR,
       },
     })
 

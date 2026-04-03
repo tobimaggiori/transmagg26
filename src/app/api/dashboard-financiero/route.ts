@@ -62,7 +62,7 @@ export async function GET() {
     // Pendiente de facturar: viajes sin factura activa
     const viajesPendienteFacturar = await prisma.viaje.findMany({
       where: {
-        enFacturas: { none: { factura: { estado: { in: ["EMITIDA", "PAGADA", "PARCIALMENTE_PAGADA"] } } } },
+        estadoFactura: "PENDIENTE_FACTURAR",
       },
       select: { kilos: true, tarifaEmpresa: true },
     })
@@ -74,7 +74,7 @@ export async function GET() {
     const viajesPendienteLiquidar = await prisma.viaje.findMany({
       where: {
         fleteroId: { not: null },
-        enLiquidaciones: { none: { liquidacion: { estado: { in: ["EMITIDA", "PAGADA", "PARCIALMENTE_PAGADA"] } } } },
+        estadoLiquidacion: "PENDIENTE_LIQUIDAR",
       },
       select: { kilos: true, tarifa: true },
     })

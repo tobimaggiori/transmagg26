@@ -17,7 +17,7 @@ export async function GET() {
     const viajes = await prisma.viaje.findMany({
       where: {
         fleteroId: { not: null },
-        enLiquidaciones: { none: { liquidacion: { estado: { in: ["EMITIDA", "PAGADA", "PARCIALMENTE_PAGADA"] as string[] } } } },
+        estadoLiquidacion: "PENDIENTE_LIQUIDAR",
       },
       include: {
         fletero: { select: { id: true, razonSocial: true, comisionDefault: true } },
