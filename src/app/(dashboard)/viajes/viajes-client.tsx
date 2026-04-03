@@ -15,7 +15,7 @@ import { WorkflowSummaryCard } from "@/components/workflow/workflow-summary-card
 import { CircuitBadge } from "@/components/workflow/circuit-badge"
 import { WorkflowNote } from "@/components/workflow/workflow-note"
 import { SearchCombobox } from "@/components/ui/search-combobox"
-import { viajeEsFacturable, razonNoFacturable } from "@/lib/facturacion"
+// facturacion imports removed — CAE/arcaEstado no longer checked in viajes list
 import { CiudadArgentinaInput } from "@/components/ui/ciudad-argentina-input"
 import { UploadPDF } from "@/components/upload-pdf"
 import type { Rol } from "@/types"
@@ -1091,21 +1091,6 @@ export function ViajesClient({
                               <div className="flex flex-wrap gap-1.5">
                                 <CircuitBadge etiqueta="Fletero" estado={v.estadoLiquidacion} />
                                 <CircuitBadge etiqueta="Empresa" estado={v.estadoFactura} />
-                                {v.estadoFactura === "PENDIENTE_FACTURAR" && v.enLiquidaciones != null && (
-                                  viajeEsFacturable(v as { estadoFactura: string; enLiquidaciones: Array<{ liquidacion: { estado: string } }> })
-                                    ? (
-                                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800">
-                                        LP activa
-                                      </span>
-                                    ) : (
-                                      <span
-                                        className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800"
-                                        title={razonNoFacturable(v as { estadoFactura: string; enLiquidaciones: Array<{ liquidacion: { estado: string } }> })}
-                                      >
-                                        LP no activa
-                                      </span>
-                                    )
-                                )}
                               </div>
                               <p className="text-xs text-muted-foreground">
                                 {describirCircuitoViaje(v.estadoLiquidacion, v.estadoFactura)}

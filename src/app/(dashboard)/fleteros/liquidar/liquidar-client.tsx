@@ -200,12 +200,12 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
   const [generando, setGenerando] = useState(false)
   const [errorGen, setErrorGen] = useState<string | null>(null)
   const [fleteroInfo, setFleteroInfo] = useState<FleteroInfo | null>(null)
-  const [exitoLiquidacion, setExitoLiquidacion] = useState(false)
+  const [exitoLiquidacion, setExitoLiquidacion] = useState<{ nroLP: string; id: string } | null>(null)
   const { estado: estadoPDF, abrirPDF, cerrarPDF } = usePDFViewer()
 
   const cargarDatos = useCallback(async () => {
     setCargando(true)
-    setExitoLiquidacion(false)
+    setExitoLiquidacion(null)
     try {
       const url = fleteroId ? `/api/liquidaciones?fleteroId=${fleteroId}` : "/api/liquidaciones"
       const res = await fetch(url)
@@ -287,15 +287,13 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
         return
       }
       const liqCreada = await res.json() as { id: string; nroComprobante?: number; ptoVenta?: number }
-      setEnPreview(false)
-      setSeleccionados(new Set())
-      setExitoLiquidacion(true)
-      cargarDatos()
-
-      // Abrir PDFViewer del LP recién creado
       const nroLP = liqCreada.nroComprobante
         ? `${String(liqCreada.ptoVenta ?? 1).padStart(4, "0")}-${formatearNroComprobante(liqCreada.nroComprobante)}`
         : "LP"
+      setEnPreview(false)
+      setSeleccionados(new Set())
+      setExitoLiquidacion({ nroLP, id: liqCreada.id })
+      cargarDatos()
       abrirPDF({
         fetchUrl: `/api/liquidaciones/${liqCreada.id}/pdf`,
         titulo: `LP ${nroLP} — ${fleteroInfo?.razonSocial ?? ""}`,
@@ -324,11 +322,42 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
       </div>
 
       {exitoLiquidacion && (
-        <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-          <span>✓ Liquidación generada exitosamente.</span>
-          <Link href="/fleteros/liquidaciones" className="font-medium underline hover:text-green-900">
-            Ver en Consultar Liq. Prod. →
-          </Link>
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 space-y-2">
+          <p className="font-medium">✓ Líquido Producto {exitoLiquidacion.nroLP} emitido exitosamente.</p>
+          <p className="text-xs text-green-700">(Cuando se conecte ARCA, aquí aparecerá el CAE asignado)</p>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => abrirPDF({
+                fetchUrl: `/api/liquidaciones/${exitoLiquidacion.id}/pdf`,
+                titulo: `LP ${exitoLiquidacion.nroLP}`,
+                onEnviarMail: async (email: string) => {
+                  const r = await fetch(`/api/liquidaciones/${exitoLiquidacion.id}/enviar-email`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ emailDestino: email }),
+                  })
+                  if (!r.ok) { const err = await r.json(); throw new Error(err.error ?? "Error") }
+                },
+              })}
+              className="h-8 px-3 rounded-md bg-green-700 text-white text-xs font-medium hover:bg-green-800"
+            >
+              Ver PDF
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                abrirPDF({ fetchUrl: `/api/liquidaciones/${exitoLiquidacion.id}/pdf`, titulo: `LP ${exitoLiquidacion.nroLP}` })
+                setTimeout(() => window.print(), 1000)
+              }}
+              className="h-8 px-3 rounded-md border border-green-300 text-green-800 text-xs font-medium hover:bg-green-100"
+            >
+              Imprimir PDF
+            </button>
+            <Link href="/fleteros/liquidaciones" className="h-8 px-3 rounded-md border border-green-300 text-green-800 text-xs font-medium hover:bg-green-100 inline-flex items-center">
+              Ver en Consultar LP →
+            </Link>
+          </div>
         </div>
       )}
 
@@ -339,7 +368,7 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
             <SearchCombobox
               items={fleteros.map((f) => ({ id: f.id, label: f.razonSocial, sublabel: f.cuit }))}
               value={fleteroId}
-              onChange={(id) => { setFleteroId(id); setSeleccionados(new Set()); setEnPreview(false); setExitoLiquidacion(false) }}
+              onChange={(id) => { setFleteroId(id); setSeleccionados(new Set()); setEnPreview(false); setExitoLiquidacion(null) }}
               placeholder="Buscar por razón social o CUIT..."
             />
           </div>
