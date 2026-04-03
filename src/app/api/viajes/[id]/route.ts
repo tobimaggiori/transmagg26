@@ -194,9 +194,9 @@ export async function PATCH(
     if (tarifa !== undefined) {
       // tarifaEmpresa siempre actualizable
       tarifaUpdate.tarifaEmpresa = tarifa
-      // tarifaFletero solo si no tiene LP emitido
+      // tarifa (fletero) solo si no tiene LP emitido
       if (!tieneLP) {
-        tarifaUpdate.tarifaFletero = tarifa
+        tarifaUpdate.tarifa = tarifa
       }
     }
 

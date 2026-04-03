@@ -138,7 +138,7 @@ export async function GET(request: NextRequest) {
           destino: true,
           provinciaDestino: true,
           kilos: true,
-          tarifaFletero: true,
+          tarifa: true,
           nroCartaPorte: true,
           estadoLiquidacion: true,
           estadoFactura: true,
@@ -224,9 +224,9 @@ export async function GET(request: NextRequest) {
     // Calcular toneladas y total en los viajes pendientes
     const viajesPendientes = viajesRaw.map((v) => ({
       ...v,
-      tarifaFletero: v.tarifaFletero,
+      tarifa: v.tarifa,
       toneladas: v.kilos != null ? calcularToneladas(v.kilos) : null,
-      total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaFletero) : null,
+      total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifa) : null,
     }))
 
     return NextResponse.json({ viajesPendientes, liquidaciones, fletero: fleteroData, nroProximoComprobante, gastosPendientes })

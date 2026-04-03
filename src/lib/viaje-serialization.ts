@@ -2,7 +2,7 @@ import { calcularToneladas, calcularTotalViaje } from "@/lib/viajes"
 
 type ViajeOperativoMinimo = {
   kilos: number | null
-  tarifaFletero?: number | null
+  tarifa?: number | null
   tarifaEmpresa?: number | null
 }
 
@@ -17,11 +17,11 @@ export function enriquecerViajeOperativo<T extends ViajeOperativoMinimo>(
   toneladas: number | null
   total: number | null
 } {
-  const tarifa = viaje.tarifaEmpresa ?? viaje.tarifaFletero ?? null
+  const tarifaCalc = viaje.tarifaEmpresa ?? viaje.tarifa ?? null
   const toneladas = viaje.kilos != null ? calcularToneladas(viaje.kilos) : null
   const total =
-    viaje.kilos != null && tarifa != null
-      ? calcularTotalViaje(viaje.kilos, tarifa)
+    viaje.kilos != null && tarifaCalc != null
+      ? calcularTotalViaje(viaje.kilos, tarifaCalc)
       : null
 
   return {
@@ -36,13 +36,13 @@ export function enriquecerViajeOperativo<T extends ViajeOperativoMinimo>(
  */
 export function ocultarTarifaOperativa<
   T extends {
-    tarifaFletero?: number | null
+    tarifa?: number | null
     tarifaEmpresa?: number | null
     total?: number | null
   },
->(viaje: T): Omit<T, "tarifaFletero" | "tarifaEmpresa" | "total"> {
-  const { tarifaFletero, tarifaEmpresa, total, ...resto } = viaje
-  void tarifaFletero
+>(viaje: T): Omit<T, "tarifa" | "tarifaEmpresa" | "total"> {
+  const { tarifa, tarifaEmpresa, total, ...resto } = viaje
+  void tarifa
   void tarifaEmpresa
   void total
   return resto

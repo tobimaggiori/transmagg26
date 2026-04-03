@@ -5,7 +5,7 @@
  *
  * Los viajes tienen estados independientes para liquidación y factura.
  * SEGURIDAD:
- * - tarifaFletero/tarifaEmpresa nunca se expone a roles de empresa ni de fletero
+ * - tarifa/tarifaEmpresa nunca se expone a roles de empresa ni de fletero
  * - Fletero solo ve sus propios viajes
  * - Empresa solo ve sus propios viajes
  */
@@ -61,17 +61,17 @@ const crearViajeSchema = z.object({
  * GET: NextRequest -> Promise<NextResponse>
  *
  * Devuelve hasta 200 viajes filtrados por rol y parámetros opcionales.
- * Incluye empresa.razonSocial, fletero.razonSocial, estadoLiquidacion, estadoFactura, kilos, tarifaFletero/tarifaEmpresa.
- * Roles externos no reciben tarifaFletero/tarifaEmpresa; roles internos reciben todo.
+ * Incluye empresa.razonSocial, fletero.razonSocial, estadoLiquidacion, estadoFactura, kilos, tarifa/tarifaEmpresa.
+ * Roles externos no reciben tarifa/tarifaEmpresa; roles internos reciben todo.
  * Existe para el listado de viajes con cálculos de toneladas y totales.
  *
  * Ejemplos:
  * GET /api/viajes (sesión ADMIN_TRANSMAGG)
- * // => 200 [{ id, tarifaFletero/tarifaEmpresa, estadoLiquidacion, estadoFactura, toneladas, total, empresa, fletero }]
+ * // => 200 [{ id, tarifa/tarifaEmpresa, estadoLiquidacion, estadoFactura, toneladas, total, empresa, fletero }]
  * GET /api/viajes?fleteroId=f1 (sesión OPERADOR_TRANSMAGG)
  * // => 200 viajes filtrados por fletero
  * GET /api/viajes (sesión FLETERO)
- * // => 200 viajes propios sin tarifaFletero/tarifaEmpresa
+ * // => 200 viajes propios sin tarifa/tarifaEmpresa
  */
 export async function GET(request: NextRequest) {
   const session = await auth()
@@ -191,7 +191,7 @@ export async function GET(request: NextRequest) {
  * Existe para que operadores internos carguen viajes standalone.
  *
  * Ejemplos:
- * POST /api/viajes { fleteroId, camionId, choferId, empresaId, fechaViaje: "2026-03-15", tarifaFletero/tarifaEmpresa: 50000 }
+ * POST /api/viajes { fleteroId, camionId, choferId, empresaId, fechaViaje: "2026-03-15", tarifa/tarifaEmpresa: 50000 }
  * // => 201 { id, estadoLiquidacion: "PENDIENTE_LIQUIDAR", estadoFactura: "PENDIENTE_FACTURAR" }
  * POST /api/viajes { ...datos, fleteroId: "noexiste" }
  * // => 404 { error: "Fletero no encontrado" }
@@ -254,7 +254,7 @@ export async function POST(request: NextRequest) {
         empresaId,
         operadorId,
         fechaViaje: new Date(fechaViaje),
-        tarifaFletero: tarifa,
+        tarifa,
         tarifaEmpresa: tarifa,
         estadoLiquidacion,
         estadoFactura,

@@ -35,7 +35,7 @@ type ViajeAPI = {
   destino: string | null
   provinciaDestino: string | null
   kilos: number | null
-  tarifaFletero: number | null
+  tarifa: number | null
   tarifaEmpresa: number | null
   tieneCupo: boolean
   cupo: string | null
@@ -462,7 +462,7 @@ function PanelDetalle({
               />
               {tieneLP && (
                 <p className="text-xs text-amber-600 mt-1">
-                  ⚠ El LP ya fue emitido. Este cambio solo impactará en la factura a la empresa. La tarifa del fletero ({formatearMoneda(viaje.tarifaFletero ?? 0)}) no se modifica.
+                  ⚠ El LP ya fue emitido. Este cambio solo impactará en la factura a la empresa. La tarifa del fletero ({formatearMoneda(viaje.tarifa ?? 0)}) no se modifica.
                 </p>
               )}
             </div>

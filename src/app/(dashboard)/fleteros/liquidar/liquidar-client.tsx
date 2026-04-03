@@ -42,7 +42,7 @@ type ViajeParaLiquidar = {
   destino: string | null
   provinciaDestino: string | null
   kilos: number | null
-  tarifaFletero: number
+  tarifa: number
   estadoFactura: string
   nroCartaPorte: string | null
 }
@@ -79,7 +79,7 @@ function ModalPreviewLiquidacion({
 
   const viajesParaCalc = viajes.map((v) => ({
     kilos: v.kilos ?? 0,
-    tarifaFletero: v.tarifaFletero,
+    tarifaFletero: v.tarifa,
   }))
   const preview = calcularLiquidacion(viajesParaCalc, comisionPct, ivaPct)
 
@@ -124,7 +124,7 @@ function ModalPreviewLiquidacion({
             <tbody className="divide-y">
               {viajes.map((v, i) => {
                 const kilos = v.kilos ?? 0
-                const tarifa = v.tarifaFletero
+                const tarifa = v.tarifa
                 const importe = kilos > 0 ? calcularTotalViaje(kilos, tarifa) : null
                 return (
                   <tr key={v.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
@@ -266,7 +266,7 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
           destino: v.destino,
           provinciaDestino: v.provinciaDestino,
           kilos: v.kilos ?? 0,
-          tarifaFletero: v.tarifaFletero,
+          tarifaFletero: v.tarifa,
         })),
       }
       const res = await fetch("/api/liquidaciones", {
@@ -373,7 +373,7 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
                 <tbody className="divide-y">
                   {viajesPendientes.map((v) => {
                     const kilos = v.kilos ?? 0
-                    const tarifa = v.tarifaFletero
+                    const tarifa = v.tarifa
                     const ton = kilos > 0 ? calcularToneladas(kilos) : null
                     const total = kilos > 0 ? calcularTotalViaje(kilos, tarifa) : null
                     return (

@@ -3,7 +3,7 @@
 /**
  * Propósito: Componente cliente de la página de viajes.
  * Maneja selección de fletero/empresa, carga de viajes via API, tabs y modales de ABM.
- * SEGURIDAD: tarifaFletero/tarifaEmpresa nunca se muestra a roles externos.
+ * SEGURIDAD: tarifa/tarifaEmpresa nunca se muestra a roles externos.
  */
 
 import { useState, useCallback, useEffect } from "react"
@@ -42,7 +42,7 @@ type ViajeAPI = {
   destino: string | null
   provinciaDestino: string | null
   kilos: number | null
-  tarifaFletero?: number | null
+  tarifa?: number | null
   tarifaEmpresa?: number | null
   estadoLiquidacion: string
   estadoFactura: string

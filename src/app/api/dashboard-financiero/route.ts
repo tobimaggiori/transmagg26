@@ -68,9 +68,9 @@ export async function GET() {
     // Pendiente de liquidar: viajes con estadoLiquidacion PENDIENTE_LIQUIDAR
     const viajesPendienteLiquidar = await prisma.viaje.findMany({
       where: { estadoLiquidacion: "PENDIENTE_LIQUIDAR" },
-      select: { tarifaFletero: true },
+      select: { tarifa: true },
     })
-    const pendienteLiquidar = viajesPendienteLiquidar.reduce((acc, v) => acc + (v.tarifaFletero ?? 0), 0)
+    const pendienteLiquidar = viajesPendienteLiquidar.reduce((acc, v) => acc + (v.tarifa ?? 0), 0)
 
     // Cheques en cartera
     const chequesCartera = await prisma.chequeRecibido.findMany({
