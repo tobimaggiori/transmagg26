@@ -13,7 +13,7 @@ import { prisma } from "@/lib/prisma"
 import { puedeAcceder } from "@/lib/permissions"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { FiltroPeriodo } from "@/components/contabilidad/filtro-periodo"
-import { LibroIibbClient } from "./libro-iibb-client"
+// LibroIibbClient removed — data is shown inline, export buttons handle PDF
 import type { Rol } from "@/types"
 
 /* ── Tipos internos (mismos que pdf-libro-iibb.ts) ─────────────────────────── */
@@ -574,10 +574,26 @@ export default async function ContabilidadIibbPage({
         </div>
       </div>
 
-      {/* ── LibroIibbClient (generacion del libro) ─────────────────────────── */}
-      <div className="border-t pt-6">
-        <LibroIibbClient libros={[]} />
-      </div>
+      {/* Botón Exportar PDF al pie */}
+      {hayDatos && (
+        <div className="flex gap-2 border-t pt-4">
+          <a
+            href={`/api/contabilidad/iibb/pdf${exportQuery}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-2 hover:bg-primary/90"
+          >
+            Exportar PDF
+          </a>
+          <a
+            href={`/api/contabilidad/iibb/excel${exportQuery}`}
+            download
+            className="h-9 px-4 rounded-md border text-sm font-medium inline-flex items-center gap-2 hover:bg-accent"
+          >
+            Exportar Excel
+          </a>
+        </div>
+      )}
     </div>
   )
 }
