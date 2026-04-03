@@ -101,26 +101,6 @@ interface ChequeEmitido {
   cuenta: string
 }
 
-interface GrupoPendiente {
-  empresaId?: string
-  fleteroId?: string
-  razonSocial: string
-  totalTarifaBase?: number
-  total?: number
-  cantidadViajes: number
-  listosParaFacturar?: number
-  bloqueados?: number
-  viajes: Array<{
-    id: string
-    fechaViaje: string
-    procedencia: string | null
-    destino: string | null
-    tarifa?: number
-    total?: number | null
-    nroCartaPorte?: string | null
-    cartaPorteS3Key?: string | null
-  }>
-}
 
 type ModalTipo =
   | "deuda-empresas"

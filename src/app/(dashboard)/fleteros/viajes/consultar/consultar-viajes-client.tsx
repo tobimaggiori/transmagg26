@@ -184,7 +184,6 @@ function hayCambios(form: FormViaje, original: ViajeDetalle): boolean {
 
 function PanelDetalle({
   viaje,
-  fleteros,
   onGuardar,
   onCerrar,
   onCambiarEmpresa,
@@ -192,7 +191,6 @@ function PanelDetalle({
   onEliminar,
 }: {
   viaje: ViajeDetalle
-  fleteros: Fletero[]
   onGuardar: () => void
   onCerrar: () => void
   onCambiarEmpresa: () => void
@@ -1171,7 +1169,6 @@ export function ConsultarViajesClient({
       {viajeDetalle && (
         <PanelDetalle
           viaje={viajeDetalle}
-          fleteros={fleteros}
           onGuardar={async () => {
             await cargar()
             // Refresh the detail panel with updated data
