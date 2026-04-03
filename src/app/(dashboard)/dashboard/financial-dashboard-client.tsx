@@ -403,10 +403,38 @@ function ChequesEmitidosModal() {
   )
 }
 
-// --- Modal Pendiente de Liquidar (con NRO CPE clickeable) ---
+// --- Modal Pendiente de Liquidar ---
+
+interface ViajeLiquidar {
+  id: string
+  fechaViaje: string
+  nroCartaPorte: string | null
+  cartaPorteS3Key: string | null
+  tieneCpe: boolean
+  remito: string | null
+  cupo: string | null
+  tieneCupo: boolean
+  mercaderia: string | null
+  procedencia: string | null
+  destino: string | null
+  kilos: number | null
+  tarifa: number
+  subtotal: number
+  iva: number
+  total: number
+}
+
+interface GrupoLiquidar {
+  fleteroId: string
+  razonSocial: string
+  comisionPct: number
+  totalGeneral: number
+  cantidadViajes: number
+  viajes: ViajeLiquidar[]
+}
 
 function PendienteLiquidarModal() {
-  const [data, setData] = useState<GrupoPendiente[] | null>(null)
+  const [data, setData] = useState<GrupoLiquidar[] | null>(null)
   const { estado: estadoPDF, abrirPDF, cerrarPDF } = usePDFViewer()
 
   useEffect(() => {
@@ -424,49 +452,65 @@ function PendienteLiquidarModal() {
             <div className="flex justify-between items-center">
               <p className="font-semibold">{grupo.razonSocial}</p>
               <div className="text-right">
-                <p className="font-bold">{formatearMoneda(grupo.total ?? 0)}</p>
-                <p className="text-xs text-muted-foreground">{grupo.cantidadViajes} viaje(s)</p>
+                <p className="font-bold">{formatearMoneda(grupo.totalGeneral)}</p>
+                <p className="text-xs text-muted-foreground">{grupo.cantidadViajes} viaje(s) · Comisión {grupo.comisionPct}%</p>
               </div>
             </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-muted-foreground text-xs border-b uppercase">
-                  <th className="text-left py-1">Fecha</th>
-                  <th className="text-left py-1">Procedencia</th>
-                  <th className="text-left py-1">Destino</th>
-                  <th className="text-left py-1">Nro CPE</th>
-                  <th className="text-right py-1">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {grupo.viajes.map((v) => (
-                  <tr key={v.id} className="border-b last:border-0">
-                    <td className="py-1">{formatearFecha(v.fechaViaje)}</td>
-                    <td className="py-1">{v.procedencia ?? "—"}</td>
-                    <td className="py-1">{v.destino ?? "—"}</td>
-                    <td className="py-1">
-                      {v.nroCartaPorte ? (
-                        v.cartaPorteS3Key ? (
-                          <button
-                            type="button"
-                            onClick={() => abrirPDF({
-                              s3Key: v.cartaPorteS3Key!,
-                              titulo: `Carta de Porte — ${v.nroCartaPorte}`,
-                            })}
-                            className="text-primary hover:underline font-medium text-xs"
-                          >
-                            {v.nroCartaPorte}
-                          </button>
-                        ) : (
-                          <span className="text-xs">{v.nroCartaPorte}</span>
-                        )
-                      ) : <span className="text-xs text-muted-foreground">N/A</span>}
-                    </td>
-                    <td className="text-right py-1">{v.total != null ? formatearMoneda(v.total) : "—"}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-muted-foreground text-xs border-b uppercase">
+                    <th className="text-left py-1">Fecha</th>
+                    <th className="text-left py-1">CPE</th>
+                    <th className="text-left py-1">Remito</th>
+                    <th className="text-left py-1">Cupo</th>
+                    <th className="text-left py-1">Mercadería</th>
+                    <th className="text-left py-1">Origen</th>
+                    <th className="text-left py-1">Destino</th>
+                    <th className="text-right py-1">Kilos</th>
+                    <th className="text-right py-1">Tarifa</th>
+                    <th className="text-right py-1">Subtotal</th>
+                    <th className="text-right py-1">IVA</th>
+                    <th className="text-right py-1">Total</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {grupo.viajes.map((v) => (
+                    <tr key={v.id} className="border-b last:border-0">
+                      <td className="py-1 whitespace-nowrap">{formatearFecha(v.fechaViaje)}</td>
+                      <td className="py-1">
+                        {v.tieneCpe && v.nroCartaPorte ? (
+                          v.cartaPorteS3Key ? (
+                            <button
+                              type="button"
+                              onClick={() => abrirPDF({
+                                s3Key: v.cartaPorteS3Key!,
+                                titulo: `Carta de Porte — ${v.nroCartaPorte}`,
+                              })}
+                              className="text-primary hover:underline font-medium text-xs"
+                            >
+                              {v.nroCartaPorte}
+                            </button>
+                          ) : (
+                            <span className="text-xs">{v.nroCartaPorte}</span>
+                          )
+                        ) : <span className="text-xs text-muted-foreground">N/A</span>}
+                      </td>
+                      <td className="py-1">{v.remito ?? "—"}</td>
+                      <td className="py-1">{v.tieneCupo && v.cupo ? v.cupo : <span className="text-muted-foreground">N/A</span>}</td>
+                      <td className="py-1">{v.mercaderia ?? "—"}</td>
+                      <td className="py-1">{v.procedencia ?? "—"}</td>
+                      <td className="py-1">{v.destino ?? "—"}</td>
+                      <td className="text-right py-1">{v.kilos?.toLocaleString("es-AR") ?? "—"}</td>
+                      <td className="text-right py-1">{formatearMoneda(v.tarifa)}</td>
+                      <td className="text-right py-1">{formatearMoneda(v.subtotal)}</td>
+                      <td className="text-right py-1">{formatearMoneda(v.iva)}</td>
+                      <td className="text-right py-1 font-medium">{formatearMoneda(v.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ))}
       </div>
