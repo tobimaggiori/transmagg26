@@ -8,6 +8,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from "react"
 import { formatearMoneda, formatearFecha, cn } from "@/lib/utils"
+import { calcularTotalViaje } from "@/lib/viajes"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { PDFViewer } from "@/components/ui/pdf-viewer"
@@ -218,7 +219,7 @@ function PanelDetalle({
   // Cálculos del resumen
   const kilos = parseFloat(form.kilos) || 0
   const tarifa = parseFloat(form.tarifa) || 0
-  const subtotal = kilos * tarifa
+  const subtotal = kilos > 0 && tarifa > 0 ? calcularTotalViaje(kilos, tarifa) : 0
   // Buscar comisión del fletero
   const fletero = fleteros.find((f) => f.id === viaje.fleteroId)
   const comisionPct = fletero?.comisionDefault ?? 0
@@ -474,7 +475,7 @@ function PanelDetalle({
           <div className="rounded-lg border bg-muted/30 p-4 space-y-2 text-sm font-mono">
             <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground mb-2">Resumen del viaje</p>
             <div className="flex justify-between">
-              <span>Subtotal (kilos x tarifa):</span>
+              <span>Subtotal (ton x tarifa):</span>
               <span>{formatearMoneda(subtotal)}</span>
             </div>
             {viaje.fleteroId && comisionPct > 0 && (
@@ -503,7 +504,7 @@ function PanelDetalle({
               <span>TOTAL EMPRESA:</span>
               <span>{formatearMoneda(totalEmpresa)}</span>
             </div>
-            <p className="text-xs text-muted-foreground">(kilos x tarifa)</p>
+            <p className="text-xs text-muted-foreground">(ton x tarifa)</p>
           </div>
 
           {/* Errores y éxito */}
