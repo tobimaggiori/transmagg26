@@ -644,7 +644,14 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
   useEffect(() => {
     fetch("/api/dashboard-financiero")
       .then((r) => r.json())
-      .then((d) => { setData(d?.alertasFci !== undefined ? d : null); setLoading(false) })
+      .then((d) => {
+        if (d && typeof d === "object" && !d.error) {
+          setData({ ...d, alertasFci: d.alertasFci ?? [], cuentas: d.cuentas ?? [] })
+        } else {
+          setData(null)
+        }
+        setLoading(false)
+      })
       .catch(() => setLoading(false))
     fetch("/api/dashboard-financiero/efectivo-caja")
       .then((r) => r.json())
