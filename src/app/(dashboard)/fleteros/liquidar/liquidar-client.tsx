@@ -12,13 +12,14 @@ import Link from "next/link"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
 import { labelCondicionIva, formatearNroComprobante } from "@/lib/liquidacion-utils"
+import { SearchCombobox } from "@/components/ui/search-combobox"
 import { PDFViewer } from "@/components/ui/pdf-viewer"
 import { usePDFViewer } from "@/hooks/use-pdf-viewer"
 import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type Fletero = { id: string; razonSocial: string; comisionDefault?: number }
+type Fletero = { id: string; razonSocial: string; cuit: string; comisionDefault?: number }
 
 type FleteroInfo = {
   razonSocial: string
@@ -203,11 +204,11 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
   const { estado: estadoPDF, abrirPDF, cerrarPDF } = usePDFViewer()
 
   const cargarDatos = useCallback(async () => {
-    if (!fleteroId) return
     setCargando(true)
     setExitoLiquidacion(false)
     try {
-      const res = await fetch(`/api/liquidaciones?fleteroId=${fleteroId}`)
+      const url = fleteroId ? `/api/liquidaciones?fleteroId=${fleteroId}` : "/api/liquidaciones"
+      const res = await fetch(url)
       if (res.ok) {
         const data = await res.json() as {
           viajesPendientes: ViajeParaLiquidar[]
@@ -333,27 +334,19 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
 
       {esInterno && (
         <div className="flex flex-wrap gap-4 p-4 bg-muted/40 rounded-lg border">
-          <div className="flex flex-col gap-1 min-w-[250px]">
-            <label className="text-xs font-medium text-muted-foreground">Fletero</label>
-            <select
+          <div className="flex flex-col gap-1 min-w-[300px]">
+            <label className="text-xs font-medium text-muted-foreground">Fletero (dejar vacío para ver todos)</label>
+            <SearchCombobox
+              items={fleteros.map((f) => ({ id: f.id, label: f.razonSocial, sublabel: f.cuit }))}
               value={fleteroId}
-              onChange={(e) => { setFleteroId(e.target.value); setSeleccionados(new Set()); setEnPreview(false); setExitoLiquidacion(false) }}
-              className="h-9 rounded-md border bg-background px-2 text-sm"
-            >
-              <option value="">Seleccioná un fletero...</option>
-              {fleteros.map((f) => <option key={f.id} value={f.id}>{f.razonSocial}</option>)}
-            </select>
+              onChange={(id) => { setFleteroId(id); setSeleccionados(new Set()); setEnPreview(false); setExitoLiquidacion(false) }}
+              placeholder="Buscar por razón social o CUIT..."
+            />
           </div>
         </div>
       )}
 
-      {!fleteroId && esInterno && (
-        <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
-          <p className="text-lg">Seleccioná un Fletero para ver sus viajes pendientes de liquidación</p>
-        </div>
-      )}
-
-      {fleteroId && (
+      {(fleteroId || esInterno) && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">

@@ -34,7 +34,13 @@ export default async function NuevaFacturaSeguroPage() {
       orderBy: { patenteChasis: "asc" },
     }),
     prisma.cuenta.findMany({
-      where: { activa: true },
+      where: {
+        activa: true,
+        OR: [
+          { cuentaPadreId: { not: null } },
+          { tipo: { not: "BANCO" } },
+        ],
+      },
       select: { id: true, nombre: true, tipo: true },
       orderBy: { nombre: "asc" },
     }),

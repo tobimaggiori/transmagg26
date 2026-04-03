@@ -10,18 +10,17 @@ export default async function NuevoPagoImpuestoPage() {
   if (!session?.user) redirect("/login")
   if (!puedeAcceder(session.user.rol as Rol, "cuentas")) redirect("/dashboard")
 
-  const [cuentas, tarjetas] = await Promise.all([
-    prisma.cuenta.findMany({
-      where: { activa: true },
-      select: { id: true, nombre: true, tipo: true },
-      orderBy: { nombre: "asc" },
-    }),
-    prisma.tarjeta.findMany({
-      where: { activa: true },
-      select: { id: true, nombre: true, banco: true, ultimos4: true, tipo: true },
-      orderBy: { nombre: "asc" },
-    }),
-  ])
+  const cuentas = await prisma.cuenta.findMany({
+    where: {
+      activa: true,
+      OR: [
+        { cuentaPadreId: { not: null } },
+        { tipo: { not: "BANCO" } },
+      ],
+    },
+    select: { id: true, nombre: true, tipo: true },
+    orderBy: { nombre: "asc" },
+  })
 
-  return <NuevoPagoImpuestoClient cuentas={cuentas} tarjetas={tarjetas} />
+  return <NuevoPagoImpuestoClient cuentas={cuentas} />
 }

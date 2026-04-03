@@ -21,7 +21,6 @@ import { formatearMoneda, formatearFecha } from "@/lib/utils"
 
 interface Proveedor { id: string; razonSocial: string; cuit: string }
 interface Cuenta { id: string; nombre: string; tipo?: string }
-interface Tarjeta { id: string; nombre: string; tipo: string; banco: string; ultimos4: string }
 interface ChequeEnCartera {
   id: string
   nroCheque: string
@@ -47,19 +46,10 @@ interface FacturaPendiente {
   fleteroId: string | null
 }
 
-interface ResumenInfo {
-  existe: boolean
-  tienePdf: boolean
-  periodo: string
-  id?: string
-  s3Key?: string | null
-}
-
 interface RegistrarPagoProveedorClientProps {
   proveedores: Proveedor[]
   cuentas: Cuenta[]
   cuentasChequera: Cuenta[]
-  tarjetas: Tarjeta[]
   chequesEnCartera: ChequeEnCartera[]
 }
 
@@ -68,17 +58,9 @@ const TIPOS_PAGO = [
   { value: "CHEQUE_PROPIO", label: "Cheque propio (ECheq)" },
   { value: "CHEQUE_FISICO_TERCERO", label: "Cheque físico de tercero (endoso)" },
   { value: "CHEQUE_ELECTRONICO_TERCERO", label: "ECheq de tercero (endoso)" },
-  { value: "TARJETA_CREDITO", label: "Tarjeta de crédito" },
-  { value: "TARJETA_DEBITO", label: "Tarjeta de débito" },
-  { value: "TARJETA_PREPAGA", label: "Tarjeta prepaga" },
+  { value: "TARJETA", label: "Tarjeta" },
   { value: "EFECTIVO", label: "Efectivo" },
 ] as const
-
-const TIPOS_TARJETA: Record<string, string> = {
-  TARJETA_CREDITO: "CREDITO",
-  TARJETA_DEBITO: "DEBITO",
-  TARJETA_PREPAGA: "PREPAGA",
-}
 
 /**
  * RegistrarPagoProveedorClient: RegistrarPagoProveedorClientProps -> JSX.Element
@@ -90,7 +72,6 @@ export function RegistrarPagoProveedorClient({
   proveedores,
   cuentas,
   cuentasChequera,
-  tarjetas,
   chequesEnCartera,
 }: RegistrarPagoProveedorClientProps) {
   // Paso 1: proveedor seleccionado
@@ -106,20 +87,11 @@ export function RegistrarPagoProveedorClient({
   const [observaciones, setObservaciones] = useState("")
   const [cuentaId, setCuentaId] = useState("")
   const [chequeRecibidoId, setChequeRecibidoId] = useState("")
-  const [tarjetaId, setTarjetaId] = useState("")
   const [comprobantePdfS3Key, setComprobantePdfS3Key] = useState("")
   const [chequeNro, setChequeNro] = useState("")
   const [chequeFechaEmision, setChequeFechaEmision] = useState(new Date().toISOString().slice(0, 10))
   const [chequeFechaPago, setChequeFechaPago] = useState("")
-  const [chequeTipoDoc, setChequeTipoDoc] = useState("CUIT")
-  const [chequeNroDoc, setChequeNroDoc] = useState("")
-  const [chequeMailBeneficiario, setChequeMailBeneficiario] = useState("")
   const [chequeClausula, setChequeClausula] = useState("NO_A_LA_ORDEN")
-  const [chequeDescripcion1, setChequeDescripcion1] = useState("")
-  const [chequeDescripcion2, setChequeDescripcion2] = useState("")
-  // Resumen tarjeta info
-  const [resumenInfo, setResumenInfo] = useState<ResumenInfo | null>(null)
-  const [cargandoResumen, setCargandoResumen] = useState(false)
   // Estado de envío
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState("")
@@ -137,7 +109,7 @@ export function RegistrarPagoProveedorClient({
     "CHEQUE_ELECTRONICO_TERCERO",
   ].includes(tipoPago)
 
-  const esTarjeta = ["TARJETA_CREDITO", "TARJETA_DEBITO", "TARJETA_PREPAGA"].includes(tipoPago)
+  const esTarjeta = tipoPago === "TARJETA"
 
   // Filtrar cheques según tipo
   const chequesFiltrados = chequesEnCartera.filter((c) => {
@@ -146,10 +118,7 @@ export function RegistrarPagoProveedorClient({
     return false
   })
 
-  // Filtrar tarjetas según tipo de pago
-  const tarjetasFiltradas = tarjetas.filter(
-    (t) => t.tipo === (TIPOS_TARJETA[tipoPago] ?? "")
-  )
+  // (tarjeta selection removed — when TARJETA is selected, the expense stays pending)
 
   // Al seleccionar proveedor: cargar facturas pendientes
   async function seleccionarProveedor(id: string) {
@@ -178,52 +147,12 @@ export function RegistrarPagoProveedorClient({
     setObservaciones("")
     setCuentaId("")
     setChequeRecibidoId("")
-    setTarjetaId("")
     setComprobantePdfS3Key("")
     setChequeNro("")
     setChequeFechaEmision(new Date().toISOString().slice(0, 10))
     setChequeFechaPago("")
-    setChequeTipoDoc("CUIT")
-    setChequeNroDoc("")
-    setChequeMailBeneficiario("")
     setChequeClausula("NO_A_LA_ORDEN")
-    setChequeDescripcion1("")
-    setChequeDescripcion2("")
-    setResumenInfo(null)
     setError("")
-  }
-
-  // Al cambiar tarjetaId + fecha: verificar resumen del mes
-  async function verificarResumenTarjeta(tId: string, fecha: string) {
-    if (!tId || !fecha) return
-    const periodo = fecha.slice(0, 7) // YYYY-MM
-    setCargandoResumen(true)
-    const r = await fetch(`/api/tarjetas/${tId}/resumenes`)
-    const d = await r.json()
-    const resumenes: Array<{ id: string; periodo: string; s3Key: string | null }> = Array.isArray(d) ? d : []
-    const resumen = resumenes.find((rs) => rs.periodo === periodo)
-    if (resumen) {
-      setResumenInfo({
-        existe: true,
-        tienePdf: !!resumen.s3Key,
-        periodo,
-        id: resumen.id,
-        s3Key: resumen.s3Key,
-      })
-    } else {
-      setResumenInfo({ existe: false, tienePdf: false, periodo })
-    }
-    setCargandoResumen(false)
-  }
-
-  function handleTarjetaChange(tId: string) {
-    setTarjetaId(tId)
-    if (tId && fechaPago) verificarResumenTarjeta(tId, fechaPago)
-  }
-
-  function handleFechaChange(f: string) {
-    setFechaPago(f)
-    if (tarjetaId && esTarjeta && f) verificarResumenTarjeta(tarjetaId, f)
   }
 
   // Preparar payload y enviar
@@ -239,17 +168,17 @@ export function RegistrarPagoProveedorClient({
       comprobantePdfS3Key: comprobantePdfS3Key || null,
       cuentaId: cuentaId || null,
       chequeRecibidoId: chequeRecibidoId || null,
-      tarjetaId: tarjetaId || null,
+      tarjetaId: null,
       chequePropio: tipoPago === "CHEQUE_PROPIO" ? {
         nroCheque: chequeNro || null,
-        tipoDocBeneficiario: chequeTipoDoc,
-        nroDocBeneficiario: chequeNroDoc,
-        mailBeneficiario: chequeMailBeneficiario || null,
+        tipoDocBeneficiario: "CUIT",
+        nroDocBeneficiario: proveedor?.cuit ?? "",
+        mailBeneficiario: null,
         fechaEmision: chequeFechaEmision,
         fechaPago: chequeFechaPago,
         clausula: chequeClausula,
-        descripcion1: chequeDescripcion1 || null,
-        descripcion2: chequeDescripcion2 || null,
+        descripcion1: null,
+        descripcion2: null,
       } : null,
     }
     const res = await fetch(`/api/proveedores/${proveedorId}/pago`, {
@@ -282,11 +211,12 @@ export function RegistrarPagoProveedorClient({
     }
     if (tipoPago === "TRANSFERENCIA" && !cuentaId) { setError("Seleccioná la cuenta de origen"); return }
     if (tipoPago === "CHEQUE_PROPIO" && !cuentaId) { setError("Seleccioná la cuenta/chequera"); return }
+    if (tipoPago === "CHEQUE_PROPIO" && !chequeNro.trim()) { setError("Ingresá el número de cheque"); return }
     if ((tipoPago === "CHEQUE_FISICO_TERCERO" || tipoPago === "CHEQUE_ELECTRONICO_TERCERO") && !chequeRecibidoId) {
       setError("Seleccioná el cheque a endosar")
       return
     }
-    if (esTarjeta && !tarjetaId) { setError("Seleccioná la tarjeta"); return }
+    // TARJETA: no requiere seleccionar tarjeta, queda pendiente de asignación
 
     // Mostrar modal si requiere comprobante y no hay PDF
     if (requiereComprobante && !comprobantePdfS3Key) {
@@ -419,7 +349,7 @@ export function RegistrarPagoProveedorClient({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Fecha de pago</Label>
-              <Input type="date" value={fechaPago} onChange={(e) => handleFechaChange(e.target.value)} />
+              <Input type="date" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} />
             </div>
             <div>
               <Label>Monto a pagar</Label>
@@ -440,13 +370,8 @@ export function RegistrarPagoProveedorClient({
                 const nuevoTipo = e.target.value
                 setTipoPago(nuevoTipo)
                 setChequeRecibidoId("")
-                setTarjetaId("")
                 setCuentaId("")
                 setComprobantePdfS3Key("")
-                setResumenInfo(null)
-                if (nuevoTipo === "CHEQUE_PROPIO" && proveedor?.cuit) {
-                  setChequeNroDoc(proveedor.cuit)
-                }
               }}
             >
               {TIPOS_PAGO.map((t) => (
@@ -478,8 +403,8 @@ export function RegistrarPagoProveedorClient({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label>Nro. cheque (opcional)</Label>
-                  <Input value={chequeNro} onChange={(e) => setChequeNro(e.target.value)} placeholder="Asignado al emitir" />
+                  <Label>Nro. cheque *</Label>
+                  <Input value={chequeNro} onChange={(e) => setChequeNro(e.target.value)} placeholder="Número de cheque" />
                 </div>
                 <div>
                   <Label>Cláusula</Label>
@@ -499,38 +424,11 @@ export function RegistrarPagoProveedorClient({
                   <Input type="date" value={chequeFechaPago} onChange={(e) => setChequeFechaPago(e.target.value)} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>Tipo doc beneficiario</Label>
-                  <Select value={chequeTipoDoc} onChange={(e) => setChequeTipoDoc(e.target.value)}>
-                    <option value="CUIT">CUIT</option>
-                    <option value="CUIL">CUIL</option>
-                    <option value="CDI">CDI</option>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Nro doc beneficiario</Label>
-                  <Input value={chequeNroDoc} onChange={(e) => setChequeNroDoc(e.target.value)} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>Mail beneficiario (opcional)</Label>
-                  <Input type="email" value={chequeMailBeneficiario} onChange={(e) => setChequeMailBeneficiario(e.target.value)} placeholder="email@ejemplo.com" />
-                </div>
-                <div className="space-y-1">
-                  {/* spacer */}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>Descripción 1 (opcional)</Label>
-                  <Input value={chequeDescripcion1} onChange={(e) => setChequeDescripcion1(e.target.value)} />
-                </div>
-                <div>
-                  <Label>Descripción 2 (opcional)</Label>
-                  <Input value={chequeDescripcion2} onChange={(e) => setChequeDescripcion2(e.target.value)} />
-                </div>
+              {/* Beneficiario: datos del proveedor (solo lectura) */}
+              <div className="rounded-md border bg-muted/30 px-4 py-3 space-y-1 text-sm">
+                <p><span className="text-muted-foreground">Tipo beneficiario:</span> <strong>Proveedor</strong></p>
+                <p><span className="text-muted-foreground">Nombre:</span> <strong>{proveedor?.razonSocial ?? "—"}</strong></p>
+                <p><span className="text-muted-foreground">CUIT:</span> <strong>{proveedor?.cuit ?? "—"}</strong></p>
               </div>
             </>
           )}
@@ -573,27 +471,11 @@ export function RegistrarPagoProveedorClient({
           )}
 
           {esTarjeta && (
-            <div>
-              <Label>Tarjeta ({TIPOS_TARJETA[tipoPago] ?? ""})</Label>
-              <Select value={tarjetaId} onChange={(e) => handleTarjetaChange(e.target.value)}>
-                <option value="">— Seleccioná tarjeta —</option>
-                {tarjetasFiltradas.map((t) => (
-                  <option key={t.id} value={t.id}>{t.nombre} — {t.banco} •••• {t.ultimos4}</option>
-                ))}
-              </Select>
-              {tarjetaId && !cargandoResumen && resumenInfo && (
-                <div className={`mt-2 text-xs rounded px-3 py-2 ${resumenInfo.existe && resumenInfo.tienePdf ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"}`}>
-                  {resumenInfo.existe && resumenInfo.tienePdf && (
-                    <span>✓ Resumen {resumenInfo.periodo} ya cargado. <ViewPDF s3Key={resumenInfo.s3Key} size="sm" label="Ver" /></span>
-                  )}
-                  {resumenInfo.existe && !resumenInfo.tienePdf && (
-                    <span>⚠ El resumen {resumenInfo.periodo} existe pero aún no tiene PDF cargado. Podés cargarlo en Contabilidad → Tarjetas.</span>
-                  )}
-                  {!resumenInfo.existe && (
-                    <span>⚠ No hay resumen de {resumenInfo.periodo} para esta tarjeta. Se creará automáticamente al registrar el pago.</span>
-                  )}
-                </div>
-              )}
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+              <p className="text-sm text-amber-800">
+                El gasto quedará pendiente de asignación a una tarjeta.
+                Podés asignarlo luego desde Contabilidad → Tarjetas al cerrar el resumen.
+              </p>
             </div>
           )}
 

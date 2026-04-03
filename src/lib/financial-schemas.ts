@@ -79,6 +79,8 @@ export const crearCuentaSchema = z.object({
   tieneTarjetasPrepagasChoferes: z.boolean().default(false),
   formatoReconciliacion: formatoReconciliacionSchema.nullable().optional(),
   esCuentaComitenteBroker: z.boolean().default(false),
+  tieneIibbSircrebTucuman: z.boolean().default(false),
+  alicuotaIibbSircrebTucuman: z.number().min(0).default(0.06),
   cuentaPadreId: z.string().uuid().nullable().optional(),
   nroCuenta: z.string().nullable().optional(),
   cbu: z.string().nullable().optional(),

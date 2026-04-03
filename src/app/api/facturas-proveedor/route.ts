@@ -32,9 +32,7 @@ const pagoOpcionalSchema = z.object({
     "CHEQUE_PROPIO",
     "CHEQUE_FISICO_TERCERO",
     "CHEQUE_ELECTRONICO_TERCERO",
-    "TARJETA_CREDITO",
-    "TARJETA_DEBITO",
-    "TARJETA_PREPAGA",
+    "TARJETA",
     "EFECTIVO",
   ]),
   observaciones: z.string().optional().nullable(),
@@ -347,7 +345,7 @@ export async function POST(request: NextRequest) {
 
       // 4. Pago opcional — dentro de la misma transacción atómica
       let pagoResult: { nuevoEstado: string } | null = null
-      const esPagoTarjeta = data.pago && ["TARJETA_CREDITO", "TARJETA_DEBITO", "TARJETA_PREPAGA"].includes(data.pago.tipo)
+      const esPagoTarjeta = data.pago && data.pago.tipo === "TARJETA"
       if (data.pago && esPagoTarjeta) {
         // Tarjeta: no crear pago ni movimiento, solo marcar como pendiente tarjeta
         await tx.facturaProveedor.update({

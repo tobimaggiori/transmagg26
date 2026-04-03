@@ -66,6 +66,7 @@ export function ConsultarRecibosClient({ empresas }: ConsultarRecibosClientProps
   const [empresaId, setEmpresaId] = useState("")
   const [desde, setDesde] = useState("")
   const [hasta, setHasta] = useState("")
+  const [filtroNroRecibo, setFiltroNroRecibo] = useState("")
   const [recibos, setRecibos] = useState<ReciboRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -103,7 +104,14 @@ export function ConsultarRecibosClient({ empresas }: ConsultarRecibosClientProps
     })
   }
 
-  const totalCobradoGeneral = recibos.reduce((s, r) => s + r.totalCobrado, 0)
+  const recibosFiltrados = filtroNroRecibo
+    ? recibos.filter((r) =>
+        fmtNroRecibo(r.ptoVenta, r.nro)
+          .includes(filtroNroRecibo.trim())
+      )
+    : recibos
+
+  const totalCobradoGeneral = recibosFiltrados.reduce((s, r) => s + r.totalCobrado, 0)
 
   return (
     <div className="max-w-6xl mx-auto mt-6 space-y-6">
@@ -112,7 +120,7 @@ export function ConsultarRecibosClient({ empresas }: ConsultarRecibosClientProps
       {/* Filtros */}
       <Card>
         <CardContent className="pt-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
             <div className="md:col-span-2">
               <Label className="text-xs mb-1">Empresa</Label>
               <SearchCombobox
@@ -120,6 +128,16 @@ export function ConsultarRecibosClient({ empresas }: ConsultarRecibosClientProps
                 value={empresaId}
                 onChange={setEmpresaId}
                 placeholder="Todas las empresas..."
+              />
+            </div>
+            <div>
+              <Label className="text-xs mb-1">Nro Recibo</Label>
+              <Input
+                type="text"
+                placeholder="Ej: 0001-00000012"
+                value={filtroNroRecibo}
+                onChange={(e) => setFiltroNroRecibo(e.target.value)}
+                className="h-9"
               />
             </div>
             <div>
@@ -141,6 +159,7 @@ export function ConsultarRecibosClient({ empresas }: ConsultarRecibosClientProps
                 setEmpresaId("")
                 setDesde("")
                 setHasta("")
+                setFiltroNroRecibo("")
                 setRecibos([])
                 setBuscado(false)
                 setError(null)
@@ -162,7 +181,7 @@ export function ConsultarRecibosClient({ empresas }: ConsultarRecibosClientProps
       {buscado && !loading && (
         <Card>
           <CardContent className="pt-4">
-            {recibos.length === 0 ? (
+            {recibosFiltrados.length === 0 ? (
               <p className="text-muted-foreground text-sm py-4 text-center">
                 No se encontraron recibos con los filtros indicados.
               </p>
@@ -182,7 +201,7 @@ export function ConsultarRecibosClient({ empresas }: ConsultarRecibosClientProps
                     </tr>
                   </thead>
                   <tbody>
-                    {recibos.map((r) => (
+                    {recibosFiltrados.map((r) => (
                       <tr
                         key={r.id}
                         className="border-b hover:bg-muted/40 cursor-pointer"
@@ -217,7 +236,7 @@ export function ConsultarRecibosClient({ empresas }: ConsultarRecibosClientProps
                   <tfoot>
                     <tr className="border-t font-bold">
                       <td colSpan={5} className="py-2 pr-3">
-                        {recibos.length} recibo(s)
+                        {recibosFiltrados.length} recibo(s)
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">{fmt(totalCobradoGeneral)}</td>
                       <td colSpan={2}></td>

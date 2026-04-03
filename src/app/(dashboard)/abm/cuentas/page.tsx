@@ -14,7 +14,7 @@ export default async function CuentasPage() {
 
   const cuentas = await prisma.cuenta.findMany({
     orderBy: { nombre: "asc" },
-    select: { id: true, nombre: true, tipo: true, bancoOEntidad: true, moneda: true, activa: true, tieneChequera: true, tienePlanillaEmisionMasiva: true, tieneCuentaRemunerada: true, tieneTarjetasPrepagasChoferes: true, tieneImpuestoDebcred: true, alicuotaImpuesto: true },
+    select: { id: true, nombre: true, tipo: true, bancoOEntidad: true, moneda: true, activa: true, tieneChequera: true, tienePlanillaEmisionMasiva: true, tieneCuentaRemunerada: true, tieneTarjetasPrepagasChoferes: true, tieneImpuestoDebcred: true, alicuotaImpuesto: true, tieneIibbSircrebTucuman: true, alicuotaIibbSircrebTucuman: true, cuentaPadreId: true, _count: { select: { movimientosSinFactura: true } } },
   })
 
   return (

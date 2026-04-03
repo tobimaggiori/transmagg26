@@ -37,7 +37,7 @@ type ViajeParaFacturar = {
   estadoLiquidacion: string
   estadoFactura: string
   enLiquidaciones: Array<{
-    liquidacion: { estado: string; cae: string | null; arcaEstado: string | null }
+    liquidacion: { estado: string }
   }>
   // editados localmente
   kilosEdit?: number

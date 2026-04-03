@@ -44,7 +44,7 @@ datasource db {
 // Titular tarjeta tipo:        EMPRESA | CHOFER | EMPLEADO
 // Tipo adelanto fletero:       EFECTIVO | TRANSFERENCIA | CHEQUE_PROPIO | CHEQUE_TERCERO | COMBUSTIBLE
 // Estado adelanto fletero:     PENDIENTE_DESCUENTO | DESCONTADO_PARCIAL | DESCONTADO_TOTAL
-// Tipo pago proveedor:         TRANSFERENCIA | CHEQUE_PROPIO | CHEQUE_FISICO_TERCERO | CHEQUE_ELECTRONICO_TERCERO | TARJETA_CREDITO | TARJETA_DEBITO | TARJETA_PREPAGA | EFECTIVO
+// Tipo pago proveedor:         TRANSFERENCIA | CHEQUE_PROPIO | CHEQUE_FISICO_TERCERO | CHEQUE_ELECTRONICO_TERCERO | TARJETA | EFECTIVO
 // Estado pago factura prov.:   PENDIENTE | PARCIALMENTE_PAGADA | PAGADA
 // Tipo gasto tarjeta (extra):  PAGO_PROVEEDOR
 
@@ -515,6 +515,8 @@ model Cuenta {
   tieneTarjetasPrepagasChoferes  Boolean             @default(false) @map("tiene_tarjetas_prepagas_choferes")
   formatoReconciliacion          String?             @map("formato_reconciliacion")
   esCuentaComitenteBroker        Boolean             @default(false) @map("es_cuenta_comitente_broker")
+  tieneIibbSircrebTucuman        Boolean             @default(false) @map("tiene_iibb_sircreb_tucuman")
+  alicuotaIibbSircrebTucuman     Float               @default(0.06) @map("alicuota_iibb_sircreb_tucuman")
   cuentaPadreId                  String?             @map("cuenta_padre_id")
   nroCuenta                      String?             @map("nro_cuenta")
   cbu                            String?
@@ -1072,7 +1074,7 @@ model ItemFacturaProveedor {
   @@map("items_factura_proveedor")
 }
 
-// TipoPagoProveedor: TRANSFERENCIA | CHEQUE_PROPIO | CHEQUE_FISICO_TERCERO | CHEQUE_ELECTRONICO_TERCERO | TARJETA_CREDITO | TARJETA_DEBITO | TARJETA_PREPAGA | EFECTIVO
+// TipoPagoProveedor: TRANSFERENCIA | CHEQUE_PROPIO | CHEQUE_FISICO_TERCERO | CHEQUE_ELECTRONICO_TERCERO | TARJETA | EFECTIVO
 model PagoProveedor {
   id                  String    @id @default(uuid())
   facturaProveedorId  String    @map("factura_proveedor_id")
@@ -1356,12 +1358,14 @@ model CierreResumenTarjeta {
   id            String    @id @default(uuid())
   tarjetaId     String    @map("tarjeta_id")
   mesAnio       String    @map("mes_anio")
-  totalPagado   Float     @map("total_pagado")
-  cuentaPagoId  String    @map("cuenta_pago_id")
-  fechaPago     DateTime  @map("fecha_pago")
-  pdfS3Key      String?   @map("pdf_s3_key")
-  operadorId    String    @map("operador_id")
-  creadoEn      DateTime  @default(now()) @map("creado_en")
+  totalPagado           Float     @map("total_pagado")
+  diferencia            Float     @default(0) @map("diferencia")
+  descripcionDiferencia String?   @map("descripcion_diferencia")
+  cuentaPagoId          String    @map("cuenta_pago_id")
+  fechaPago             DateTime  @map("fecha_pago")
+  pdfS3Key              String?   @map("pdf_s3_key")
+  operadorId            String    @map("operador_id")
+  creadoEn              DateTime  @default(now()) @map("creado_en")
 
   tarjeta       Tarjeta   @relation(fields: [tarjetaId], references: [id])
   cuentaPago    Cuenta    @relation("CuentaCierreResumenTarjeta", fields: [cuentaPagoId], references: [id])

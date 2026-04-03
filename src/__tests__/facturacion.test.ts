@@ -9,7 +9,7 @@ import { viajeEsFacturable, razonNoFacturable } from "@/lib/facturacion"
 
 function mkViaje(overrides: Partial<{
   estadoFactura: string
-  enLiquidaciones: Array<{ liquidacion: { estado: string; cae: string | null; arcaEstado: string | null } }>
+  enLiquidaciones: Array<{ liquidacion: { estado: string } }>
 }> = {}) {
   return {
     estadoFactura: "PENDIENTE_FACTURAR",
@@ -18,12 +18,10 @@ function mkViaje(overrides: Partial<{
   }
 }
 
-function mkLiquidacion(overrides: Partial<{ estado: string; cae: string | null; arcaEstado: string | null }> = {}) {
+function mkLiquidacion(overrides: Partial<{ estado: string }> = {}) {
   return {
     liquidacion: {
       estado: "EMITIDA",
-      cae: "12345678901234",
-      arcaEstado: "ACEPTADA",
       ...overrides,
     },
   }
@@ -32,8 +30,18 @@ function mkLiquidacion(overrides: Partial<{ estado: string; cae: string | null; 
 // ─── viajeEsFacturable ────────────────────────────────────────────────────────
 
 describe("viajeEsFacturable", () => {
-  it("returns true when estadoFactura=PENDIENTE_FACTURAR, LP EMITIDA con CAE y ACEPTADA", () => {
+  it("returns true when estadoFactura=PENDIENTE_FACTURAR, LP EMITIDA", () => {
     const v = mkViaje({ enLiquidaciones: [mkLiquidacion()] })
+    expect(viajeEsFacturable(v)).toBe(true)
+  })
+
+  it("returns true when LP is PAGADA", () => {
+    const v = mkViaje({ enLiquidaciones: [mkLiquidacion({ estado: "PAGADA" })] })
+    expect(viajeEsFacturable(v)).toBe(true)
+  })
+
+  it("returns true when LP is PARCIALMENTE_PAGADA", () => {
+    const v = mkViaje({ enLiquidaciones: [mkLiquidacion({ estado: "PARCIALMENTE_PAGADA" })] })
     expect(viajeEsFacturable(v)).toBe(true)
   })
 
@@ -52,36 +60,26 @@ describe("viajeEsFacturable", () => {
     expect(viajeEsFacturable(v)).toBe(false)
   })
 
-  it("returns false when LP has no CAE", () => {
-    const v = mkViaje({ enLiquidaciones: [mkLiquidacion({ cae: null })] })
+  it("returns false when LP is ANULADA", () => {
+    const v = mkViaje({ enLiquidaciones: [mkLiquidacion({ estado: "ANULADA" })] })
     expect(viajeEsFacturable(v)).toBe(false)
   })
 
-  it("returns false when LP arcaEstado is PENDIENTE", () => {
-    const v = mkViaje({ enLiquidaciones: [mkLiquidacion({ arcaEstado: "PENDIENTE" })] })
-    expect(viajeEsFacturable(v)).toBe(false)
-  })
-
-  it("returns false when LP arcaEstado is RECHAZADA", () => {
-    const v = mkViaje({ enLiquidaciones: [mkLiquidacion({ arcaEstado: "RECHAZADA" })] })
-    expect(viajeEsFacturable(v)).toBe(false)
-  })
-
-  it("returns true when one of multiple LPs is EMITIDA+CAE+ACEPTADA", () => {
+  it("returns true when one of multiple LPs is in active state", () => {
     const v = mkViaje({
       enLiquidaciones: [
-        mkLiquidacion({ estado: "BORRADOR", cae: null }),
-        mkLiquidacion(),
+        mkLiquidacion({ estado: "BORRADOR" }),
+        mkLiquidacion({ estado: "EMITIDA" }),
       ],
     })
     expect(viajeEsFacturable(v)).toBe(true)
   })
 
-  it("returns false when all LPs fail the condition", () => {
+  it("returns false when all LPs are inactive", () => {
     const v = mkViaje({
       enLiquidaciones: [
-        mkLiquidacion({ cae: null }),
-        mkLiquidacion({ arcaEstado: "PENDIENTE" }),
+        mkLiquidacion({ estado: "BORRADOR" }),
+        mkLiquidacion({ estado: "ANULADA" }),
       ],
     })
     expect(viajeEsFacturable(v)).toBe(false)
@@ -101,18 +99,8 @@ describe("razonNoFacturable", () => {
     expect(razonNoFacturable(v)).toMatch(/liquidaci[oó]n asignada/i)
   })
 
-  it("returns 'La LP no está emitida' when all LPs are BORRADOR", () => {
+  it("returns LP not active message when all LPs are BORRADOR", () => {
     const v = mkViaje({ enLiquidaciones: [mkLiquidacion({ estado: "BORRADOR" })] })
-    expect(razonNoFacturable(v)).toMatch(/emitida/i)
-  })
-
-  it("returns 'La LP no tiene CAE de ARCA' when LP is EMITIDA but cae is null", () => {
-    const v = mkViaje({ enLiquidaciones: [mkLiquidacion({ cae: null })] })
-    expect(razonNoFacturable(v)).toMatch(/CAE/i)
-  })
-
-  it("returns 'La LP no fue aceptada por ARCA' when arcaEstado is not ACEPTADA", () => {
-    const v = mkViaje({ enLiquidaciones: [mkLiquidacion({ arcaEstado: "PENDIENTE" })] })
-    expect(razonNoFacturable(v)).toMatch(/aceptada por ARCA/i)
+    expect(razonNoFacturable(v)).toMatch(/activo|emitida/i)
   })
 })

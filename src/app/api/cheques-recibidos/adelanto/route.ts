@@ -1,7 +1,7 @@
 /**
  * POST /api/cheques-recibidos/adelanto — Registra un cheque recibido sin factura asociada.
  * Usado cuando se recibe un cheque como adelanto antes de emitir la factura.
- * Soporta origen Empresa o Proveedor.
+ * Solo soporta origen Empresa.
  */
 
 import { NextRequest, NextResponse } from "next/server"
@@ -11,27 +11,23 @@ import { invalidDataResponse, notFoundResponse, requireFinancialAccess, serverEr
 import { resolverOperadorId } from "@/lib/session-utils"
 
 const adelantoSchema = z.object({
-  tipoOrigen: z.enum(["EMPRESA", "PROVEEDOR"]),
-  empresaId: z.string().uuid().optional(),
-  proveedorId: z.string().uuid().optional(),
+  tipoOrigen: z.literal("EMPRESA"),
+  empresaId: z.string().uuid("La empresa es obligatoria"),
   esElectronico: z.boolean().default(false),
-  nroCheque: z.string().min(1),
-  bancoEmisor: z.string().min(1),
-  monto: z.number().positive(),
-  fechaEmision: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  fechaCobro: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  nroCheque: z.string().min(1, "El número de cheque es obligatorio"),
+  bancoEmisor: z.string().min(1, "El banco emisor es obligatorio"),
+  monto: z.number().positive("El monto debe ser mayor a 0"),
+  fechaEmision: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de emisión inválida"),
+  fechaCobro: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de cobro inválida"),
   observaciones: z.string().optional().nullable(),
-}).refine(
-  (d) => (d.tipoOrigen === "EMPRESA" && !!d.empresaId) || (d.tipoOrigen === "PROVEEDOR" && !!d.proveedorId),
-  { message: "Debe indicar empresaId o proveedorId según el tipo de origen" },
-)
+})
 
 /**
  * POST: NextRequest -> Promise<NextResponse>
  *
  * Crea un ChequeRecibido sin facturaId (adelanto o depósito sin factura).
  * Estado inicial: EN_CARTERA.
- * Soporta tipoOrigen EMPRESA o PROVEEDOR.
+ * Solo soporta tipoOrigen EMPRESA.
  */
 export async function POST(request: NextRequest) {
   const access = await requireFinancialAccess()
@@ -49,20 +45,16 @@ export async function POST(request: NextRequest) {
     const parsed = adelantoSchema.safeParse(body)
     if (!parsed.success) return invalidDataResponse(parsed.error.flatten())
 
-    const { tipoOrigen, empresaId, proveedorId, ...chequeData } = parsed.data
+    const { tipoOrigen: _tipoOrigen, empresaId, ...chequeData } = parsed.data
+    void _tipoOrigen
 
-    if (tipoOrigen === "EMPRESA") {
-      const empresa = await prisma.empresa.findUnique({ where: { id: empresaId! }, select: { id: true } })
-      if (!empresa) return notFoundResponse("Empresa")
-    } else {
-      const proveedor = await prisma.proveedor.findUnique({ where: { id: proveedorId! }, select: { id: true } })
-      if (!proveedor) return notFoundResponse("Proveedor")
-    }
+    const empresa = await prisma.empresa.findUnique({ where: { id: empresaId }, select: { id: true } })
+    if (!empresa) return notFoundResponse("Empresa")
 
     const cheque = await prisma.chequeRecibido.create({
       data: {
-        empresaId: tipoOrigen === "EMPRESA" ? empresaId! : null,
-        proveedorOrigenId: tipoOrigen === "PROVEEDOR" ? proveedorId! : null,
+        empresaId,
+        proveedorOrigenId: null,
         facturaId: null,
         esElectronico: chequeData.esElectronico,
         nroCheque: chequeData.nroCheque,

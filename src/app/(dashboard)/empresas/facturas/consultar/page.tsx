@@ -39,7 +39,13 @@ export default async function EmpresasFacturasConsultarPage() {
       orderBy: { razonSocial: "asc" },
     }),
     prisma.cuenta.findMany({
-      where: { activa: true },
+      where: {
+        activa: true,
+        OR: [
+          { cuentaPadreId: { not: null } },
+          { tipo: { not: "BANCO" } },
+        ],
+      },
       select: { id: true, nombre: true, bancoOEntidad: true },
       orderBy: { nombre: "asc" },
     }),

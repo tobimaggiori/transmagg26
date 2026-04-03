@@ -144,8 +144,6 @@ export async function GET(request: NextRequest) {
             liquidacion: {
               select: {
                 estado: true,
-                cae: true,
-                arcaEstado: true,
                 nroComprobante: true,
                 ptoVenta: true,
                 pdfS3Key: true,

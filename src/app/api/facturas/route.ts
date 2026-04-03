@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
           enLiquidaciones: {
             select: {
               liquidacion: {
-                select: { estado: true, cae: true, arcaEstado: true },
+                select: { estado: true },
               },
             },
           },
@@ -249,7 +249,7 @@ export async function POST(request: NextRequest) {
       include: {
         enLiquidaciones: {
           select: {
-            liquidacion: { select: { estado: true, cae: true, arcaEstado: true } },
+            liquidacion: { select: { estado: true } },
           },
         },
       },
@@ -262,11 +262,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verificar que todos los viajes tienen LP con CAE aceptado en ARCA
+    // Verificar que todos los viajes tienen LP en estado activo (emitida/pagada)
     const noFacturables = viajesExistentes.filter((v) => !viajeEsFacturable(v))
     if (noFacturables.length > 0) {
       return NextResponse.json(
-        { error: "Uno o más viajes no tienen LP con CAE aceptado en ARCA y no pueden facturarse" },
+        { error: "Uno o más viajes no tienen LP en estado activo y no pueden facturarse" },
         { status: 422 }
       )
     }

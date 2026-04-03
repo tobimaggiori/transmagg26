@@ -49,7 +49,7 @@ type ViajeAPI = {
   nroCartaPorte?: string | null
   cartaPorteS3Key?: string | null
   enLiquidaciones?: Array<{
-    liquidacion: { estado: string; cae: string | null; arcaEstado: string | null }
+    liquidacion: { estado: string }
   }>
   toneladas?: number | null
   total?: number | null
@@ -1092,17 +1092,17 @@ export function ViajesClient({
                                 <CircuitBadge etiqueta="Fletero" estado={v.estadoLiquidacion} />
                                 <CircuitBadge etiqueta="Empresa" estado={v.estadoFactura} />
                                 {v.estadoFactura === "PENDIENTE_FACTURAR" && v.enLiquidaciones != null && (
-                                  viajeEsFacturable(v as { estadoFactura: string; enLiquidaciones: Array<{ liquidacion: { estado: string; cae: string | null; arcaEstado: string | null } }> })
+                                  viajeEsFacturable(v as { estadoFactura: string; enLiquidaciones: Array<{ liquidacion: { estado: string } }> })
                                     ? (
                                       <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800">
-                                        LP con CAE
+                                        LP activa
                                       </span>
                                     ) : (
                                       <span
                                         className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800"
-                                        title={razonNoFacturable(v as { estadoFactura: string; enLiquidaciones: Array<{ liquidacion: { estado: string; cae: string | null; arcaEstado: string | null } }> })}
+                                        title={razonNoFacturable(v as { estadoFactura: string; enLiquidaciones: Array<{ liquidacion: { estado: string } }> })}
                                       >
-                                        Sin CAE ARCA
+                                        LP no activa
                                       </span>
                                     )
                                 )}

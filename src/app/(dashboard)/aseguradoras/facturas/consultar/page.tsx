@@ -18,8 +18,8 @@ export default async function ConsultarFacturasSeguroPage() {
   if (!puedeAcceder(rol, "aseguradoras")) redirect("/dashboard")
 
   const proveedores = await prisma.proveedor.findMany({
-    where: { activo: true },
-    select: { id: true, razonSocial: true },
+    where: { activo: true, tipo: "ASEGURADORA" },
+    select: { id: true, razonSocial: true, cuit: true },
     orderBy: { razonSocial: "asc" },
   })
 

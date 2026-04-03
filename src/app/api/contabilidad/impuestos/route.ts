@@ -112,9 +112,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  if (medioPago === "TARJETA" && !tarjetaId) {
-    return NextResponse.json({ error: "Tarjeta requerida" }, { status: 400 })
-  }
+  // TARJETA: tarjetaId ya no es requerida, el gasto queda pendiente de asignación
 
   const operadorId = session.user.id
 

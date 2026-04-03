@@ -38,7 +38,10 @@ export async function GET(
         estado: { in: ["EMITIDA", "PARCIALMENTE_PAGADA"] },
       },
       include: {
-        pagos: { select: { monto: true } },
+        pagos: {
+          where: { anulado: false },
+          select: { monto: true },
+        },
       },
       orderBy: { grabadaEn: "asc" },
     })

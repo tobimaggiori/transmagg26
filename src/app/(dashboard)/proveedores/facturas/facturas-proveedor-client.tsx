@@ -72,9 +72,7 @@ const LABEL_TIPO_PAGO: Record<string, string> = {
   CHEQUE_PROPIO: "Cheque propio",
   CHEQUE_FISICO_TERCERO: "Cheque físico",
   CHEQUE_ELECTRONICO_TERCERO: "ECheq",
-  TARJETA_CREDITO: "T. Crédito",
-  TARJETA_DEBITO: "T. Débito",
-  TARJETA_PREPAGA: "T. Prepaga",
+  TARJETA: "Tarjeta",
   EFECTIVO: "Efectivo",
 }
 

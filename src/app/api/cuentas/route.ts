@@ -45,6 +45,9 @@ export async function GET() {
           },
           orderBy: { nombre: "asc" },
         },
+        _count: {
+          select: { movimientosSinFactura: true },
+        },
       },
       orderBy: { nombre: "asc" },
     })

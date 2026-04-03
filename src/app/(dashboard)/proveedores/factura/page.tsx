@@ -1,6 +1,6 @@
 /**
  * Propósito: Página para ingresar facturas de proveedores (ruta /proveedores/factura).
- * Server component: carga proveedores activos, cuentas, tarjetas y cheques en cartera.
+ * Server component: carga proveedores activos, cuentas y cheques en cartera.
  */
 
 import { auth } from "@/lib/auth"
@@ -14,7 +14,7 @@ import type { Rol } from "@/types"
  * ProveedoresFacturaPage: () -> Promise<JSX.Element>
  *
  * Verifica autenticación y permisos (solo roles internos).
- * Carga proveedores activos, cuentas, tarjetas y cheques en cartera y renderiza el formulario.
+ * Carga proveedores activos, cuentas y cheques en cartera y renderiza el formulario.
  * Existe como entry point para cargar facturas de proveedores con pago opcional inline.
  *
  * Ejemplos:
@@ -30,20 +30,21 @@ export default async function ProveedoresFacturaPage() {
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
   if (!esRolInterno(rol)) redirect("/dashboard")
 
-  const [proveedores, cuentas, tarjetas, chequesRaw] = await Promise.all([
+  const [proveedores, cuentas, chequesRaw] = await Promise.all([
     prisma.proveedor.findMany({
       where: { activo: true, tipo: "GENERAL" },
       select: { id: true, razonSocial: true, cuit: true },
       orderBy: { razonSocial: "asc" },
     }),
     prisma.cuenta.findMany({
-      where: { activa: true },
+      where: {
+        activa: true,
+        OR: [
+          { cuentaPadreId: { not: null } },
+          { tipo: { not: "BANCO" } },
+        ],
+      },
       select: { id: true, nombre: true, tipo: true, tieneChequera: true },
-      orderBy: { nombre: "asc" },
-    }),
-    prisma.tarjeta.findMany({
-      where: { activa: true },
-      select: { id: true, nombre: true, tipo: true, banco: true, ultimos4: true },
       orderBy: { nombre: "asc" },
     }),
     prisma.chequeRecibido.findMany({
@@ -69,7 +70,6 @@ export default async function ProveedoresFacturaPage() {
     <FacturaProveedorIngresoClient
       proveedores={proveedores}
       cuentas={cuentas}
-      tarjetas={tarjetas}
       chequesEnCartera={chequesEnCartera}
     />
   )

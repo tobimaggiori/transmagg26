@@ -2,13 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select } from "@/components/ui/select"
-import { FormError } from "@/components/ui/form-error"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { formatearMoneda } from "@/lib/utils"
-import { Plus, ChevronRight } from "lucide-react"
+import { ChevronRight } from "lucide-react"
 
 // --- Tipos ---
 
@@ -142,19 +137,6 @@ export function BancosClient() {
   const [loading, setLoading] = useState(true)
   const [cuentaSeleccionada, setCuentaSeleccionada] = useState<Cuenta | null>(null)
 
-  // Modal nuevo banco
-  const [modalBanco, setModalBanco] = useState(false)
-  const [formBanco, setFormBanco] = useState({ nombre: "" })
-  const [guardandoBanco, setGuardandoBanco] = useState(false)
-  const [errorBanco, setErrorBanco] = useState("")
-
-  // Modal nueva sub-cuenta
-  const [modalSubcuenta, setModalSubcuenta] = useState(false)
-  const [bancoPadreSeleccionado, setBancoPadreSeleccionado] = useState<Cuenta | null>(null)
-  const [formSub, setFormSub] = useState({ moneda: "PESOS", nroCuenta: "", cbu: "", alias: "" })
-  const [guardandoSub, setGuardandoSub] = useState(false)
-  const [errorSub, setErrorSub] = useState("")
-
   const cargarCuentas = useCallback(() => {
     setLoading(true)
     fetch("/api/cuentas")
@@ -176,88 +158,11 @@ export function BancosClient() {
     return subCuentas.filter((s) => s.cuentaPadreId === bancoId)
   }
 
-  async function guardarBanco() {
-    setErrorBanco("")
-    if (!formBanco.nombre.trim()) { setErrorBanco("El nombre es obligatorio"); return }
-    setGuardandoBanco(true)
-    try {
-      const res = await fetch("/api/cuentas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nombre: formBanco.nombre.trim(),
-          tipo: "BANCO",
-          bancoOEntidad: formBanco.nombre.trim(),
-          moneda: "PESOS",
-          saldoInicial: 0,
-          activa: true,
-        }),
-      })
-      if (!res.ok) {
-        const d = await res.json()
-        setErrorBanco(d.error ?? "Error al crear el banco")
-        return
-      }
-      setModalBanco(false)
-      setFormBanco({ nombre: "" })
-      cargarCuentas()
-    } finally {
-      setGuardandoBanco(false)
-    }
-  }
-
-  function abrirModalSubcuenta(banco: Cuenta) {
-    setBancoPadreSeleccionado(banco)
-    setFormSub({ moneda: "PESOS", nroCuenta: "", cbu: "", alias: "" })
-    setErrorSub("")
-    setModalSubcuenta(true)
-  }
-
-  async function guardarSubcuenta() {
-    setErrorSub("")
-    if (!bancoPadreSeleccionado) return
-    if (!formSub.nroCuenta.trim()) { setErrorSub("El número de cuenta es obligatorio"); return }
-    setGuardandoSub(true)
-    try {
-      const monedaLabel = formSub.moneda === "PESOS" ? "ARS" : "USD"
-      const nombre = `${bancoPadreSeleccionado.nombre} — CC ${monedaLabel}`
-      const res = await fetch("/api/cuentas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nombre,
-          tipo: "BANCO",
-          bancoOEntidad: bancoPadreSeleccionado.nombre,
-          moneda: formSub.moneda,
-          saldoInicial: 0,
-          activa: true,
-          cuentaPadreId: bancoPadreSeleccionado.id,
-          nroCuenta: formSub.nroCuenta.trim(),
-          cbu: formSub.cbu.trim() || null,
-          alias: formSub.alias.trim() || null,
-        }),
-      })
-      if (!res.ok) {
-        const d = await res.json()
-        setErrorSub(d.error ?? "Error al crear la sub-cuenta")
-        return
-      }
-      setModalSubcuenta(false)
-      cargarCuentas()
-    } finally {
-      setGuardandoSub(false)
-    }
-  }
-
   return (
     <div className="flex flex-col h-full gap-0">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b">
         <h2 className="text-xl font-semibold">Cuentas Bancarias</h2>
-        <Button onClick={() => { setFormBanco({ nombre: "" }); setErrorBanco(""); setModalBanco(true) }}>
-          <Plus className="h-4 w-4 mr-1" />
-          Agregar banco
-        </Button>
       </div>
 
       {/* Contenido dos paneles */}
@@ -276,15 +181,6 @@ export function BancosClient() {
                   <div key={banco.id} className="border rounded overflow-hidden">
                     <div className="flex items-center justify-between px-3 py-2 bg-muted/30">
                       <span className="font-medium text-sm">{banco.nombre}</span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => abrirModalSubcuenta(banco)}
-                        className="h-6 px-2 text-xs"
-                      >
-                        <Plus className="h-3 w-3 mr-0.5" />
-                        Sub-cuenta
-                      </Button>
                     </div>
                     {subs.length === 0 ? (
                       <p className="px-3 py-2 text-xs text-muted-foreground">Sin sub-cuentas</p>
@@ -331,81 +227,6 @@ export function BancosClient() {
         </div>
       </div>
 
-      {/* Modal nuevo banco */}
-      <Dialog open={modalBanco} onOpenChange={setModalBanco}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Agregar banco</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label>Nombre del banco</Label>
-              <Input
-                value={formBanco.nombre}
-                onChange={(e) => setFormBanco({ nombre: e.target.value })}
-                placeholder="Ej: Banco Galicia"
-              />
-            </div>
-            {errorBanco && <FormError message={errorBanco} />}
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setModalBanco(false)}>Cancelar</Button>
-            <Button onClick={guardarBanco} disabled={guardandoBanco}>
-              {guardandoBanco ? "Guardando..." : "Crear"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal nueva sub-cuenta */}
-      <Dialog open={modalSubcuenta} onOpenChange={setModalSubcuenta}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Agregar sub-cuenta — {bancoPadreSeleccionado?.nombre}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label>Moneda</Label>
-              <Select value={formSub.moneda} onChange={(e) => setFormSub((f) => ({ ...f, moneda: e.target.value }))}>
-                <option value="PESOS">ARS (Pesos)</option>
-                <option value="DOLARES">USD (Dólares)</option>
-              </Select>
-            </div>
-            <div>
-              <Label>Número de cuenta</Label>
-              <Input
-                value={formSub.nroCuenta}
-                onChange={(e) => setFormSub((f) => ({ ...f, nroCuenta: e.target.value }))}
-                placeholder="Ej: 123456789"
-              />
-            </div>
-            <div>
-              <Label>CBU (22 dígitos)</Label>
-              <Input
-                value={formSub.cbu}
-                onChange={(e) => setFormSub((f) => ({ ...f, cbu: e.target.value }))}
-                placeholder="Opcional"
-                maxLength={22}
-              />
-            </div>
-            <div>
-              <Label>Alias</Label>
-              <Input
-                value={formSub.alias}
-                onChange={(e) => setFormSub((f) => ({ ...f, alias: e.target.value }))}
-                placeholder="Opcional"
-              />
-            </div>
-            {errorSub && <FormError message={errorSub} />}
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setModalSubcuenta(false)}>Cancelar</Button>
-            <Button onClick={guardarSubcuenta} disabled={guardandoSub}>
-              {guardandoSub ? "Guardando..." : "Crear"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

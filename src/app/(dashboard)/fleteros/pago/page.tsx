@@ -24,7 +24,13 @@ export default async function OrdenDePagoPage() {
       orderBy: { razonSocial: "asc" },
     }).then((rows) => rows.map((r) => ({ ...r, email: r.usuario?.email ?? null }))),
     prisma.cuenta.findMany({
-      where: { activa: true },
+      where: {
+        activa: true,
+        OR: [
+          { cuentaPadreId: { not: null } },
+          { tipo: { not: "BANCO" } },
+        ],
+      },
       select: { id: true, nombre: true, bancoOEntidad: true },
       orderBy: { nombre: "asc" },
     }),

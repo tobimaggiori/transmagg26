@@ -9,7 +9,7 @@
  *   CHEQUE_PROPIO              → ChequeEmitido (estado EMITIDO)
  *   CHEQUE_FISICO_TERCERO      → ChequeRecibido.estado = ENDOSADO_PROVEEDOR
  *   CHEQUE_ELECTRONICO_TERCERO → ChequeRecibido.estado = ENDOSADO_PROVEEDOR
- *   TARJETA_*                  → busca o crea ResumenTarjeta del mes; crea GastoTarjeta
+ *   TARJETA                    → gasto queda pendiente de asignación a tarjeta
  *   EFECTIVO                   → solo PagoProveedor
  *
  * Actualiza estadoPago de la factura: PAGADA | PARCIALMENTE_PAGADA
@@ -33,9 +33,7 @@ const pagoSchema = z.object({
     "CHEQUE_PROPIO",
     "CHEQUE_FISICO_TERCERO",
     "CHEQUE_ELECTRONICO_TERCERO",
-    "TARJETA_CREDITO",
-    "TARJETA_DEBITO",
-    "TARJETA_PREPAGA",
+    "TARJETA",
     "EFECTIVO",
   ]),
   observaciones: z.string().optional().nullable(),
@@ -63,7 +61,7 @@ const pagoSchema = z.object({
  *
  * Ejemplos:
  * POST({ facturaProveedorId, fecha, monto, tipo: "EFECTIVO" }) === 201 { pago }
- * POST({ tipo: "TARJETA_CREDITO", tarjetaId }) === 201 { pago, resumenTarjetaId }
+ * POST({ tipo: "TARJETA" }) === 201 { pago, resumenTarjetaId: null }
  * POST (sin auth) === 401
  */
 export async function POST(

@@ -22,7 +22,7 @@ export default async function FleterosLiquidarPage() {
   const fleteros = esInterno
     ? await prisma.fletero.findMany({
         where: { activo: true },
-        select: { id: true, razonSocial: true, comisionDefault: true },
+        select: { id: true, razonSocial: true, cuit: true, comisionDefault: true },
         orderBy: { razonSocial: "asc" },
       })
     : []

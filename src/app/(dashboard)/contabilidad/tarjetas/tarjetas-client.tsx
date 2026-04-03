@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ViewPDF } from "@/components/view-pdf"
 import { UploadPDF } from "@/components/upload-pdf"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
-import { Plus, CreditCard, X } from "lucide-react"
+import { Plus, CreditCard, X, AlertTriangle } from "lucide-react"
 
 // --- Tipos ---
 
@@ -70,6 +70,16 @@ interface Chofer {
   apellido: string
 }
 
+interface GastoSinAsignar {
+  id: string
+  origen: "PROVEEDOR" | "IMPUESTO"
+  descripcion: string
+  monto: number
+  fecha: string
+  tarjetaNombre: string
+  tarjetaId: string | null
+}
+
 interface TarjetasClientProps {
   tarjetasIniciales: Tarjeta[]
   cuentas: Cuenta[]
@@ -101,6 +111,21 @@ export function TarjetasClient({ tarjetasIniciales, cuentas, choferes }: Tarjeta
   })
   const [errorNueva, setErrorNueva] = useState("")
   const [guardandoNueva, setGuardandoNueva] = useState(false)
+
+  // Gastos sin asignar
+  const [gastosSinAsignar, setGastosSinAsignar] = useState<GastoSinAsignar[]>([])
+  const [cargandoGastosSinAsignar, setCargandoGastosSinAsignar] = useState(false)
+  const [mostrarGastosSinAsignar, setMostrarGastosSinAsignar] = useState(false)
+
+  async function cargarGastosSinAsignar() {
+    setCargandoGastosSinAsignar(true)
+    const r = await fetch("/api/tarjetas/gastos-sin-asignar")
+    const d = await r.json()
+    setGastosSinAsignar(Array.isArray(d) ? d : [])
+    setCargandoGastosSinAsignar(false)
+  }
+
+  useEffect(() => { cargarGastosSinAsignar() }, [])
 
   const tarjetasFiltradas = tarjetas.filter((t) =>
     tabActivo === "corporativas"
@@ -168,6 +193,62 @@ export function TarjetasClient({ tarjetasIniciales, cuentas, choferes }: Tarjeta
           <Plus className="h-4 w-4 mr-1" /> Nueva tarjeta
         </Button>
       </div>
+
+      {/* Gastos sin asignar */}
+      {gastosSinAsignar.length > 0 && (
+        <div className="border rounded-lg bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
+          <button
+            onClick={() => setMostrarGastosSinAsignar((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 text-left"
+          >
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <span className="font-medium text-sm">
+                Gastos sin asignar a cierre ({gastosSinAsignar.length})
+              </span>
+              <span className="text-sm text-muted-foreground">
+                — Total: {formatearMoneda(gastosSinAsignar.reduce((s, g) => s + g.monto, 0))}
+              </span>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {mostrarGastosSinAsignar ? "Ocultar" : "Ver detalle"}
+            </span>
+          </button>
+          {mostrarGastosSinAsignar && (
+            <div className="border-t border-amber-200 dark:border-amber-800 overflow-auto max-h-64">
+              <table className="w-full text-sm">
+                <thead className="bg-amber-100/50 dark:bg-amber-900/30">
+                  <tr>
+                    <th className="text-left px-3 py-2">Origen</th>
+                    <th className="text-left px-3 py-2">Descripción</th>
+                    <th className="text-left px-3 py-2">Tarjeta</th>
+                    <th className="text-right px-3 py-2">Monto</th>
+                    <th className="text-right px-3 py-2">Fecha</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {gastosSinAsignar.map((g) => (
+                    <tr key={`${g.origen}-${g.id}`} className="border-t border-amber-200/50 dark:border-amber-800/50">
+                      <td className="px-3 py-2">
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${g.origen === "PROVEEDOR" ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" : "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"}`}>
+                          {g.origen}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">{g.descripcion}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{g.tarjetaNombre}</td>
+                      <td className="px-3 py-2 text-right font-medium">{formatearMoneda(g.monto)}</td>
+                      <td className="px-3 py-2 text-right text-muted-foreground whitespace-nowrap">{formatearFecha(g.fecha)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+      {cargandoGastosSinAsignar && gastosSinAsignar.length === 0 && (
+        <p className="text-sm text-muted-foreground">Cargando gastos sin asignar...</p>
+      )}
 
       {/* Tabs principales */}
       <div className="border-b flex gap-0">
@@ -339,6 +420,8 @@ interface CierreResumen {
   id: string
   mesAnio: string
   totalPagado: number
+  diferencia: number
+  descripcionDiferencia: string | null
   fechaPago: string
   pdfS3Key: string | null
   cuentaPago: { nombre: string }
@@ -394,6 +477,8 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
   const [cierreCuentaId, setCierreCuentaId] = useState("")
   const [cierreFechaPago, setCierreFechaPago] = useState(new Date().toISOString().slice(0, 10))
   const [cierrePdfS3Key, setCierrePdfS3Key] = useState("")
+  const [cierreDiferencia, setCierreDiferencia] = useState(0)
+  const [cierreDescDiferencia, setCierreDescDiferencia] = useState("")
   const [pagosCierre, setPagosCierre] = useState<PagoCierre[]>([])
   const [errorCierre, setErrorCierre] = useState("")
   const [guardandoCierre, setGuardandoCierre] = useState(false)
@@ -432,6 +517,8 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
     setCierreCuentaId("")
     setCierreFechaPago(new Date().toISOString().slice(0, 10))
     setCierrePdfS3Key("")
+    setCierreDiferencia(0)
+    setCierreDescDiferencia("")
     setErrorCierre("")
     setModalCierre(true)
   }
@@ -446,7 +533,8 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
     setPagosCierre((prev) => prev.map((p, i) => i === idx ? { ...p, montoPagado: monto } : p))
   }
 
-  const totalCierre = pagosCierre.filter((p) => p.seleccionada).reduce((sum, p) => sum + p.montoPagado, 0)
+  const sumaFacturasCierre = pagosCierre.filter((p) => p.seleccionada).reduce((sum, p) => sum + p.montoPagado, 0)
+  const totalCierre = sumaFacturasCierre + cierreDiferencia
 
   async function confirmarCierre() {
     setErrorCierre("")
@@ -464,6 +552,8 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
         cuentaPagoId: cierreCuentaId,
         fechaPago: cierreFechaPago,
         pdfS3Key: cierrePdfS3Key || null,
+        diferencia: cierreDiferencia,
+        descripcionDiferencia: cierreDescDiferencia || null,
         pagos: pagosSeleccionados.map((p) => ({
           facturaId: p.facturaId,
           tipo: p.tipo,
@@ -820,6 +910,7 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
                       <th className="text-left px-3 py-2">Período</th>
                       <th className="text-left px-3 py-2">Fecha Pago</th>
                       <th className="text-right px-3 py-2">Total Pagado</th>
+                      <th className="text-right px-3 py-2">Diferencia</th>
                       <th className="text-left px-3 py-2">Cuenta</th>
                     </tr>
                   </thead>
@@ -829,12 +920,15 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
                         <td className="px-3 py-2">{c.mesAnio}</td>
                         <td className="px-3 py-2">{formatearFecha(c.fechaPago)}</td>
                         <td className="px-3 py-2 text-right font-medium">{formatearMoneda(c.totalPagado)}</td>
+                        <td className="px-3 py-2 text-right text-muted-foreground" title={c.descripcionDiferencia ?? ""}>
+                          {c.diferencia ? formatearMoneda(c.diferencia) : "-"}
+                        </td>
                         <td className="px-3 py-2">{c.cuentaPago?.nombre ?? "-"}</td>
                       </tr>
                     ))}
                     {(cierres ?? []).length === 0 && (
                       <tr>
-                        <td colSpan={4} className="px-3 py-4 text-center text-muted-foreground">Sin cierres de resumen.</td>
+                        <td colSpan={5} className="px-3 py-4 text-center text-muted-foreground">Sin cierres de resumen.</td>
                       </tr>
                     )}
                   </tbody>
@@ -1025,8 +1119,37 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
               </table>
             </div>
 
-            <div className="text-right font-semibold">
-              Total cierre: {formatearMoneda(totalCierre)}
+            <div className="border-t pt-3 space-y-2">
+              <Label className="text-sm font-medium">Diferencia (gastos sin comprobante)</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={cierreDiferencia || ""}
+                    onChange={(e) => setCierreDiferencia(parseFloat(e.target.value) || 0)}
+                    placeholder="0.00"
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div>
+                  <Input
+                    value={cierreDescDiferencia}
+                    onChange={(e) => setCierreDescDiferencia(e.target.value)}
+                    placeholder="Descripción (opcional)"
+                    className="h-8 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="text-right space-y-0.5">
+              {cierreDiferencia !== 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Facturas: {formatearMoneda(sumaFacturasCierre)} + Diferencia: {formatearMoneda(cierreDiferencia)}
+                </p>
+              )}
+              <p className="font-semibold">Total cierre: {formatearMoneda(totalCierre)}</p>
             </div>
 
             {errorCierre && <FormError message={errorCierre} />}

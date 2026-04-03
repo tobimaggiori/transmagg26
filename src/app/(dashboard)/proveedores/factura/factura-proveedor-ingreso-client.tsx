@@ -12,7 +12,6 @@ import { Plus, Trash2 } from "lucide-react"
 
 type Proveedor = { id: string; razonSocial: string; cuit: string }
 type Cuenta = { id: string; nombre: string; tipo: string; tieneChequera: boolean }
-type Tarjeta = { id: string; nombre: string; tipo: string; banco: string; ultimos4: string }
 type ChequeEnCartera = {
   id: string
   nroCheque: string
@@ -25,7 +24,6 @@ type ChequeEnCartera = {
 type FacturaProveedorIngresoClientProps = {
   proveedores: Proveedor[]
   cuentas: Cuenta[]
-  tarjetas: Tarjeta[]
   chequesEnCartera: ChequeEnCartera[]
 }
 
@@ -63,7 +61,6 @@ const CONCEPTOS = [
 
 const REQUIERE_CUENTA = new Set(["TRANSFERENCIA", "CHEQUE_PROPIO"])
 const REQUIERE_CHEQUE_CARTERA = new Set(["CHEQUE_FISICO_TERCERO", "CHEQUE_ELECTRONICO_TERCERO"])
-const REQUIERE_TARJETA = new Set(["TARJETA_CREDITO", "TARJETA_DEBITO", "TARJETA_PREPAGA"])
 const REQUIERE_COMPROBANTE = new Set([
   "TRANSFERENCIA",
   "CHEQUE_PROPIO",
@@ -99,13 +96,13 @@ const todayStr = () => new Date().toISOString().slice(0, 10)
 /**
  * FacturaProveedorIngresoClient: FacturaProveedorIngresoClientProps -> JSX.Element
  *
- * Dado proveedores, cuentas, tarjetas y cheques en cartera, renderiza el formulario
+ * Dado proveedores, cuentas y cheques en cartera, renderiza el formulario
  * completo para ingresar una factura de proveedor con ítems, alícuotas IVA por ítem,
  * percepciones, PDF obligatorio y pago opcional inline en la misma transacción atómica.
  * Para tipos B/C/X no se discrimina IVA. Hace POST a /api/facturas-proveedor.
  *
  * Ejemplos:
- * <FacturaProveedorIngresoClient proveedores={[...]} cuentas={[...]} tarjetas={[...]} chequesEnCartera={[...]} />
+ * <FacturaProveedorIngresoClient proveedores={[...]} cuentas={[...]} chequesEnCartera={[...]} />
  */
 export function FacturaProveedorIngresoClient({
   proveedores,
@@ -138,16 +135,10 @@ export function FacturaProveedorIngresoClient({
   const [pagoComprobantePdfS3Key, setPagoComprobantePdfS3Key] = useState("")
   const [pagoCuentaId, setPagoCuentaId] = useState("")
   const [pagoChequeRecibidoId, setPagoChequeRecibidoId] = useState("")
-  const [pagoTarjetaId, setPagoTarjetaId] = useState("")
   const [pagoChequeNro, setPagoChequeNro] = useState("")
   const [pagoChequeFechaEmision, setPagoChequeFechaEmision] = useState(todayStr())
   const [pagoChequeFechaPago, setPagoChequeFechaPago] = useState("")
   const [pagoChequeClausula, setPagoChequeClausula] = useState("NO_A_LA_ORDEN")
-  const [pagoChequeTipoDoc, setPagoChequeTipoDoc] = useState("CUIT")
-  const [pagoChequeDocBeneficiario, setPagoChequeDocBeneficiario] = useState("")
-  const [pagoChequeMailBeneficiario, setPagoChequeMailBeneficiario] = useState("")
-  const [pagoChequeDescripcion1, setPagoChequeDescripcion1] = useState("")
-  const [pagoChequeDescripcion2, setPagoChequeDescripcion2] = useState("")
 
   // ── Estado UI ─────────────────────────────────────────────────────────────
   const [loading, setLoading] = useState(false)
@@ -202,11 +193,7 @@ export function FacturaProveedorIngresoClient({
     setPagoTipo(tipo)
     setPagoCuentaId("")
     setPagoChequeRecibidoId("")
-    setPagoTarjetaId("")
     setPagoComprobantePdfS3Key("")
-    if (tipo === "CHEQUE_PROPIO" && proveedor?.cuit) {
-      setPagoChequeDocBeneficiario(proveedor.cuit)
-    }
   }
 
   const handleRegistrarPagoChange = (checked: boolean) => {
@@ -222,10 +209,8 @@ export function FacturaProveedorIngresoClient({
       setPagoComprobantePdfS3Key("")
       setPagoCuentaId("")
       setPagoChequeRecibidoId("")
-      setPagoTarjetaId("")
       setPagoChequeNro("")
       setPagoChequeFechaPago("")
-      setPagoChequeDocBeneficiario("")
     }
   }
 
@@ -277,17 +262,17 @@ export function FacturaProveedorIngresoClient({
           comprobantePdfS3Key: pagoComprobantePdfS3Key || undefined,
           cuentaId: pagoCuentaId || undefined,
           chequeRecibidoId: pagoChequeRecibidoId || undefined,
-          tarjetaId: pagoTarjetaId || undefined,
+          tarjetaId: undefined,
           chequePropio: pagoTipo === "CHEQUE_PROPIO" ? {
             nroCheque: pagoChequeNro || null,
-            tipoDocBeneficiario: pagoChequeTipoDoc,
-            nroDocBeneficiario: pagoChequeDocBeneficiario,
-            mailBeneficiario: pagoChequeMailBeneficiario || null,
+            tipoDocBeneficiario: "CUIT",
+            nroDocBeneficiario: proveedor?.cuit ?? "",
+            mailBeneficiario: null,
             fechaEmision: pagoChequeFechaEmision,
             fechaPago: pagoChequeFechaPago,
             clausula: pagoChequeClausula,
-            descripcion1: pagoChequeDescripcion1 || null,
-            descripcion2: pagoChequeDescripcion2 || null,
+            descripcion1: null,
+            descripcion2: null,
           } : undefined,
         }
       : undefined
@@ -688,9 +673,7 @@ export function FacturaProveedorIngresoClient({
                   <option value="CHEQUE_PROPIO">Cheque propio (ECheq)</option>
                   <option value="CHEQUE_FISICO_TERCERO">Cheque físico de tercero</option>
                   <option value="CHEQUE_ELECTRONICO_TERCERO">ECheq de tercero</option>
-                  <option value="TARJETA_CREDITO">Tarjeta de crédito</option>
-                  <option value="TARJETA_DEBITO">Tarjeta de débito</option>
-                  <option value="TARJETA_PREPAGA">Tarjeta prepaga</option>
+                  <option value="TARJETA">Tarjeta</option>
                   <option value="EFECTIVO">Efectivo</option>
                 </select>
               </div>
@@ -715,7 +698,7 @@ export function FacturaProveedorIngresoClient({
                 </div>
               )}
 
-              {/* CHEQUE_PROPIO — cuenta chequera + datos cheque */}
+              {/* CHEQUE_PROPIO — cuenta chequera + datos cheque simplificados */}
               {pagoTipo === "CHEQUE_PROPIO" && (
                 <>
                   <div className="space-y-1.5">
@@ -738,12 +721,12 @@ export function FacturaProveedorIngresoClient({
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label htmlFor="pagoChequeNro">Nro. de cheque (opcional)</Label>
+                      <Label htmlFor="pagoChequeNro">Nro. de cheque *</Label>
                       <Input
                         id="pagoChequeNro"
                         value={pagoChequeNro}
                         onChange={(e) => setPagoChequeNro(e.target.value)}
-                        placeholder="Asignado al emitir"
+                        placeholder="Número de cheque"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -779,56 +762,11 @@ export function FacturaProveedorIngresoClient({
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="pagoChequeTipoDoc">Tipo doc beneficiario</Label>
-                      <select
-                        id="pagoChequeTipoDoc"
-                        value={pagoChequeTipoDoc}
-                        onChange={(e) => setPagoChequeTipoDoc(e.target.value)}
-                        className={SELECT_CLS}
-                      >
-                        <option value="CUIT">CUIT</option>
-                        <option value="CUIL">CUIL</option>
-                        <option value="CDI">CDI</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="pagoChequeDocBenef">Nro doc beneficiario</Label>
-                      <Input
-                        id="pagoChequeDocBenef"
-                        value={pagoChequeDocBeneficiario}
-                        onChange={(e) => setPagoChequeDocBeneficiario(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="pagoChequeMailBenef">Mail beneficiario (opcional)</Label>
-                    <Input
-                      id="pagoChequeMailBenef"
-                      type="email"
-                      value={pagoChequeMailBeneficiario}
-                      onChange={(e) => setPagoChequeMailBeneficiario(e.target.value)}
-                      placeholder="email@ejemplo.com"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="pagoChequeDesc1">Descripción 1 (opcional)</Label>
-                      <Input
-                        id="pagoChequeDesc1"
-                        value={pagoChequeDescripcion1}
-                        onChange={(e) => setPagoChequeDescripcion1(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="pagoChequeDesc2">Descripción 2 (opcional)</Label>
-                      <Input
-                        id="pagoChequeDesc2"
-                        value={pagoChequeDescripcion2}
-                        onChange={(e) => setPagoChequeDescripcion2(e.target.value)}
-                      />
-                    </div>
+                  {/* Beneficiario: datos del proveedor (solo lectura) */}
+                  <div className="rounded-md border bg-muted/30 px-4 py-3 space-y-1 text-sm">
+                    <p><span className="text-muted-foreground">Tipo beneficiario:</span> <strong>Proveedor</strong></p>
+                    <p><span className="text-muted-foreground">Nombre:</span> <strong>{proveedor?.razonSocial ?? "—"}</strong></p>
+                    <p><span className="text-muted-foreground">CUIT:</span> <strong>{proveedor?.cuit ?? "—"}</strong></p>
                   </div>
                 </>
               )}
@@ -881,12 +819,12 @@ export function FacturaProveedorIngresoClient({
                 </div>
               )}
 
-              {/* TARJETA_* */}
-              {REQUIERE_TARJETA.has(pagoTipo) && (
+              {/* TARJETA */}
+              {pagoTipo === "TARJETA" && (
                 <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
                   <p className="text-sm text-amber-800">
-                    La factura quedará pendiente de pago con tarjeta.
-                    Registrá el pago desde Contabilidad → Tarjetas al cerrar el resumen.
+                    El gasto quedará pendiente de asignación a una tarjeta.
+                    Podés asignarlo luego desde Contabilidad → Tarjetas al cerrar el resumen.
                   </p>
                 </div>
               )}

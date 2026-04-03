@@ -5,15 +5,15 @@
  */
 
 import { useState, useEffect, useCallback } from "react"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { SearchCombobox } from "@/components/ui/search-combobox"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
-import Link from "next/link"
 
 interface Proveedor {
   id: string
   razonSocial: string
+  cuit: string
 }
 
 interface FacturaSeguro {
@@ -42,6 +42,12 @@ export function ConsultarFacturasSeguroClient({ proveedores }: Props) {
   const [desde, setDesde] = useState("")
   const [hasta, setHasta] = useState("")
 
+  const aseguradoraItems = proveedores.map((p) => ({
+    id: p.id,
+    label: p.razonSocial,
+    sublabel: p.cuit,
+  }))
+
   const buscar = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -69,30 +75,21 @@ export function ConsultarFacturasSeguroClient({ proveedores }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Facturas de Seguro</h2>
-          <p className="text-muted-foreground">Consultá y filtrá las facturas registradas</p>
-        </div>
-        <Link href="/aseguradoras/facturas/nueva">
-          <Button>Nueva factura</Button>
-        </Link>
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">Facturas de Seguro</h2>
+        <p className="text-muted-foreground">Consultá y filtrá las facturas registradas</p>
       </div>
 
       {/* Filtros */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <div>
           <Label>Aseguradora</Label>
-          <select
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          <SearchCombobox
+            items={aseguradoraItems}
             value={aseguradoraId}
-            onChange={(e) => setAseguradoraId(e.target.value)}
-          >
-            <option value="">Todas</option>
-            {proveedores.map((p) => (
-              <option key={p.id} value={p.id}>{p.razonSocial}</option>
-            ))}
-          </select>
+            onChange={setAseguradoraId}
+            placeholder="Todas las aseguradoras..."
+          />
         </div>
         <div>
           <Label>Estado</Label>

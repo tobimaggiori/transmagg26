@@ -22,7 +22,7 @@ export async function GET() {
         empresa: { select: { id: true, razonSocial: true } },
         enLiquidaciones: {
           include: {
-            liquidacion: { select: { id: true, estado: true, cae: true, arcaEstado: true, nroComprobante: true, ptoVenta: true, pdfS3Key: true } },
+            liquidacion: { select: { id: true, estado: true, nroComprobante: true, ptoVenta: true, pdfS3Key: true } },
           },
         },
       },
@@ -55,11 +55,11 @@ export async function GET() {
 
     const porEmpresa = new Map<string, EmpresaEntry>()
 
-    // Solo mostrar viajes facturables (con LP emitida + CAE aceptado por ARCA)
+    // Solo mostrar viajes facturables (con LP en estado activo)
     const viajesFacturables = viajes.filter((v) => viajeEsFacturable({
       estadoFactura: "PENDIENTE_FACTURAR",
       enLiquidaciones: v.enLiquidaciones.map((el) => ({
-        liquidacion: { estado: el.liquidacion.estado, cae: el.liquidacion.cae, arcaEstado: el.liquidacion.arcaEstado },
+        liquidacion: { estado: el.liquidacion.estado },
       })),
     }))
 

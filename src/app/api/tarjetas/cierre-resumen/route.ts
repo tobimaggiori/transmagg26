@@ -23,6 +23,8 @@ const cierreSchema = z.object({
   cuentaPagoId: z.string().min(1),
   fechaPago: z.string().min(1),
   pdfS3Key: z.string().optional().nullable(),
+  diferencia: z.number().default(0),
+  descripcionDiferencia: z.string().optional().nullable(),
   pagos: z.array(pagoSchema).min(1),
 })
 
@@ -83,7 +85,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       email: session.user.email,
     })
 
-    const totalPagado = data.pagos.reduce((sum, p) => sum + p.montoPagado, 0)
+    const sumaFacturas = data.pagos.reduce((sum, p) => sum + p.montoPagado, 0)
+    const diferencia = data.diferencia ?? 0
+    const totalPagado = sumaFacturas + diferencia
 
     const result = await prisma.$transaction(async (tx) => {
       // 1. Crear CierreResumenTarjeta
@@ -92,6 +96,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           tarjetaId: data.tarjetaId,
           mesAnio: data.mesAnio,
           totalPagado,
+          diferencia,
+          descripcionDiferencia: data.descripcionDiferencia ?? null,
           cuentaPagoId: data.cuentaPagoId,
           fechaPago: new Date(data.fechaPago),
           pdfS3Key: data.pdfS3Key ?? null,

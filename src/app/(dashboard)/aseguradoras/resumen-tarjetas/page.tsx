@@ -24,7 +24,7 @@ export default async function ResumenTarjetasPage() {
       orderBy: { nombre: "asc" },
     }),
     prisma.cuenta.findMany({
-      where: { activa: true },
+      where: { activa: true, cuentaPadreId: { not: null } },
       select: { id: true, nombre: true, tipo: true },
       orderBy: { nombre: "asc" },
     }),

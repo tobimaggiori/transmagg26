@@ -13,7 +13,7 @@ import type { Rol } from "@/types"
 /**
  * RegistrarPagoProveedorPage: () -> Promise<JSX.Element>
  *
- * Carga proveedores, cuentas, tarjetas y cheques en cartera.
+ * Carga proveedores, cuentas y cheques en cartera.
  * Solo accesible para ADMIN_TRANSMAGG y OPERADOR_TRANSMAGG.
  */
 export default async function RegistrarPagoProveedorPage() {
@@ -22,25 +22,34 @@ export default async function RegistrarPagoProveedorPage() {
   const rol = (session.user.rol ?? "") as Rol
   if (!puedeAcceder(rol, "proveedores")) redirect("/")
 
-  const [proveedores, cuentas, cuentasChequera, tarjetas, chequesEnCartera] = await Promise.all([
+  const [proveedores, cuentas, cuentasChequera, chequesEnCartera] = await Promise.all([
     prisma.proveedor.findMany({
       where: { activo: true },
       select: { id: true, razonSocial: true, cuit: true },
       orderBy: { razonSocial: "asc" },
     }),
     prisma.cuenta.findMany({
-      where: { activa: true, tipo: { in: ["BANCO", "BILLETERA_VIRTUAL"] } },
+      where: {
+        activa: true,
+        tipo: { in: ["BANCO", "BILLETERA_VIRTUAL"] },
+        OR: [
+          { cuentaPadreId: { not: null } },
+          { tipo: { not: "BANCO" } },
+        ],
+      },
       select: { id: true, nombre: true, tipo: true },
       orderBy: { nombre: "asc" },
     }),
     prisma.cuenta.findMany({
-      where: { activa: true, tieneChequera: true },
+      where: {
+        activa: true,
+        tieneChequera: true,
+        OR: [
+          { cuentaPadreId: { not: null } },
+          { tipo: { not: "BANCO" } },
+        ],
+      },
       select: { id: true, nombre: true },
-      orderBy: { nombre: "asc" },
-    }),
-    prisma.tarjeta.findMany({
-      where: { activa: true },
-      select: { id: true, nombre: true, tipo: true, banco: true, ultimos4: true },
       orderBy: { nombre: "asc" },
     }),
     prisma.chequeRecibido.findMany({
@@ -69,7 +78,6 @@ export default async function RegistrarPagoProveedorPage() {
       proveedores={proveedores}
       cuentas={cuentas}
       cuentasChequera={cuentasChequera}
-      tarjetas={tarjetas}
       chequesEnCartera={chequesSerializados}
     />
   )

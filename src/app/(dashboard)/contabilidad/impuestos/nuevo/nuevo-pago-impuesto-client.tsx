@@ -3,7 +3,7 @@
 /**
  * Formulario para registrar un pago de impuesto (IIBB, IVA, Ganancias, Otro).
  * - CUENTA_BANCARIA: sube comprobante PDF a R2 (obligatorio) + MovimientoSinFactura EGRESO.
- * - TARJETA: requiere seleccionar tarjeta + MovimientoSinFactura EGRESO vinculado a tarjeta.
+ * - TARJETA: gasto queda pendiente de asignación a tarjeta (sin seleccionar tarjeta).
  * - EFECTIVO: sin comprobante ni movimiento bancario.
  */
 
@@ -16,17 +16,8 @@ interface Cuenta {
   tipo: string
 }
 
-interface Tarjeta {
-  id: string
-  nombre: string
-  banco: string
-  ultimos4: string
-  tipo: string
-}
-
 interface NuevoPagoImpuestoClientProps {
   cuentas: Cuenta[]
-  tarjetas: Tarjeta[]
 }
 
 const TIPOS_IMPUESTO = [
@@ -70,7 +61,7 @@ function todayISO(): string {
 
 const COMPROBANTE_PREFIX = "comprobantes-impuestos"
 
-export function NuevoPagoImpuestoClient({ cuentas, tarjetas }: NuevoPagoImpuestoClientProps) {
+export function NuevoPagoImpuestoClient({ cuentas }: NuevoPagoImpuestoClientProps) {
   const [tipoImpuesto, setTipoImpuesto] = useState("IIBB")
   const [descripcion, setDescripcion]   = useState("")
   const [mes, setMes]                   = useState("01")
@@ -78,7 +69,6 @@ export function NuevoPagoImpuestoClient({ cuentas, tarjetas }: NuevoPagoImpuesto
   const [monto, setMonto]               = useState("")
   const [medioPago, setMedioPago]       = useState("CUENTA_BANCARIA")
   const [cuentaId, setCuentaId]         = useState("")
-  const [tarjetaId, setTarjetaId]       = useState("")
   const [fechaPago, setFechaPago]       = useState(todayISO())
   const [comprobante, setComprobante]   = useState<File | null>(null)
   const [observaciones, setObservaciones] = useState("")
@@ -104,10 +94,7 @@ export function NuevoPagoImpuestoClient({ cuentas, tarjetas }: NuevoPagoImpuesto
       setError("El comprobante PDF es obligatorio para pagos desde cuenta bancaria.")
       return
     }
-    if (esTarjeta && !tarjetaId) {
-      setError("Seleccioná la tarjeta con la que se realizó el pago.")
-      return
-    }
+    // TARJETA: no requiere seleccionar tarjeta, queda pendiente de asignación
 
     setLoading(true)
     try {
@@ -145,7 +132,7 @@ export function NuevoPagoImpuestoClient({ cuentas, tarjetas }: NuevoPagoImpuesto
           fechaPago,
           medioPago,
           cuentaId:            esCuentaBancaria ? cuentaId    : undefined,
-          tarjetaId:           esTarjeta        ? tarjetaId   : undefined,
+          tarjetaId:           undefined,
           comprobantePdfS3Key: esCuentaBancaria ? comprobantePdfS3Key : undefined,
           observaciones: observaciones || undefined,
         }),
@@ -173,7 +160,6 @@ export function NuevoPagoImpuestoClient({ cuentas, tarjetas }: NuevoPagoImpuesto
     setMonto("")
     setMedioPago("CUENTA_BANCARIA")
     setCuentaId("")
-    setTarjetaId("")
     setFechaPago(todayISO())
     setComprobante(null)
     setObservaciones("")
@@ -288,7 +274,7 @@ export function NuevoPagoImpuestoClient({ cuentas, tarjetas }: NuevoPagoImpuesto
           <select
             className="mt-1 w-full border rounded px-3 py-2 text-sm"
             value={medioPago}
-            onChange={(e) => { setMedioPago(e.target.value); setCuentaId(""); setTarjetaId(""); setComprobante(null) }}
+            onChange={(e) => { setMedioPago(e.target.value); setCuentaId(""); setComprobante(null) }}
             required
           >
             {MEDIOS_PAGO.map((m) => (
@@ -315,23 +301,13 @@ export function NuevoPagoImpuestoClient({ cuentas, tarjetas }: NuevoPagoImpuesto
           </div>
         )}
 
-        {/* Tarjeta (solo TARJETA) */}
+        {/* Tarjeta (solo TARJETA) — gasto queda pendiente de asignación */}
         {esTarjeta && (
-          <div>
-            <label className="text-sm font-medium">Tarjeta *</label>
-            <select
-              className="mt-1 w-full border rounded px-3 py-2 text-sm"
-              value={tarjetaId}
-              onChange={(e) => setTarjetaId(e.target.value)}
-              required
-            >
-              <option value="">Seleccionar tarjeta...</option>
-              {tarjetas.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.nombre} — {t.banco} ···{t.ultimos4}
-                </option>
-              ))}
-            </select>
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+            <p className="text-sm text-amber-800">
+              El gasto quedará pendiente de asignación a una tarjeta.
+              Podés asignarlo luego desde Contabilidad → Tarjetas al cerrar el resumen.
+            </p>
           </div>
         )}
 

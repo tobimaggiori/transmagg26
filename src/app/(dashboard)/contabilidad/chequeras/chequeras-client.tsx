@@ -55,7 +55,7 @@ interface ChequeRecibido {
   endosadoABroker: { id: string; nombre: string } | null
 }
 
-interface Cuenta { id: string; nombre: string }
+interface Cuenta { id: string; nombre: string; tieneChequera?: boolean; cuentaPadreId?: string | null }
 interface Empresa { id: string; razonSocial: string }
 interface Fletero { id: string; razonSocial: string }
 interface Proveedor { id: string; razonSocial: string }
@@ -168,7 +168,10 @@ function TabEmitidos() {
   useEffect(() => { cargar() }, [cargar])
 
   useEffect(() => {
-    fetch("/api/cuentas").then(r => r.json()).then(d => setCuentas(Array.isArray(d) ? d : []))
+    fetch("/api/cuentas").then(r => r.json()).then(d => {
+      const todas: Cuenta[] = Array.isArray(d) ? d : []
+      setCuentas(todas.filter(c => c.cuentaPadreId && c.tieneChequera))
+    })
   }, [])
 
   const proximos7 = cheques.filter(c => c.estado === "EMITIDO" && diasHasta(c.fechaPago) >= 0 && diasHasta(c.fechaPago) <= 7)
@@ -568,9 +571,8 @@ function TabRecibidos() {
 
   const [modalAdelanto, setModalAdelanto] = useState(false)
   const [empresas, setEmpresas] = useState<Empresa[]>([])
-  const [tipoOrigenAdelanto, setTipoOrigenAdelanto] = useState<"EMPRESA" | "PROVEEDOR">("EMPRESA")
   const [formAdelanto, setFormAdelanto] = useState({
-    empresaId: "", proveedorId: "", esElectronico: false, nroCheque: "", bancoEmisor: "",
+    empresaId: "", esElectronico: false, nroCheque: "", bancoEmisor: "",
     monto: "", fechaEmision: hoy(), fechaCobro: hoy(), observaciones: "",
   })
   const [errorAdelanto, setErrorAdelanto] = useState("")
@@ -593,7 +595,9 @@ function TabRecibidos() {
   const cargar = useCallback(() => {
     setLoading(true)
     const p = new URLSearchParams()
-    if (filtroEstado) p.set("estado", filtroEstado)
+    // Map grouped filters to API estado param
+    const estadoApi = filtroEstado === "ENDOSADO" ? "" : filtroEstado === "VENCIDO" ? "EN_CARTERA" : filtroEstado
+    if (estadoApi) p.set("estado", estadoApi)
     if (filtroEsElectronico) p.set("esElectronico", filtroEsElectronico)
     if (filtroEmpresaId) p.set("empresaId", filtroEmpresaId)
     if (filtroTieneFactura) p.set("tieneFactura", filtroTieneFactura)
@@ -603,7 +607,17 @@ function TabRecibidos() {
     p.set("limit", String(limit))
     fetch(`/api/cheques-recibidos?${p}`)
       .then(r => r.json())
-      .then(d => { setCheques(Array.isArray(d.cheques) ? d.cheques : []); setTotal(d.total ?? 0); setLoading(false) })
+      .then(d => {
+        let lista: ChequeRecibido[] = Array.isArray(d.cheques) ? d.cheques : []
+        if (filtroEstado === "ENDOSADO") {
+          lista = lista.filter(c => c.estado.startsWith("ENDOSADO_"))
+        } else if (filtroEstado === "VENCIDO") {
+          const limiteVencido = new Date()
+          limiteVencido.setDate(limiteVencido.getDate() - 30)
+          lista = lista.filter(c => c.estado === "EN_CARTERA" && new Date(c.fechaCobro) < limiteVencido)
+        }
+        setCheques(lista); setTotal(filtroEstado === "ENDOSADO" || filtroEstado === "VENCIDO" ? lista.length : (d.total ?? 0)); setLoading(false)
+      })
       .catch(() => setLoading(false))
   }, [filtroEstado, filtroEsElectronico, filtroEmpresaId, filtroTieneFactura, filtroDesde, filtroHasta, page])
 
@@ -657,12 +671,16 @@ function TabRecibidos() {
 
   async function guardarAdelanto() {
     setErrorAdelanto("")
+    if (!formAdelanto.empresaId || !formAdelanto.nroCheque || !formAdelanto.bancoEmisor || !formAdelanto.monto || !formAdelanto.fechaEmision || !formAdelanto.fechaCobro) {
+      setErrorAdelanto("Complete todos los campos obligatorios")
+      return
+    }
     setGuardandoAdelanto(true)
-    const { empresaId, proveedorId, ...rest } = formAdelanto
+    const { empresaId, ...rest } = formAdelanto
     const payload = {
       ...rest,
-      tipoOrigen: tipoOrigenAdelanto,
-      ...(tipoOrigenAdelanto === "EMPRESA" ? { empresaId } : { proveedorId }),
+      tipoOrigen: "EMPRESA" as const,
+      empresaId,
       monto: parseFloat(formAdelanto.monto),
       observaciones: formAdelanto.observaciones || null,
     }
@@ -674,8 +692,7 @@ function TabRecibidos() {
     setGuardandoAdelanto(false)
     if (res.ok) {
       setModalAdelanto(false)
-      setTipoOrigenAdelanto("EMPRESA")
-      setFormAdelanto({ empresaId: "", proveedorId: "", esElectronico: false, nroCheque: "", bancoEmisor: "", monto: "", fechaEmision: hoy(), fechaCobro: hoy(), observaciones: "" })
+      setFormAdelanto({ empresaId: "", esElectronico: false, nroCheque: "", bancoEmisor: "", monto: "", fechaEmision: hoy(), fechaCobro: hoy(), observaciones: "" })
       cargar()
     } else {
       const d = await res.json(); setErrorAdelanto(d.error ?? "Error al guardar")
@@ -775,11 +792,10 @@ function TabRecibidos() {
               <option value="">Todos</option>
               <option value="EN_CARTERA">En cartera</option>
               <option value="DEPOSITADO">Depositado</option>
-              <option value="ENDOSADO_FLETERO">Endosado fletero</option>
-              <option value="ENDOSADO_PROVEEDOR">Endosado proveedor</option>
-              <option value="ENDOSADO_BROKER">Endosado broker</option>
-              <option value="DESCONTADO_BANCO">Descontado banco</option>
+              <option value="ENDOSADO">Endosado</option>
+              <option value="DESCONTADO_BANCO">Descontado</option>
               <option value="RECHAZADO">Rechazado</option>
+              <option value="VENCIDO">Vencido</option>
             </Select>
           </div>
           <div>
@@ -791,7 +807,7 @@ function TabRecibidos() {
             </Select>
           </div>
           <div>
-            <Label className="text-xs">Empresa</Label>
+            <Label className="text-xs">Recibido de:</Label>
             <Select value={filtroEmpresaId} onChange={e => { setFiltroEmpresaId(e.target.value); setPage(1) }} className="w-44">
               <option value="">Todas</option>
               {empresas.map(e => <option key={e.id} value={e.id}>{e.razonSocial}</option>)}
@@ -914,40 +930,11 @@ function TabRecibidos() {
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label>Origen del cheque</Label>
-              <div className="flex rounded-md border overflow-hidden h-9 w-fit mt-1 mb-2">
-                <button
-                  type="button"
-                  onClick={() => { setTipoOrigenAdelanto("EMPRESA"); setFormAdelanto(f => ({ ...f, proveedorId: "" })) }}
-                  className={`px-4 text-xs font-medium border-r ${tipoOrigenAdelanto === "EMPRESA" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-                >
-                  Empresa
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setTipoOrigenAdelanto("PROVEEDOR"); setFormAdelanto(f => ({ ...f, empresaId: "" })) }}
-                  className={`px-4 text-xs font-medium ${tipoOrigenAdelanto === "PROVEEDOR" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-                >
-                  Proveedor
-                </button>
-              </div>
-              {tipoOrigenAdelanto === "EMPRESA" ? (
-                <>
-                  <Label>Empresa</Label>
-                  <Select value={formAdelanto.empresaId} onChange={e => setFormAdelanto(f => ({ ...f, empresaId: e.target.value }))}>
-                    <option value="">Seleccionar...</option>
-                    {empresas.map(e => <option key={e.id} value={e.id}>{e.razonSocial}</option>)}
-                  </Select>
-                </>
-              ) : (
-                <>
-                  <Label>Proveedor</Label>
-                  <Select value={formAdelanto.proveedorId} onChange={e => setFormAdelanto(f => ({ ...f, proveedorId: e.target.value }))}>
-                    <option value="">Seleccionar...</option>
-                    {proveedores.map(p => <option key={p.id} value={p.id}>{p.razonSocial}</option>)}
-                  </Select>
-                </>
-              )}
+              <Label>Empresa <span className="text-red-500">*</span></Label>
+              <Select value={formAdelanto.empresaId} onChange={e => setFormAdelanto(f => ({ ...f, empresaId: e.target.value }))} required>
+                <option value="">Seleccionar...</option>
+                {empresas.map(e => <option key={e.id} value={e.id}>{e.razonSocial}</option>)}
+              </Select>
             </div>
             <div className="flex items-center gap-4">
               <Label className="text-sm font-medium">Tipo cheque:</Label>
@@ -963,13 +950,13 @@ function TabRecibidos() {
               </label>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Nro. de cheque</Label><Input value={formAdelanto.nroCheque} onChange={e => setFormAdelanto(f => ({ ...f, nroCheque: e.target.value }))} /></div>
-              <div><Label>Banco emisor</Label><Input value={formAdelanto.bancoEmisor} onChange={e => setFormAdelanto(f => ({ ...f, bancoEmisor: e.target.value }))} /></div>
+              <div><Label>Nro. de cheque <span className="text-red-500">*</span></Label><Input value={formAdelanto.nroCheque} onChange={e => setFormAdelanto(f => ({ ...f, nroCheque: e.target.value }))} required /></div>
+              <div><Label>Banco emisor <span className="text-red-500">*</span></Label><Input value={formAdelanto.bancoEmisor} onChange={e => setFormAdelanto(f => ({ ...f, bancoEmisor: e.target.value }))} required /></div>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <div><Label>Monto</Label><Input type="number" value={formAdelanto.monto} onChange={e => setFormAdelanto(f => ({ ...f, monto: e.target.value }))} /></div>
-              <div><Label>Fecha emisión</Label><Input type="date" value={formAdelanto.fechaEmision} onChange={e => setFormAdelanto(f => ({ ...f, fechaEmision: e.target.value }))} /></div>
-              <div><Label>Fecha cobro</Label><Input type="date" value={formAdelanto.fechaCobro} onChange={e => setFormAdelanto(f => ({ ...f, fechaCobro: e.target.value }))} /></div>
+              <div><Label>Monto <span className="text-red-500">*</span></Label><Input type="number" value={formAdelanto.monto} onChange={e => setFormAdelanto(f => ({ ...f, monto: e.target.value }))} required /></div>
+              <div><Label>Fecha emisión <span className="text-red-500">*</span></Label><Input type="date" value={formAdelanto.fechaEmision} onChange={e => setFormAdelanto(f => ({ ...f, fechaEmision: e.target.value }))} required /></div>
+              <div><Label>Fecha cobro <span className="text-red-500">*</span></Label><Input type="date" value={formAdelanto.fechaCobro} onChange={e => setFormAdelanto(f => ({ ...f, fechaCobro: e.target.value }))} required /></div>
             </div>
             <div><Label>Observaciones</Label><Input value={formAdelanto.observaciones} onChange={e => setFormAdelanto(f => ({ ...f, observaciones: e.target.value }))} placeholder="Opcional" /></div>
             {errorAdelanto && <FormError message={errorAdelanto} />}

@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { ViewPDF } from "@/components/view-pdf"
 
 interface PagoImpuesto {
   id: string
@@ -184,14 +185,7 @@ export function ConsultarPagosImpuestoClient() {
                   </td>
                   <td className="px-3 py-2">
                     {p.comprobantePdfS3Key ? (
-                      <a
-                        href={`/api/storage/${p.comprobantePdfS3Key}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-primary underline text-xs"
-                      >
-                        Ver
-                      </a>
+                      <ViewPDF s3Key={p.comprobantePdfS3Key} label="Ver" size="sm" variant="link" />
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}

@@ -77,54 +77,9 @@ export async function procesarPagoProveedor(
   } = ctx
   const fechaPago = input.fecha
 
-  let resumenTarjetaId: string | null = null
+  const resumenTarjetaId: string | null = null
 
-  // ── 1. Para TARJETA_*: buscar o crear ResumenTarjeta del mes ────────────────
-  if (
-    (input.tipo === "TARJETA_CREDITO" ||
-      input.tipo === "TARJETA_DEBITO" ||
-      input.tipo === "TARJETA_PREPAGA") &&
-    input.tarjetaId
-  ) {
-    const periodo = `${fechaPago.getFullYear()}-${String(fechaPago.getMonth() + 1).padStart(2, "0")}`
-    const resumenExistente = await tx.resumenTarjeta.findFirst({
-      where: { tarjetaId: input.tarjetaId, periodo },
-    })
-
-    if (resumenExistente) {
-      await tx.resumenTarjeta.update({
-        where: { id: resumenExistente.id },
-        data: { totalARS: resumenExistente.totalARS + input.monto },
-      })
-      resumenTarjetaId = resumenExistente.id
-    } else {
-      const ultimoDiaMes = new Date(fechaPago.getFullYear(), fechaPago.getMonth() + 1, 0)
-      const nuevoResumen = await tx.resumenTarjeta.create({
-        data: {
-          tarjetaId: input.tarjetaId,
-          periodo,
-          fechaVtoPago: ultimoDiaMes,
-          totalARS: input.monto,
-          pagado: false,
-        },
-      })
-      resumenTarjetaId = nuevoResumen.id
-    }
-
-    const efectivoOperadorId =
-      operadorId ??
-      (await tx.usuario.findFirst({ where: { rol: "ADMIN_TRANSMAGG" } }))!.id
-    await tx.gastoTarjeta.create({
-      data: {
-        tarjetaId: input.tarjetaId,
-        tipoGasto: "PAGO_PROVEEDOR",
-        monto: input.monto,
-        fecha: fechaPago,
-        descripcion: `Factura ${facturaNroComprobante} - ${proveedorRazonSocial}`,
-        operadorId: efectivoOperadorId,
-      },
-    })
-  }
+  // ── 1. TARJETA: el gasto queda pendiente de asignación (no se vincula a tarjeta) ──
 
   // ── 2. Crear PagoProveedor ──────────────────────────────────────────────────
   const pago = await tx.pagoProveedor.create({
