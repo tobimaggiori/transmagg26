@@ -73,17 +73,33 @@ export async function GET(
 
   // Si no tiene PDF, generarlo
   if (!key) {
-    const buf = await generarPDFLiquidacion(liq.id)
-    const nro = liq.nroComprobante
-      ? `LP-${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${String(liq.nroComprobante).padStart(8, "0")}`
-      : `LP-borrador-${liq.id.slice(0, 8)}`
-    key = await subirPDF(buf, "liquidaciones", `${nro}.pdf`)
-    await prisma.liquidacion.update({
-      where: { id: liq.id },
-      data: { pdfS3Key: key },
-    })
+    try {
+      const buf = await generarPDFLiquidacion(liq.id)
+      const nro = liq.nroComprobante
+        ? `LP-${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${String(liq.nroComprobante).padStart(8, "0")}`
+        : `LP-borrador-${liq.id.slice(0, 8)}`
+      key = await subirPDF(buf, "liquidaciones", `${nro}.pdf`)
+      await prisma.liquidacion.update({
+        where: { id: liq.id },
+        data: { pdfS3Key: key },
+      })
+    } catch (pdfError) {
+      console.error("[GET /api/liquidaciones/[id]/pdf] Error generando PDF:", pdfError)
+      return NextResponse.json(
+        { error: "No se pudo generar el PDF. Intentá de nuevo desde Consultar LP." },
+        { status: 500 }
+      )
+    }
   }
 
-  const url = await obtenerUrlFirmada(key, 900)
-  return NextResponse.json({ url })
+  try {
+    const url = await obtenerUrlFirmada(key, 900)
+    return NextResponse.json({ url })
+  } catch (signError) {
+    console.error("[GET /api/liquidaciones/[id]/pdf] Error obteniendo URL firmada:", signError)
+    return NextResponse.json(
+      { error: "No se pudo obtener la URL del PDF" },
+      { status: 500 }
+    )
+  }
 }

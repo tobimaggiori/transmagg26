@@ -39,7 +39,10 @@ export function usePDFViewer() {
         // Fetch URL from an endpoint that returns { url }
         const res = await fetch(params.fetchUrl)
         const data = await res.json()
-        if (!res.ok || !data.url) return
+        if (!res.ok || !data.url) {
+          console.error("[PDFViewer] fetchUrl failed:", params.fetchUrl, data)
+          return
+        }
         pdfUrl = data.url as string
       } else {
         // s3Key — get signed URL
@@ -56,8 +59,8 @@ export function usePDFViewer() {
         emailsDisponibles: params.emailsDisponibles ?? [],
         onEnviarMail: params.onEnviarMail,
       })
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("[PDFViewer] Error al abrir PDF:", err)
     }
   }, [])
 
