@@ -440,18 +440,14 @@ function PendienteLiquidarModal() {
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="text-muted-foreground text-xs border-b uppercase">
-                    <th className="text-left px-3 py-2 whitespace-nowrap" style={{ minWidth: 100 }}>Fecha</th>
-                    <th className="text-left px-3 py-2 whitespace-nowrap" style={{ minWidth: 110 }}>CPE</th>
-                    <th className="text-left px-3 py-2 whitespace-nowrap" style={{ minWidth: 80 }}>Remito</th>
-                    <th className="text-left px-3 py-2 whitespace-nowrap" style={{ minWidth: 80 }}>Cupo</th>
-                    <th className="text-left px-3 py-2 whitespace-nowrap" style={{ minWidth: 100 }}>Mercadería</th>
-                    <th className="text-left px-3 py-2 whitespace-nowrap" style={{ minWidth: 100 }}>Origen</th>
-                    <th className="text-left px-3 py-2 whitespace-nowrap" style={{ minWidth: 120 }}>Destino</th>
-                    <th className="text-right px-3 py-2 whitespace-nowrap" style={{ minWidth: 90 }}>Kilos</th>
-                    <th className="text-right px-3 py-2 whitespace-nowrap" style={{ minWidth: 100 }}>Tarifa</th>
-                    <th className="text-right px-3 py-2 whitespace-nowrap" style={{ minWidth: 120 }}>Subtotal</th>
-                    <th className="text-right px-3 py-2 whitespace-nowrap" style={{ minWidth: 110 }}>IVA</th>
-                    <th className="text-right px-3 py-2 whitespace-nowrap" style={{ minWidth: 120 }}>Total</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap">Fecha</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap">CPE</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap">Remito</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap">Cupo</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap">Mercadería</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap">Origen</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap">Destino</th>
+                    <th className="text-right px-3 py-2 whitespace-nowrap">Kilos</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -482,15 +478,17 @@ function PendienteLiquidarModal() {
                       <td className="px-3 py-2">{v.procedencia ?? "—"}</td>
                       <td className="px-3 py-2">{v.destino ?? "—"}</td>
                       <td className="text-right px-3 py-2 tabular-nums">{v.kilos?.toLocaleString("es-AR") ?? "—"}</td>
-                      <td className="text-right px-3 py-2 tabular-nums">{formatearMoneda(v.tarifa)}</td>
-                      <td className="text-right px-3 py-2 tabular-nums">{formatearMoneda(v.subtotal)}</td>
-                      <td className="text-right px-3 py-2 tabular-nums">{formatearMoneda(v.iva)}</td>
-                      <td className="text-right px-3 py-2 tabular-nums font-medium">{formatearMoneda(v.total)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            <a
+              href={`/fleteros/liquidar?fleteroId=${grupo.fleteroId}&action=emitir`}
+              className="inline-block text-sm text-primary hover:underline font-medium mt-1"
+            >
+              Ver más información →
+            </a>
           </div>
         ))}
       </div>

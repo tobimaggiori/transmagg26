@@ -7,6 +7,7 @@
  */
 
 import { useState, useCallback, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
@@ -185,8 +186,10 @@ function ModalPreviewLiquidacion({
 
 export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClientProps) {
   const esInterno = rol === "ADMIN_TRANSMAGG" || rol === "OPERADOR_TRANSMAGG"
+  const searchParams = useSearchParams()
+  const fleteroIdParam = searchParams.get("fleteroId")
 
-  const [fleteroId, setFleteroId] = useState<string>(fleteroIdPropio ?? "")
+  const [fleteroId, setFleteroId] = useState<string>(fleteroIdParam ?? fleteroIdPropio ?? "")
   const [viajesPendientes, setViajesPendientes] = useState<ViajeParaLiquidar[]>([])
   const [cargando, setCargando] = useState(false)
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
