@@ -151,12 +151,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
             </div>
           </div>
 
-          {esCamionPropio && (
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-800">
-              Este viaje usa un camión propio de Transmagg. No genera liquidación al fletero.
-            </div>
-          )}
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {!esCamionPropio && (
               <div>
