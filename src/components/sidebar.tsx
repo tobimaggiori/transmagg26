@@ -19,7 +19,6 @@ import {
   Package,
   Route,
   Settings2,
-  Warehouse,
   Building2,
   BookOpen,
   LogOut,
