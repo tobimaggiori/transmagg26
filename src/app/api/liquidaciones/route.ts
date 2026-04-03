@@ -220,14 +220,6 @@ export async function GET(request: NextRequest) {
         : Promise.resolve([]),
     ])
 
-    // Debug: info para diagnosticar desde el browser
-    const totalViajes = await prisma.viaje.count({ where: { fleteroId: fleteroIdReal ?? undefined } })
-    const porEstado = await prisma.viaje.groupBy({
-      by: ["estadoLiquidacion"],
-      where: { fleteroId: fleteroIdReal ?? undefined },
-      _count: true,
-    })
-
     // Calcular toneladas y total en los viajes pendientes
     const viajesPendientes = viajesRaw.map((v) => ({
       ...v,
@@ -236,19 +228,7 @@ export async function GET(request: NextRequest) {
       total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifa) : null,
     }))
 
-    return NextResponse.json({
-      viajesPendientes,
-      liquidaciones,
-      fletero: fleteroData,
-      nroProximoComprobante,
-      gastosPendientes,
-      _debug: {
-        total: totalViajes,
-        pendientes: viajesRaw.length,
-        filtros: { fleteroId: fleteroIdReal, logica: "sin liquidaciones EMITIDA/PAGADA/PARCIALMENTE_PAGADA" },
-        estadosEncontrados: porEstado.map((e) => ({ estado: e.estadoLiquidacion, count: e._count })),
-      },
-    })
+    return NextResponse.json({ viajesPendientes, liquidaciones, fletero: fleteroData, nroProximoComprobante, gastosPendientes })
   } catch (error) {
     console.error("[GET /api/liquidaciones]", error)
     return NextResponse.json(

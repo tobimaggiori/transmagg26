@@ -6,6 +6,7 @@
 
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { calcularTotalViaje } from "@/lib/viajes"
 import {
   requireFinancialAccess,
   serverErrorResponse,
@@ -58,19 +59,28 @@ export async function GET() {
     })
     const deudaFleteros = (liquidacionesAgg._sum.total ?? 0) - (pagosFleterosAgg._sum.monto ?? 0)
 
-    // Pendiente de facturar: viajes con estadoFactura PENDIENTE_FACTURAR
+    // Pendiente de facturar: viajes sin factura activa
     const viajesPendienteFacturar = await prisma.viaje.findMany({
-      where: { estadoFactura: "PENDIENTE_FACTURAR" },
-      select: { tarifaEmpresa: true },
+      where: {
+        enFacturas: { none: { factura: { estado: { in: ["EMITIDA", "PAGADA", "PARCIALMENTE_PAGADA"] } } } },
+      },
+      select: { kilos: true, tarifaEmpresa: true },
     })
-    const pendienteFacturar = viajesPendienteFacturar.reduce((acc, v) => acc + (v.tarifaEmpresa ?? 0), 0)
+    const pendienteFacturar = viajesPendienteFacturar.reduce(
+      (acc, v) => acc + (v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaEmpresa) : 0), 0
+    )
 
-    // Pendiente de liquidar: viajes con estadoLiquidacion PENDIENTE_LIQUIDAR
+    // Pendiente de liquidar: viajes sin liquidación activa, con fletero
     const viajesPendienteLiquidar = await prisma.viaje.findMany({
-      where: { estadoLiquidacion: "PENDIENTE_LIQUIDAR" },
-      select: { tarifa: true },
+      where: {
+        fleteroId: { not: null },
+        enLiquidaciones: { none: { liquidacion: { estado: { in: ["EMITIDA", "PAGADA", "PARCIALMENTE_PAGADA"] } } } },
+      },
+      select: { kilos: true, tarifa: true },
     })
-    const pendienteLiquidar = viajesPendienteLiquidar.reduce((acc, v) => acc + (v.tarifa ?? 0), 0)
+    const pendienteLiquidar = viajesPendienteLiquidar.reduce(
+      (acc, v) => acc + (v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifa) : 0), 0
+    )
 
     // Cheques en cartera
     const chequesCartera = await prisma.chequeRecibido.findMany({
