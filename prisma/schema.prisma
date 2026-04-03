@@ -345,6 +345,8 @@ model Viaje {
   kilos               Float?
   tarifa                 Float    @map("tarifa_fletero")
   tarifaEmpresa          Float    @map("tarifa_empresa")
+  // Campo legacy — existe en Turso con NOT NULL. Se mantiene con default para no romper inserts.
+  tarifaOperativaInicial Float    @default(0) @map("tarifa_operativa_inicial")
   estadoLiquidacion   String   @default("PENDIENTE_LIQUIDAR") @map("estado_liquidacion")
   estadoFactura       String   @default("PENDIENTE_FACTURAR") @map("estado_factura")
   // Carta de porte — número único + PDF en R2
