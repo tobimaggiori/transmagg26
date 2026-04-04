@@ -68,10 +68,12 @@ const pagoFleteroItemSchema = z.discriminatedUnion("tipoPago", [
     monto: z.number().positive(),
     cuentaBancariaId: z.string().uuid(),
     referencia: z.string().optional(),
+    comprobanteS3Key: z.string().min(1),
   }),
   z.object({
     tipoPago: z.literal("CHEQUE_PROPIO"),
     monto: z.number().positive(),
+    comprobanteS3Key: z.string().min(1),
     chequePropio: z.object({
       cuentaId: z.string().uuid(),
       nroCheque: z.string().min(1),
@@ -87,6 +89,7 @@ const pagoFleteroItemSchema = z.discriminatedUnion("tipoPago", [
     tipoPago: z.literal("CHEQUE_TERCERO"),
     monto: z.number().positive(),
     chequeRecibidoId: z.string().uuid(),
+    comprobanteS3Key: z.string().min(1),
   }),
   z.object({
     tipoPago: z.literal("EFECTIVO"),
@@ -324,6 +327,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                 chequeRecibidoId:
                   pago.tipoPago === "CHEQUE_TERCERO" ? pago.chequeRecibidoId : undefined,
                 referencia: pago.tipoPago === "TRANSFERENCIA" ? pago.referencia : undefined,
+                comprobanteS3Key:
+                  pago.tipoPago === "TRANSFERENCIA" || pago.tipoPago === "CHEQUE_PROPIO" || pago.tipoPago === "CHEQUE_TERCERO"
+                    ? pago.comprobanteS3Key
+                    : undefined,
                 operadorId,
               },
             })

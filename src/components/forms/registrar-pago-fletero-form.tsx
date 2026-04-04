@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
+import { UploadPDF } from "@/components/upload-pdf"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -71,6 +72,7 @@ type PagoItemTransferencia = {
   monto: string
   cuentaBancariaId: string
   referencia: string
+  comprobanteS3Key?: string
 }
 type PagoItemChequePropio = {
   tipoPago: "CHEQUE_PROPIO"
@@ -83,11 +85,13 @@ type PagoItemChequePropio = {
   clausula: string
   descripcion1: string
   descripcion2: string
+  comprobanteS3Key?: string
 }
 type PagoItemChequeTercero = {
   tipoPago: "CHEQUE_TERCERO"
   monto: string
   chequeRecibidoId: string
+  comprobanteS3Key?: string
 }
 type PagoItemEfectivo = {
   tipoPago: "EFECTIVO"
@@ -238,6 +242,9 @@ export function RegistrarPagoFleteroModal({
     if (draft.tipoPago === "CHEQUE_TERCERO" && !draft.chequeRecibidoId) {
       setDraftError("Seleccioná un cheque en cartera"); return
     }
+    if ((draft.tipoPago === "CHEQUE_PROPIO" || draft.tipoPago === "CHEQUE_TERCERO" || draft.tipoPago === "TRANSFERENCIA") && !draft.comprobanteS3Key) {
+      setDraftError("Subí el comprobante antes de agregar"); return
+    }
     if (draft.tipoPago === "SALDO_A_FAVOR" && monto > saldoAFavorCC) {
       setDraftError(`Saldo a favor disponible: ${ars(saldoAFavorCC)}`); return
     }
@@ -274,12 +281,13 @@ export function RegistrarPagoFleteroModal({
         pagos: pagos.map((p) => {
           const monto = parseFloat(p.monto)
           if (p.tipoPago === "TRANSFERENCIA") {
-            return { tipoPago: p.tipoPago, monto, cuentaBancariaId: p.cuentaBancariaId, referencia: p.referencia || undefined }
+            return { tipoPago: p.tipoPago, monto, cuentaBancariaId: p.cuentaBancariaId, referencia: p.referencia || undefined, comprobanteS3Key: p.comprobanteS3Key }
           }
           if (p.tipoPago === "CHEQUE_PROPIO") {
             return {
               tipoPago: p.tipoPago,
               monto,
+              comprobanteS3Key: p.comprobanteS3Key,
               chequePropio: {
                 cuentaId: p.cuentaId,
                 nroCheque: p.nroCheque,
@@ -292,7 +300,7 @@ export function RegistrarPagoFleteroModal({
               },
             }
           }
-          if (p.tipoPago === "CHEQUE_TERCERO") return { tipoPago: p.tipoPago, monto, chequeRecibidoId: p.chequeRecibidoId }
+          if (p.tipoPago === "CHEQUE_TERCERO") return { tipoPago: p.tipoPago, monto, chequeRecibidoId: p.chequeRecibidoId, comprobanteS3Key: p.comprobanteS3Key }
           return { tipoPago: p.tipoPago, monto }
         }),
         fecha: today,
@@ -508,6 +516,9 @@ export function RegistrarPagoFleteroModal({
                       <td className="px-2 py-2 text-xs">{tipoBadge(p)}</td>
                       <td className="px-2 py-2 text-xs text-muted-foreground max-w-[200px] truncate">
                         {resumenItem(p, cuentasBancarias, chequesEnCartera)}
+                        {"comprobanteS3Key" in p && p.comprobanteS3Key && (
+                          <span className="ml-1.5 inline-flex items-center text-green-700 font-medium">📎 PDF</span>
+                        )}
                       </td>
                       <td className="px-2 py-2 text-right font-mono text-xs">
                         {ars(parseFloat(p.monto) || 0)}
@@ -764,6 +775,29 @@ function DraftForm({
               </option>
             ))}
           </Select>
+        </div>
+      )}
+
+      {/* Comprobante obligatorio para CHEQUE_PROPIO, CHEQUE_TERCERO, TRANSFERENCIA */}
+      {(draft.tipoPago === "CHEQUE_PROPIO" || draft.tipoPago === "CHEQUE_TERCERO" || draft.tipoPago === "TRANSFERENCIA") && (
+        <div>
+          <Label className="text-xs mb-1 block">
+            {draft.tipoPago === "CHEQUE_PROPIO" && "Comprobante de emisión"}
+            {draft.tipoPago === "CHEQUE_TERCERO" && "Comprobante de endoso"}
+            {draft.tipoPago === "TRANSFERENCIA" && "Comprobante de transferencia"}
+            {" "}<span className="text-destructive">*</span>
+          </Label>
+          <UploadPDF
+            prefijo="comprobantes-pago-fletero"
+            required
+            label={
+              draft.tipoPago === "CHEQUE_PROPIO" ? "Comprobante de emisión" :
+              draft.tipoPago === "CHEQUE_TERCERO" ? "Comprobante de endoso" :
+              "Comprobante de transferencia"
+            }
+            s3Key={"comprobanteS3Key" in draft ? draft.comprobanteS3Key : undefined}
+            onUpload={(key) => onUpdate({ comprobanteS3Key: key } as Partial<PagoItem>)}
+          />
         </div>
       )}
 
