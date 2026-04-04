@@ -18,7 +18,7 @@ const patchSchema = z.object({
   certificadoB64: z.string().optional(),
   certificadoPass: z.string().optional(),
   modo: z.enum(["homologacion", "produccion"]).optional(),
-  puntosVenta: z.record(z.string(), z.string()).optional(),
+  puntosVenta: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
   cbuMiPymes: z.string().nullable().optional(),
   activa: z.boolean().optional(),
 })
@@ -80,7 +80,9 @@ export async function PATCH(req: NextRequest) {
     update: {
       ...rest,
       ...datosSensibles,
-      ...(puntosVenta !== undefined ? { puntosVenta: JSON.stringify(puntosVenta) } : {}),
+      ...(puntosVenta !== undefined ? { puntosVenta: JSON.stringify(
+        Object.fromEntries(Object.entries(puntosVenta).map(([k, v]) => [k, Number(v)]))
+      ) } : {}),
       actualizadoPor: session.user.email ?? undefined,
     },
     create: {
@@ -89,7 +91,9 @@ export async function PATCH(req: NextRequest) {
       razonSocial: "",
       ...rest,
       ...datosSensibles,
-      ...(puntosVenta !== undefined ? { puntosVenta: JSON.stringify(puntosVenta) } : {}),
+      ...(puntosVenta !== undefined ? { puntosVenta: JSON.stringify(
+        Object.fromEntries(Object.entries(puntosVenta).map(([k, v]) => [k, Number(v)]))
+      ) } : {}),
       actualizadoPor: session.user.email ?? undefined,
     },
   })

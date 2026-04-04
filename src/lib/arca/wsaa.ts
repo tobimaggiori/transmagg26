@@ -17,7 +17,8 @@ import { prisma } from "@/lib/prisma"
 import { WsaaError } from "./errors"
 import type { ArcaConfig, TicketAcceso } from "./types"
 import { resolverUrls } from "./config"
-import { descifrarValor } from "./crypto"
+// Nota: cargarConfigArca() ya descifra certificadoB64 y certificadoPass.
+// No descifrar de nuevo aquí — el config que llega ya tiene valores en plaintext.
 
 /** Renovar 10 min antes de que expire (margen para emisiones que tardan). */
 const MARGEN_EXPIRACION_MS = 10 * 60 * 1000
@@ -128,9 +129,9 @@ async function solicitarTicketWsaa(config: ArcaConfig, servicio: string): Promis
   const expiration = new Date(now.getTime() + 12 * 60 * 60 * 1000)
   const tra = generarTRA(servicio, now, expiration)
 
-  // Descifrar certificado y password (backward compatible con plaintext)
-  const certB64 = descifrarValor(config.certificadoB64)
-  const certPass = descifrarValor(config.certificadoPass)
+  // config ya viene descifrado desde cargarConfigArca()
+  const certB64 = config.certificadoB64
+  const certPass = config.certificadoPass
 
   const cmsSigned = firmarCMS(tra, certB64, certPass)
 

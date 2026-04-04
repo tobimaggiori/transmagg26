@@ -44,9 +44,14 @@ export async function cargarConfigArca(): Promise<ArcaConfig> {
   if (!row.certificadoB64) throw new ArcaConfigIncompletaError("certificado digital")
   if (!row.certificadoPass) throw new ArcaConfigIncompletaError("contraseña del certificado")
 
-  let puntosVenta: Record<string, number> = {}
+  const puntosVenta: Record<string, number> = {}
   try {
-    puntosVenta = JSON.parse(row.puntosVenta || "{}")
+    const raw = JSON.parse(row.puntosVenta || "{}") as Record<string, unknown>
+    // Normalizar: DB puede tener strings ("1") o numbers (1) → siempre number
+    for (const [k, v] of Object.entries(raw)) {
+      const n = typeof v === "number" ? v : parseInt(String(v), 10)
+      if (!isNaN(n) && n > 0) puntosVenta[k] = n
+    }
   } catch {
     throw new ArcaConfigIncompletaError("puntos de venta (JSON inválido)")
   }

@@ -313,8 +313,8 @@ export async function autorizarLiquidacionArca(
  * Autoriza una factura emitida a empresa en ARCA. Mismo flujo que liquidación
  * pero con modelo FacturaEmitida y tipos de comprobante 1/6/201.
  *
- * Nota: las facturas no tienen generador PDF con pdfkit — usan HTML.
- * El PDF fiscal no se genera inmediatamente; se regenerará en el próximo GET /pdf.
+ * Genera PDF fiscal inmediato post-CAE con generarPDFFactura (pdfkit).
+ * Si falla el PDF, el CAE queda persistido y el PDF puede regenerarse via GET /pdf.
  */
 export async function autorizarFacturaArca(
   facturaId: string,
@@ -403,7 +403,8 @@ export async function autorizarFacturaArca(
  * Autoriza una nota de crédito o débito emitida en ARCA.
  * Requiere comprobante asociado (factura o liquidación original).
  *
- * Nota: NC/ND no tienen generador PDF — se regenerará en GET /pdf si se implementa.
+ * Genera PDF fiscal inmediato post-CAE con generarPDFNotaCD (pdfkit).
+ * Si falla el PDF, el CAE queda persistido y el PDF puede regenerarse via GET /pdf.
  */
 export async function autorizarNotaCDArca(
   notaId: string,
@@ -614,7 +615,7 @@ async function _autorizarComprobante(
   logArca("info", "completado", "Comprobante autorizado exitosamente", {
     tipo: input.tipoDocumento,
     id: input.documentoId,
-    cae,
+    cae: cae.slice(0, 4) + "..." + cae.slice(-4),
     nroDefinitivo,
   })
 
