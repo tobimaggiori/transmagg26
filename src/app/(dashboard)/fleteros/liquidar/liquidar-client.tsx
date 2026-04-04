@@ -205,7 +205,6 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
 
   const cargarDatos = useCallback(async () => {
     setCargando(true)
-    setExitoLiquidacion(null)
     try {
       const url = fleteroId ? `/api/liquidaciones?fleteroId=${fleteroId}` : "/api/liquidaciones"
       const res = await fetch(url)
@@ -309,6 +308,8 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
           }
         },
       })
+    } catch (e) {
+      setErrorGen(e instanceof Error ? e.message : "Error de red al generar liquidación")
     } finally {
       setGenerando(false)
     }
