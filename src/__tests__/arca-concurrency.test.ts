@@ -1,159 +1,334 @@
 /**
- * Tests para concurrencia e idempotencia de la capa ARCA.
- * Verifica que el lock atómico con updateMany previene doble emisión.
- *
- * Nota: estos tests no usan la DB real — mockean Prisma para simular
- * escenarios de carrera. El comportamiento atómico real depende de SQLite.
+ * Tests reales de concurrencia e idempotencia del service ARCA.
+ * Mockea Prisma, WSAA, WSFEv1 y config para ejercitar la lógica real
+ * de autorizarLiquidacionArca incluyendo tomarLock* (updateMany).
  */
 
+// ─── Mocks ───────────────────────────────────────────────────────────────────
+
+const mockPrisma = {
+  liquidacion: {
+    findUnique: jest.fn(),
+    updateMany: jest.fn(),
+    update: jest.fn(),
+  },
+  configuracionArca: {
+    findUnique: jest.fn(),
+  },
+  ticketWsaa: {
+    findUnique: jest.fn(),
+    upsert: jest.fn(),
+  },
+}
+
+jest.mock("@/lib/prisma", () => ({ prisma: mockPrisma }))
+
+jest.mock("@/lib/arca/config", () => ({
+  cargarConfigArca: jest.fn(),
+  resolverUrls: jest.fn().mockReturnValue({
+    wsaaUrl: "https://wsaahomo.afip.gov.ar/ws/services/LoginCms",
+    wsfev1Url: "https://wswhomo.afip.gov.ar/wsfev1/service.asmx",
+  }),
+}))
+
+jest.mock("@/lib/arca/wsaa", () => ({
+  obtenerTicketWsaa: jest.fn(),
+}))
+
+jest.mock("@/lib/arca/wsfev1", () => ({
+  feCompUltimoAutorizado: jest.fn(),
+  feCAESolicitar: jest.fn(),
+}))
+
+// Mock dynamic imports para PDF/storage (no nos interesan en estos tests)
+jest.mock("@/lib/storage", () => ({
+  storageConfigurado: jest.fn().mockReturnValue(false),
+  subirPDF: jest.fn(),
+}))
+jest.mock("@/lib/pdf-liquidacion", () => ({
+  generarPDFLiquidacion: jest.fn(),
+}))
+
+import { autorizarLiquidacionArca } from "@/lib/arca/service"
+import { cargarConfigArca } from "@/lib/arca/config"
+import { obtenerTicketWsaa } from "@/lib/arca/wsaa"
+import { feCompUltimoAutorizado, feCAESolicitar } from "@/lib/arca/wsfev1"
 import {
   DocumentoYaAutorizadoError,
   DocumentoEnProcesoError,
-  ArcaValidacionError,
+  DocumentoNoEncontradoError,
 } from "@/lib/arca/errors"
-import { validarDocumentoNoAutorizado } from "@/lib/arca/validators"
+import type { ArcaConfig } from "@/lib/arca/types"
 
-describe("protección contra doble emisión", () => {
-  describe("validarDocumentoNoAutorizado", () => {
-    it("permite PENDIENTE", () => {
-      expect(validarDocumentoNoAutorizado("PENDIENTE")).toBeNull()
+// ─── Fixtures ────────────────────────────────────────────────────────────────
+
+const CONFIG_MOCK: ArcaConfig = {
+  cuit: "30709381683",
+  razonSocial: "TRANS-MAGG S.R.L.",
+  certificadoB64: "cert",
+  certificadoPass: "pass",
+  modo: "homologacion",
+  puntosVenta: { FACTURA_A: 1 },
+  cbuMiPymes: null,
+  activa: true,
+}
+
+const LIQ_MOCK = {
+  id: "liq-001",
+  estado: "EMITIDA",
+  arcaEstado: "PENDIENTE",
+  idempotencyKey: null,
+  cae: null,
+  caeVto: null,
+  qrData: null,
+  nroComprobante: 1,
+  ptoVenta: 1,
+  tipoCbte: 186,
+  neto: 100000,
+  ivaMonto: 21000,
+  total: 121000,
+  grabadaEn: new Date("2026-04-01"),
+  fletero: { cuit: "20123456789", condicionIva: "RESPONSABLE_INSCRIPTO" },
+  viajes: [{ fechaViaje: new Date("2026-03-15") }, { fechaViaje: new Date("2026-03-28") }],
+}
+
+const TICKET_MOCK = {
+  token: "TOKEN_LARGO_SUFICIENTE_PARA_PASAR_VALIDACION",
+  sign: "SIGN_LARGO_SUFICIENTE_PARA_PASAR_VALIDACION",
+  expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000),
+}
+
+const FECAE_RESPONSE_OK = {
+  FeCabResp: { Cuit: 30709381683, PtoVta: 1, CbteTipo: 186, FchProceso: "20260401", CantReg: 1, Resultado: "A" },
+  FeDetResp: {
+    FECAEDetResponse: [{
+      Concepto: 2, DocTipo: 80, DocNro: 20123456789,
+      CbteDesde: 42, CbteHasta: 42, CbteFch: "20260401",
+      Resultado: "A" as const,
+      CAE: "74123456789012",
+      CAEFchVto: "20260415",
+      Observaciones: null,
+    }],
+  },
+  Errors: null,
+  Events: null,
+}
+
+// ─── Setup ───────────────────────────────────────────────────────────────────
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  (cargarConfigArca as jest.Mock).mockResolvedValue(CONFIG_MOCK);
+  (obtenerTicketWsaa as jest.Mock).mockResolvedValue(TICKET_MOCK);
+  (feCompUltimoAutorizado as jest.Mock).mockResolvedValue({ PtoVta: 1, CbteTipo: 186, CbteNro: 41 });
+  (feCAESolicitar as jest.Mock).mockResolvedValue(FECAE_RESPONSE_OK)
+  mockPrisma.liquidacion.update.mockResolvedValue({})
+})
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+describe("autorizarLiquidacionArca — lock atómico real", () => {
+  it("toma el lock con updateMany y procede cuando count=1", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue({ ...LIQ_MOCK })
+    mockPrisma.liquidacion.updateMany.mockResolvedValue({ count: 1 })
+
+    const result = await autorizarLiquidacionArca("liq-001", "key-001")
+
+    // Verificar que updateMany fue llamado con WHERE condicional
+    expect(mockPrisma.liquidacion.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "liq-001",
+        arcaEstado: { in: ["PENDIENTE", "RECHAZADA"] },
+      },
+      data: { arcaEstado: "EN_PROCESO", idempotencyKey: "key-001" },
     })
 
-    it("permite RECHAZADA (reintento)", () => {
-      expect(validarDocumentoNoAutorizado("RECHAZADA")).toBeNull()
-    })
-
-    it("bloquea AUTORIZADA", () => {
-      const error = validarDocumentoNoAutorizado("AUTORIZADA")
-      expect(error).not.toBeNull()
-      expect(error).toContain("ya fue autorizado")
-    })
-
-    it("bloquea EN_PROCESO", () => {
-      const error = validarDocumentoNoAutorizado("EN_PROCESO")
-      expect(error).not.toBeNull()
-      expect(error).toContain("siendo procesado")
-    })
+    // Verificar que la autorización se completó
+    expect(result.ok).toBe(true)
+    expect(result.cae).toBe("74123456789012")
   })
 
-  describe("errores tipados para concurrencia", () => {
-    it("DocumentoYaAutorizadoError tiene status 409", () => {
-      const err = new DocumentoYaAutorizadoError()
-      expect(err.statusCode).toBe(409)
-      expect(err.code).toBe("DOCUMENTO_YA_AUTORIZADO")
-    })
+  it("aborta con DocumentoEnProcesoError cuando updateMany devuelve count=0 (EN_PROCESO)", async () => {
+    mockPrisma.liquidacion.findUnique
+      .mockResolvedValueOnce({ ...LIQ_MOCK }) // primera lectura: PENDIENTE
+      .mockResolvedValueOnce({ arcaEstado: "EN_PROCESO" }) // relectura post-lock fallido
+    mockPrisma.liquidacion.updateMany.mockResolvedValue({ count: 0 })
 
-    it("DocumentoEnProcesoError tiene status 409", () => {
-      const err = new DocumentoEnProcesoError()
-      expect(err.statusCode).toBe(409)
-      expect(err.code).toBe("DOCUMENTO_EN_PROCESO")
-    })
+    await expect(autorizarLiquidacionArca("liq-001", "key-001"))
+      .rejects.toThrow(DocumentoEnProcesoError)
+
+    // updateMany se llamó pero no matcheó (otro proceso ya lo tomó)
+    expect(mockPrisma.liquidacion.updateMany).toHaveBeenCalledTimes(1)
+    // feCAESolicitar NO se llamó (se abortó antes)
+    expect(feCAESolicitar).not.toHaveBeenCalled()
   })
 
-  describe("estrategia de lock atómico (updateMany)", () => {
-    /**
-     * El lock atómico funciona así:
-     *
-     * 1. updateMany WHERE { id, arcaEstado IN ["PENDIENTE", "RECHAZADA"] }
-     *    SET { arcaEstado: "EN_PROCESO" }
-     *
-     * 2. Si count === 0 → otro proceso ya lo tomó → abortar
-     *    Si count === 1 → lock tomado exitosamente → proceder
-     *
-     * SQLite serializa writes: dos UPDATEs concurrentes se ejecutan uno después
-     * del otro. El primero transiciona el estado; el segundo no matchea el WHERE
-     * y devuelve count=0.
-     *
-     * Esto es una prueba conceptual de la lógica de decisión.
-     */
+  it("aborta con DocumentoYaAutorizadoError cuando updateMany count=0 y relectura da AUTORIZADA", async () => {
+    mockPrisma.liquidacion.findUnique
+      .mockResolvedValueOnce({ ...LIQ_MOCK }) // primera lectura
+      .mockResolvedValueOnce({ arcaEstado: "AUTORIZADA" }) // relectura: ya autorizado
+    mockPrisma.liquidacion.updateMany.mockResolvedValue({ count: 0 })
 
-    it("simula: primer request toma el lock (count=1)", () => {
-      const count = 1 // Simulando resultado de updateMany
-      const lockOk = count > 0
-      expect(lockOk).toBe(true)
-    })
-
-    it("simula: segundo request no puede tomar el lock (count=0)", () => {
-      const count = 0 // Estado ya cambió a EN_PROCESO por otro request
-      const lockOk = count > 0
-      expect(lockOk).toBe(false)
-    })
-
-    it("simula: request después de AUTORIZADA no puede tomar lock (count=0)", () => {
-      const count = 0 // Estado es AUTORIZADA, no matchea IN ["PENDIENTE", "RECHAZADA"]
-      const lockOk = count > 0
-      expect(lockOk).toBe(false)
-    })
-
-    it("simula: request después de RECHAZADA puede reintentar (count=1)", () => {
-      const count = 1 // RECHAZADA está en el IN, puede retomarse
-      const lockOk = count > 0
-      expect(lockOk).toBe(true)
-    })
+    await expect(autorizarLiquidacionArca("liq-001", "key-001"))
+      .rejects.toThrow(DocumentoYaAutorizadoError)
   })
 
-  describe("idempotencia con idempotencyKey", () => {
-    it("misma key + AUTORIZADA → devuelve resultado sin re-emitir", () => {
-      // Simula el check de idempotencia
-      const registro = {
-        idempotencyKey: "key-123",
-        arcaEstado: "AUTORIZADA",
-        cae: "74123456789012",
-      }
-      const requestKey = "key-123"
+  it("permite reintentar desde RECHAZADA (updateMany matchea RECHAZADA)", async () => {
+    const liqRechazada = { ...LIQ_MOCK, arcaEstado: "RECHAZADA" }
+    mockPrisma.liquidacion.findUnique.mockResolvedValue(liqRechazada)
+    mockPrisma.liquidacion.updateMany.mockResolvedValue({ count: 1 })
 
-      const esIdempotente = registro.idempotencyKey === requestKey && registro.arcaEstado === "AUTORIZADA"
-      expect(esIdempotente).toBe(true)
-    })
+    const result = await autorizarLiquidacionArca("liq-001", "key-002")
 
-    it("key diferente + AUTORIZADA → lanza error (no re-emite con otra key)", () => {
-      const registro = {
-        idempotencyKey: "key-123",
-        arcaEstado: "AUTORIZADA",
-        cae: "74123456789012",
-      }
-      const requestKey = "key-456"
+    expect(result.ok).toBe(true)
+    expect(mockPrisma.liquidacion.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          arcaEstado: { in: ["PENDIENTE", "RECHAZADA"] },
+        }),
+      })
+    )
+  })
+})
 
-      const esIdempotente = registro.idempotencyKey === requestKey && registro.arcaEstado === "AUTORIZADA"
-      expect(esIdempotente).toBe(false)
-      // En este caso, el flujo normal detectaría AUTORIZADA y lanzaría DocumentoYaAutorizadoError
-    })
+describe("autorizarLiquidacionArca — idempotencia real", () => {
+  it("misma key + AUTORIZADA devuelve resultado sin llamar ARCA", async () => {
+    const liqAutorizada = {
+      ...LIQ_MOCK,
+      arcaEstado: "AUTORIZADA",
+      idempotencyKey: "key-001",
+      cae: "74123456789012",
+      caeVto: new Date("2026-04-15"),
+      qrData: "eyJ2ZXIiOjF9",
+    }
+    mockPrisma.liquidacion.findUnique.mockResolvedValue(liqAutorizada)
 
-    it("misma key + RECHAZADA → permite reintento", () => {
-      const registro = {
-        idempotencyKey: "key-123",
-        arcaEstado: "RECHAZADA",
-      }
-      const requestKey = "key-123"
+    const result = await autorizarLiquidacionArca("liq-001", "key-001")
 
-      const esIdempotente = registro.idempotencyKey === requestKey && registro.arcaEstado === "AUTORIZADA"
-      expect(esIdempotente).toBe(false)
-      // Continúa al flujo normal, detecta RECHAZADA como retryable
-      expect(validarDocumentoNoAutorizado("RECHAZADA")).toBeNull()
+    expect(result.ok).toBe(true)
+    expect(result.cae).toBe("74123456789012")
+    // No se llamó a updateMany (no intentó tomar lock)
+    expect(mockPrisma.liquidacion.updateMany).not.toHaveBeenCalled()
+    // No se llamó a WSAA ni WSFEv1
+    expect(obtenerTicketWsaa).not.toHaveBeenCalled()
+    expect(feCAESolicitar).not.toHaveBeenCalled()
+  })
+
+  it("key diferente + AUTORIZADA lanza DocumentoYaAutorizadoError", async () => {
+    const liqAutorizada = {
+      ...LIQ_MOCK,
+      arcaEstado: "AUTORIZADA",
+      idempotencyKey: "key-vieja",
+      cae: "74123456789012",
+    }
+    mockPrisma.liquidacion.findUnique.mockResolvedValue(liqAutorizada)
+
+    await expect(autorizarLiquidacionArca("liq-001", "key-nueva"))
+      .rejects.toThrow(DocumentoYaAutorizadoError)
+
+    expect(feCAESolicitar).not.toHaveBeenCalled()
+  })
+})
+
+describe("autorizarLiquidacionArca — doble ejecución simulada", () => {
+  it("solo la primera ejecución completa la autorización", async () => {
+    mockPrisma.liquidacion.findUnique
+      .mockResolvedValueOnce({ ...LIQ_MOCK }) // request A: lee PENDIENTE
+      .mockResolvedValueOnce({ ...LIQ_MOCK }) // request B: lee PENDIENTE (antes del lock)
+      .mockResolvedValueOnce({ arcaEstado: "EN_PROCESO" }) // request B: relectura post-lock fallido
+
+    // Request A obtiene el lock
+    mockPrisma.liquidacion.updateMany
+      .mockResolvedValueOnce({ count: 1 }) // request A: lock OK
+      .mockResolvedValueOnce({ count: 0 }) // request B: lock FAIL
+
+    // Ejecutar ambos "simultáneamente"
+    const requestA = autorizarLiquidacionArca("liq-001", "key-A")
+    const requestB = autorizarLiquidacionArca("liq-001", "key-B")
+
+    const [resultA, resultB] = await Promise.allSettled([requestA, requestB])
+
+    // A completó exitosamente
+    expect(resultA.status).toBe("fulfilled")
+    if (resultA.status === "fulfilled") {
+      expect(resultA.value.ok).toBe(true)
+      expect(resultA.value.cae).toBe("74123456789012")
+    }
+
+    // B falló con DocumentoEnProcesoError
+    expect(resultB.status).toBe("rejected")
+    if (resultB.status === "rejected") {
+      expect(resultB.reason).toBeInstanceOf(DocumentoEnProcesoError)
+    }
+
+    // feCAESolicitar se llamó exactamente 1 vez (solo request A)
+    expect(feCAESolicitar).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("autorizarLiquidacionArca — casos de error", () => {
+  it("lanza DocumentoNoEncontradoError si la liquidación no existe", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue(null)
+
+    await expect(autorizarLiquidacionArca("liq-inexistente", "key-001"))
+      .rejects.toThrow(DocumentoNoEncontradoError)
+  })
+
+  it("lanza DocumentoNoEncontradoError si la liquidación está ANULADA", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue({ ...LIQ_MOCK, estado: "ANULADA" })
+
+    await expect(autorizarLiquidacionArca("liq-001", "key-001"))
+      .rejects.toThrow(DocumentoNoEncontradoError)
+  })
+
+  it("lanza DocumentoEnProcesoError si arcaEstado es EN_PROCESO antes del lock", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue({ ...LIQ_MOCK, arcaEstado: "EN_PROCESO" })
+
+    await expect(autorizarLiquidacionArca("liq-001", "key-001"))
+      .rejects.toThrow(DocumentoEnProcesoError)
+
+    // No intentó tomar lock (falló en la verificación previa)
+    expect(mockPrisma.liquidacion.updateMany).not.toHaveBeenCalled()
+  })
+
+  it("revierte estado a PENDIENTE si falla después del lock", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue({ ...LIQ_MOCK })
+    mockPrisma.liquidacion.updateMany.mockResolvedValue({ count: 1 });
+    // Hacer que WSAA falle
+    (obtenerTicketWsaa as jest.Mock).mockRejectedValue(new Error("WSAA timeout"))
+
+    await expect(autorizarLiquidacionArca("liq-001", "key-001"))
+      .rejects.toThrow()
+
+    // Verificar que se revirtió el estado
+    expect(mockPrisma.liquidacion.update).toHaveBeenCalledWith({
+      where: { id: "liq-001" },
+      data: { arcaEstado: "PENDIENTE" },
     })
   })
 })
 
-describe("validación de NC/ND", () => {
-  it("rechaza tipos recibidos (NC_RECIBIDA, ND_RECIBIDA)", () => {
-    expect(() => {
-      // Simula la validación del service
-      const tipo: string = "NC_RECIBIDA"
-      if (tipo !== "NC_EMITIDA" && tipo !== "ND_EMITIDA") {
-        throw new ArcaValidacionError(["Solo se autorizan NC/ND emitidas en ARCA"])
-      }
-    }).toThrow(ArcaValidacionError)
-  })
+describe("autorizarLiquidacionArca — persistencia post-CAE", () => {
+  it("persiste todos los campos ARCA después de autorización exitosa", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue({ ...LIQ_MOCK })
+    mockPrisma.liquidacion.updateMany.mockResolvedValue({ count: 1 })
 
-  it("acepta NC_EMITIDA", () => {
-    const tipo = "NC_EMITIDA"
-    const esEmitida = tipo === "NC_EMITIDA" || tipo === "ND_EMITIDA"
-    expect(esEmitida).toBe(true)
-  })
+    await autorizarLiquidacionArca("liq-001", "key-001")
 
-  it("acepta ND_EMITIDA", () => {
-    const tipo: string = "ND_EMITIDA"
-    const esEmitida = tipo === "NC_EMITIDA" || tipo === "ND_EMITIDA"
-    expect(esEmitida).toBe(true)
+    // Verificar que update se llamó con los campos ARCA
+    const updateCalls = mockPrisma.liquidacion.update.mock.calls
+    const persistCall = updateCalls.find(
+      (call: unknown[]) => (call[0] as { data: Record<string, unknown> }).data.cae !== undefined
+    )
+
+    expect(persistCall).toBeDefined()
+    const data = (persistCall[0] as { data: Record<string, unknown> }).data
+    expect(data.cae).toBe("74123456789012")
+    expect(data.arcaEstado).toBe("AUTORIZADA")
+    expect(data.nroComprobante).toBe(42) // ultimo (41) + 1
+    expect(data.requestArcaJson).toBeDefined()
+    expect(data.responseArcaJson).toBeDefined()
+    expect(data.qrData).toBeDefined()
+    expect(data.autorizadaEn).toBeInstanceOf(Date)
   })
 })
