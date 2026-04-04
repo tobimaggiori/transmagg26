@@ -446,6 +446,14 @@ model Liquidacion {
   qrData             String?  @map("qr_data")
   arcaEstado         String?  @default("PENDIENTE") @map("arca_estado")
   arcaObservaciones  String?  @map("arca_observaciones")
+  requestArcaJson    String?  @map("request_arca_json")
+  // Payload enviado a ARCA (serializado como JSON string)
+  responseArcaJson   String?  @map("response_arca_json")
+  // Respuesta de ARCA (serializada como JSON string)
+  autorizadaEn       DateTime? @map("autorizada_en")
+  // Timestamp de autorización exitosa en ARCA
+  idempotencyKey     String?  @map("idempotency_key")
+  // UUID para prevenir doble emisión
   pdfS3Key           String?  @map("pdf_s3_key")
   grabadaEn          DateTime @default(now()) @map("grabada_en")
 
@@ -479,7 +487,25 @@ model FacturaEmitida {
   neto             Float
   ivaMonto         Float    @map("iva_monto")
   total            Float
-  estadoArca       String   @default("PENDIENTE") @map("estado_arca")
+  ptoVenta           Int?      @default(1) @map("pto_venta")
+  // Punto de venta ARCA habilitado
+  cae                String?   @map("cae")
+  // Código de Autorización Electrónica (14 dígitos)
+  caeVto             DateTime? @map("cae_vto")
+  // Fecha de vencimiento del CAE
+  qrData             String?   @map("qr_data")
+  // JSON base64 del QR fiscal según RG 4291
+  estadoArca         String    @default("PENDIENTE") @map("estado_arca")
+  arcaObservaciones  String?   @map("arca_observaciones")
+  // Errores o advertencias de ARCA al autorizar
+  requestArcaJson    String?   @map("request_arca_json")
+  // Payload enviado a ARCA (serializado como JSON string)
+  responseArcaJson   String?   @map("response_arca_json")
+  // Respuesta de ARCA (serializada como JSON string)
+  autorizadaEn       DateTime? @map("autorizada_en")
+  // Timestamp de autorización exitosa en ARCA
+  idempotencyKey     String?   @map("idempotency_key")
+  // UUID para prevenir doble emisión
   estado           String   @default("BORRADOR")
   pdfS3Key         String?  @map("pdf_s3_key")
   emitidaEn        DateTime @default(now()) @map("emitida_en")
@@ -1240,6 +1266,18 @@ model NotaCreditoDebito {
   qrData              String?   @map("qr_data")
   arcaEstado          String?   @default("PENDIENTE") @map("arca_estado")
   arcaObservaciones   String?   @map("arca_observaciones")
+  requestArcaJson     String?   @map("request_arca_json")
+  // Payload enviado a ARCA (serializado como JSON string)
+  responseArcaJson    String?   @map("response_arca_json")
+  // Respuesta de ARCA (serializada como JSON string)
+  autorizadaEn        DateTime? @map("autorizada_en")
+  // Timestamp de autorización exitosa en ARCA
+  idempotencyKey      String?   @map("idempotency_key")
+  // UUID para prevenir doble emisión
+  // Comprobante asociado para NC/ND (requerido por ARCA)
+  cbteAsocTipo        Int?      @map("cbte_asoc_tipo")
+  cbteAsocPtoVta      Int?      @map("cbte_asoc_pto_vta")
+  cbteAsocNro         Int?      @map("cbte_asoc_nro")
 
   pdfS3Key            String?   @map("pdf_s3_key")
 
@@ -1457,6 +1495,21 @@ model ConfiguracionArca {
   actualizadoPor   String?  @map("actualizado_por")
 
   @@map("configuracion_arca")
+}
+
+// Cache del ticket de acceso WSAA para evitar autenticar en cada request.
+// El ticket dura 12 horas; se renueva automáticamente al expirar.
+model TicketWsaa {
+  id          String   @id @default("wsfe")
+  // "wsfe" para WSFEv1. Extensible a otros servicios si se necesita.
+  token       String
+  sign        String
+  expiresAt   DateTime @map("expires_at")
+  // Momento de expiración del ticket (generationTime + 12h de WSAA)
+  obtainedAt  DateTime @default(now()) @map("obtained_at")
+  // Momento en que se obtuvo este ticket
+
+  @@map("tickets_wsaa")
 }
 
 model HistorialPago {
