@@ -132,17 +132,53 @@ Agregar `@@unique([ptoVenta, nroComprobante, tipoCbte])` donde corresponda. Esto
 
 ---
 
+## Hardening (implementado)
+
+### Seguridad de secretos
+- **Cifrado en reposo**: `certificadoB64` y `certificadoPass` se cifran con AES-256-GCM usando `ENCRYPTION_KEY` como master key al guardar desde la API de configuración.
+- **Backward compatible**: Si un valor no tiene prefijo `enc:v1:`, se trata como plaintext legacy. La migración es progresiva: al re-guardar la config, se cifra automáticamente.
+- **Nunca expuestos**: GET de config ya stripeaba cert/pass. Los logs nunca incluyen token, sign, certificado ni password.
+- **Sanitización de errores**: Los mensajes de error no incluyen IDs internos, detalles de forge ni paths de certificado.
+
+### Estrategia WSAA
+- **Cache en DB**: Ticket WSAA (token + sign) persiste en `tickets_wsaa` con `expiresAt`. Cada invocación lee de DB primero.
+- **Margen de expiración**: 10 minutos (antes era 5). Cubre emisiones que tardan en completarse.
+- **Validación de integridad**: Verifica que token/sign no estén vacíos ni sean demasiado cortos antes de reusar.
+- **Renovación concurrente**: Dos invocaciones simultáneas que ven ticket vencido pueden ambas llamar a WSAA. No hay corrupción (upsert idempotente). WSAA tolera loginCms duplicados con el mismo certificado.
+- **Retry**: 1 reintento con 2s de delay para errores transitorios de red/timeout. No reintenta errores de certificado (permanentes).
+
+### Política de retries
+| Capa | Retry | Delay | Errores reintentables |
+|------|-------|-------|-----------------------|
+| WSAA | 1 | 2s | Red, timeout, HTTP 5xx |
+| WSFEv1 | 1 | 2s (backoff) | Red, timeout, HTTP 5xx |
+| WSAA | 0 | — | Certificado inválido, HTTP 4xx |
+| WSFEv1 | 0 | — | Rechazo fiscal, error funcional |
+
+### Clasificación de errores
+Todos los `ArcaError` tienen un campo `retryable: boolean`:
+- `WsaaError`: retryable=true por default (red), false si certificado inválido
+- `Wsfev1Error`: retryable=true por default (red), false si error funcional ARCA
+- `ArcaRechazoError`: retryable=false (rechazo fiscal permanente)
+- `ArcaValidacionError`: retryable=false (datos incorrectos)
+- `DocumentoEnProcesoError`: retryable=true (esperar y reintentar)
+- `DocumentoYaAutorizadoError`: retryable=false
+- `ArcaNoConfiguradaError`: retryable=false
+
+### Logging
+Cada entrada de log incluye: `{ ts, nivel, modulo: "ARCA", etapa, mensaje, ...meta }`.
+Etapas: inicio, lock, wsaa, numeracion, validacion, autorizacion, persistencia, pdf, completado, error.
+Soporte puede rastrear en qué punto exacto falló una emisión.
+
+---
+
 ## Limitaciones conocidas
 
-1. **Certificado sin cifrar en DB**: El certificado y su password se almacenan como texto en Turso. Se recomienda cifrar con ENCRYPTION_KEY a futuro. Por ahora, Turso cifra en reposo.
+1. **Cold start de Vercel**: La primera invocación de WSAA puede tardar 2-3 segundos por parsing PKCS#12. Subsiguientes usan cache en DB.
 
-2. **No hay lock distribuido**: Turso no soporta `SELECT FOR UPDATE`. La protección contra doble emisión usa optimistic concurrency (campo arcaEstado). En escenarios de concurrencia extrema, la unique constraint de DB es el último recurso.
+2. **Concurrencia de renovación WSAA**: Dos invocaciones simultáneas pueden ambas renovar el ticket. No hay corrupción ni impacto funcional, solo una llamada extra a WSAA. Aceptable para el volumen esperado.
 
-3. **Cold start de Vercel**: La primera invocación de WSAA puede tardar 2-3 segundos por el parsing del certificado PKCS#12. Subsiguientes invocaciones dentro de la misma instancia usan cache en memoria + DB.
-
-4. **Sin retry automático de ARCA**: Si ARCA falla por timeout, el operador debe reintentar manualmente. El sistema detecta el estado EN_PROCESO y permite reintentar de forma segura.
-
-5. **Tipos de comprobante soportados**: Factura A/B (1/6), Factura A MiPyme (201), LP A/B (186/187), NC A/B (3/8), ND A/B (2/7). No se soportan comprobantes C, M ni E.
+3. **Tipos de comprobante soportados**: Factura A/B (1/6), Factura A MiPyme (201), LP A/B (186/187), NC A/B (3/8), ND A/B (2/7). No se soportan comprobantes C, M ni E.
 
 ---
 
@@ -150,7 +186,7 @@ Agregar `@@unique([ptoVenta, nroComprobante, tipoCbte])` donde corresponda. Esto
 
 ```env
 # Ya existentes (no cambiar)
-ENCRYPTION_KEY=            # Usado para HMAC de QR internos (ya existe)
+ENCRYPTION_KEY=            # Master key para cifrado de cert/pass ARCA + HMAC de QR internos (ya existe)
 
 # Opcionales — las URLs se determinan por el campo `modo` de ConfiguracionArca
 # Solo necesarias si se quieren override los defaults

@@ -38,13 +38,13 @@ describe("protección contra doble emisión", () => {
 
   describe("errores tipados para concurrencia", () => {
     it("DocumentoYaAutorizadoError tiene status 409", () => {
-      const err = new DocumentoYaAutorizadoError("test-id")
+      const err = new DocumentoYaAutorizadoError()
       expect(err.statusCode).toBe(409)
       expect(err.code).toBe("DOCUMENTO_YA_AUTORIZADO")
     })
 
     it("DocumentoEnProcesoError tiene status 409", () => {
-      const err = new DocumentoEnProcesoError("test-id")
+      const err = new DocumentoEnProcesoError()
       expect(err.statusCode).toBe(409)
       expect(err.code).toBe("DOCUMENTO_EN_PROCESO")
     })

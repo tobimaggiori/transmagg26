@@ -49,3 +49,6 @@ export {
 
 // Validadores
 export { validarPreAutorizacion, validarDocumentoNoAutorizado } from "./validators"
+
+// Crypto
+export { cifrarValor, descifrarValor, estaCifrado } from "./crypto"

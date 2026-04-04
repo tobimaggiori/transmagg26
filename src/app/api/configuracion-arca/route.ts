@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esAdmin } from "@/lib/permissions"
+import { cifrarValor } from "@/lib/arca/crypto"
 import { z } from "zod"
 import type { Rol } from "@/types"
 
@@ -67,12 +68,18 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
 
-  const { puntosVenta, ...rest } = parsed.data
+  const { puntosVenta, certificadoB64, certificadoPass, ...rest } = parsed.data
+
+  // Cifrar certificado y password si están presentes
+  const datosSensibles: Record<string, string> = {}
+  if (certificadoB64 !== undefined) datosSensibles.certificadoB64 = cifrarValor(certificadoB64)
+  if (certificadoPass !== undefined) datosSensibles.certificadoPass = cifrarValor(certificadoPass)
 
   const updated = await prisma.configuracionArca.upsert({
     where: { id: "unico" },
     update: {
       ...rest,
+      ...datosSensibles,
       ...(puntosVenta !== undefined ? { puntosVenta: JSON.stringify(puntosVenta) } : {}),
       actualizadoPor: session.user.email ?? undefined,
     },
@@ -81,6 +88,7 @@ export async function PATCH(req: NextRequest) {
       cuit: "30709381683",
       razonSocial: "",
       ...rest,
+      ...datosSensibles,
       ...(puntosVenta !== undefined ? { puntosVenta: JSON.stringify(puntosVenta) } : {}),
       actualizadoPor: session.user.email ?? undefined,
     },

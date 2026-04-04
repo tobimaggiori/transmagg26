@@ -6,6 +6,7 @@
 
 import { prisma } from "@/lib/prisma"
 import { ArcaNoConfiguradaError, ArcaConfigIncompletaError } from "./errors"
+import { descifrarValor } from "./crypto"
 import type { ArcaConfig, ArcaUrls } from "./types"
 
 const WSAA_URLS = {
@@ -53,8 +54,9 @@ export async function cargarConfigArca(): Promise<ArcaConfig> {
   return {
     cuit: row.cuit.replace(/\D/g, ""),
     razonSocial: row.razonSocial,
-    certificadoB64: row.certificadoB64,
-    certificadoPass: row.certificadoPass,
+    // Descifrar certificado y password (backward compatible con plaintext legacy)
+    certificadoB64: descifrarValor(row.certificadoB64),
+    certificadoPass: descifrarValor(row.certificadoPass),
     modo: row.modo === "produccion" ? "produccion" : "homologacion",
     puntosVenta,
     cbuMiPymes: row.cbuMiPymes ?? null,

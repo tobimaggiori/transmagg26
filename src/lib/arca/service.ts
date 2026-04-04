@@ -32,8 +32,10 @@ import type { ArcaConfig, AutorizarComprobanteResult, TipoDocumentoArca } from "
 
 // ─── Logging seguro ──────────────────────────────────────────────────────────
 
-function logArca(nivel: "info" | "warn" | "error", mensaje: string, meta?: Record<string, unknown>) {
-  const entry = { ts: new Date().toISOString(), nivel, modulo: "ARCA", mensaje, ...meta }
+type Etapa = "inicio" | "lock" | "wsaa" | "numeracion" | "validacion" | "autorizacion" | "persistencia" | "pdf" | "completado" | "error"
+
+function logArca(nivel: "info" | "warn" | "error", etapa: Etapa, mensaje: string, meta?: Record<string, unknown>) {
+  const entry = { ts: new Date().toISOString(), nivel, modulo: "ARCA", etapa, mensaje, ...meta }
   if (nivel === "error") console.error(JSON.stringify(entry))
   else console.log(JSON.stringify(entry))
 }
@@ -99,7 +101,7 @@ async function generarPdfFiscalLiquidacion(liquidacionId: string): Promise<strin
   try {
     const { storageConfigurado, subirPDF } = await import("@/lib/storage")
     if (!storageConfigurado()) {
-      logArca("warn", "Storage no configurado, PDF no generado", { id: liquidacionId })
+      logArca("warn", "pdf", "Storage no configurado, PDF no generado", { id: liquidacionId })
       return null
     }
 
@@ -117,7 +119,7 @@ async function generarPdfFiscalLiquidacion(liquidacionId: string): Promise<strin
     const key = await subirPDF(buffer, "liquidaciones", `${nro}.pdf`)
     return key
   } catch (err) {
-    logArca("error", "Error generando PDF fiscal post-autorización", {
+    logArca("error", "pdf", "Error generando PDF fiscal post-autorización", {
       id: liquidacionId,
       error: err instanceof Error ? err.message : String(err),
     })
@@ -135,7 +137,7 @@ async function generarPdfFiscalFactura(facturaId: string): Promise<string | null
   try {
     const { storageConfigurado, subirPDF } = await import("@/lib/storage")
     if (!storageConfigurado()) {
-      logArca("warn", "Storage no configurado, PDF factura no generado", { id: facturaId })
+      logArca("warn", "pdf", "Storage no configurado, PDF factura no generado", { id: facturaId })
       return null
     }
 
@@ -153,7 +155,7 @@ async function generarPdfFiscalFactura(facturaId: string): Promise<string | null
     const key = await subirPDF(buffer, "facturas-emitidas", `${nro}.pdf`)
     return key
   } catch (err) {
-    logArca("error", "Error generando PDF fiscal factura post-autorización", {
+    logArca("error", "pdf", "Error generando PDF fiscal factura post-autorización", {
       id: facturaId,
       error: err instanceof Error ? err.message : String(err),
     })
@@ -171,7 +173,7 @@ async function generarPdfFiscalNotaCD(notaId: string): Promise<string | null> {
   try {
     const { storageConfigurado, subirPDF } = await import("@/lib/storage")
     if (!storageConfigurado()) {
-      logArca("warn", "Storage no configurado, PDF nota CD no generado", { id: notaId })
+      logArca("warn", "pdf", "Storage no configurado, PDF nota CD no generado", { id: notaId })
       return null
     }
 
@@ -191,7 +193,7 @@ async function generarPdfFiscalNotaCD(notaId: string): Promise<string | null> {
     const key = await subirPDF(buffer, "facturas-emitidas", `${nro}.pdf`)
     return key
   } catch (err) {
-    logArca("error", "Error generando PDF fiscal nota CD post-autorización", {
+    logArca("error", "pdf", "Error generando PDF fiscal nota CD post-autorización", {
       id: notaId,
       error: err instanceof Error ? err.message : String(err),
     })
@@ -235,7 +237,7 @@ export async function autorizarLiquidacionArca(
   })
 
   if (!liq || liq.estado === "ANULADA") {
-    throw new DocumentoNoEncontradoError("Liquidación", liquidacionId)
+    throw new DocumentoNoEncontradoError("Liquidación")
   }
 
   // Idempotencia: si ya fue autorizado con esta misma key, devolver resultado
@@ -246,8 +248,8 @@ export async function autorizarLiquidacionArca(
   // Verificar estado (lectura informativa, el lock atómico es la protección real)
   const errorEstado = validarDocumentoNoAutorizado(liq.arcaEstado ?? "PENDIENTE")
   if (errorEstado) {
-    if (liq.arcaEstado === "AUTORIZADA") throw new DocumentoYaAutorizadoError(liquidacionId)
-    throw new DocumentoEnProcesoError(liquidacionId)
+    if (liq.arcaEstado === "AUTORIZADA") throw new DocumentoYaAutorizadoError()
+    throw new DocumentoEnProcesoError()
   }
 
   // Lock atómico: solo avanza si el estado actual es PENDIENTE o RECHAZADA
@@ -258,8 +260,8 @@ export async function autorizarLiquidacionArca(
       where: { id: liquidacionId },
       select: { arcaEstado: true },
     })
-    if (current?.arcaEstado === "AUTORIZADA") throw new DocumentoYaAutorizadoError(liquidacionId)
-    throw new DocumentoEnProcesoError(liquidacionId)
+    if (current?.arcaEstado === "AUTORIZADA") throw new DocumentoYaAutorizadoError()
+    throw new DocumentoEnProcesoError()
   }
 
   // Determinar tipo de comprobante por condición IVA del fletero
@@ -291,7 +293,7 @@ export async function autorizarLiquidacionArca(
         where: { id: liquidacionId },
         data: { pdfS3Key: pdfKey },
       })
-      logArca("info", "PDF fiscal generado", { id: liquidacionId, pdfKey })
+      logArca("info", "pdf", "PDF fiscal generado", { id: liquidacionId, pdfKey })
     }
 
     return result
@@ -329,7 +331,7 @@ export async function autorizarFacturaArca(
   })
 
   if (!factura || factura.estado === "ANULADA") {
-    throw new DocumentoNoEncontradoError("Factura", facturaId)
+    throw new DocumentoNoEncontradoError("Factura")
   }
 
   if (factura.idempotencyKey === idempotencyKey && factura.estadoArca === "AUTORIZADA") {
@@ -338,8 +340,8 @@ export async function autorizarFacturaArca(
 
   const errorEstado = validarDocumentoNoAutorizado(factura.estadoArca)
   if (errorEstado) {
-    if (factura.estadoArca === "AUTORIZADA") throw new DocumentoYaAutorizadoError(facturaId)
-    throw new DocumentoEnProcesoError(facturaId)
+    if (factura.estadoArca === "AUTORIZADA") throw new DocumentoYaAutorizadoError()
+    throw new DocumentoEnProcesoError()
   }
 
   // Lock atómico
@@ -349,8 +351,8 @@ export async function autorizarFacturaArca(
       where: { id: facturaId },
       select: { estadoArca: true },
     })
-    if (current?.estadoArca === "AUTORIZADA") throw new DocumentoYaAutorizadoError(facturaId)
-    throw new DocumentoEnProcesoError(facturaId)
+    if (current?.estadoArca === "AUTORIZADA") throw new DocumentoYaAutorizadoError()
+    throw new DocumentoEnProcesoError()
   }
 
   const tipoCbte = factura.tipoCbte
@@ -382,7 +384,7 @@ export async function autorizarFacturaArca(
         where: { id: facturaId },
         data: { pdfS3Key: pdfKey },
       })
-      logArca("info", "PDF fiscal factura generado", { id: facturaId, pdfKey })
+      logArca("info", "pdf", "PDF fiscal factura generado", { id: facturaId, pdfKey })
     }
 
     return result
@@ -418,7 +420,7 @@ export async function autorizarNotaCDArca(
   })
 
   if (!nota || nota.estado === "ANULADA") {
-    throw new DocumentoNoEncontradoError("Nota de crédito/débito", notaId)
+    throw new DocumentoNoEncontradoError("Nota de crédito/débito")
   }
 
   if (nota.tipo !== "NC_EMITIDA" && nota.tipo !== "ND_EMITIDA") {
@@ -431,8 +433,8 @@ export async function autorizarNotaCDArca(
 
   const errorEstado = validarDocumentoNoAutorizado(nota.arcaEstado ?? "PENDIENTE")
   if (errorEstado) {
-    if (nota.arcaEstado === "AUTORIZADA") throw new DocumentoYaAutorizadoError(notaId)
-    throw new DocumentoEnProcesoError(notaId)
+    if (nota.arcaEstado === "AUTORIZADA") throw new DocumentoYaAutorizadoError()
+    throw new DocumentoEnProcesoError()
   }
 
   // Lock atómico
@@ -442,8 +444,8 @@ export async function autorizarNotaCDArca(
       where: { id: notaId },
       select: { arcaEstado: true },
     })
-    if (current?.arcaEstado === "AUTORIZADA") throw new DocumentoYaAutorizadoError(notaId)
-    throw new DocumentoEnProcesoError(notaId)
+    if (current?.arcaEstado === "AUTORIZADA") throw new DocumentoYaAutorizadoError()
+    throw new DocumentoEnProcesoError()
   }
 
   // Determinar comprobante asociado
@@ -500,7 +502,7 @@ export async function autorizarNotaCDArca(
         where: { id: notaId },
         data: { pdfS3Key: pdfKey },
       })
-      logArca("info", "PDF fiscal nota CD generado", { id: notaId, pdfKey })
+      logArca("info", "pdf", "PDF fiscal nota CD generado", { id: notaId, pdfKey })
     }
 
     return result
@@ -526,7 +528,7 @@ async function _autorizarComprobante(
   config: ArcaConfig,
   input: AutorizarInput
 ): Promise<AutorizarComprobanteResult> {
-  logArca("info", "Iniciando autorización ARCA", {
+  logArca("info", "inicio", "Iniciando autorización ARCA", {
     tipo: input.tipoDocumento,
     id: input.documentoId,
     tipoCbte: input.tipoCbte,
@@ -541,7 +543,7 @@ async function _autorizarComprobante(
   const ultimo = await feCompUltimoAutorizado(urls.wsfev1Url, auth, input.ptoVenta, input.tipoCbte)
   const nroDefinitivo = ultimo.CbteNro + 1
 
-  logArca("info", "Numeración sincronizada", {
+  logArca("info", "numeracion", "Numeración sincronizada", {
     ultimoArca: ultimo.CbteNro,
     nroDefinitivo,
     ptoVenta: input.ptoVenta,
@@ -575,7 +577,7 @@ async function _autorizarComprobante(
   const observaciones = det.Observaciones?.Obs?.map((o) => `${o.Code}: ${o.Msg}`).join("; ") ?? ""
 
   if (det.Resultado === "R") {
-    logArca("warn", "Comprobante rechazado por ARCA", {
+    logArca("warn", "autorizacion", "Comprobante rechazado por ARCA", {
       tipo: input.tipoDocumento,
       id: input.documentoId,
       observaciones,
@@ -609,7 +611,7 @@ async function _autorizarComprobante(
     fechaEmision: input.fecha,
   })
 
-  logArca("info", "Comprobante autorizado exitosamente", {
+  logArca("info", "completado", "Comprobante autorizado exitosamente", {
     tipo: input.tipoDocumento,
     id: input.documentoId,
     cae,

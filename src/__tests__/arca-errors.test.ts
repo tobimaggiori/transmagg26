@@ -83,16 +83,17 @@ describe("ArcaRechazoError", () => {
 
 describe("DocumentoYaAutorizadoError", () => {
   it("tiene código DOCUMENTO_YA_AUTORIZADO y status 409", () => {
-    const err = new DocumentoYaAutorizadoError("abc-123")
+    const err = new DocumentoYaAutorizadoError()
     expect(err.code).toBe("DOCUMENTO_YA_AUTORIZADO")
     expect(err.statusCode).toBe(409)
-    expect(err.message).toContain("abc-123")
+    expect(err.retryable).toBe(false)
+    expect(err.message).toContain("ya fue autorizado")
   })
 })
 
 describe("DocumentoEnProcesoError", () => {
   it("tiene código DOCUMENTO_EN_PROCESO y status 409", () => {
-    const err = new DocumentoEnProcesoError("abc-123")
+    const err = new DocumentoEnProcesoError()
     expect(err.code).toBe("DOCUMENTO_EN_PROCESO")
     expect(err.statusCode).toBe(409)
   })
@@ -111,11 +112,13 @@ describe("ArcaValidacionError", () => {
 
 describe("DocumentoNoEncontradoError", () => {
   it("tiene código DOCUMENTO_NO_ENCONTRADO y status 404", () => {
-    const err = new DocumentoNoEncontradoError("Liquidación", "abc-123")
+    const err = new DocumentoNoEncontradoError("Liquidación")
     expect(err.code).toBe("DOCUMENTO_NO_ENCONTRADO")
     expect(err.statusCode).toBe(404)
+    expect(err.retryable).toBe(false)
     expect(err.message).toContain("Liquidación")
-    expect(err.message).toContain("abc-123")
+    // ID sanitizado — no debe aparecer en el mensaje público
+    expect(err.message).not.toContain("abc-123")
   })
 })
 
@@ -125,7 +128,7 @@ describe("herencia de errores", () => {
     expect(new WsaaError("x")).toBeInstanceOf(ArcaError)
     expect(new Wsfev1Error("x")).toBeInstanceOf(ArcaError)
     expect(new ArcaRechazoError("x")).toBeInstanceOf(ArcaError)
-    expect(new DocumentoYaAutorizadoError("x")).toBeInstanceOf(ArcaError)
+    expect(new DocumentoYaAutorizadoError()).toBeInstanceOf(ArcaError)
     expect(new ArcaValidacionError([])).toBeInstanceOf(ArcaError)
   })
 
