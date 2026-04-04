@@ -1,10 +1,16 @@
 /**
  * Propósito: Servicio central de autorización de comprobantes en ARCA.
  * Orquesta el flujo completo: validación, autenticación WSAA, sincronización de
- * numeración, llamada a FECAESolicitar, persistencia y regeneración de PDF.
+ * numeración, llamada a FECAESolicitar, persistencia y generación de PDF fiscal.
  *
  * Reutilizable para facturas, liquidaciones, notas de crédito y notas de débito.
  * No contiene lógica de HTTP/routes — las routes lo invocan con datos ya validados.
+ *
+ * Concurrencia: la transición a EN_PROCESO es atómica (updateMany con WHERE sobre
+ * el estado actual). Solo un request puede tomar el lock lógico.
+ *
+ * PDF: se genera inmediatamente después de la autorización exitosa. Si la generación
+ * falla, el CAE queda persistido y el PDF puede regenerarse manualmente.
  */
 
 import { prisma } from "@/lib/prisma"
@@ -32,6 +38,93 @@ function logArca(nivel: "info" | "warn" | "error", mensaje: string, meta?: Recor
   else console.log(JSON.stringify(entry))
 }
 
+// ─── Lock atómico ────────────────────────────────────────────────────────────
+
+/**
+ * tomarLockLiquidacion: (id, idempotencyKey) -> Promise<boolean>
+ *
+ * Intenta transicionar atómicamente arcaEstado a EN_PROCESO.
+ * Solo tiene éxito si el estado actual es PENDIENTE o RECHAZADA.
+ * Devuelve true si el lock se tomó, false si alguien más lo tiene.
+ *
+ * Compatible con SQLite/Turso: usa updateMany con WHERE condicional.
+ * SQLite serializa writes, así que solo un request gana la carrera.
+ */
+async function tomarLockLiquidacion(id: string, idempotencyKey: string): Promise<boolean> {
+  const result = await prisma.liquidacion.updateMany({
+    where: {
+      id,
+      arcaEstado: { in: ["PENDIENTE", "RECHAZADA"] },
+    },
+    data: { arcaEstado: "EN_PROCESO", idempotencyKey },
+  })
+  return result.count > 0
+}
+
+async function tomarLockFactura(id: string, idempotencyKey: string): Promise<boolean> {
+  const result = await prisma.facturaEmitida.updateMany({
+    where: {
+      id,
+      estadoArca: { in: ["PENDIENTE", "RECHAZADA"] },
+    },
+    data: { estadoArca: "EN_PROCESO", idempotencyKey },
+  })
+  return result.count > 0
+}
+
+async function tomarLockNotaCD(id: string, idempotencyKey: string): Promise<boolean> {
+  const result = await prisma.notaCreditoDebito.updateMany({
+    where: {
+      id,
+      arcaEstado: { in: ["PENDIENTE", "RECHAZADA"] },
+    },
+    data: { arcaEstado: "EN_PROCESO", idempotencyKey },
+  })
+  return result.count > 0
+}
+
+// ─── Generación PDF fiscal inmediata ─────────────────────────────────────────
+
+/**
+ * generarPdfFiscalLiquidacion: (liquidacionId) -> Promise<string | null>
+ *
+ * Genera el PDF fiscal de la liquidación (con CAE, QR, nro definitivo) y lo
+ * sube a R2. Devuelve la S3 key del PDF, o null si storage no está configurado
+ * o si la generación falla.
+ *
+ * Si falla, NO pierde el CAE — solo loguea el error. El PDF puede regenerarse
+ * manualmente via GET /api/liquidaciones/[id]/pdf.
+ */
+async function generarPdfFiscalLiquidacion(liquidacionId: string): Promise<string | null> {
+  try {
+    const { storageConfigurado, subirPDF } = await import("@/lib/storage")
+    if (!storageConfigurado()) {
+      logArca("warn", "Storage no configurado, PDF no generado", { id: liquidacionId })
+      return null
+    }
+
+    const { generarPDFLiquidacion } = await import("@/lib/pdf-liquidacion")
+    const buffer = await generarPDFLiquidacion(liquidacionId)
+
+    const liq = await prisma.liquidacion.findUnique({
+      where: { id: liquidacionId },
+      select: { nroComprobante: true, ptoVenta: true },
+    })
+    const nro = liq?.nroComprobante
+      ? `LP-${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${String(liq.nroComprobante).padStart(8, "0")}`
+      : `LP-${liquidacionId.slice(0, 8)}`
+
+    const key = await subirPDF(buffer, "liquidaciones", `${nro}.pdf`)
+    return key
+  } catch (err) {
+    logArca("error", "Error generando PDF fiscal post-autorización", {
+      id: liquidacionId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return null
+  }
+}
+
 // ─── Servicio principal ──────────────────────────────────────────────────────
 
 /**
@@ -40,12 +133,12 @@ function logArca(nivel: "info" | "warn" | "error", mensaje: string, meta?: Recor
  * Autoriza una liquidación (LP) en ARCA. Flujo completo:
  * 1. Carga config ARCA y valida que esté activa
  * 2. Carga la liquidación y valida que no esté ya autorizada
- * 3. Marca como EN_PROCESO (protección doble emisión)
+ * 3. Toma lock atómico (EN_PROCESO) — protección contra doble emisión
  * 4. Obtiene ticket WSAA
  * 5. Sincroniza numeración con FECompUltimoAutorizado
  * 6. Arma payload y llama FECAESolicitar
  * 7. Persiste resultado (CAE, observaciones, request/response)
- * 8. Invalida PDF previo para que se regenere con CAE
+ * 8. Genera PDF fiscal inmediato con CAE
  *
  * @param liquidacionId — UUID de la liquidación.
  * @param idempotencyKey — UUID único para prevenir doble emisión.
@@ -71,32 +164,38 @@ export async function autorizarLiquidacionArca(
     throw new DocumentoNoEncontradoError("Liquidación", liquidacionId)
   }
 
-  // Verificar idempotencia
+  // Idempotencia: si ya fue autorizado con esta misma key, devolver resultado
   if (liq.idempotencyKey === idempotencyKey && liq.arcaEstado === "AUTORIZADA") {
     return resultadoDesdeRegistro(liq as RegistroAutorizado)
   }
 
-  // Verificar estado
+  // Verificar estado (lectura informativa, el lock atómico es la protección real)
   const errorEstado = validarDocumentoNoAutorizado(liq.arcaEstado ?? "PENDIENTE")
   if (errorEstado) {
     if (liq.arcaEstado === "AUTORIZADA") throw new DocumentoYaAutorizadoError(liquidacionId)
     throw new DocumentoEnProcesoError(liquidacionId)
   }
 
+  // Lock atómico: solo avanza si el estado actual es PENDIENTE o RECHAZADA
+  const lockOk = await tomarLockLiquidacion(liquidacionId, idempotencyKey)
+  if (!lockOk) {
+    // Releer para dar mensaje preciso
+    const current = await prisma.liquidacion.findUnique({
+      where: { id: liquidacionId },
+      select: { arcaEstado: true },
+    })
+    if (current?.arcaEstado === "AUTORIZADA") throw new DocumentoYaAutorizadoError(liquidacionId)
+    throw new DocumentoEnProcesoError(liquidacionId)
+  }
+
   // Determinar tipo de comprobante por condición IVA del fletero
   const condIva = (liq.fletero as { condicionIva?: string }).condicionIva ?? "RESPONSABLE_INSCRIPTO"
   const tipoCbte = condIva === "RESPONSABLE_INSCRIPTO" || condIva === "MONOTRIBUTISTA" ? 186 : 187
-  const tipoKey = tipoCbte === 186 ? "FACTURA_A" : "FACTURA_B" // LP usa mismos PV que facturas A/B en config
+  const tipoKey = tipoCbte === 186 ? "FACTURA_A" : "FACTURA_B"
   const ptoVenta = config.puntosVenta[tipoKey] ?? config.puntosVenta["FACTURA_A"] ?? 1
 
-  // Marcar EN_PROCESO
-  await prisma.liquidacion.update({
-    where: { id: liquidacionId },
-    data: { arcaEstado: "EN_PROCESO", idempotencyKey },
-  })
-
   try {
-    return await _autorizarComprobante(config, {
+    const result = await _autorizarComprobante(config, {
       tipoDocumento: "LIQUIDACION",
       documentoId: liquidacionId,
       tipoCbte,
@@ -110,8 +209,20 @@ export async function autorizarLiquidacionArca(
       fechaServDesde: liq.viajes[0]?.fechaViaje ?? liq.grabadaEn,
       fechaServHasta: liq.viajes[liq.viajes.length - 1]?.fechaViaje ?? liq.grabadaEn,
     })
+
+    // Generar PDF fiscal inmediato (post-CAE). Si falla, CAE ya está persistido.
+    const pdfKey = await generarPdfFiscalLiquidacion(liquidacionId)
+    if (pdfKey) {
+      await prisma.liquidacion.update({
+        where: { id: liquidacionId },
+        data: { pdfS3Key: pdfKey },
+      })
+      logArca("info", "PDF fiscal generado", { id: liquidacionId, pdfKey })
+    }
+
+    return result
   } catch (err) {
-    // Revertir estado EN_PROCESO si falló
+    // Revertir lock si falló (RECHAZADA si ARCA rechazó, PENDIENTE si error técnico)
     await prisma.liquidacion.update({
       where: { id: liquidacionId },
       data: { arcaEstado: err instanceof ArcaRechazoError ? "RECHAZADA" : "PENDIENTE" },
@@ -125,6 +236,9 @@ export async function autorizarLiquidacionArca(
  *
  * Autoriza una factura emitida a empresa en ARCA. Mismo flujo que liquidación
  * pero con modelo FacturaEmitida y tipos de comprobante 1/6/201.
+ *
+ * Nota: las facturas no tienen generador PDF con pdfkit — usan HTML.
+ * El PDF fiscal no se genera inmediatamente; se regenerará en el próximo GET /pdf.
  */
 export async function autorizarFacturaArca(
   facturaId: string,
@@ -154,14 +268,20 @@ export async function autorizarFacturaArca(
     throw new DocumentoEnProcesoError(facturaId)
   }
 
-  const tipoCbte = factura.tipoCbte // Ya definido al crear la factura
+  // Lock atómico
+  const lockOk = await tomarLockFactura(facturaId, idempotencyKey)
+  if (!lockOk) {
+    const current = await prisma.facturaEmitida.findUnique({
+      where: { id: facturaId },
+      select: { estadoArca: true },
+    })
+    if (current?.estadoArca === "AUTORIZADA") throw new DocumentoYaAutorizadoError(facturaId)
+    throw new DocumentoEnProcesoError(facturaId)
+  }
+
+  const tipoCbte = factura.tipoCbte
   const tipoKey = tipoCbte === 201 ? "FACTURA_A" : tipoCbte === 1 ? "FACTURA_A" : "FACTURA_B"
   const ptoVenta = config.puntosVenta[tipoKey] ?? 1
-
-  await prisma.facturaEmitida.update({
-    where: { id: facturaId },
-    data: { estadoArca: "EN_PROCESO", idempotencyKey },
-  })
 
   try {
     return await _autorizarComprobante(config, {
@@ -194,6 +314,8 @@ export async function autorizarFacturaArca(
  *
  * Autoriza una nota de crédito o débito emitida en ARCA.
  * Requiere comprobante asociado (factura o liquidación original).
+ *
+ * Nota: NC/ND no tienen generador PDF — se regenerará en GET /pdf si se implementa.
  */
 export async function autorizarNotaCDArca(
   notaId: string,
@@ -213,7 +335,6 @@ export async function autorizarNotaCDArca(
     throw new DocumentoNoEncontradoError("Nota de crédito/débito", notaId)
   }
 
-  // Solo NC_EMITIDA y ND_EMITIDA se autorizan en ARCA
   if (nota.tipo !== "NC_EMITIDA" && nota.tipo !== "ND_EMITIDA") {
     throw new ArcaValidacionError(["Solo se autorizan NC/ND emitidas en ARCA"])
   }
@@ -225,6 +346,17 @@ export async function autorizarNotaCDArca(
   const errorEstado = validarDocumentoNoAutorizado(nota.arcaEstado ?? "PENDIENTE")
   if (errorEstado) {
     if (nota.arcaEstado === "AUTORIZADA") throw new DocumentoYaAutorizadoError(notaId)
+    throw new DocumentoEnProcesoError(notaId)
+  }
+
+  // Lock atómico
+  const lockOk = await tomarLockNotaCD(notaId, idempotencyKey)
+  if (!lockOk) {
+    const current = await prisma.notaCreditoDebito.findUnique({
+      where: { id: notaId },
+      select: { arcaEstado: true },
+    })
+    if (current?.arcaEstado === "AUTORIZADA") throw new DocumentoYaAutorizadoError(notaId)
     throw new DocumentoEnProcesoError(notaId)
   }
 
@@ -257,11 +389,6 @@ export async function autorizarNotaCDArca(
   const tipoCbte = nota.tipoCbte ?? 0
   const tipoKey = [2, 3].includes(tipoCbte) ? "NOTA_CREDITO_A" : "NOTA_CREDITO_B"
   const ptoVenta = config.puntosVenta[tipoKey] ?? config.puntosVenta["FACTURA_A"] ?? 1
-
-  await prisma.notaCreditoDebito.update({
-    where: { id: notaId },
-    data: { arcaEstado: "EN_PROCESO", idempotencyKey },
-  })
 
   try {
     return await _autorizarComprobante(config, {
@@ -356,7 +483,7 @@ async function _autorizarComprobante(
       observaciones,
     })
 
-    // Persistir rechazo
+    // Persistir rechazo (sin borrar pdfS3Key — puede haber borrador previo)
     await _persistirResultado(input.tipoDocumento, input.documentoId, {
       arcaEstado: "RECHAZADA",
       arcaObservaciones: observaciones,
@@ -391,7 +518,8 @@ async function _autorizarComprobante(
     nroDefinitivo,
   })
 
-  // 8. Persistir resultado exitoso
+  // 8. Persistir resultado exitoso (sin tocar pdfS3Key — se actualiza después
+  //    de generar el PDF fiscal en la función caller)
   await _persistirResultado(input.tipoDocumento, input.documentoId, {
     arcaEstado: "AUTORIZADA",
     arcaObservaciones: observaciones || null,
@@ -404,8 +532,6 @@ async function _autorizarComprobante(
     nroComprobante: nroDefinitivo,
     ptoVenta: input.ptoVenta,
     tipoCbte: input.tipoCbte,
-    // Invalidar PDF previo para que se regenere con CAE
-    pdfS3Key: null,
   })
 
   return {
@@ -433,7 +559,6 @@ interface PersistirData {
   nroComprobante: number
   ptoVenta: number
   tipoCbte: number
-  pdfS3Key?: string | null
 }
 
 async function _persistirResultado(
@@ -456,7 +581,6 @@ async function _persistirResultado(
         nroComprobante: data.nroComprobante,
         ptoVenta: data.ptoVenta,
         tipoCbte: data.tipoCbte,
-        ...(data.pdfS3Key !== undefined ? { pdfS3Key: data.pdfS3Key } : {}),
       },
     })
   } else if (tipo === "FACTURA") {
@@ -474,11 +598,9 @@ async function _persistirResultado(
         nroComprobante: String(data.nroComprobante),
         ptoVenta: data.ptoVenta,
         tipoCbte: data.tipoCbte,
-        ...(data.pdfS3Key !== undefined ? { pdfS3Key: data.pdfS3Key } : {}),
       },
     })
   } else {
-    // NOTA_CREDITO o NOTA_DEBITO
     await prisma.notaCreditoDebito.update({
       where: { id },
       data: {
@@ -493,7 +615,6 @@ async function _persistirResultado(
         nroComprobante: data.nroComprobante,
         ptoVenta: data.ptoVenta,
         tipoCbte: data.tipoCbte,
-        ...(data.pdfS3Key !== undefined ? { pdfS3Key: data.pdfS3Key } : {}),
       },
     })
   }
