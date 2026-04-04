@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma"
 import PDFDocument from "pdfkit"
 import QRCode from "qrcode"
 import crypto from "crypto"
+import { obtenerUrlQRFiscal } from "@/lib/arca/qr"
 
 function fmt(n: number): string {
   return (
@@ -119,7 +120,10 @@ export async function generarPDFLiquidacion(
       ? fmtNroLP(liq.ptoVenta, liq.nroComprobante)
       : "Borrador"
 
-  const qrUrl = generarQRUrl(liq.id)
+  // QR: usar fiscal (RG 4291) si autorizada en ARCA, sino URL interna con HMAC
+  const qrUrl = liq.qrData
+    ? obtenerUrlQRFiscal(liq.qrData)
+    : generarQRUrl(liq.id)
 
   /* Generate QR as PNG buffer */
   let qrBuffer: Buffer | null = null

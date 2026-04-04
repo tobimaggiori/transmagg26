@@ -1,6 +1,8 @@
 /**
  * API Route: GET /api/facturas/[id]/pdf
- * Genera una vista HTML imprimible de la factura emitida para descargar como PDF.
+ *
+ * Si la factura tiene pdfS3Key (PDF fiscal generado post-ARCA), devuelve URL firmada de R2.
+ * Si no, genera una vista HTML imprimible (comportamiento original pre-ARCA).
  * Solo accesible para roles con permiso sobre facturas.
  */
 
@@ -8,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno, esRolEmpresa } from "@/lib/permissions"
+import { obtenerUrlFirmada, storageConfigurado } from "@/lib/storage"
 import type { Rol } from "@/types"
 
 function fmt(monto: number) {
@@ -46,6 +49,30 @@ export async function GET(
     return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
   }
 
+  // Si hay PDF fiscal en R2 (post-ARCA), servir desde ahí
+  const facCheck = await prisma.facturaEmitida.findUnique({
+    where: { id: params.id },
+    select: { id: true, pdfS3Key: true, empresaId: true },
+  })
+  if (!facCheck) return NextResponse.json({ error: "Factura no encontrada" }, { status: 404 })
+
+  if (esRolEmpresa(rol)) {
+    const empUsr = await prisma.empresaUsuario.findFirst({
+      where: { usuario: { email: session.user.email }, empresaId: facCheck.empresaId },
+    })
+    if (!empUsr) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
+  }
+
+  if (facCheck.pdfS3Key && storageConfigurado()) {
+    try {
+      const url = await obtenerUrlFirmada(facCheck.pdfS3Key, 900)
+      return NextResponse.json({ url })
+    } catch {
+      // Fallthrough al HTML si la URL falla
+    }
+  }
+
+  // Fallback: HTML imprimible (comportamiento pre-ARCA)
   const factura = await prisma.facturaEmitida.findUnique({
     where: { id: params.id },
     include: {
@@ -67,13 +94,6 @@ export async function GET(
 
   if (!factura) {
     return NextResponse.json({ error: "Factura no encontrada" }, { status: 404 })
-  }
-
-  if (esRolEmpresa(rol)) {
-    const empUsr = await prisma.empresaUsuario.findFirst({
-      where: { usuario: { email: session.user.email }, empresaId: factura.empresaId },
-    })
-    if (!empUsr) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
   }
 
   const filasViajes = factura.viajes.map((v) => `

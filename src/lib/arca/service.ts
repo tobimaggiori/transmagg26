@@ -125,6 +125,80 @@ async function generarPdfFiscalLiquidacion(liquidacionId: string): Promise<strin
   }
 }
 
+/**
+ * generarPdfFiscalFactura: (facturaId) -> Promise<string | null>
+ *
+ * Genera el PDF fiscal de la factura (con CAE, QR, nro definitivo) y lo
+ * sube a R2. Mismo contrato que generarPdfFiscalLiquidacion.
+ */
+async function generarPdfFiscalFactura(facturaId: string): Promise<string | null> {
+  try {
+    const { storageConfigurado, subirPDF } = await import("@/lib/storage")
+    if (!storageConfigurado()) {
+      logArca("warn", "Storage no configurado, PDF factura no generado", { id: facturaId })
+      return null
+    }
+
+    const { generarPDFFactura } = await import("@/lib/pdf-factura")
+    const buffer = await generarPDFFactura(facturaId)
+
+    const fac = await prisma.facturaEmitida.findUnique({
+      where: { id: facturaId },
+      select: { nroComprobante: true, ptoVenta: true, tipoCbte: true },
+    })
+    const nro = fac?.nroComprobante
+      ? `FAC-${String(fac.ptoVenta ?? 1).padStart(4, "0")}-${fac.nroComprobante.padStart(8, "0")}`
+      : `FAC-${facturaId.slice(0, 8)}`
+
+    const key = await subirPDF(buffer, "facturas-emitidas", `${nro}.pdf`)
+    return key
+  } catch (err) {
+    logArca("error", "Error generando PDF fiscal factura post-autorización", {
+      id: facturaId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return null
+  }
+}
+
+/**
+ * generarPdfFiscalNotaCD: (notaId) -> Promise<string | null>
+ *
+ * Genera el PDF fiscal de la NC/ND (con CAE, QR, nro definitivo) y lo
+ * sube a R2. Mismo contrato que generarPdfFiscalLiquidacion.
+ */
+async function generarPdfFiscalNotaCD(notaId: string): Promise<string | null> {
+  try {
+    const { storageConfigurado, subirPDF } = await import("@/lib/storage")
+    if (!storageConfigurado()) {
+      logArca("warn", "Storage no configurado, PDF nota CD no generado", { id: notaId })
+      return null
+    }
+
+    const { generarPDFNotaCD } = await import("@/lib/pdf-nota-cd")
+    const buffer = await generarPDFNotaCD(notaId)
+
+    const nota = await prisma.notaCreditoDebito.findUnique({
+      where: { id: notaId },
+      select: { nroComprobante: true, ptoVenta: true, tipo: true },
+    })
+    const prefijo = nota?.tipo === "NC_EMITIDA" ? "NC" : "ND"
+    const nro = nota?.nroComprobante
+      ? `${prefijo}-${String(nota.ptoVenta ?? 1).padStart(4, "0")}-${String(nota.nroComprobante).padStart(8, "0")}`
+      : `${prefijo}-${notaId.slice(0, 8)}`
+
+    // NC/ND usan mismo bucket que facturas emitidas
+    const key = await subirPDF(buffer, "facturas-emitidas", `${nro}.pdf`)
+    return key
+  } catch (err) {
+    logArca("error", "Error generando PDF fiscal nota CD post-autorización", {
+      id: notaId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return null
+  }
+}
+
 // ─── Servicio principal ──────────────────────────────────────────────────────
 
 /**
@@ -284,7 +358,7 @@ export async function autorizarFacturaArca(
   const ptoVenta = config.puntosVenta[tipoKey] ?? 1
 
   try {
-    return await _autorizarComprobante(config, {
+    const result = await _autorizarComprobante(config, {
       tipoDocumento: "FACTURA",
       documentoId: facturaId,
       tipoCbte,
@@ -300,6 +374,18 @@ export async function autorizarFacturaArca(
       cbuMiPymes: tipoCbte === 201 ? config.cbuMiPymes : null,
       modalidadMiPymes: tipoCbte === 201 ? factura.modalidadMiPymes : null,
     })
+
+    // Generar PDF fiscal inmediato (post-CAE). Si falla, CAE ya está persistido.
+    const pdfKey = await generarPdfFiscalFactura(facturaId)
+    if (pdfKey) {
+      await prisma.facturaEmitida.update({
+        where: { id: facturaId },
+        data: { pdfS3Key: pdfKey },
+      })
+      logArca("info", "PDF fiscal factura generado", { id: facturaId, pdfKey })
+    }
+
+    return result
   } catch (err) {
     await prisma.facturaEmitida.update({
       where: { id: facturaId },
@@ -391,7 +477,7 @@ export async function autorizarNotaCDArca(
   const ptoVenta = config.puntosVenta[tipoKey] ?? config.puntosVenta["FACTURA_A"] ?? 1
 
   try {
-    return await _autorizarComprobante(config, {
+    const result = await _autorizarComprobante(config, {
       tipoDocumento: nota.tipo === "NC_EMITIDA" ? "NOTA_CREDITO" : "NOTA_DEBITO",
       documentoId: notaId,
       tipoCbte,
@@ -406,6 +492,18 @@ export async function autorizarNotaCDArca(
       fechaServHasta: nota.creadoEn,
       comprobanteAsociado,
     })
+
+    // Generar PDF fiscal inmediato (post-CAE). Si falla, CAE ya está persistido.
+    const pdfKey = await generarPdfFiscalNotaCD(notaId)
+    if (pdfKey) {
+      await prisma.notaCreditoDebito.update({
+        where: { id: notaId },
+        data: { pdfS3Key: pdfKey },
+      })
+      logArca("info", "PDF fiscal nota CD generado", { id: notaId, pdfKey })
+    }
+
+    return result
   } catch (err) {
     await prisma.notaCreditoDebito.update({
       where: { id: notaId },
