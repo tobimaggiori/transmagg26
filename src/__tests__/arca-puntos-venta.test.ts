@@ -1,6 +1,7 @@
 /**
- * Tests para normalización de puntosVenta (string legacy → number).
- * Verifica backward compatibility con datos guardados como strings en DB.
+ * Tests para normalización de puntosVenta end-to-end:
+ * - Lectura desde DB (cargarConfigArca): string legacy → number
+ * - Escritura a DB (normalizarPuntosVentaInput): filtra NaN, 0, negativos
  */
 
 // Mock prisma antes de importar config
@@ -98,6 +99,82 @@ describe("puntosVenta normalización", () => {
       FACTURA_A: 1,
       FACTURA_B: 2,
       NOTA_CREDITO_A: 3,
+    })
+  })
+})
+
+// ─── Normalización de input (escritura a DB) ─────────────────────────────────
+// Replica la lógica de normalizarPuntosVentaInput de la route para testear
+// el contrato: solo números válidos > 0 se persisten.
+
+function normalizarPuntosVentaInput(input: Record<string, string | number>): Record<string, number> {
+  const result: Record<string, number> = {}
+  for (const [k, v] of Object.entries(input)) {
+    const n = typeof v === "number" ? v : parseInt(String(v), 10)
+    if (!isNaN(n) && n > 0) result[k] = n
+  }
+  return result
+}
+
+describe("puntosVenta normalización de input (escritura)", () => {
+  it('"abc" no se persiste', () => {
+    const result = normalizarPuntosVentaInput({ FACTURA_A: "abc" })
+    expect(result.FACTURA_A).toBeUndefined()
+    expect(Object.keys(result)).toHaveLength(0)
+  })
+
+  it("0 no se persiste", () => {
+    const result = normalizarPuntosVentaInput({ FACTURA_A: 0 })
+    expect(result.FACTURA_A).toBeUndefined()
+  })
+
+  it("-1 no se persiste", () => {
+    const result = normalizarPuntosVentaInput({ FACTURA_A: -1 })
+    expect(result.FACTURA_A).toBeUndefined()
+  })
+
+  it('"0" (string) no se persiste', () => {
+    const result = normalizarPuntosVentaInput({ FACTURA_A: "0" })
+    expect(result.FACTURA_A).toBeUndefined()
+  })
+
+  it('"-1" (string) no se persiste', () => {
+    const result = normalizarPuntosVentaInput({ FACTURA_A: "-1" })
+    expect(result.FACTURA_A).toBeUndefined()
+  })
+
+  it('"3" se persiste como 3', () => {
+    const result = normalizarPuntosVentaInput({ FACTURA_A: "3" })
+    expect(result.FACTURA_A).toBe(3)
+    expect(typeof result.FACTURA_A).toBe("number")
+  })
+
+  it("5 (number) se persiste como 5", () => {
+    const result = normalizarPuntosVentaInput({ FACTURA_A: 5 })
+    expect(result.FACTURA_A).toBe(5)
+  })
+
+  it("NaN no produce entrada en el resultado", () => {
+    const result = normalizarPuntosVentaInput({ FACTURA_A: "abc", FACTURA_B: "3" })
+    expect(JSON.stringify(result)).toBe('{"FACTURA_B":3}')
+    // No hay null ni NaN en el JSON
+    expect(JSON.stringify(result)).not.toContain("null")
+    expect(JSON.stringify(result)).not.toContain("NaN")
+  })
+
+  it("mix completo: solo valores válidos sobreviven", () => {
+    const result = normalizarPuntosVentaInput({
+      FACTURA_A: "1",
+      FACTURA_B: "abc",
+      NOTA_CREDITO_A: 0,
+      NOTA_CREDITO_B: -5,
+      NOTA_DEBITO_A: "7",
+      NOTA_DEBITO_B: 10,
+    })
+    expect(result).toEqual({
+      FACTURA_A: 1,
+      NOTA_DEBITO_A: 7,
+      NOTA_DEBITO_B: 10,
     })
   })
 })

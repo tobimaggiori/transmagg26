@@ -23,6 +23,41 @@ const patchSchema = z.object({
   activa: z.boolean().optional(),
 })
 
+/**
+ * parsearPuntosVenta: string -> Record<string, number>
+ *
+ * Parsea el JSON de puntosVenta de la DB y normaliza a numbers.
+ * Filtra valores inválidos (NaN, 0, negativos). Backward compatible con strings legacy.
+ */
+function parsearPuntosVenta(json: string): Record<string, number> {
+  try {
+    const raw = JSON.parse(json) as Record<string, unknown>
+    const result: Record<string, number> = {}
+    for (const [k, v] of Object.entries(raw)) {
+      const n = typeof v === "number" ? v : parseInt(String(v), 10)
+      if (!isNaN(n) && n > 0) result[k] = n
+    }
+    return result
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * normalizarPuntosVentaInput: Record<string, string | number> -> string
+ *
+ * Convierte el input del frontend a JSON para DB.
+ * Solo persiste números válidos > 0. Descarta NaN, 0, negativos.
+ */
+function normalizarPuntosVentaInput(input: Record<string, string | number>): string {
+  const result: Record<string, number> = {}
+  for (const [k, v] of Object.entries(input)) {
+    const n = typeof v === "number" ? v : parseInt(String(v), 10)
+    if (!isNaN(n) && n > 0) result[k] = n
+  }
+  return JSON.stringify(result)
+}
+
 export async function GET() {
   const session = await auth()
   if (!session?.user) {
@@ -43,13 +78,7 @@ export async function GET() {
   return NextResponse.json({
     ...safe,
     tieneCertificado: !!_b64,
-    puntosVenta: (() => {
-      try {
-        return JSON.parse(safe.puntosVenta) as Record<string, string>
-      } catch {
-        return {}
-      }
-    })(),
+    puntosVenta: parsearPuntosVenta(safe.puntosVenta),
   })
 }
 
@@ -75,14 +104,14 @@ export async function PATCH(req: NextRequest) {
   if (certificadoB64 !== undefined) datosSensibles.certificadoB64 = cifrarValor(certificadoB64)
   if (certificadoPass !== undefined) datosSensibles.certificadoPass = cifrarValor(certificadoPass)
 
+  const pvJson = puntosVenta !== undefined ? normalizarPuntosVentaInput(puntosVenta) : undefined
+
   const updated = await prisma.configuracionArca.upsert({
     where: { id: "unico" },
     update: {
       ...rest,
       ...datosSensibles,
-      ...(puntosVenta !== undefined ? { puntosVenta: JSON.stringify(
-        Object.fromEntries(Object.entries(puntosVenta).map(([k, v]) => [k, Number(v)]))
-      ) } : {}),
+      ...(pvJson !== undefined ? { puntosVenta: pvJson } : {}),
       actualizadoPor: session.user.email ?? undefined,
     },
     create: {
@@ -91,9 +120,7 @@ export async function PATCH(req: NextRequest) {
       razonSocial: "",
       ...rest,
       ...datosSensibles,
-      ...(puntosVenta !== undefined ? { puntosVenta: JSON.stringify(
-        Object.fromEntries(Object.entries(puntosVenta).map(([k, v]) => [k, Number(v)]))
-      ) } : {}),
+      ...(pvJson !== undefined ? { puntosVenta: pvJson } : {}),
       actualizadoPor: session.user.email ?? undefined,
     },
   })
@@ -103,12 +130,6 @@ export async function PATCH(req: NextRequest) {
   return NextResponse.json({
     ...safe,
     tieneCertificado: !!_b64patch,
-    puntosVenta: (() => {
-      try {
-        return JSON.parse(safe.puntosVenta) as Record<string, string>
-      } catch {
-        return {}
-      }
-    })(),
+    puntosVenta: parsearPuntosVenta(safe.puntosVenta),
   })
 }
