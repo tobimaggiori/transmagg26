@@ -6,6 +6,9 @@
  * en la UI y en los API routes.
  */
 
+import { calcularNetoMasIva, type MonetaryInput } from "@/lib/money"
+import { prisma } from "@/lib/prisma"
+
 /**
  * labelTipoNotaCD: string -> string
  *
@@ -114,12 +117,33 @@ export function tipoCbteArcaParaNotaCD(tipo: string, condicionIva: string): numb
 }
 
 /**
- * calcularTotalesNotaCD: number number -> { montoNeto: number, montoIva: number, montoTotal: number }
+ * calcularProximoNroComprobanteNotaCD: string -> Promise<number>
+ *
+ * Dado el tipo de nota (NC_EMITIDA, ND_EMITIDA, etc.), devuelve el próximo
+ * número de comprobante disponible (máximo existente + 1, o 1 si no hay ninguno).
+ * Existe para asignar numeración correlativa antes de enviar a ARCA.
+ *
+ * Ejemplos:
+ * calcularProximoNroComprobanteNotaCD("NC_EMITIDA") === Promise<1>  // sin notas previas
+ * calcularProximoNroComprobanteNotaCD("ND_EMITIDA") === Promise<6>  // última nro = 5
+ */
+export async function calcularProximoNroComprobanteNotaCD(tipo: string): Promise<number> {
+  const ultima = await prisma.notaCreditoDebito.findFirst({
+    where: { tipo },
+    orderBy: { nroComprobante: "desc" },
+    select: { nroComprobante: true },
+  })
+  return (ultima?.nroComprobante ?? 0) + 1
+}
+
+/**
+ * calcularTotalesNotaCD: MonetaryInput number -> { montoNeto: number, montoIva: number, montoTotal: number }
  *
  * Dado el monto neto y el porcentaje de IVA (0-100), calcula y devuelve
  * el monto de IVA (redondeado a centavos) y el total (neto + IVA).
  * Esta función existe para aplicar el cálculo de IVA de forma consistente
  * tanto en el servidor (POST) como en el cliente (preview del formulario).
+ * Usa el módulo monetario central para garantizar precisión y redondeo uniforme.
  *
  * Ejemplos:
  * calcularTotalesNotaCD(1000, 21) === { montoNeto: 1000, montoIva: 210, montoTotal: 1210 }
@@ -127,9 +151,9 @@ export function tipoCbteArcaParaNotaCD(tipo: string, condicionIva: string): numb
  * calcularTotalesNotaCD(333.33, 21) === { montoNeto: 333.33, montoIva: 70, montoTotal: 403.33 }
  */
 export function calcularTotalesNotaCD(
-  montoNeto: number,
+  montoNeto: MonetaryInput,
   ivaPct: number
 ): { montoNeto: number; montoIva: number; montoTotal: number } {
-  const montoIva = Math.round(montoNeto * ivaPct) / 100
-  return { montoNeto, montoIva, montoTotal: montoNeto + montoIva }
+  const result = calcularNetoMasIva(montoNeto, ivaPct)
+  return { montoNeto: result.neto, montoIva: result.iva, montoTotal: result.total }
 }

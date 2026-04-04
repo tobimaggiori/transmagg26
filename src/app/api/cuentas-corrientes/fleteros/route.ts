@@ -9,6 +9,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
 import { resolverOperadorId } from "@/lib/session-utils"
+import { sumarImportes, restarImportes, maxMonetario, parsearImporte, m } from "@/lib/money"
 import type { Rol } from "@/types"
 
 /**
@@ -71,13 +72,13 @@ export async function GET() {
     if (!fleteroId) continue
     const actual = ajustesPorFletero.get(fleteroId) ?? 0
     // NC_RECIBIDA reduce lo que Transmagg le debe al fletero
-    ajustesPorFletero.set(fleteroId, actual - nota.montoTotal)
+    ajustesPorFletero.set(fleteroId, restarImportes(actual, nota.montoTotal))
   }
 
   const resultado = fleteros.map((flet) => {
     const liquidacionesConSaldo = flet.liquidaciones.map((liq) => {
-      const pagado = liq.pagos.reduce((acc, p) => acc + p.monto, 0)
-      const saldo = Math.max(0, liq.total - pagado)
+      const pagado = sumarImportes(liq.pagos.map(p => p.monto))
+      const saldo = maxMonetario(0, restarImportes(liq.total, pagado))
       return {
         id: liq.id,
         total: liq.total,
@@ -89,16 +90,16 @@ export async function GET() {
     })
 
     const liquidacionesImpagas = liquidacionesConSaldo.filter((l) => l.saldo > 0)
-    const saldoBaseLiquidaciones = liquidacionesImpagas.reduce((acc, l) => acc + l.saldo, 0)
+    const saldoBaseLiquidaciones = sumarImportes(liquidacionesImpagas.map(l => l.saldo))
     const ajusteNotasCD = ajustesPorFletero.get(flet.id) ?? 0
-    const saldoAPagar = Math.max(0, saldoBaseLiquidaciones + ajusteNotasCD)
+    const saldoAPagar = maxMonetario(0, sumarImportes([saldoBaseLiquidaciones, ajusteNotasCD]))
 
     return {
       fletero: { id: flet.id, razonSocial: flet.razonSocial, cuit: flet.cuit },
       saldoAPagar,
       liquidacionesImpagas,
       ajusteNotasCD,
-      totalLiquidado: flet.liquidaciones.reduce((acc, l) => acc + l.total, 0),
+      totalLiquidado: sumarImportes(flet.liquidaciones.map(l => l.total)),
     }
   }).sort((a, b) => b.saldoAPagar - a.saldoAPagar)
 
@@ -148,16 +149,16 @@ export async function POST(request: NextRequest) {
       orderBy: { grabadaEn: "asc" },
     })
 
-    let montoRestante = parseFloat(String(monto))
+    let montoRestante = parsearImporte(String(monto))
     const pagosCreados = []
 
     for (const l of liquidaciones) {
       if (montoRestante <= 0) break
-      const pagado = l.pagos.reduce((acc, p) => acc + p.monto, 0)
-      const saldo = l.total - pagado
+      const pagado = sumarImportes(l.pagos.map(p => p.monto))
+      const saldo = restarImportes(l.total, pagado)
       if (saldo <= 0) continue
 
-      const montoAplicar = Math.min(montoRestante, saldo)
+      const montoAplicar = m(Math.min(montoRestante, saldo))
       const pago = await prisma.pagoAFletero.create({
         data: {
           fleteroId,
@@ -170,7 +171,7 @@ export async function POST(request: NextRequest) {
         },
       })
       pagosCreados.push(pago)
-      montoRestante -= montoAplicar
+      montoRestante = restarImportes(montoRestante, montoAplicar)
     }
 
     return NextResponse.json(pagosCreados, { status: 201 })

@@ -7,7 +7,9 @@
  */
 
 import { useState, useCallback, useEffect, useMemo } from "react"
-import { formatearMoneda, formatearFecha, cn } from "@/lib/utils"
+import { formatearFecha, cn } from "@/lib/utils"
+import { sumarImportes, restarImportes, aplicarPorcentaje, calcularIva, formatearMoneda, parsearImporte } from "@/lib/money"
+import { calcularTotalViaje } from "@/lib/viajes"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { PDFViewer } from "@/components/ui/pdf-viewer"
@@ -242,7 +244,7 @@ function PanelDetalle({
       if (form.destino !== original.destino) body.destino = form.destino || null
       if (form.provinciaDestino !== original.provinciaDestino) body.provinciaDestino = form.provinciaDestino || null
       if (form.kilos !== original.kilos) body.kilos = form.kilos ? parseFloat(form.kilos) : null
-      if (form.tarifa !== original.tarifa) body.tarifa = form.tarifa ? parseFloat(form.tarifa) : undefined
+      if (form.tarifa !== original.tarifa) body.tarifa = form.tarifa ? parsearImporte(form.tarifa) : undefined
 
       if (Object.keys(body).length === 0) return
 
@@ -515,20 +517,20 @@ function PanelDetalle({
             const ivaPctLP = vel.liquidacion.ivaPct ?? 21
             const kilosLP = vel.kilos ?? viaje.kilos ?? 0
             const tarifaLP = vel.tarifaFletero ?? viaje.tarifa ?? 0
-            const subtotalLP = (kilosLP / 1000) * tarifaLP
-            const comisionLP = Math.round(subtotalLP * (comisionPct / 100) * 100) / 100
-            const netoLP = Math.round((subtotalLP - comisionLP) * 100) / 100
-            const ivaLP = Math.round(netoLP * (ivaPctLP / 100) * 100) / 100
-            const totalLP = Math.round((netoLP + ivaLP) * 100) / 100
+            const subtotalLP = calcularTotalViaje(kilosLP, tarifaLP)
+            const comisionLP = aplicarPorcentaje(subtotalLP, comisionPct)
+            const netoLP = restarImportes(subtotalLP, comisionLP)
+            const ivaLP = calcularIva(netoLP, ivaPctLP)
+            const totalLP = sumarImportes([netoLP, ivaLP])
 
             const ivaPctFact = vef.factura.ivaPct ?? 21
             const kilosFact = vef.kilos ?? viaje.kilos ?? 0
             const tarifaFact = vef.tarifaEmpresa ?? viaje.tarifaEmpresa ?? 0
-            const subtotalFact = (kilosFact / 1000) * tarifaFact
-            const ivaFact = Math.round(subtotalFact * (ivaPctFact / 100) * 100) / 100
-            const totalFact = Math.round((subtotalFact + ivaFact) * 100) / 100
+            const subtotalFact = calcularTotalViaje(kilosFact, tarifaFact)
+            const ivaFact = calcularIva(subtotalFact, ivaPctFact)
+            const totalFact = sumarImportes([subtotalFact, ivaFact])
 
-            const diferencia = Math.round((subtotalFact - netoLP) * 100) / 100
+            const diferencia = restarImportes(subtotalFact, netoLP)
 
             const fmtNroLP = vel.liquidacion.nroComprobante
               ? `${String(vel.liquidacion.ptoVenta ?? 1).padStart(4, "0")}-${String(vel.liquidacion.nroComprobante).padStart(8, "0")}`

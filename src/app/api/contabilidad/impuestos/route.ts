@@ -7,19 +7,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { esRolInterno } from "@/lib/permissions"
 import { prisma } from "@/lib/prisma"
+import { ejecutarRegistrarPagoImpuesto } from "@/lib/impuesto-commands"
 import type { Rol } from "@/types"
-
-const COMPROBANTE_PREFIX = "comprobantes-impuestos"
-
-function tipoDisplay(tipoImpuesto: string, descripcion?: string | null): string {
-  const map: Record<string, string> = {
-    IIBB:      "IIBB",
-    IVA:       "IVA",
-    GANANCIAS: "Ganancias",
-    OTRO:      descripcion ?? "Impuesto",
-  }
-  return map[tipoImpuesto] ?? tipoImpuesto
-}
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const session = await auth()
@@ -72,7 +61,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const rol = (session.user.rol ?? "") as Rol
   if (!esRolInterno(rol)) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
 
-  let body: {
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: "JSON inválido" }, { status: 400 })
+  }
+
+  const data = body as {
     tipoImpuesto: string
     descripcion?: string
     periodo: string
@@ -85,100 +81,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     observaciones?: string
   }
 
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: "JSON inválido" }, { status: 400 })
-  }
-
-  const { tipoImpuesto, descripcion, periodo, monto, fechaPago, medioPago,
-          cuentaId, tarjetaId, comprobantePdfS3Key, observaciones } = body
-
-  if (!tipoImpuesto || !periodo || !monto || !fechaPago || !medioPago) {
-    return NextResponse.json({ error: "Faltan campos requeridos" }, { status: 400 })
-  }
-
-  // Validaciones por medio de pago
-  if (medioPago === "CUENTA_BANCARIA") {
-    if (!cuentaId) {
-      return NextResponse.json({ error: "Cuenta bancaria requerida" }, { status: 400 })
-    }
-    if (!comprobantePdfS3Key) {
-      return NextResponse.json({ error: "Comprobante PDF obligatorio para pagos desde cuenta bancaria" }, { status: 400 })
-    }
-    // Validar que la key pertenezca al prefijo correcto (evitar path traversal)
-    if (!comprobantePdfS3Key.startsWith(`${COMPROBANTE_PREFIX}/`)) {
-      return NextResponse.json({ error: "S3 key de comprobante inválida" }, { status: 400 })
-    }
-  }
-
-  // TARJETA: tarjetaId ya no es requerida, el gasto queda pendiente de asignación
-
   const operadorId = session.user.id
 
-  const pago = await prisma.$transaction(async (tx) => {
-    const nuevoPago = await tx.pagoImpuesto.create({
-      data: {
-        tipoImpuesto,
-        descripcion:         descripcion         ?? null,
-        periodo,
-        monto,
-        fechaPago:           new Date(fechaPago),
-        medioPago,
-        cuentaId:            cuentaId            ?? null,
-        tarjetaId:           tarjetaId           ?? null,
-        comprobantePdfS3Key: comprobantePdfS3Key ?? null,
-        observaciones:       observaciones       ?? null,
-        operadorId,
-      },
-    })
+  const resultado = await ejecutarRegistrarPagoImpuesto(data, operadorId)
 
-    const desc = `Pago ${tipoDisplay(tipoImpuesto, descripcion)} — período ${periodo}`
+  if (!resultado.ok) {
+    return NextResponse.json({ error: resultado.error }, { status: resultado.status })
+  }
 
-    if (medioPago === "CUENTA_BANCARIA" && cuentaId) {
-      await tx.movimientoSinFactura.create({
-        data: {
-          cuentaId,
-          tipo:        "EGRESO",
-          categoria:   "PAGO_SERVICIO",
-          monto,
-          fecha:       new Date(fechaPago),
-          descripcion: desc,
-          operadorId,
-        },
-      })
-    }
-
-    if (medioPago === "TARJETA" && tarjetaId) {
-      // Obtener la cuenta asociada a la tarjeta (si tiene)
-      const tarjeta = await tx.tarjeta.findUnique({
-        where: { id: tarjetaId },
-        select: { cuentaId: true },
-      })
-
-      if (tarjeta?.cuentaId) {
-        await tx.movimientoSinFactura.create({
-          data: {
-            cuentaId:    tarjeta.cuentaId,
-            tarjetaId,
-            tipo:        "EGRESO",
-            categoria:   "PAGO_TARJETA",
-            monto,
-            fecha:       new Date(fechaPago),
-            descripcion: desc,
-            operadorId,
-          },
-        })
-      } else {
-        // Si la tarjeta no tiene cuenta asociada, registrar sin cuenta (tarjetaId solo)
-        // Esto requiere una cuenta dummy — mejor buscar otra cuenta o simplemente omitir el movimiento bancario
-        // Para tarjetas sin cuenta asociada, no se genera MovimientoSinFactura (requiere cuentaId)
-        // El pago queda registrado en PagoImpuesto.tarjetaId únicamente
-      }
-    }
-
-    return nuevoPago
-  })
-
-  return NextResponse.json({ pago }, { status: 201 })
+  return NextResponse.json({ pago: resultado.result }, { status: 201 })
 }

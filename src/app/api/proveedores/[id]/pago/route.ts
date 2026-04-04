@@ -18,9 +18,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { esRolInterno } from "@/lib/permissions"
-import { prisma } from "@/lib/prisma"
 import { resolverOperadorId } from "@/lib/session-utils"
-import { procesarPagoProveedor } from "@/lib/pago-proveedor"
+import { ejecutarPagoProveedorDirecto } from "@/lib/pago-proveedor"
 import { z } from "zod"
 import type { Rol } from "@/types"
 
@@ -88,7 +87,6 @@ export async function POST(
   }
 
   const data = parsed.data
-  const fechaPago = new Date(data.fecha)
 
   let operadorId: string | null = null
   try {
@@ -98,49 +96,28 @@ export async function POST(
   }
 
   try {
-    const proveedor = await prisma.proveedor.findUnique({
-      where: { id: proveedorId },
-      select: { id: true, razonSocial: true },
-    })
-    if (!proveedor) return NextResponse.json({ error: "Proveedor no encontrado" }, { status: 404 })
+    const resultado = await ejecutarPagoProveedorDirecto(
+      {
+        proveedorId,
+        facturaProveedorId: data.facturaProveedorId,
+        fecha: data.fecha,
+        monto: data.monto,
+        tipo: data.tipo,
+        observaciones: data.observaciones,
+        comprobantePdfS3Key: data.comprobantePdfS3Key,
+        cuentaId: data.cuentaId,
+        chequeRecibidoId: data.chequeRecibidoId,
+        tarjetaId: data.tarjetaId,
+        chequePropio: data.chequePropio ?? null,
+      },
+      operadorId
+    )
 
-    const factura = await prisma.facturaProveedor.findUnique({
-      where: { id: data.facturaProveedorId },
-      include: { pagos: { where: { anulado: false }, select: { monto: true } } },
-    })
-    if (!factura || factura.proveedorId !== proveedorId) {
-      return NextResponse.json({ error: "Factura no encontrada" }, { status: 404 })
+    if (!resultado.ok) {
+      return NextResponse.json({ error: resultado.error }, { status: resultado.status })
     }
 
-    const totalPagadoAnterior = factura.pagos.reduce((acc, p) => acc + p.monto, 0)
-
-    const result = await prisma.$transaction(async (tx) => {
-      return procesarPagoProveedor(
-        tx,
-        {
-          facturaId: factura.id,
-          facturaTotal: factura.total,
-          totalPagadoAnterior,
-          facturaNroComprobante: factura.nroComprobante,
-          proveedorId,
-          proveedorRazonSocial: proveedor.razonSocial,
-          operadorId,
-        },
-        {
-          fecha: fechaPago,
-          monto: data.monto,
-          tipo: data.tipo,
-          observaciones: data.observaciones,
-          comprobantePdfS3Key: data.comprobantePdfS3Key,
-          cuentaId: data.cuentaId,
-          chequeRecibidoId: data.chequeRecibidoId,
-          tarjetaId: data.tarjetaId,
-          chequePropio: data.chequePropio ?? null,
-        }
-      )
-    })
-
-    return NextResponse.json(result, { status: 201 })
+    return NextResponse.json(resultado.result, { status: 201 })
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("DUPLICATE_CHEQUE:")) {
       const nro = error.message.split(":")[1]

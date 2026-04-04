@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
+import { sumarImportes, restarImportes } from "@/lib/money"
 import type { Rol } from "@/types"
 
 function fmt(monto: number) {
@@ -82,9 +83,9 @@ export async function GET(request: NextRequest) {
 
   const ventas = asientos.filter((a) => a.tipo === "VENTA")
   const compras = asientos.filter((a) => a.tipo === "COMPRA")
-  const totalVentas = ventas.reduce((acc, a) => acc + a.montoIva, 0)
-  const totalCompras = compras.reduce((acc, a) => acc + a.montoIva, 0)
-  const posicion = totalVentas - totalCompras
+  const totalVentas = sumarImportes(ventas.map(a => a.montoIva))
+  const totalCompras = sumarImportes(compras.map(a => a.montoIva))
+  const posicion = restarImportes(totalVentas, totalCompras)
 
   const filaVenta = (a: (typeof ventas)[0]) => {
     const esLP = a.tipoReferencia === "LIQUIDACION"

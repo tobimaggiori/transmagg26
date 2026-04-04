@@ -10,6 +10,7 @@ import { calcularTotalViaje } from "@/lib/viajes"
 import {
   requireFinancialAccess,
 } from "@/lib/financial-api"
+import { sumarImportes, restarImportes } from "@/lib/money"
 import {
   calcularSaldoContableCuenta,
   calcularSaldoEnFciPropiosCuenta,
@@ -51,7 +52,7 @@ export async function GET() {
       const pagosEmpresasAgg = await prisma.pagoDeEmpresa.aggregate({
         _sum: { monto: true },
       })
-      deudaEmpresas = (facturasAgg._sum.total ?? 0) - (pagosEmpresasAgg._sum.monto ?? 0)
+      deudaEmpresas = restarImportes(facturasAgg._sum.total ?? 0, pagosEmpresasAgg._sum.monto ?? 0)
     } catch (e) { console.error("[dashboard] Error deudaEmpresas:", e) }
 
     try {
@@ -63,7 +64,7 @@ export async function GET() {
         _sum: { monto: true },
         where: { anulado: false },
       })
-      deudaFleteros = (liquidacionesAgg._sum.total ?? 0) - (pagosFleterosAgg._sum.monto ?? 0)
+      deudaFleteros = restarImportes(liquidacionesAgg._sum.total ?? 0, pagosFleterosAgg._sum.monto ?? 0)
     } catch (e) { console.error("[dashboard] Error deudaFleteros:", e) }
 
     try {
@@ -71,8 +72,8 @@ export async function GET() {
         where: { estadoFactura: "PENDIENTE_FACTURAR" },
         select: { kilos: true, tarifaEmpresa: true },
       })
-      pendienteFacturar = viajesPendienteFacturar.reduce(
-        (acc, v) => acc + (v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaEmpresa) : 0), 0
+      pendienteFacturar = sumarImportes(
+        viajesPendienteFacturar.map(v => v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifaEmpresa) : 0)
       )
     } catch (e) { console.error("[dashboard] Error pendienteFacturar:", e) }
 
@@ -81,8 +82,8 @@ export async function GET() {
         where: { fleteroId: { not: null }, estadoLiquidacion: "PENDIENTE_LIQUIDAR" },
         select: { kilos: true, tarifa: true },
       })
-      pendienteLiquidar = viajesPendienteLiquidar.reduce(
-        (acc, v) => acc + (v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifa) : 0), 0
+      pendienteLiquidar = sumarImportes(
+        viajesPendienteLiquidar.map(v => v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifa) : 0)
       )
     } catch (e) { console.error("[dashboard] Error pendienteLiquidar:", e) }
 
@@ -96,10 +97,10 @@ export async function GET() {
         where: { estado: "EN_CARTERA" },
         select: { monto: true, fechaCobro: true, esElectronico: true },
       })
-      chequesAlDia = chequesCartera.filter((c) => new Date(c.fechaCobro) <= hoy).reduce((acc, c) => acc + c.monto, 0)
-      chequesNoAlDia = chequesCartera.filter((c) => new Date(c.fechaCobro) > hoy).reduce((acc, c) => acc + c.monto, 0)
-      chequesFisico = chequesCartera.filter((c) => !c.esElectronico).reduce((acc, c) => acc + c.monto, 0)
-      chequesElectronico = chequesCartera.filter((c) => c.esElectronico).reduce((acc, c) => acc + c.monto, 0)
+      chequesAlDia = sumarImportes(chequesCartera.filter((c) => new Date(c.fechaCobro) <= hoy).map(c => c.monto))
+      chequesNoAlDia = sumarImportes(chequesCartera.filter((c) => new Date(c.fechaCobro) > hoy).map(c => c.monto))
+      chequesFisico = sumarImportes(chequesCartera.filter((c) => !c.esElectronico).map(c => c.monto))
+      chequesElectronico = sumarImportes(chequesCartera.filter((c) => c.esElectronico).map(c => c.monto))
     } catch (e) { console.error("[dashboard] Error chequesCartera:", e) }
 
     try {
@@ -163,21 +164,21 @@ export async function GET() {
         }))
         const saldoEnFciPropios = calcularSaldoEnFciPropiosCuenta(fciDetalle)
         const saldoDisponible = calcularSaldoDisponibleCuenta(saldoContable, saldoEnFciPropios)
-        const capitalEnviado = cuenta.movimientosSinFactura
-          .filter((m) => m.categoria === "ENVIO_A_BROKER")
-          .reduce((acc, m) => acc + m.monto, 0)
-        const capitalRescatado = cuenta.movimientosSinFactura
-          .filter((m) => m.categoria === "RESCATE_DE_BROKER")
-          .reduce((acc, m) => acc + m.monto, 0)
+        const capitalEnviado = sumarImportes(
+          cuenta.movimientosSinFactura.filter((m) => m.categoria === "ENVIO_A_BROKER").map(m => m.monto)
+        )
+        const capitalRescatado = sumarImportes(
+          cuenta.movimientosSinFactura.filter((m) => m.categoria === "RESCATE_DE_BROKER").map(m => m.monto)
+        )
         const capitalNetoEnBroker = calcularCapitalNetoBroker(capitalEnviado, capitalRescatado)
         const rendimiento = calcularRendimientoBroker({
           capitalEnviado,
           capitalRescatado,
-          saldoFcis: fciDetalle.reduce((acc, f) => acc + f.saldoInformadoActual, 0),
+          saldoFcis: sumarImportes(fciDetalle.map(f => f.saldoInformadoActual)),
         })
-        const coberturaCheques30Dias = chequesEmitidos30Dias
-          .filter((c) => c.cuentaId === cuenta.id)
-          .reduce((acc, c) => acc + c.monto, 0)
+        const coberturaCheques30Dias = sumarImportes(
+          chequesEmitidos30Dias.filter((c) => c.cuentaId === cuenta.id).map(c => c.monto)
+        )
 
         return {
           id: cuenta.id,
@@ -206,7 +207,7 @@ export async function GET() {
       chequesEnCartera: {
         alDia: chequesAlDia,
         noAlDia: chequesNoAlDia,
-        total: chequesAlDia + chequesNoAlDia,
+        total: sumarImportes([chequesAlDia, chequesNoAlDia]),
         fisico: chequesFisico,
         electronico: chequesElectronico,
       },

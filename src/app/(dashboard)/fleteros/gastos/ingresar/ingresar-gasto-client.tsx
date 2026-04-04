@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { formatearMoneda } from "@/lib/utils"
+import { parsearImporte, multiplicarImporte, calcularIva, sumarImportes, formatearMoneda } from "@/lib/money"
 import { Plus, Trash2 } from "lucide-react"
 
 type Proveedor = { id: string; razonSocial: string; cuit: string }
@@ -79,16 +79,16 @@ export function IngresarGastoClient({ proveedores, fleteros }: IngresarGastoClie
 
   // Cálculo de totales en tiempo real
   const itemsCalculados = items.map((it) => {
-    const cant = parseFloat(it.cantidad) || 0
-    const precio = parseFloat(it.precioUnitario) || 0
-    const neto = cant * precio
-    const alicuota = discriminaIVA ? parseFloat(it.alicuotaIva) : 0
-    const iva = alicuota > 0 ? neto * alicuota / 100 : 0
-    return { neto, iva, total: neto + iva }
+    const cant = parsearImporte(it.cantidad)
+    const precio = parsearImporte(it.precioUnitario)
+    const neto = multiplicarImporte(cant, precio)
+    const alicuota = discriminaIVA ? parsearImporte(it.alicuotaIva) : 0
+    const iva = alicuota > 0 ? calcularIva(neto, alicuota) : 0
+    return { neto, iva, total: sumarImportes([neto, iva]) }
   })
-  const totalNeto = itemsCalculados.reduce((acc, i) => acc + i.neto, 0)
-  const totalIva = itemsCalculados.reduce((acc, i) => acc + i.iva, 0)
-  const total = totalNeto + totalIva
+  const totalNeto = sumarImportes(itemsCalculados.map(i => i.neto))
+  const totalIva = sumarImportes(itemsCalculados.map(i => i.iva))
+  const total = sumarImportes([totalNeto, totalIva])
 
   const puedeGuardar =
     fleteroId &&
@@ -97,7 +97,7 @@ export function IngresarGastoClient({ proveedores, fleteros }: IngresarGastoClie
     nroComprobante &&
     fechaComprobante &&
     items.length > 0 &&
-    items.every((it) => it.descripcion && parseFloat(it.precioUnitario) > 0)
+    items.every((it) => it.descripcion && parsearImporte(it.precioUnitario) > 0)
 
   function resetForm() {
     setFleteroId("")
@@ -133,7 +133,7 @@ export function IngresarGastoClient({ proveedores, fleteros }: IngresarGastoClie
           items: items.map((it) => ({
             descripcion: it.descripcion,
             cantidad: parseFloat(it.cantidad) || 1,
-            precioUnitario: parseFloat(it.precioUnitario) || 0,
+            precioUnitario: parsearImporte(it.precioUnitario),
             alicuotaIva: discriminaIVA ? parseFloat(it.alicuotaIva) : 0,
           })),
         }),

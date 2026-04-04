@@ -17,6 +17,7 @@ import {
 } from "@/lib/financial-api"
 import { prisma } from "@/lib/prisma"
 import { resolverOperadorId } from "@/lib/session-utils"
+import { sumarImportes, importesIguales, esMayorQueCero } from "@/lib/money"
 
 const modificarSchema = z.object({
   justificacion: z.string().min(10, "La justificación debe tener al menos 10 caracteres"),
@@ -142,15 +143,15 @@ export async function PATCH(
       if ((nuevoMonto !== undefined || nuevaLiquidacionId !== undefined) && pago.liquidacion) {
         const liqOrig = pago.liquidacion
         const montoAcreditar = nuevaLiquidacionId ? 0 : (nuevoMonto ?? pago.monto)
-        const totalOtrosPagos = liqOrig.pagos
-          .filter((p) => p.id !== id)
-          .reduce((s, p) => s + p.monto, 0)
-        const totalLiqOrig = totalOtrosPagos + montoAcreditar
+        const totalOtrosPagos = sumarImportes(
+          liqOrig.pagos.filter((p) => p.id !== id).map((p) => p.monto)
+        )
+        const totalLiqOrig = sumarImportes([totalOtrosPagos, montoAcreditar])
 
         const estadoLiqOrig =
-          totalLiqOrig >= liqOrig.total - 0.01
+          importesIguales(totalLiqOrig, liqOrig.total) || totalLiqOrig >= liqOrig.total
             ? "PAGADA"
-            : totalLiqOrig > 0.01
+            : esMayorQueCero(totalLiqOrig)
             ? "PARCIALMENTE_PAGADA"
             : "EMITIDA"
 
@@ -170,13 +171,15 @@ export async function PATCH(
           },
         })
         if (liqNueva) {
-          const totalConNuevoPago =
-            liqNueva.pagos.reduce((s, p) => s + p.monto, 0) + (nuevoMonto ?? pago.monto)
+          const totalConNuevoPago = sumarImportes([
+            ...liqNueva.pagos.map((p) => p.monto),
+            nuevoMonto ?? pago.monto,
+          ])
 
           const estadoLiqNueva =
-            totalConNuevoPago >= liqNueva.total - 0.01
+            importesIguales(totalConNuevoPago, liqNueva.total) || totalConNuevoPago >= liqNueva.total
               ? "PAGADA"
-              : totalConNuevoPago > 0.01
+              : esMayorQueCero(totalConNuevoPago)
               ? "PARCIALMENTE_PAGADA"
               : "EMITIDA"
 

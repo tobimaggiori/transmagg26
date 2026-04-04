@@ -10,6 +10,7 @@ import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder } from "@/lib/permissions"
 import { formatearMoneda } from "@/lib/utils"
+import { sumarImportes } from "@/lib/money"
 import {
   Card,
   CardContent,
@@ -54,20 +55,23 @@ export default async function IibbPage() {
   })
 
   // Agrupar por provincia para el resumen
-  const porProvincia = asientos.reduce(
+  const agrupado = asientos.reduce(
     (acc, asiento) => {
       const key = asiento.provincia
-      if (!acc[key]) {
-        acc[key] = { montoIngreso: 0, count: 0 }
-      }
-      acc[key].montoIngreso += asiento.montoIngreso
-      acc[key].count++
+      if (!acc[key]) acc[key] = [] as typeof asientos
+      acc[key].push(asiento)
       return acc
     },
-    {} as Record<string, { montoIngreso: number; count: number }>
+    {} as Record<string, typeof asientos>
   )
+  const porProvincia = Object.fromEntries(
+    Object.entries(agrupado).map(([key, arr]) => [
+      key,
+      { montoIngreso: sumarImportes(arr.map(a => a.montoIngreso)), count: arr.length },
+    ])
+  ) as Record<string, { montoIngreso: number; count: number }>
 
-  const totalIngresos = asientos.reduce((acc, a) => acc + a.montoIngreso, 0)
+  const totalIngresos = sumarImportes(asientos.map(a => a.montoIngreso))
 
   return (
     <div className="space-y-6">

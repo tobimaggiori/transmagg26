@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { UploadPDF } from "@/components/upload-pdf"
 import { SearchCombobox } from "@/components/ui/search-combobox"
+import { parsearImporte } from "@/lib/money"
 
 const TIPOS_BIEN = [
   { value: "CAMION",        label: "Camión propio Transmagg" },
@@ -65,7 +66,7 @@ export function NuevaPolizaClient({ camiones, proveedores, camionIdInicial }: Nu
           cobertura:       cobertura || null,
           vigenciaDesde,
           vigenciaHasta,
-          montoMensual:    montoMensual ? parseFloat(montoMensual) : null,
+          montoMensual:    montoMensual ? parsearImporte(montoMensual) : null,
           pdfS3Key:        pdfS3Key ?? null,
         }),
       })

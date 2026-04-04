@@ -5,6 +5,7 @@
  */
 
 import { prisma } from "@/lib/prisma"
+import { sumarImportes } from "@/lib/money"
 import PDFDocument from "pdfkit"
 import QRCode from "qrcode"
 
@@ -142,7 +143,7 @@ async function loadOP(ordenPagoId: string) {
     }
   }
   const facturas = Array.from(liquidacionesUnicas.values())
-  const totalFacturas = facturas.reduce((s, f) => s + f.total, 0)
+  const totalFacturas = sumarImportes(facturas.map(f => f.total))
 
   // Cheques propios — deduplicar por chequeEmitidoId
   type ChequePropioRow = { cuenta: string; vencimiento: Date; nro: string; monto: number }
@@ -160,7 +161,7 @@ async function loadOP(ordenPagoId: string) {
     }
   }
   const chequesPropios = Array.from(chequesPropiosMap.values())
-  const totalChequesPropios = chequesPropios.reduce((s, c) => s + c.monto, 0)
+  const totalChequesPropios = sumarImportes(chequesPropios.map(c => c.monto))
 
   // Cheques de tercero — deduplicar por chequeRecibidoId
   type ChequeTerceroRow = { banco: string; vencimiento: Date; nro: string; monto: number }
@@ -178,15 +179,15 @@ async function loadOP(ordenPagoId: string) {
     }
   }
   const chequesTercero = Array.from(chequesTerceroMap.values())
-  const totalChequesTercero = chequesTercero.reduce((s, c) => s + c.monto, 0)
+  const totalChequesTercero = sumarImportes(chequesTercero.map(c => c.monto))
 
   // Transferencias y efectivo
-  const totalTransferencia = op.pagos
-    .filter((p) => p.tipoPago === "TRANSFERENCIA")
-    .reduce((s, p) => s + p.monto, 0)
-  const totalEfectivo = op.pagos
-    .filter((p) => p.tipoPago === "EFECTIVO")
-    .reduce((s, p) => s + p.monto, 0)
+  const totalTransferencia = sumarImportes(
+    op.pagos.filter((p) => p.tipoPago === "TRANSFERENCIA").map(p => p.monto)
+  )
+  const totalEfectivo = sumarImportes(
+    op.pagos.filter((p) => p.tipoPago === "EFECTIVO").map(p => p.monto)
+  )
 
   // Adelantos descontados (deduplicados por liquidacion)
   type AdelantoRow = { descripcion: string; efectivo: number; gasOil: number; faltante: number }
@@ -207,10 +208,10 @@ async function loadOP(ordenPagoId: string) {
     }
   }
   const adelantos = Array.from(adelantosMap.values())
-  const totalAdelantosEfectivo = adelantos.reduce((s, a) => s + a.efectivo, 0)
-  const totalAdelantosGasOil = adelantos.reduce((s, a) => s + a.gasOil, 0)
-  const totalAdelantosFaltante = adelantos.reduce((s, a) => s + a.faltante, 0)
-  const totalAdelantosGeneral = totalAdelantosEfectivo + totalAdelantosGasOil + totalAdelantosFaltante
+  const totalAdelantosEfectivo = sumarImportes(adelantos.map(a => a.efectivo))
+  const totalAdelantosGasOil = sumarImportes(adelantos.map(a => a.gasOil))
+  const totalAdelantosFaltante = sumarImportes(adelantos.map(a => a.faltante))
+  const totalAdelantosGeneral = sumarImportes([totalAdelantosEfectivo, totalAdelantosGasOil, totalAdelantosFaltante])
 
   // Gastos descontados (deduplicados por gastoId x liquidacion)
   type GastoRow = { proveedor: string; cbte: string; montoDescontado: number }
@@ -227,7 +228,7 @@ async function loadOP(ordenPagoId: string) {
     }
   }
   const gastos = Array.from(gastosMap.values())
-  const totalGastosDescontados = gastos.reduce((s, g) => s + g.montoDescontado, 0)
+  const totalGastosDescontados = sumarImportes(gastos.map(g => g.montoDescontado))
 
   const condicionIva = condicionIvaLabel[op.fletero.condicionIva] ?? op.fletero.condicionIva
 

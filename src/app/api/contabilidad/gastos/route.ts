@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
+import { sumarImportes } from "@/lib/money"
 
 function periodoFilter(params: URLSearchParams) {
   const mes = params.get("mes")
@@ -112,10 +113,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       .map(([nombre, items]) => ({
         nombre,
         items,
-        total: items.reduce((acc, i) => acc + i.monto, 0),
+        total: sumarImportes(items.map(i => i.monto)),
       }))
 
-    const totalGeneral = rubros.reduce((acc, r) => acc + r.total, 0)
+    const totalGeneral = sumarImportes(rubros.map(r => r.total))
 
     return NextResponse.json({ rubros, totalGeneral })
   } catch (error) {

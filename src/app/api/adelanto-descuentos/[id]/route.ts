@@ -8,6 +8,7 @@ import {
   serverErrorResponse,
 } from "@/lib/financial-api"
 import { actualizarAdelantoDescuentoSchema } from "@/lib/financial-schemas"
+import { sumarImportes } from "@/lib/money"
 
 function calcularEstadoAdelanto(monto: number, montoDescontado: number): string {
   if (montoDescontado <= 0) return "PENDIENTE_DESCUENTO"
@@ -90,10 +91,12 @@ export async function PATCH(
     if (!liquidacion) return notFoundResponse("Liquidación")
 
     const nuevoMontoDescontado = parsed.data.montoDescontado ?? existente.montoDescontado
-    const totalSinActual = adelanto.descuentos
-      .filter((descuento) => descuento.id !== existente.id)
-      .reduce((acumulado, descuento) => acumulado + descuento.montoDescontado, 0)
-    const totalFinal = totalSinActual + nuevoMontoDescontado
+    const totalSinActual = sumarImportes(
+      adelanto.descuentos
+        .filter((descuento) => descuento.id !== existente.id)
+        .map((descuento) => descuento.montoDescontado)
+    )
+    const totalFinal = sumarImportes([totalSinActual, nuevoMontoDescontado])
 
     if (totalFinal > adelanto.monto) {
       return badRequestResponse("El descuento supera el saldo pendiente del adelanto")
@@ -151,9 +154,11 @@ export async function DELETE(
 
     if (!adelanto) return notFoundResponse("Adelanto fletero")
 
-    const totalFinal = adelanto.descuentos
-      .filter((descuento) => descuento.id !== existente.id)
-      .reduce((acumulado, descuento) => acumulado + descuento.montoDescontado, 0)
+    const totalFinal = sumarImportes(
+      adelanto.descuentos
+        .filter((descuento) => descuento.id !== existente.id)
+        .map((descuento) => descuento.montoDescontado)
+    )
 
     await prisma.$transaction(async (tx) => {
       await tx.adelantoDescuento.delete({ where: { id: params.id } })

@@ -4,6 +4,8 @@
  */
 
 import { prisma } from "@/lib/prisma"
+import { sumarImportes, restarImportes, multiplicarImporte, dividirImporte } from "@/lib/money"
+import { calcularTotalViaje } from "@/lib/viajes"
 import PDFDocument from "pdfkit"
 
 /* -- Formatters ------------------------------------------------------------ */
@@ -124,18 +126,18 @@ async function obtenerDatosActividad(desde: Date, hasta: Date): Promise<FilaActi
 
     const vel = vf.viaje.enLiquidaciones[0]
     const tarifaFletero = vel?.tarifaFletero ?? 0
-    const totalFletero = (kilos / 1000) * tarifaFletero
-    const comisionFact = totalEmpresa - totalFletero
+    const totalFletero = calcularTotalViaje(kilos, tarifaFletero)
+    const comisionFact = restarImportes(totalEmpresa, totalFletero)
 
     let comisionViaje = 0
     if (vel?.liquidacion) {
       const lp = vel.liquidacion
       if (lp.subtotalBruto > 0) {
-        comisionViaje = (lp.comisionMonto / lp.subtotalBruto) * vel.subtotal
+        comisionViaje = multiplicarImporte(dividirImporte(lp.comisionMonto, lp.subtotalBruto), vel.subtotal)
       }
     }
 
-    const baseIIBB = comisionFact + comisionViaje
+    const baseIIBB = sumarImportes([comisionFact, comisionViaje])
 
     filas.push({
       provincia: vf.provinciaOrigen ?? "Sin provincia",
@@ -400,10 +402,10 @@ export async function generarPDFLibroIIBB(mesAnio: string): Promise<Buffer> {
   }
 
   const provinciaTotales = new Map<string, { totalFacturado: number; baseIIBB: number }>()
-  const totalBaseIIBB = filasActividad.reduce((s, f) => s + f.baseIIBB, 0)
-  const totalFacturado = filasActividad.reduce((s, f) => s + f.totalEmpresa, 0)
-  const totalPercepciones = percepciones.reduce((s, p) => s + p.monto, 0)
-  const totalRetenciones = retenciones.reduce((s, r) => s + r.monto, 0)
+  const totalBaseIIBB = sumarImportes(filasActividad.map(f => f.baseIIBB))
+  const totalFacturado = sumarImportes(filasActividad.map(f => f.totalEmpresa))
+  const totalPercepciones = sumarImportes(percepciones.map(p => p.monto))
+  const totalRetenciones = sumarImportes(retenciones.map(r => r.monto))
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 40, size: "A4" })
@@ -436,21 +438,9 @@ export async function generarPDFLibroIIBB(mesAnio: string): Promise<Buffer> {
     drawS1Header(doc)
 
     for (const [provincia, filas] of Array.from(porProvincia.entries()).sort((a, b) => a[0].localeCompare(b[0]))) {
-      let provTotalFacturado = 0
-      let provBaseIIBB = 0
-      let provSubtotalFact = 0
-      let provComisionFact = 0
-      let provComisionLP = 0
-
       drawS1ProvinciaHeader(doc, provincia)
 
       for (const fila of filas) {
-        provTotalFacturado += fila.totalEmpresa
-        provSubtotalFact += fila.subtotalFactura
-        provComisionFact += fila.comisionFact
-        provComisionLP += fila.comisionViaje
-        provBaseIIBB += fila.baseIIBB
-
         drawS1Row(doc, [
           fmtFecha(fila.fechaFactura),
           fila.remito,
@@ -463,6 +453,12 @@ export async function generarPDFLibroIIBB(mesAnio: string): Promise<Buffer> {
           fmtNumero(fila.baseIIBB),
         ])
       }
+
+      const provTotalFacturado = sumarImportes(filas.map(f => f.totalEmpresa))
+      const provSubtotalFact = sumarImportes(filas.map(f => f.subtotalFactura))
+      const provComisionFact = sumarImportes(filas.map(f => f.comisionFact))
+      const provComisionLP = sumarImportes(filas.map(f => f.comisionViaje))
+      const provBaseIIBB = sumarImportes(filas.map(f => f.baseIIBB))
 
       drawS1SubtotalRow(doc, `Subtotal ${provincia}`, fmtNumero(provSubtotalFact), fmtNumero(provComisionFact), fmtNumero(provComisionLP), fmtNumero(provBaseIIBB))
       provinciaTotales.set(provincia, { totalFacturado: provTotalFacturado, baseIIBB: provBaseIIBB })
@@ -549,7 +545,7 @@ export async function generarPDFLibroIIBB(mesAnio: string): Promise<Buffer> {
       "TOTALES",
       fmt(totalFacturado),
       fmt(totalBaseIIBB),
-      fmt(totalPercepciones + totalRetenciones),
+      fmt(sumarImportes([totalPercepciones, totalRetenciones])),
     ], true, "#f1f5f9")
 
     /* -- Footer -- */

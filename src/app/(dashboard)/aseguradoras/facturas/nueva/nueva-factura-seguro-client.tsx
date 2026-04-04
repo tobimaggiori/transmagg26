@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SearchCombobox } from "@/components/ui/search-combobox"
-import { formatearMoneda } from "@/lib/utils"
+import { parsearImporte, calcularIva, sumarImportes, dividirImporte, formatearMoneda } from "@/lib/money"
 import { Plus, Trash2 } from "lucide-react"
 
 interface Proveedor {
@@ -117,12 +117,13 @@ export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Pro
   const [periodoDesde, setPeriodoDesde] = useState("")
   const [periodoHasta, setPeriodoHasta] = useState("")
   const [neto, setNeto] = useState("")
-  const ivaCalc = neto ? Math.round(parseFloat(neto) * 0.21 * 100) / 100 : 0
+  const netoNum = parsearImporte(neto)
+  const ivaCalc = netoNum > 0 ? calcularIva(netoNum, 21) : 0
 
   // Percepciones e impuestos adicionales
   const [percepcionesExtra, setPercepcionesExtra] = useState<PercepcionForm[]>([])
-  const totalPercepcionesExtra = percepcionesExtra.reduce((acc, p) => acc + (parseFloat(p.monto) || 0), 0)
-  const totalCalc = neto ? Math.round((parseFloat(neto) + ivaCalc + totalPercepcionesExtra) * 100) / 100 : 0
+  const totalPercepcionesExtra = sumarImportes(percepcionesExtra.map(p => parsearImporte(p.monto)))
+  const totalCalc = netoNum > 0 ? sumarImportes([netoNum, ivaCalc, totalPercepcionesExtra]) : 0
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const agregarPercepcionSeguro = () => setPercepcionesExtra((prev) => [...prev, nuevaPercepcion()])
@@ -167,7 +168,7 @@ export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Pro
     if (!primerMesAnio || !cantCuotas) return []
     const n = parseInt(cantCuotas)
     if (isNaN(n) || n < 1) return []
-    const monto = Math.round((totalCalc / n) * 100) / 100
+    const monto = dividirImporte(totalCalc, n)
     const [anio, mes] = primerMesAnio.split("-").map(Number)
     return Array.from({ length: n }, (_, i) => {
       const d = new Date(anio, mes - 1 + i, 1)
@@ -184,7 +185,7 @@ export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Pro
     if (!nroComprobante) { setError("Ingresá el número de comprobante"); return false }
     if (!fecha) { setError("Ingresá la fecha"); return false }
     if (!periodoDesde || !periodoHasta) { setError("Ingresá el período de cobertura"); return false }
-    if (!neto || parseFloat(neto) <= 0) { setError("Ingresá el monto neto"); return false }
+    if (!neto || parsearImporte(neto) <= 0) { setError("Ingresá el monto neto"); return false }
     return true
   }
 
@@ -209,16 +210,16 @@ export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Pro
       fecha,
       periodoDesde,
       periodoHasta,
-      neto: parseFloat(neto),
+      neto: parsearImporte(neto),
       iva: ivaCalc,
       total: totalCalc,
       percepciones: percepcionesExtra
-        .filter((p) => parseFloat(p.monto) > 0)
+        .filter((p) => parsearImporte(p.monto) > 0)
         .map((p) => ({
           tipo: p.tipo,
           categoria: categoriaPercepcion(p.tipo),
           descripcion: p.tipo === "OTRO" ? p.descripcion || null : null,
-          monto: parseFloat(p.monto),
+          monto: parsearImporte(p.monto),
         })),
       formaPago,
       medioPagoContado: formaPago === "CONTADO" ? medioPagoContado : undefined,

@@ -1,10 +1,20 @@
 /**
- * Funciones de cálculo de cuenta corriente para empresas, fleteros y proveedores.
- * Todas las funciones son puras respecto a Prisma (reciben el cliente como parámetro
- * implícito a través de la importación) y devuelven saldos calculados.
+ * cuenta-corriente.ts
+ *
+ * Cálculo de saldos de cuenta corriente para empresas, fleteros y documentos.
+ *
+ * Estructura:
+ * - Funciones puras de cálculo (sin Prisma): calcularSaldoCC, calcularAjusteNotasCD, calcularSaldoPendiente
+ * - Funciones de orquestación (con Prisma): calcularSaldoCCEmpresa, calcularSaldoCCFletero, etc.
+ *
+ * Las funciones puras son testeables sin mocks y contienen las reglas de negocio.
+ * Las funciones de orquestación solo obtienen datos y delegan al cálculo puro.
  */
 
 import { prisma } from "@/lib/prisma"
+import { sumarImportes, restarImportes, maxMonetario, type MonetaryInput } from "@/lib/money"
+
+// ─── Tipos ───────────────────────────────────────────────────────────────────
 
 export type SaldoCC = {
   saldoDeudor: number   // empresa/fletero DEBE (positivo)
@@ -12,21 +22,100 @@ export type SaldoCC = {
   saldoNeto: number     // positivo = debe, negativo = a favor
 }
 
+type NotaCD = { tipo: string; montoTotal: MonetaryInput }
+
+// ─── Funciones puras de cálculo ──────────────────────────────────────────────
+
+/**
+ * calcularAjusteNotasCD: NotaCD[] string string -> number
+ *
+ * Dada [una lista de notas de crédito/débito, el tipo que reduce deuda
+ * y el tipo que aumenta deuda], devuelve [el ajuste neto a aplicar al debe].
+ * Positivo = más deuda, negativo = menos deuda.
+ *
+ * Existe para centralizar la regla de ajuste NC/ND que es idéntica
+ * entre empresa (NC_EMITIDA/ND_EMITIDA) y fletero (NC_RECIBIDA/ND_RECIBIDA).
+ *
+ * Ejemplos:
+ * calcularAjusteNotasCD([{ tipo: "NC_EMITIDA", montoTotal: 20000 }], "NC_EMITIDA", "ND_EMITIDA") === -20000
+ * calcularAjusteNotasCD([{ tipo: "ND_EMITIDA", montoTotal: 15000 }], "NC_EMITIDA", "ND_EMITIDA") === 15000
+ * calcularAjusteNotasCD([], "NC_EMITIDA", "ND_EMITIDA") === 0
+ * calcularAjusteNotasCD([
+ *   { tipo: "NC_EMITIDA", montoTotal: 10000 },
+ *   { tipo: "ND_EMITIDA", montoTotal: 5000 },
+ * ], "NC_EMITIDA", "ND_EMITIDA") === -5000
+ */
+export function calcularAjusteNotasCD(
+  notas: NotaCD[],
+  tipoCredito: string,
+  tipoDebito: string
+): number {
+  return notas.reduce((sum, n) => {
+    if (n.tipo === tipoCredito) return restarImportes(sum, n.montoTotal)
+    if (n.tipo === tipoDebito) return sumarImportes([sum, n.montoTotal])
+    return sum
+  }, 0)
+}
+
+/**
+ * calcularSaldoCC: number number number -> SaldoCC
+ *
+ * Dados [totalDocumentos (facturas o liquidaciones), totalPagos y ajusteNotasCD],
+ * devuelve [el saldo de cuenta corriente con deudor, a favor y neto].
+ *
+ * Regla:
+ * - totalDebe = totalDocumentos + ajusteNotasCD
+ * - saldoNeto = totalDebe - totalPagos
+ * - saldoNeto > 0 → deudor; saldoNeto <= 0 → a favor
+ *
+ * Ejemplos:
+ * calcularSaldoCC(300000, 0, 0) === { saldoDeudor: 300000, saldoAFavor: 0, saldoNeto: 300000 }
+ * calcularSaldoCC(100000, 130000, 0) === { saldoDeudor: 0, saldoAFavor: 30000, saldoNeto: -30000 }
+ * calcularSaldoCC(100000, 0, -20000) === { saldoDeudor: 80000, saldoAFavor: 0, saldoNeto: 80000 }
+ * calcularSaldoCC(0, 0, 0) === { saldoDeudor: 0, saldoAFavor: 0, saldoNeto: 0 }
+ */
+export function calcularSaldoCC(
+  totalDocumentos: number,
+  totalPagos: number,
+  ajusteNotasCD: number
+): SaldoCC {
+  const totalDebe = sumarImportes([totalDocumentos, ajusteNotasCD])
+  const saldoNeto = restarImportes(totalDebe, totalPagos)
+
+  if (saldoNeto > 0) {
+    return { saldoDeudor: saldoNeto, saldoAFavor: 0, saldoNeto }
+  }
+  return { saldoDeudor: 0, saldoAFavor: Math.abs(saldoNeto), saldoNeto }
+}
+
+/**
+ * calcularSaldoPendiente: number MonetaryInput[] -> number
+ *
+ * Dado [el total de un documento y la lista de montos de pagos],
+ * devuelve [el saldo pendiente, mínimo 0].
+ *
+ * Ejemplos:
+ * calcularSaldoPendiente(100000, [40000]) === 60000
+ * calcularSaldoPendiente(100000, [100000]) === 0
+ * calcularSaldoPendiente(100000, [120000]) === 0
+ * calcularSaldoPendiente(100000, []) === 100000
+ */
+export function calcularSaldoPendiente(
+  total: number,
+  pagos: MonetaryInput[]
+): number {
+  const totalPagado = sumarImportes(pagos)
+  return maxMonetario(0, restarImportes(total, totalPagado))
+}
+
+// ─── Orquestación con Prisma ─────────────────────────────────────────────────
+
 /**
  * calcularSaldoCCEmpresa: (empresaId: string) -> Promise<SaldoCC>
  *
- * Dado el ID de una empresa, calcula su saldo de cuenta corriente:
- * - DEBE: suma de facturas en estado EMITIDA, PARCIALMENTE_COBRADA, COBRADA (excluyendo ANULADA y BORRADOR),
- *   más notas de débito emitidas vinculadas a la empresa
- * - HABER: suma de todos los PagoDeEmpresa registrados, más notas de crédito emitidas
- * - saldoNeto = totalDebe - totalHaber
- * - Si saldoNeto > 0 → empresa debe (saldoDeudor = saldoNeto, saldoAFavor = 0)
- * - Si saldoNeto ≤ 0 → empresa tiene a favor (saldoDeudor = 0, saldoAFavor = Math.abs(saldoNeto))
- * Existe para mostrar el saldo en la vista de cuenta corriente y validar pagos con SALDO_A_FAVOR.
- *
- * Ejemplos:
- * calcularSaldoCCEmpresa("emp1") === { saldoDeudor: 400000, saldoAFavor: 0, saldoNeto: 400000 }
- * calcularSaldoCCEmpresa("emp1") === { saldoDeudor: 0, saldoAFavor: 30000, saldoNeto: -30000 }
+ * Dado el ID de una empresa, calcula su saldo de cuenta corriente.
+ * Obtiene facturas, pagos y notas CD de Prisma, y delega el cálculo
+ * a las funciones puras calcularAjusteNotasCD y calcularSaldoCC.
  */
 export async function calcularSaldoCCEmpresa(empresaId: string): Promise<SaldoCC> {
   const [facturas, pagos, notasCD] = await Promise.all([
@@ -50,35 +139,19 @@ export async function calcularSaldoCCEmpresa(empresaId: string): Promise<SaldoCC
     }),
   ])
 
-  const totalFacturas = facturas.reduce((sum, f) => sum + f.total, 0)
-  const totalPagos = pagos.reduce((sum, p) => sum + p.monto, 0)
+  const totalFacturas = sumarImportes(facturas.map(f => f.total))
+  const totalPagos = sumarImportes(pagos.map(p => p.monto))
+  const ajuste = calcularAjusteNotasCD(notasCD, "NC_EMITIDA", "ND_EMITIDA")
 
-  // NC_EMITIDA reduce deuda (crédito a favor de empresa), ND_EMITIDA aumenta deuda
-  const ajusteNotasCD = notasCD.reduce((sum, n) => {
-    if (n.tipo === "NC_EMITIDA") return sum - n.montoTotal
-    if (n.tipo === "ND_EMITIDA") return sum + n.montoTotal
-    return sum
-  }, 0)
-
-  const totalDebe = totalFacturas + ajusteNotasCD
-  const saldoNeto = totalDebe - totalPagos
-
-  if (saldoNeto > 0) {
-    return { saldoDeudor: saldoNeto, saldoAFavor: 0, saldoNeto }
-  } else {
-    return { saldoDeudor: 0, saldoAFavor: Math.abs(saldoNeto), saldoNeto }
-  }
+  return calcularSaldoCC(totalFacturas, totalPagos, ajuste)
 }
 
 /**
  * calcularSaldoCCFletero: (fleteroId: string) -> Promise<SaldoCC>
  *
- * Análogo a calcularSaldoCCEmpresa pero para liquidaciones.
- * DEBE: suma de liquidaciones EMITIDA, PARCIALMENTE_PAGADA, PAGADA (lo que transmagg le debe al fletero)
- * HABER: suma de todos los PagoAFletero registrados (lo que ya se pagó)
- * - saldoNeto = totalDebe - totalHaber
- * - Si saldoNeto > 0 → transmagg debe al fletero (saldoDeudor = saldoNeto, saldoAFavor = 0)
- * - Si saldoNeto ≤ 0 → fletero tiene deuda con transmagg (saldoDeudor = 0, saldoAFavor = Math.abs(saldoNeto))
+ * Dado el ID de un fletero, calcula su saldo de cuenta corriente.
+ * Obtiene liquidaciones, pagos y notas CD de Prisma, y delega el cálculo
+ * a las funciones puras calcularAjusteNotasCD y calcularSaldoCC.
  */
 export async function calcularSaldoCCFletero(fleteroId: string): Promise<SaldoCC> {
   const [liquidaciones, pagos, notasCD] = await Promise.all([
@@ -102,31 +175,17 @@ export async function calcularSaldoCCFletero(fleteroId: string): Promise<SaldoCC
     }),
   ])
 
-  const totalLiquidaciones = liquidaciones.reduce((sum, l) => sum + l.total, 0)
-  const totalPagos = pagos.reduce((sum, p) => sum + p.monto, 0)
+  const totalLiquidaciones = sumarImportes(liquidaciones.map(l => l.total))
+  const totalPagos = sumarImportes(pagos.map(p => p.monto))
+  const ajuste = calcularAjusteNotasCD(notasCD, "NC_RECIBIDA", "ND_RECIBIDA")
 
-  // NC_RECIBIDA reduce lo que debemos al fletero, ND_RECIBIDA aumenta lo que debemos
-  const ajusteNotasCD = notasCD.reduce((sum, n) => {
-    if (n.tipo === "NC_RECIBIDA") return sum - n.montoTotal
-    if (n.tipo === "ND_RECIBIDA") return sum + n.montoTotal
-    return sum
-  }, 0)
-
-  const totalDebe = totalLiquidaciones + ajusteNotasCD
-  const saldoNeto = totalDebe - totalPagos
-
-  if (saldoNeto > 0) {
-    return { saldoDeudor: saldoNeto, saldoAFavor: 0, saldoNeto }
-  } else {
-    return { saldoDeudor: 0, saldoAFavor: Math.abs(saldoNeto), saldoNeto }
-  }
+  return calcularSaldoCC(totalLiquidaciones, totalPagos, ajuste)
 }
 
 /**
  * calcularSaldoPendienteFactura: (facturaId: string) -> Promise<number>
  *
  * Dado el ID de una factura, devuelve el saldo pendiente de cobro.
- * Consulta los pagos existentes y resta del total de la factura.
  * Retorna 0 si la factura no existe o ya está completamente cobrada.
  */
 export async function calcularSaldoPendienteFactura(facturaId: string): Promise<number> {
@@ -140,15 +199,13 @@ export async function calcularSaldoPendienteFactura(facturaId: string): Promise<
 
   if (!factura) return 0
 
-  const totalPagado = factura.pagos.reduce((sum, p) => sum + p.monto, 0)
-  return Math.max(0, factura.total - totalPagado)
+  return calcularSaldoPendiente(factura.total, factura.pagos.map(p => p.monto))
 }
 
 /**
  * calcularSaldoPendienteLiquidacion: (liquidacionId: string) -> Promise<number>
  *
  * Dado el ID de una liquidación, devuelve el saldo pendiente de pago.
- * Consulta los pagos existentes y resta del total de la liquidación.
  * Retorna 0 si la liquidación no existe o ya está completamente pagada.
  */
 export async function calcularSaldoPendienteLiquidacion(liquidacionId: string): Promise<number> {
@@ -162,6 +219,5 @@ export async function calcularSaldoPendienteLiquidacion(liquidacionId: string): 
 
   if (!liquidacion) return 0
 
-  const totalPagado = liquidacion.pagos.reduce((sum, p) => sum + p.monto, 0)
-  return Math.max(0, liquidacion.total - totalPagado)
+  return calcularSaldoPendiente(liquidacion.total, liquidacion.pagos.map(p => p.monto))
 }

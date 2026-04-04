@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
+import { sumarImportes, restarImportes } from "@/lib/money"
 import type { Rol } from "@/types"
 
 type ImpactoItem = {
@@ -54,8 +55,8 @@ function buildImpactos(
   for (const pago of pagosFletero) {
     const liq = pago.liquidacion
     if (!liq) continue
-    const totalPagado = liq.pagos.reduce((s, p) => s + p.monto, 0)
-    const totalSinEstePago = totalPagado - pago.monto
+    const totalPagado = sumarImportes(liq.pagos.map(p => p.monto))
+    const totalSinEstePago = restarImportes(totalPagado, pago.monto)
     const estadoResultante = totalSinEstePago <= 0.01 ? "EMITIDA" : "PARCIALMENTE_PAGADA"
     impactos.push({
       tipo: "LIQUIDACION",
@@ -77,8 +78,8 @@ function buildImpactos(
 
   for (const pago of pagosProveedor) {
     const fact = pago.facturaProveedor
-    const totalPagado = fact.pagos.reduce((s, p) => s + p.monto, 0)
-    const totalSinEstePago = totalPagado - pago.monto
+    const totalPagado = sumarImportes(fact.pagos.map(p => p.monto))
+    const totalSinEstePago = restarImportes(totalPagado, pago.monto)
     const estadoResultante = totalSinEstePago <= 0.01 ? "PENDIENTE" : "PARCIALMENTE_PAGADA"
     impactos.push({
       tipo: "FACTURA_PROVEEDOR",

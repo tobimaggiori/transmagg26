@@ -4,6 +4,7 @@
  */
 
 import { prisma } from "@/lib/prisma"
+import { sumarImportes } from "@/lib/money"
 import PDFDocument from "pdfkit"
 
 /* -- Formatters ------------------------------------------------------------ */
@@ -322,9 +323,9 @@ export async function generarPDFLibroPercepciones(mesAnio: string): Promise<Buff
     obtenerImpuestosInternos(mesAnio),
   ])
 
-  const totalPercepciones = percepciones.reduce((s, p) => s + p.monto, 0)
-  const totalImpuestos = impuestosInternos.reduce((s, imp) => s + imp.monto, 0)
-  const totalGeneral = totalPercepciones + totalImpuestos
+  const totalPercepciones = sumarImportes(percepciones.map(p => p.monto))
+  const totalImpuestos = sumarImportes(impuestosInternos.map(imp => imp.monto))
+  const totalGeneral = sumarImportes([totalPercepciones, totalImpuestos])
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 40, size: "A4" })

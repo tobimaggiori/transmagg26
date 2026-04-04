@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
+import { sumarImportes, maxMonetario, restarImportes } from "@/lib/money"
 
 /**
  * GET: -> Promise<NextResponse>
@@ -44,8 +45,8 @@ export async function GET() {
     const resultado = fleteros.map((flet) => {
       const liquidaciones = flet.liquidaciones
         .map((l) => {
-          const totalPagado = l.pagos.reduce((acc, p) => acc + p.monto, 0)
-          const saldo = Math.max(0, l.total - totalPagado)
+          const totalPagado = sumarImportes(l.pagos.map((p) => p.monto))
+          const saldo = maxMonetario(0, restarImportes(l.total, totalPagado))
           return {
             id: l.id,
             grabadaEn: l.grabadaEn.toISOString(),
@@ -60,9 +61,9 @@ export async function GET() {
         })
         .filter((l) => l.saldo > 0)
 
-      const totalLiquidado = liquidaciones.reduce((acc, l) => acc + l.total, 0)
-      const totalPagado = liquidaciones.reduce((acc, l) => acc + l.totalPagado, 0)
-      const saldoAPagar = liquidaciones.reduce((acc, l) => acc + l.saldo, 0)
+      const totalLiquidado = sumarImportes(liquidaciones.map((l) => l.total))
+      const totalPagado = sumarImportes(liquidaciones.map((l) => l.totalPagado))
+      const saldoAPagar = sumarImportes(liquidaciones.map((l) => l.saldo))
 
       return {
         fleteroId: flet.id,

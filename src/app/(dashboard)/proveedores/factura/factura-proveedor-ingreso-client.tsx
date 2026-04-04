@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { UploadPDF } from "@/components/upload-pdf"
-import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { formatearFecha } from "@/lib/utils"
+import { parsearImporte, multiplicarImporte, calcularIva, sumarImportes, restarImportes, maxMonetario, formatearMoneda } from "@/lib/money"
 import { Plus, Trash2 } from "lucide-react"
 
 type Proveedor = { id: string; razonSocial: string; cuit: string }
@@ -114,13 +115,13 @@ function nuevoItem(): ItemForm {
 }
 
 function calcularItem(item: ItemForm, discriminaIVA: boolean) {
-  const cantidad = parseFloat(item.cantidad) || 0
-  const precioUnitario = parseFloat(item.precioUnitario) || 0
-  const subtotalNeto = cantidad * precioUnitario
+  const cantidad = parsearImporte(item.cantidad)
+  const precioUnitario = parsearImporte(item.precioUnitario)
+  const subtotalNeto = multiplicarImporte(cantidad, precioUnitario)
   const esExento = discriminaIVA && item.alicuotaIva === "EXENTO"
-  const alicuota = discriminaIVA && !esExento ? parseFloat(item.alicuotaIva) : 0
-  const montoIva = alicuota > 0 ? (subtotalNeto * alicuota) / 100 : 0
-  return { subtotalNeto, montoIva, subtotalTotal: subtotalNeto + montoIva, esExento, alicuota }
+  const alicuota = discriminaIVA && !esExento ? parsearImporte(item.alicuotaIva) : 0
+  const montoIva = alicuota > 0 ? calcularIva(subtotalNeto, alicuota) : 0
+  return { subtotalNeto, montoIva, subtotalTotal: sumarImportes([subtotalNeto, montoIva]), esExento, alicuota }
 }
 
 const todayStr = () => new Date().toISOString().slice(0, 10)
@@ -184,18 +185,18 @@ export function FacturaProveedorIngresoClient({
   const discriminaIVA = TIPOS_CON_IVA.has(tipoCbte)
   const proveedor = proveedores.find((p) => p.id === proveedorId)
   const itemsCalc = items.map((item) => calcularItem(item, discriminaIVA))
-  const totalNeto = itemsCalc.reduce((acc, i) => acc + i.subtotalNeto, 0)
-  const totalIva = itemsCalc.reduce((acc, i) => acc + i.montoIva, 0)
-  const percIIBBNum = parseFloat(percepcionIIBB) || 0
-  const percIVANum = parseFloat(percepcionIVA) || 0
-  const percGananciasNum = parseFloat(percepcionGanancias) || 0
-  const totalPercepcionesLegacy = percIIBBNum + percIVANum + percGananciasNum
-  const totalPercepcionesExtra = percepcionesExtra.reduce((acc, p) => acc + (parseFloat(p.monto) || 0), 0)
-  const totalPercepciones = totalPercepcionesLegacy + totalPercepcionesExtra
-  const totalFinal = totalNeto + totalIva + totalPercepciones
+  const totalNeto = sumarImportes(itemsCalc.map(i => i.subtotalNeto))
+  const totalIva = sumarImportes(itemsCalc.map(i => i.montoIva))
+  const percIIBBNum = parsearImporte(percepcionIIBB)
+  const percIVANum = parsearImporte(percepcionIVA)
+  const percGananciasNum = parsearImporte(percepcionGanancias)
+  const totalPercepcionesLegacy = sumarImportes([percIIBBNum, percIVANum, percGananciasNum])
+  const totalPercepcionesExtra = sumarImportes(percepcionesExtra.map(p => parsearImporte(p.monto)))
+  const totalPercepciones = sumarImportes([totalPercepcionesLegacy, totalPercepcionesExtra])
+  const totalFinal = sumarImportes([totalNeto, totalIva, totalPercepciones])
 
-  const pagoMontoNum = parseFloat(pagoMonto) || 0
-  const saldoTrasPago = Math.max(0, totalFinal - pagoMontoNum)
+  const pagoMontoNum = parsearImporte(pagoMonto)
+  const saldoTrasPago = maxMonetario(0, restarImportes(totalFinal, pagoMontoNum))
 
   // ── Validación ────────────────────────────────────────────────────────────
   const cabeceraCompleta = !!(
@@ -206,7 +207,7 @@ export function FacturaProveedorIngresoClient({
     fechaComprobante
   )
   const tieneItemValido = items.some(
-    (i) => i.descripcion.trim() && parseFloat(i.precioUnitario) > 0
+    (i) => i.descripcion.trim() && parsearImporte(i.precioUnitario) > 0
   )
   const tienePdf = pdfS3Key !== ""
 
@@ -284,13 +285,13 @@ export function FacturaProveedorIngresoClient({
     }
 
     const itemsPayload = items
-      .filter((i) => i.descripcion.trim() && parseFloat(i.precioUnitario) > 0)
+      .filter((i) => i.descripcion.trim() && parsearImporte(i.precioUnitario) > 0)
       .map((item) => {
         const calc = calcularItem(item, discriminaIVA)
         return {
           descripcion: item.descripcion.trim(),
           cantidad: parseFloat(item.cantidad) || 1,
-          precioUnitario: parseFloat(item.precioUnitario),
+          precioUnitario: parsearImporte(item.precioUnitario),
           alicuotaIva: calc.alicuota,
           esExento: calc.esExento,
         }
@@ -338,12 +339,12 @@ export function FacturaProveedorIngresoClient({
           pdfS3Key,
           items: itemsPayload,
           percepciones: percepcionesExtra
-            .filter((p) => parseFloat(p.monto) > 0)
+            .filter((p) => parsearImporte(p.monto) > 0)
             .map((p) => ({
               tipo: p.tipo,
               categoria: categoriaPercepcion(p.tipo),
               descripcion: p.tipo === "OTRO" ? p.descripcion || null : null,
-              monto: parseFloat(p.monto),
+              monto: parsearImporte(p.monto),
             })),
           pago: pagoPayload,
         }),

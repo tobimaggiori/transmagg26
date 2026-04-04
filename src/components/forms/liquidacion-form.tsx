@@ -17,7 +17,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { FormError } from "@/components/ui/form-error"
-import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { formatearFecha } from "@/lib/utils"
+import { sumarImportes, restarImportes, aplicarPorcentaje, calcularIva, parsearImporte, formatearMoneda } from "@/lib/money"
 
 interface ViajeDisponible {
   id: string
@@ -106,11 +107,11 @@ export function LiquidacionForm({ fleteros, viajesPendientes, onSuccess }: Liqui
   }
 
   const viajesElegidos = Object.values(seleccionados)
-  const subtotalBruto = viajesElegidos.reduce((acc, v) => acc + (parseFloat(v.tarifaFletero) || 0), 0)
-  const comisionMonto = subtotalBruto * (parseFloat(comisionPct) / 100)
-  const neto = subtotalBruto - comisionMonto
-  const ivaMonto = comisionMonto * 0.21
-  const total = neto + ivaMonto
+  const subtotalBruto = sumarImportes(viajesElegidos.map(v => parsearImporte(v.tarifaFletero)))
+  const comisionMonto = aplicarPorcentaje(subtotalBruto, parsearImporte(comisionPct))
+  const neto = restarImportes(subtotalBruto, comisionMonto)
+  const ivaMonto = calcularIva(neto, 21)
+  const total = sumarImportes([neto, ivaMonto])
 
   async function handleSubmit() {
     setLoading(true)
@@ -122,10 +123,10 @@ export function LiquidacionForm({ fleteros, viajesPendientes, onSuccess }: Liqui
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fleteroId,
-          comisionPct: parseFloat(comisionPct),
+          comisionPct: parsearImporte(comisionPct),
           viajes: viajesElegidos.map((v) => ({
             viajeId: v.viajeId,
-            tarifaFletero: parseFloat(v.tarifaFletero),
+            tarifaFletero: parsearImporte(v.tarifaFletero),
           })),
         }),
       })
@@ -341,7 +342,7 @@ export function LiquidacionForm({ fleteros, viajesPendientes, onSuccess }: Liqui
             onClick={() => setPaso(paso + 1)}
             disabled={
               (paso === 1 && !fleteroId) ||
-              (paso === 2 && (viajesElegidos.length === 0 || viajesElegidos.some((v) => !v.tarifaFletero || parseFloat(v.tarifaFletero) <= 0)))
+              (paso === 2 && (viajesElegidos.length === 0 || viajesElegidos.some((v) => !v.tarifaFletero || parsearImporte(v.tarifaFletero) <= 0)))
             }
           >
             Siguiente <ChevronRight className="h-4 w-4" />

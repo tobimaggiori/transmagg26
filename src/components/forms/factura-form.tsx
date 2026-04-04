@@ -17,7 +17,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { FormError } from "@/components/ui/form-error"
-import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { formatearFecha } from "@/lib/utils"
+import { sumarImportes, calcularIva, parsearImporte, formatearMoneda } from "@/lib/money"
 import { TipoCbte } from "@/types"
 
 interface ViajeDisponible {
@@ -105,9 +106,9 @@ export function FacturaForm({ empresas, viajesPendientes, onSuccess }: FacturaFo
   }
 
   const viajesElegidos = Object.values(seleccionados)
-  const neto = viajesElegidos.reduce((acc, v) => acc + (parseFloat(v.tarifaEmpresa) || 0), 0)
-  const ivaMonto = neto * (alicuotaIva / 100)
-  const total = neto + ivaMonto
+  const neto = sumarImportes(viajesElegidos.map(v => parsearImporte(v.tarifaEmpresa)))
+  const ivaMonto = calcularIva(neto, alicuotaIva)
+  const total = sumarImportes([neto, ivaMonto])
 
   async function handleSubmit() {
     setLoading(true)
@@ -123,7 +124,7 @@ export function FacturaForm({ empresas, viajesPendientes, onSuccess }: FacturaFo
           alicuotaIva,
           viajes: viajesElegidos.map((v) => ({
             viajeId: v.viajeId,
-            tarifaEmpresa: parseFloat(v.tarifaEmpresa),
+            tarifaEmpresa: parsearImporte(v.tarifaEmpresa),
           })),
         }),
       })
@@ -332,7 +333,7 @@ export function FacturaForm({ empresas, viajesPendientes, onSuccess }: FacturaFo
             onClick={() => setPaso(paso + 1)}
             disabled={
               (paso === 1 && !empresaId) ||
-              (paso === 2 && (viajesElegidos.length === 0 || viajesElegidos.some((v) => !v.tarifaEmpresa || parseFloat(v.tarifaEmpresa) <= 0)))
+              (paso === 2 && (viajesElegidos.length === 0 || viajesElegidos.some((v) => !v.tarifaEmpresa || parsearImporte(v.tarifaEmpresa) <= 0)))
             }
           >
             Siguiente <ChevronRight className="h-4 w-4" />

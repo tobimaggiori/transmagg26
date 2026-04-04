@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
+import { sumarImportes } from "@/lib/money"
 
 function fmt(n: number) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(n)
@@ -103,11 +104,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     const rubros = Array.from(rubrosMap.entries()).sort(([a], [b]) => a.localeCompare(b))
-    const totalGeneral = rubros.reduce((acc, [, items]) => acc + items.reduce((s, i) => s + i.monto, 0), 0)
+    const totalGeneral = sumarImportes(rubros.map(([, items]) => sumarImportes(items.map(i => i.monto))))
     const totalItems = facturas.length + liquidaciones.length
 
     const seccionesHtml = rubros.map(([nombre, items]) => {
-      const subtotal = items.reduce((acc, i) => acc + i.monto, 0)
+      const subtotal = sumarImportes(items.map(i => i.monto))
       const filas = items.map((i) => `<tr>
         <td>${i.fecha ? fmtFecha(i.fecha) : "—"}</td>
         <td>${i.descripcion}</td>

@@ -5,6 +5,7 @@
  */
 
 import { prisma } from "@/lib/prisma"
+import { sumarImportes, importesIguales } from "@/lib/money"
 
 // Tipo del cliente de transacción de Prisma (extraído de la firma de $transaction)
 type TxClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
@@ -99,9 +100,9 @@ export async function procesarPagoProveedor(
   })
 
   // ── 3. Actualizar estadoPago de la factura ──────────────────────────────────
-  const totalPagadoNuevo = totalPagadoAnterior + input.monto
+  const totalPagadoNuevo = sumarImportes([totalPagadoAnterior, input.monto])
   const nuevoEstado =
-    totalPagadoNuevo >= facturaTotal - 0.01 ? "PAGADA" : "PARCIALMENTE_PAGADA"
+    importesIguales(totalPagadoNuevo, facturaTotal) || totalPagadoNuevo > facturaTotal ? "PAGADA" : "PARCIALMENTE_PAGADA"
   await tx.facturaProveedor.update({
     where: { id: facturaId },
     data: { estadoPago: nuevoEstado },
@@ -191,4 +192,95 @@ export async function procesarPagoProveedor(
   }
 
   return { pagoId: pago.id, nuevoEstado, resumenTarjetaId }
+}
+
+// ─── Comando: pago directo a proveedor ──────────────────────────────────────
+
+export type DatosPagoProveedorDirecto = {
+  proveedorId: string
+  facturaProveedorId: string
+  fecha: string
+  monto: number
+  tipo: string
+  observaciones?: string | null
+  comprobantePdfS3Key?: string | null
+  cuentaId?: string | null
+  chequeRecibidoId?: string | null
+  tarjetaId?: string | null
+  chequePropio?: ChequePropioDatos | null
+}
+
+type ResultadoPagoProveedorDirecto =
+  | { ok: true; result: unknown }
+  | { ok: false; status: number; error: string }
+
+/**
+ * ejecutarPagoProveedorDirecto: DatosPagoProveedorDirecto string|null -> Promise<ResultadoPagoProveedorDirecto>
+ *
+ * Dado [los datos validados del pago y el operadorId],
+ * devuelve [el resultado del pago o un error con status HTTP].
+ *
+ * Valida:
+ * - Proveedor existe
+ * - Factura existe y pertenece al proveedor
+ *
+ * Ejecuta en transaccion:
+ * - Delega a procesarPagoProveedor() para crear PagoProveedor y efectos secundarios
+ *
+ * Ejemplos:
+ * ejecutarPagoProveedorDirecto({ proveedorId: "p1", facturaProveedorId: "f1", ... }, "op1")
+ *   // => { ok: true, result: { pagoId, nuevoEstado, resumenTarjetaId } }
+ * ejecutarPagoProveedorDirecto({ proveedorId: "noexiste", ... }, "op1")
+ *   // => { ok: false, status: 404, error: "Proveedor no encontrado" }
+ */
+export async function ejecutarPagoProveedorDirecto(
+  data: DatosPagoProveedorDirecto,
+  operadorId: string | null
+): Promise<ResultadoPagoProveedorDirecto> {
+  const { proveedorId, facturaProveedorId } = data
+  const fechaPago = new Date(data.fecha)
+
+  const proveedor = await prisma.proveedor.findUnique({
+    where: { id: proveedorId },
+    select: { id: true, razonSocial: true },
+  })
+  if (!proveedor) return { ok: false, status: 404, error: "Proveedor no encontrado" }
+
+  const factura = await prisma.facturaProveedor.findUnique({
+    where: { id: facturaProveedorId },
+    include: { pagos: { where: { anulado: false }, select: { monto: true } } },
+  })
+  if (!factura || factura.proveedorId !== proveedorId) {
+    return { ok: false, status: 404, error: "Factura no encontrada" }
+  }
+
+  const totalPagadoAnterior = sumarImportes(factura.pagos.map((p) => p.monto))
+
+  const result = await prisma.$transaction(async (tx) => {
+    return procesarPagoProveedor(
+      tx,
+      {
+        facturaId: factura.id,
+        facturaTotal: factura.total,
+        totalPagadoAnterior,
+        facturaNroComprobante: factura.nroComprobante,
+        proveedorId,
+        proveedorRazonSocial: proveedor.razonSocial,
+        operadorId,
+      },
+      {
+        fecha: fechaPago,
+        monto: data.monto,
+        tipo: data.tipo,
+        observaciones: data.observaciones,
+        comprobantePdfS3Key: data.comprobantePdfS3Key,
+        cuentaId: data.cuentaId,
+        chequeRecibidoId: data.chequeRecibidoId,
+        tarjetaId: data.tarjetaId,
+        chequePropio: data.chequePropio ?? null,
+      }
+    )
+  })
+
+  return { ok: true, result }
 }

@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
+import { sumarImportes, maxMonetario, restarImportes } from "@/lib/money"
 
 /**
  * GET: -> Promise<NextResponse>
@@ -38,20 +39,20 @@ export async function GET() {
 
     const resultado = empresas.map((emp) => {
       const facturas = emp.facturasEmitidas.map((f) => {
-        const totalPagado = f.pagos.reduce((acc, p) => acc + p.monto, 0)
+        const totalPagado = sumarImportes(f.pagos.map((p) => p.monto))
         return {
           id: f.id,
           nroComprobante: f.nroComprobante,
           total: f.total,
           totalPagado,
-          saldo: Math.max(0, f.total - totalPagado),
+          saldo: maxMonetario(0, restarImportes(f.total, totalPagado)),
           emitidaEn: f.emitidaEn.toISOString(),
           estado: f.estado,
         }
       })
-      const totalFacturado = facturas.reduce((acc, f) => acc + f.total, 0)
-      const totalPagado = facturas.reduce((acc, f) => acc + f.totalPagado, 0)
-      const saldoDeudor = facturas.reduce((acc, f) => acc + f.saldo, 0)
+      const totalFacturado = sumarImportes(facturas.map((f) => f.total))
+      const totalPagado = sumarImportes(facturas.map((f) => f.totalPagado))
+      const saldoDeudor = sumarImportes(facturas.map((f) => f.saldo))
 
       return {
         empresaId: emp.id,

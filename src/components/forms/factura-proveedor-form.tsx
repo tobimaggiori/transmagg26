@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { FormError } from "@/components/ui/form-error"
 import { TipoCbte } from "@/types"
+import { parsearImporte, calcularNetoMasIva, formatearMoneda } from "@/lib/money"
 
 interface FacturaProveedorFormProps {
   proveedorId: string
@@ -49,10 +50,9 @@ export function FacturaProveedorForm({ proveedorId, onSuccess }: FacturaProveedo
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
-  const neto = parseFloat(form.neto) || 0
-  const alicuota = parseFloat(form.alicuotaIva) || 0
-  const ivaMonto = neto * (alicuota / 100)
-  const total = neto + ivaMonto
+  const netoInput = parsearImporte(form.neto)
+  const alicuota = parsearImporte(form.alicuotaIva)
+  const { neto, iva: ivaMonto, total } = calcularNetoMasIva(netoInput, alicuota)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -146,15 +146,15 @@ export function FacturaProveedorForm({ proveedorId, onSuccess }: FacturaProveedo
         <div className="rounded-md bg-muted p-3 text-sm space-y-1">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Neto:</span>
-            <span className="font-medium">${neto.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>
+            <span className="font-medium">{formatearMoneda(neto)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">IVA ({alicuota}%):</span>
-            <span className="font-medium">${ivaMonto.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>
+            <span className="font-medium">{formatearMoneda(ivaMonto)}</span>
           </div>
           <div className="flex justify-between font-semibold border-t pt-1">
             <span>Total:</span>
-            <span>${total.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>
+            <span>{formatearMoneda(total)}</span>
           </div>
         </div>
       )}

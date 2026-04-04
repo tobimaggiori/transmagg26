@@ -8,6 +8,7 @@ import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder, esRolInterno, esRolEmpresa } from "@/lib/permissions"
+import { resolverEmpresaIdPorEmail } from "@/lib/session-utils"
 import { FacturasClient } from "./facturas-client"
 import type { Rol } from "@/types"
 
@@ -42,11 +43,7 @@ export default async function FacturasPage() {
   let cuentasBancarias: { id: string; nombre: string; bancoOEntidad: string }[] = []
 
   if (esRolEmpresa(rol)) {
-    const empUsr = await prisma.empresaUsuario.findFirst({
-      where: { usuario: { email: session.user.email ?? "" } },
-      select: { empresaId: true },
-    })
-    if (empUsr) empresaIdPropia = empUsr.empresaId
+    empresaIdPropia = await resolverEmpresaIdPorEmail(session.user.email ?? "")
   } else if (esRolInterno(rol)) {
     const data = await Promise.all([
       prisma.empresa.findMany({

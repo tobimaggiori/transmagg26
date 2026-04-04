@@ -3,6 +3,7 @@
  * Incluye secciones IVA Ventas, IVA Compras y posicion neta.
  */
 
+import { sumarImportes, restarImportes, absMonetario } from "@/lib/money"
 import PDFDocument from "pdfkit"
 
 type AsientoConRelaciones = {
@@ -177,11 +178,11 @@ export async function generarPDFLibroIva(
 ): Promise<Buffer> {
   const ventas = asientos.filter((a) => a.tipo === "VENTA")
   const compras = asientos.filter((a) => a.tipo === "COMPRA")
-  const totalBaseVentas = ventas.reduce((acc, a) => acc + a.baseImponible, 0)
-  const totalIvaVentas = ventas.reduce((acc, a) => acc + a.montoIva, 0)
-  const totalBaseCompras = compras.reduce((acc, a) => acc + a.baseImponible, 0)
-  const totalIvaCompras = compras.reduce((acc, a) => acc + a.montoIva, 0)
-  const posicion = totalIvaVentas - totalIvaCompras
+  const totalBaseVentas = sumarImportes(ventas.map(a => a.baseImponible))
+  const totalIvaVentas = sumarImportes(ventas.map(a => a.montoIva))
+  const totalBaseCompras = sumarImportes(compras.map(a => a.baseImponible))
+  const totalIvaCompras = sumarImportes(compras.map(a => a.montoIva))
+  const posicion = restarImportes(totalIvaVentas, totalIvaCompras)
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 40, size: "A4" })
@@ -285,7 +286,7 @@ export async function generarPDFLibroIva(
     const posColor = posicion >= 0 ? "#dc2626" : "#16a34a"
     const posLabel = posicion >= 0 ? "A PAGAR" : "A FAVOR"
     doc.font("Helvetica-Bold").fontSize(11).fillColor(posColor)
-    doc.text(`${fmt(Math.abs(posicion))} ${posLabel}`, 385, boxY + 20)
+    doc.text(`${fmt(absMonetario(posicion))} ${posLabel}`, 385, boxY + 20)
 
     doc.y = boxY + 56
     doc.fillColor("#000")

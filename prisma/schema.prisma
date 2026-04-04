@@ -245,7 +245,7 @@ model PolizaSeguro {
   aseguradora     String
   nroPoliza       String   @map("nro_poliza")
   cobertura       String?
-  montoMensual    Float?   @map("monto_mensual")
+  montoMensual    Decimal?   @map("monto_mensual")
   vigenciaDesde   DateTime @map("vigencia_desde")
   vigenciaHasta   DateTime @map("vigencia_hasta")
   archivos        String?
@@ -284,7 +284,7 @@ model PagoImpuesto {
   tipoImpuesto        String    @map("tipo_impuesto")
   descripcion         String?
   periodo             String
-  monto               Float
+  monto               Decimal
   fechaPago           DateTime  @map("fecha_pago")
   medioPago           String    @map("medio_pago")
   cuentaId            String?   @map("cuenta_id")
@@ -309,7 +309,7 @@ model Infraccion {
   fecha               DateTime
   organismo           String
   descripcion         String
-  monto               Float
+  monto               Decimal
   estado              String    @default("PENDIENTE")
   fechaPago           DateTime? @map("fecha_pago")
   medioPago           String?   @map("medio_pago")
@@ -345,10 +345,10 @@ model Viaje {
   destino             String?
   provinciaDestino    String?  @map("provincia_destino")
   kilos               Float?
-  tarifa                 Float    @map("tarifa_fletero")
-  tarifaEmpresa          Float    @map("tarifa_empresa")
+  tarifa                 Decimal    @map("tarifa_fletero")
+  tarifaEmpresa          Decimal    @map("tarifa_empresa")
   // Campo legacy — existe en Turso con NOT NULL. Se mantiene con default para no romper inserts.
-  tarifaOperativaInicial Float    @default(0) @map("tarifa_operativa_inicial")
+  tarifaOperativaInicial Decimal    @default(0) @map("tarifa_operativa_inicial")
   estadoLiquidacion   String   @default("PENDIENTE_LIQUIDAR") @map("estado_liquidacion")
   estadoFactura       String   @default("PENDIENTE_FACTURAR") @map("estado_factura")
   // Carta de porte — número único + PDF en R2
@@ -387,8 +387,8 @@ model ViajeEnLiquidacion {
   destino          String?
   provinciaDestino String?  @map("provincia_destino")
   kilos            Float?
-  tarifaFletero    Float    @map("tarifa_fletero")
-  subtotal         Float
+  tarifaFletero    Decimal    @map("tarifa_fletero")
+  subtotal         Decimal
 
   viaje        Viaje         @relation(fields: [viajeId], references: [id])
   liquidacion  Liquidacion   @relation(fields: [liquidacionId], references: [id], onDelete: Cascade)
@@ -413,8 +413,8 @@ model ViajeEnFactura {
   destino          String?
   provinciaDestino String?  @map("provincia_destino")
   kilos            Float?
-  tarifaEmpresa    Float    @map("tarifa_empresa")
-  subtotal         Float
+  tarifaEmpresa    Decimal    @map("tarifa_empresa")
+  subtotal         Decimal
 
   viaje        Viaje          @relation(fields: [viajeId], references: [id])
   factura      FacturaEmitida @relation(fields: [facturaId], references: [id], onDelete: Cascade)
@@ -432,11 +432,11 @@ model Liquidacion {
   operadorId    String   @map("operador_id")
   comisionPct   Float    @map("comision_pct")
   ivaPct        Float    @default(21) @map("iva_pct")
-  subtotalBruto Float    @map("subtotal_bruto")
-  comisionMonto Float    @map("comision_monto")
-  neto          Float
-  ivaMonto      Float    @map("iva_monto")
-  total         Float
+  subtotalBruto Decimal    @map("subtotal_bruto")
+  comisionMonto Decimal    @map("comision_monto")
+  neto          Decimal
+  ivaMonto      Decimal    @map("iva_monto")
+  total         Decimal
   estado             String   @default("BORRADOR")
   nroComprobante     Int?     @map("nro_comprobante")
   ptoVenta           Int?     @default(1)   @map("pto_venta")
@@ -484,9 +484,9 @@ model FacturaEmitida {
   modalidadMiPymes String?  @map("modalidad_mi_pymes")
   // "SCA" | "ADC" — solo para tipoCbte=201
   ivaPct           Float    @default(21) @map("iva_pct")
-  neto             Float
-  ivaMonto         Float    @map("iva_monto")
-  total            Float
+  neto             Decimal
+  ivaMonto         Decimal    @map("iva_monto")
+  total            Decimal
   ptoVenta           Int?      @default(1) @map("pto_venta")
   // Punto de venta ARCA habilitado
   cae                String?   @map("cae")
@@ -533,7 +533,7 @@ model Cuenta {
   tipo                           String
   bancoOEntidad                  String              @map("banco_o_entidad")
   moneda                         String
-  saldoInicial                   Float               @default(0) @map("saldo_inicial")
+  saldoInicial                   Decimal               @default(0) @map("saldo_inicial")
   activa                         Boolean             @default(true)
   creadoEn                       DateTime            @default(now()) @map("creado_en")
   cerradaEn                      DateTime?           @map("cerrada_en")
@@ -603,7 +603,7 @@ model Fci {
   moneda            String
   activo            Boolean        @default(true)
   diasHabilesAlerta   Int            @default(1)  @map("dias_habiles_alerta")
-  saldoActual         Float          @default(0)  @map("saldo_actual")
+  saldoActual         Decimal          @default(0)  @map("saldo_actual")
   saldoActualizadoEn  DateTime?                   @map("saldo_actualizado_en")
   creadoEn            DateTime       @default(now()) @map("creado_en")
 
@@ -619,7 +619,7 @@ model MovimientoFci {
   fciId                 String   @map("fci_id")
   cuentaOrigenDestinoId String   @map("cuenta_origen_destino_id")
   tipo                  String
-  monto                 Float
+  monto                 Decimal
   fecha                 DateTime
   descripcion           String?
   operadorId            String   @map("operador_id")
@@ -635,9 +635,9 @@ model MovimientoFci {
 model SaldoFci {
   id                String   @id @default(uuid())
   fciId             String   @map("fci_id")
-  saldoInformado    Float    @map("saldo_informado")
+  saldoInformado    Decimal    @map("saldo_informado")
   fechaActualizacion DateTime @map("fecha_actualizacion")
-  rendimientoPeriodo Float    @map("rendimiento_periodo")
+  rendimientoPeriodo Decimal    @map("rendimiento_periodo")
   operadorId        String   @map("operador_id")
   creadoEn          DateTime @default(now()) @map("creado_en")
 
@@ -668,7 +668,7 @@ model MovimientoSinFactura {
   cuentaId         String   @map("cuenta_id")
   tipo             String   // INGRESO | EGRESO
   categoria        String   // CHEQUE_DEPOSITADO | CHEQUE_EMITIDO_DEBITADO | TRANSFERENCIA_RECIBIDA | TRANSFERENCIA_ENVIADA | TRANSFERENCIA_ENTRE_CUENTAS_PROPIAS | ENVIO_A_BROKER | RESCATE_DE_BROKER | INTERES_CUENTA_REMUNERADA | PAGO_SERVICIO | MANTENIMIENTO_CUENTA | PAGO_TARJETA | DESCUENTO_CHEQUE_BANCO | PAGO_SUELDO | OTRO
-  monto            Float    // siempre positivo
+  monto            Decimal    // siempre positivo
   fecha            DateTime
   descripcion      String
   referencia       String?
@@ -693,7 +693,7 @@ model ChequeRecibido {
   facturaId           String?         @map("factura_id")
   nroCheque           String          @map("nro_cheque")
   bancoEmisor         String          @map("banco_emisor")
-  monto               Float
+  monto               Decimal
   fechaEmision        DateTime        @map("fecha_emision")
   fechaCobro          DateTime        @map("fecha_cobro")
   estado              String
@@ -740,7 +740,7 @@ model ChequeEmitido {
   nroCheque           String?         @map("nro_cheque")
   tipoDocBeneficiario String          @map("tipo_doc_beneficiario")
   nroDocBeneficiario  String          @map("nro_doc_beneficiario")
-  monto               Float
+  monto               Decimal
   fechaEmision        DateTime        @map("fecha_emision")
   fechaPago           DateTime        @map("fecha_pago")
   motivoPago          String          @map("motivo_pago")
@@ -775,7 +775,7 @@ model PlanillaGalicia {
   nombre          String
   cuentaId        String          @map("cuenta_id")
   estado          String          @default("BORRADOR")
-  totalMonto      Float           @map("total_monto")
+  totalMonto      Decimal           @map("total_monto")
   cantidadCheques Int             @map("cantidad_cheques")
   xlsxS3Key       String?         @map("xlsx_s3_key")
   operadorId      String          @map("operador_id")
@@ -793,7 +793,7 @@ model TarjetaPrepaga {
   choferId      String               @map("chofer_id")
   cuentaId      String               @map("cuenta_id")
   nroTarjeta    String?              @map("nro_tarjeta")
-  limiteMensual Float?               @map("limite_mensual")
+  limiteMensual Decimal?               @map("limite_mensual")
   activa        Boolean              @default(true)
   creadoEn      DateTime             @default(now()) @map("creado_en")
 
@@ -808,7 +808,7 @@ model GastoTarjetaPrepaga {
   id               String         @id @default(uuid())
   tarjetaId        String         @map("tarjeta_id")
   tipoGasto        String         @map("tipo_gasto")
-  monto            Float
+  monto            Decimal
   fecha            DateTime
   descripcion      String?
   comprobanteS3Key String?        @map("comprobante_s3_key")
@@ -835,7 +835,7 @@ model Tarjeta {
   titularNombre  String   @map("titular_nombre")
   cuentaId       String?  @map("cuenta_id")
   choferId       String?  @map("chofer_id")
-  limiteMensual  Float?   @map("limite_mensual")
+  limiteMensual  Decimal?   @map("limite_mensual")
   activa         Boolean  @default(true)
   creadoEn       DateTime @default(now()) @map("creado_en")
 
@@ -858,8 +858,8 @@ model ResumenTarjeta {
   tarjetaId    String   @map("tarjeta_id")
   periodo      String
   fechaVtoPago DateTime @map("fecha_vto_pago")
-  totalARS     Float    @map("total_ars")
-  totalUSD     Float?   @map("total_usd")
+  totalARS     Decimal    @map("total_ars")
+  totalUSD     Decimal?   @map("total_usd")
   s3Key        String?  @map("s3_key")
   pagado       Boolean  @default(false)
   creadoEn     DateTime @default(now()) @map("creado_en")
@@ -875,7 +875,7 @@ model GastoTarjeta {
   id               String   @id @default(uuid())
   tarjetaId        String   @map("tarjeta_id")
   tipoGasto        String   @map("tipo_gasto")
-  monto            Float
+  monto            Decimal
   fecha            DateTime
   descripcion      String?
   comprobanteS3Key String?  @map("comprobante_s3_key")
@@ -906,12 +906,12 @@ model AdelantoFletero {
   id               String              @id @default(uuid())
   fleteroId        String              @map("fletero_id")
   tipo             String
-  monto            Float
+  monto            Decimal
   fecha            DateTime
   descripcion      String?
   chequeEmitidoId  String?             @map("cheque_emitido_id")
   chequeRecibidoId String?             @map("cheque_recibido_id")
-  montoDescontado  Float               @default(0) @map("monto_descontado")
+  montoDescontado  Decimal               @default(0) @map("monto_descontado")
   estado           String              @default("PENDIENTE_DESCUENTO")
   operadorId       String              @map("operador_id")
   creadoEn         DateTime            @default(now()) @map("creado_en")
@@ -929,7 +929,7 @@ model AdelantoDescuento {
   id              String      @id @default(uuid())
   adelantoId      String      @map("adelanto_id")
   liquidacionId   String      @map("liquidacion_id")
-  montoDescontado Float       @map("monto_descontado")
+  montoDescontado Decimal       @map("monto_descontado")
   fecha           DateTime
 
   adelanto    AdelantoFletero @relation(fields: [adelantoId], references: [id], onDelete: Cascade)
@@ -950,8 +950,8 @@ model GastoFletero {
   fleteroId          String   @map("fletero_id")
   facturaProveedorId String   @unique @map("factura_proveedor_id")
   tipo               String   // COMBUSTIBLE | OTRO
-  montoPagado        Float    @map("monto_pagado")
-  montoDescontado    Float    @default(0) @map("monto_descontado")
+  montoPagado        Decimal    @map("monto_pagado")
+  montoDescontado    Decimal    @default(0) @map("monto_descontado")
   // PENDIENTE_PAGO: factura ingresada, proveedor no cobró aún
   // PAGADO: proveedor cobró; deuda del fletero confirmada
   // DESCONTADO_PARCIAL: algo fue descontado en LP pero queda saldo
@@ -970,7 +970,7 @@ model GastoDescuento {
   id              String       @id @default(uuid())
   gastoId         String       @map("gasto_id")
   liquidacionId   String       @map("liquidacion_id")
-  montoDescontado Float        @map("monto_descontado")
+  montoDescontado Decimal        @map("monto_descontado")
   fecha           DateTime
 
   gasto       GastoFletero @relation(fields: [gastoId], references: [id], onDelete: Cascade)
@@ -986,7 +986,7 @@ model PagoAFletero {
   fleteroId        String          @map("fletero_id")
   liquidacionId    String?         @map("liquidacion_id")
   tipoPago         String          @map("tipo_pago")
-  monto            Float
+  monto            Decimal
   referencia       String?
   fechaPago        DateTime        @map("fecha_pago")
   comprobanteS3Key String?         @map("comprobante_s3_key")
@@ -1017,7 +1017,7 @@ model PagoDeEmpresa {
   empresaId        String          @map("empresa_id")
   facturaId        String?         @map("factura_id")
   tipoPago         String          @map("tipo_pago")
-  monto            Float
+  monto            Decimal
   referencia       String?
   fechaPago        DateTime        @map("fecha_pago")
   comprobanteS3Key String?         @map("comprobante_s3_key")
@@ -1062,16 +1062,16 @@ model FacturaProveedor {
   nroComprobante       String   @map("nro_comprobante")
   ptoVenta             String?  @map("pto_venta")
   tipoCbte             String   @map("tipo_cbte")
-  neto                 Float
-  ivaMonto             Float    @map("iva_monto")
-  total                Float
+  neto                 Decimal
+  ivaMonto             Decimal    @map("iva_monto")
+  total                Decimal
   fechaCbte            DateTime @map("fecha_cbte")
   concepto             String?  @map("concepto")
   pdfS3Key             String?  @map("pdf_s3_key")
   estadoPago           String   @default("PENDIENTE") @map("estado_pago")
-  percepcionIIBB       Float?   @map("percepcion_iibb")
-  percepcionIVA        Float?   @map("percepcion_iva")
-  percepcionGanancias  Float?   @map("percepcion_ganancias")
+  percepcionIIBB       Decimal?   @map("percepcion_iibb")
+  percepcionIVA        Decimal?   @map("percepcion_iva")
+  percepcionGanancias  Decimal?   @map("percepcion_ganancias")
   // Gasto por cuenta de fletero: la factura es del fletero, Transmagg la paga
   esPorCuentaDeFletero Boolean  @default(false) @map("es_por_cuenta_de_fletero")
   fleteroId            String?  @map("fletero_id")
@@ -1094,12 +1094,12 @@ model ItemFacturaProveedor {
   facturaProveedorId String   @map("factura_proveedor_id")
   descripcion        String
   cantidad           Float    @default(1)
-  precioUnitario     Float    @map("precio_unitario")
+  precioUnitario     Decimal    @map("precio_unitario")
   alicuotaIva        Float    @map("alicuota_iva")
   esExento           Boolean  @default(false) @map("es_exento")
-  subtotalNeto       Float    @map("subtotal_neto")
-  montoIva           Float    @map("monto_iva")
-  subtotalTotal      Float    @map("subtotal_total")
+  subtotalNeto       Decimal    @map("subtotal_neto")
+  montoIva           Decimal    @map("monto_iva")
+  subtotalTotal      Decimal    @map("subtotal_total")
 
   facturaProveedor FacturaProveedor @relation(fields: [facturaProveedorId], references: [id], onDelete: Cascade)
 
@@ -1111,7 +1111,7 @@ model PagoProveedor {
   id                  String    @id @default(uuid())
   facturaProveedorId  String    @map("factura_proveedor_id")
   fecha               DateTime
-  monto               Float
+  monto               Decimal
   tipo                String
   observaciones       String?
   comprobantePdfS3Key String?   @map("comprobante_pdf_s3_key")
@@ -1146,9 +1146,9 @@ model AsientoIva {
   liquidacionId    String? @unique @map("liquidacion_id")
   tipoReferencia   String  @map("tipo_referencia")
   tipo             String
-  baseImponible    Float   @map("base_imponible")
+  baseImponible    Decimal   @map("base_imponible")
   alicuota         Float
-  montoIva         Float   @map("monto_iva")
+  montoIva         Decimal   @map("monto_iva")
   periodo          String
 
   facturaSeguroId  String?  @unique @map("factura_seguro_id")
@@ -1179,7 +1179,7 @@ model AsientoIibb {
   viajeEnFactId      String? @map("viaje_en_fact_id")
   tablaOrigen        String  @map("tabla_origen")
   provincia          String
-  montoIngreso       Float   @map("monto_ingreso")
+  montoIngreso       Decimal   @map("monto_ingreso")
   periodo            String
 
   viajeEnLiquidacion ViajeEnLiquidacion? @relation(fields: [viajeEnLiqId], references: [id])
@@ -1207,7 +1207,7 @@ model PercepcionImpuesto {
   tipo                String    // PERCEPCION_IVA | PERCEPCION_IIBB | PERCEPCION_GANANCIAS | PERCEPCION_SUSS | ICL | CO2 | IMPUESTO_INTERNO | OTRO
   categoria           String    // PERCEPCION | IMPUESTO_INTERNO
   descripcion         String?
-  monto               Float
+  monto               Decimal
   periodo             String    // "2026-03"
   creadoEn            DateTime  @default(now()) @map("creado_en")
 
@@ -1249,9 +1249,9 @@ model NotaCreditoDebito {
   fechaComprobanteExterno DateTime? @map("fecha_comprobante_externo")
   emisorExterno           String?   @map("emisor_externo")
 
-  montoNeto           Float     @map("monto_neto")
-  montoIva            Float     @default(0) @map("monto_iva")
-  montoTotal          Float     @map("monto_total")
+  montoNeto           Decimal     @map("monto_neto")
+  montoIva            Decimal     @default(0) @map("monto_iva")
+  montoTotal          Decimal     @map("monto_total")
 
   descripcion         String?
   motivoDetalle       String?   @map("motivo_detalle")
@@ -1297,10 +1297,10 @@ model ViajeEnNotaCD {
   id                String @id @default(uuid())
   notaId            String @map("nota_id")
   viajeId           String @map("viaje_id")
-  tarifaOriginal    Float  @map("tarifa_original")
+  tarifaOriginal    Decimal  @map("tarifa_original")
   kilosOriginal     Float? @map("kilos_original")
-  subtotalOriginal  Float  @map("subtotal_original")
-  subtotalCorregido Float? @map("subtotal_corregido")
+  subtotalOriginal  Decimal  @map("subtotal_original")
+  subtotalCorregido Decimal? @map("subtotal_corregido")
 
   nota  NotaCreditoDebito @relation(fields: [notaId], references: [id], onDelete: Cascade)
   viaje Viaje             @relation(fields: [viajeId], references: [id])
@@ -1392,15 +1392,15 @@ model FacturaSeguro {
   fecha            DateTime
   periodoDesde     DateTime  @map("periodo_desde")
   periodoHasta     DateTime  @map("periodo_hasta")
-  neto             Float
-  iva              Float
-  total            Float
+  neto             Decimal
+  iva              Decimal
+  total            Decimal
   formaPago        String    @map("forma_pago")
   medioPagoContado String?   @map("medio_pago_contado")
   cuentaId         String?   @map("cuenta_id")
   tarjetaId        String?   @map("tarjeta_id")
   cantCuotas       Int?      @map("cant_cuotas")
-  montoCuota       Float?    @map("monto_cuota")
+  montoCuota       Decimal?    @map("monto_cuota")
   estadoPago       String    @default("PENDIENTE") @map("estado_pago")
   operadorId       String    @map("operador_id")
   creadoEn         DateTime  @default(now()) @map("creado_en")
@@ -1424,7 +1424,7 @@ model CuotaFacturaSeguro {
   tarjetaId       String    @map("tarjeta_id")
   nroCuota        Int       @map("nro_cuota")
   totalCuotas     Int       @map("total_cuotas")
-  monto           Float
+  monto           Decimal
   mesAnio         String    @map("mes_anio")
   estado          String    @default("PENDIENTE")
   resumenTarjetaId String?  @map("resumen_tarjeta_id")
@@ -1444,8 +1444,8 @@ model CierreResumenTarjeta {
   id            String    @id @default(uuid())
   tarjetaId     String    @map("tarjeta_id")
   mesAnio       String    @map("mes_anio")
-  totalPagado           Float     @map("total_pagado")
-  diferencia            Float     @default(0) @map("diferencia")
+  totalPagado           Decimal     @map("total_pagado")
+  diferencia            Decimal     @default(0) @map("diferencia")
   descripcionDiferencia String?   @map("descripcion_diferencia")
   cuentaPagoId          String    @map("cuenta_pago_id")
   fechaPago             DateTime  @map("fecha_pago")
@@ -1466,7 +1466,7 @@ model PagoFacturaTarjeta {
   cierreResumenId     String    @map("cierre_resumen_id")
   facturaProveedorId  String?   @map("factura_proveedor_id")
   facturaSeguroId     String?   @map("factura_seguro_id")
-  montoPagado         Float     @map("monto_pagado")
+  montoPagado         Decimal     @map("monto_pagado")
   creadoEn            DateTime  @default(now()) @map("creado_en")
 
   cierreResumen       CierreResumenTarjeta  @relation(fields: [cierreResumenId], references: [id])
@@ -1537,12 +1537,12 @@ model ReciboCobranza {
   ptoVenta           Int       @default(1) @map("pto_venta")
   fecha              DateTime  @default(now())
   empresaId          String    @map("empresa_id")
-  totalCobrado       Float     @map("total_cobrado")
-  totalRetenciones   Float     @default(0) @map("total_retenciones")
-  totalComprobantes  Float     @map("total_comprobantes")
-  retencionGanancias Float     @default(0) @map("retencion_ganancias")
-  retencionIIBB      Float     @default(0) @map("retencion_iibb")
-  retencionSUSS      Float     @default(0) @map("retencion_suss")
+  totalCobrado       Decimal     @map("total_cobrado")
+  totalRetenciones   Decimal     @default(0) @map("total_retenciones")
+  totalComprobantes  Decimal     @map("total_comprobantes")
+  retencionGanancias Decimal     @default(0) @map("retencion_ganancias")
+  retencionIIBB      Decimal     @default(0) @map("retencion_iibb")
+  retencionSUSS      Decimal     @default(0) @map("retencion_suss")
   pdfS3Key           String?   @map("pdf_s3_key")
   operadorId         String    @map("operador_id")
   creadoEn           DateTime  @default(now()) @map("creado_en")
@@ -1560,7 +1560,7 @@ model MedioPagoRecibo {
   id                 String    @id @default(uuid())
   reciboId           String    @map("recibo_id")
   tipo               String    // TRANSFERENCIA | ECHEQ | CHEQUE_FISICO
-  monto              Float
+  monto              Decimal
   cuentaId           String?   @map("cuenta_id")
   fechaTransferencia DateTime? @map("fecha_transferencia")
   referencia         String?

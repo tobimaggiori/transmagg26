@@ -9,6 +9,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
 import { resolverOperadorId } from "@/lib/session-utils"
+import { sumarImportes, restarImportes, maxMonetario, parsearImporte, m } from "@/lib/money"
 import type { Rol } from "@/types"
 
 /**
@@ -73,17 +74,17 @@ export async function GET() {
     const actual = ajustesPorEmpresa.get(empresaId) ?? 0
     if (nota.tipo === "NC_EMITIDA") {
       // NC reduce deuda (empresa debe menos)
-      ajustesPorEmpresa.set(empresaId, actual - nota.montoTotal)
+      ajustesPorEmpresa.set(empresaId, restarImportes(actual, nota.montoTotal))
     } else if (nota.tipo === "ND_EMITIDA" || nota.tipo === "ND_RECIBIDA") {
       // ND aumenta deuda (empresa debe más)
-      ajustesPorEmpresa.set(empresaId, actual + nota.montoTotal)
+      ajustesPorEmpresa.set(empresaId, sumarImportes([actual, nota.montoTotal]))
     }
   }
 
   const resultado = empresas.map((emp) => {
     const facturasConSaldo = emp.facturasEmitidas.map((f) => {
-      const pagado = f.pagos.reduce((acc, p) => acc + p.monto, 0)
-      const saldo = Math.max(0, f.total - pagado)
+      const pagado = sumarImportes(f.pagos.map(p => p.monto))
+      const saldo = maxMonetario(0, restarImportes(f.total, pagado))
       return {
         id: f.id,
         nroComprobante: f.nroComprobante,
@@ -97,16 +98,16 @@ export async function GET() {
     })
 
     const facturasImpagas = facturasConSaldo.filter((f) => f.saldo > 0)
-    const saldoBaseFacturas = facturasImpagas.reduce((acc, f) => acc + f.saldo, 0)
+    const saldoBaseFacturas = sumarImportes(facturasImpagas.map(f => f.saldo))
     const ajusteNotasCD = ajustesPorEmpresa.get(emp.id) ?? 0
-    const saldoDeudor = Math.max(0, saldoBaseFacturas + ajusteNotasCD)
+    const saldoDeudor = maxMonetario(0, sumarImportes([saldoBaseFacturas, ajusteNotasCD]))
 
     return {
       empresa: { id: emp.id, razonSocial: emp.razonSocial, cuit: emp.cuit },
       saldoDeudor,
       facturasImpagas,
       ajusteNotasCD,
-      totalFacturado: emp.facturasEmitidas.reduce((acc, f) => acc + f.total, 0),
+      totalFacturado: sumarImportes(emp.facturasEmitidas.map(f => f.total)),
     }
   }).sort((a, b) => b.saldoDeudor - a.saldoDeudor)
 
@@ -156,16 +157,16 @@ export async function POST(request: NextRequest) {
       orderBy: { emitidaEn: "asc" },
     })
 
-    let montoRestante = parseFloat(String(monto))
+    let montoRestante = parsearImporte(String(monto))
     const pagosCreados = []
 
     for (const f of facturas) {
       if (montoRestante <= 0) break
-      const pagado = f.pagos.reduce((acc, p) => acc + p.monto, 0)
-      const saldo = f.total - pagado
+      const pagado = sumarImportes(f.pagos.map(p => p.monto))
+      const saldo = restarImportes(f.total, pagado)
       if (saldo <= 0) continue
 
-      const montoAplicar = Math.min(montoRestante, saldo)
+      const montoAplicar = m(Math.min(montoRestante, saldo))
       const pago = await prisma.pagoDeEmpresa.create({
         data: {
           empresaId,
@@ -178,7 +179,7 @@ export async function POST(request: NextRequest) {
         },
       })
       pagosCreados.push(pago)
-      montoRestante -= montoAplicar
+      montoRestante = restarImportes(montoRestante, montoAplicar)
     }
 
     return NextResponse.json(pagosCreados, { status: 201 })

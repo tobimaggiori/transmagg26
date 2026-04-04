@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
+import { sumarImportes } from "@/lib/money"
 
 function fmt(n: number) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(n)
@@ -106,7 +107,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     let totalGeneral = 0
 
     const seccionesHtml = provincias.map(([nombre, rows]) => {
-      const subtotalProv = rows.reduce((acc, r) => acc + r.subtotal, 0)
+      const subtotalProv = sumarImportes(rows.map(r => r.subtotal))
       totalGeneral += subtotalProv
       const filas = rows.map((r) => `<tr>
         <td class="nowrap">${fmtFecha(r.fecha)}</td>

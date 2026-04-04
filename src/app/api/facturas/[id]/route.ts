@@ -16,6 +16,7 @@ import {
   EstadoFacturaDocumento,
   resolverEstadoFacturaViaje,
 } from "@/lib/viaje-workflow"
+import { verificarPropietarioEmpresa } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 
 const TRANSICIONES_VALIDAS: Record<string, string[]> = {
@@ -79,10 +80,8 @@ export async function GET(
     if (!factura) return NextResponse.json({ error: "Factura no encontrada" }, { status: 404 })
 
     if (esRolEmpresa(rol)) {
-      const empUsr = await prisma.empresaUsuario.findFirst({
-        where: { usuario: { email: session.user.email }, empresaId: factura.empresaId },
-      })
-      if (!empUsr) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
+      const esPropietario = await verificarPropietarioEmpresa(factura.empresaId, session.user.email!)
+      if (!esPropietario) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
     } else if (!esRolInterno(rol)) {
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
     }

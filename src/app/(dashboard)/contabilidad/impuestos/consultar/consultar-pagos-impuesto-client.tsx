@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { sumarImportes } from "@/lib/money"
 import { ViewPDF } from "@/components/view-pdf"
 
 interface PagoImpuesto {
@@ -97,7 +98,7 @@ export function ConsultarPagosImpuestoClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterTipo, filterAnio, filterMedio])
 
-  const total = pagos.reduce((sum, p) => sum + p.monto, 0)
+  const total = sumarImportes(pagos.map(p => p.monto))
 
   return (
     <div className="space-y-6">

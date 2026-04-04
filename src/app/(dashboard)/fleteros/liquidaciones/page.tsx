@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder, esRolInterno } from "@/lib/permissions"
+import { resolverFleteroIdPorEmail } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 import { ConsultarLPClient } from "./consultar-lp-client"
 
@@ -41,11 +42,7 @@ export default async function FleterosLiquidacionesPage() {
 
   let fleteroIdPropio: string | null = null
   if (rol === "FLETERO") {
-    const fletero = await prisma.fletero.findFirst({
-      where: { usuario: { email: session.user.email ?? "" } },
-      select: { id: true },
-    })
-    fleteroIdPropio = fletero?.id ?? null
+    fleteroIdPropio = await resolverFleteroIdPorEmail(session.user.email ?? "")
   }
 
   return (

@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
+import { sumarImportes } from "@/lib/money"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -333,9 +334,9 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
                 <tfoot>
                   <tr className="bg-muted font-semibold border-t-2">
                     <td colSpan={4} className="px-3 py-3 text-right text-sm">Totales ({facturas.length})</td>
-                    <td className="px-3 py-3 text-right">{formatearMoneda(facturas.reduce((a, f) => a + f.neto, 0))}</td>
-                    <td className="px-3 py-3 text-right">{formatearMoneda(facturas.reduce((a, f) => a + f.ivaMonto, 0))}</td>
-                    <td className="px-3 py-3 text-right">{formatearMoneda(facturas.reduce((a, f) => a + f.total, 0))}</td>
+                    <td className="px-3 py-3 text-right">{formatearMoneda(sumarImportes(facturas.map(f => f.neto)))}</td>
+                    <td className="px-3 py-3 text-right">{formatearMoneda(sumarImportes(facturas.map(f => f.ivaMonto)))}</td>
+                    <td className="px-3 py-3 text-right">{formatearMoneda(sumarImportes(facturas.map(f => f.total)))}</td>
                     <td colSpan={4}></td>
                   </tr>
                 </tfoot>

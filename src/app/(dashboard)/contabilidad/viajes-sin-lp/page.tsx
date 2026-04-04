@@ -8,7 +8,8 @@ import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder } from "@/lib/permissions"
-import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { formatearFecha } from "@/lib/utils"
+import { sumarImportes, formatearMoneda } from "@/lib/money"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FiltroPeriodo } from "@/components/contabilidad/filtro-periodo"
 import type { Rol } from "@/types"
@@ -108,10 +109,10 @@ export default async function ContabilidadViajesSinLpPage({
     .map(([nombre, rows]) => ({
       nombre,
       rows,
-      total: rows.reduce((acc, r) => acc + r.subtotal, 0),
+      total: sumarImportes(rows.map(r => r.subtotal)),
     }))
 
-  const totalGeneral = provincias.reduce((acc, p) => acc + p.total, 0)
+  const totalGeneral = sumarImportes(provincias.map(p => p.total))
 
   const exportParams = new URLSearchParams()
   if (searchParams.mes) exportParams.set("mes", searchParams.mes)

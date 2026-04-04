@@ -14,7 +14,8 @@ import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { FormError } from "@/components/ui/form-error"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { formatearFecha } from "@/lib/utils"
+import { aplicarPorcentaje, restarImportes, parsearImporte, sumarImportes, formatearMoneda } from "@/lib/money"
 import { Plus, AlertTriangle, Clock, ChevronDown, Info } from "lucide-react"
 
 // --- Tipos ---
@@ -218,8 +219,8 @@ function TabEmitidos() {
     setErrorAccion("")
     setGuardando(true)
     const body: { costoBancarioMonto?: number } = {}
-    const monto = parseFloat(costoBancarioMonto)
-    if (!isNaN(monto) && monto > 0) body.costoBancarioMonto = monto
+    const monto = parsearImporte(costoBancarioMonto)
+    if (monto > 0) body.costoBancarioMonto = monto
     const res = await fetch(`/api/cheques/${accion.cheque.id}/confirmar-rechazo`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -257,7 +258,7 @@ function TabEmitidos() {
           <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 shrink-0" />
           <div className="text-sm text-yellow-800">
             <strong>⚠ {proximos7.length} cheque(s)</strong> a vencer en los próximos 7 días —{" "}
-            {formatearMoneda(proximos7.reduce((s, c) => s + c.monto, 0))}
+            {formatearMoneda(sumarImportes(proximos7.map(c => c.monto)))}
           </div>
         </div>
       )}
@@ -266,7 +267,7 @@ function TabEmitidos() {
           <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
           <div className="text-sm text-red-800">
             <strong>🔴 {vencidos.length} cheque(s)</strong> vencidos sin depositar —{" "}
-            {formatearMoneda(vencidos.reduce((s, c) => s + c.monto, 0))}
+            {formatearMoneda(sumarImportes(vencidos.map(c => c.monto)))}
           </div>
         </div>
       )}
@@ -681,7 +682,7 @@ function TabRecibidos() {
       ...rest,
       tipoOrigen: "EMPRESA" as const,
       empresaId,
-      monto: parseFloat(formAdelanto.monto),
+      monto: parsearImporte(formAdelanto.monto),
       observaciones: formAdelanto.observaciones || null,
     }
     const res = await fetch("/api/cheques-recibidos/adelanto", {
@@ -760,7 +761,7 @@ function TabRecibidos() {
           <AlertTriangle className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
           <div className="text-sm text-blue-800">
             <strong>📅 {proxSemana.length} cheque(s)</strong> a cobrar esta semana —{" "}
-            {formatearMoneda(proxSemana.reduce((s, c) => s + c.monto, 0))}
+            {formatearMoneda(sumarImportes(proxSemana.map(c => c.monto)))}
           </div>
         </div>
       )}
@@ -769,7 +770,7 @@ function TabRecibidos() {
           <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
           <div className="text-sm text-red-800">
             <strong>🔴 {vencidosSinCobrar.length} cheque(s)</strong> vencidos sin cobrar —{" "}
-            {formatearMoneda(vencidosSinCobrar.reduce((s, c) => s + c.monto, 0))}
+            {formatearMoneda(sumarImportes(vencidosSinCobrar.map(c => c.monto)))}
           </div>
         </div>
       )}
@@ -778,7 +779,7 @@ function TabRecibidos() {
           <Clock className="h-4 w-4 text-cyan-600 mt-0.5 shrink-0" />
           <div className="text-sm text-cyan-800">
             <strong>⏳ {brokerPendientes.length} cheque(s)</strong> endosados a brokers pendientes de confirmar depósito —{" "}
-            {formatearMoneda(brokerPendientes.reduce((s, c) => s + c.monto, 0))}
+            {formatearMoneda(sumarImportes(brokerPendientes.map(c => c.monto)))}
           </div>
         </div>
       )}
@@ -1123,8 +1124,8 @@ function TabRecibidos() {
             </div>
             {accion?.tipo === "descontar-banco" && formDescontar.tasaDescuento && !isNaN(parseFloat(formDescontar.tasaDescuento)) && (
               <div className="text-xs text-muted-foreground border rounded p-2 bg-muted/20 space-y-0.5">
-                <div>Comisión: {formatearMoneda(Math.round(accion.cheque.monto * parseFloat(formDescontar.tasaDescuento) / 100 * 100) / 100)}</div>
-                <div>Neto a acreditar: {formatearMoneda(Math.round((accion.cheque.monto * (1 - parseFloat(formDescontar.tasaDescuento) / 100)) * 100) / 100)}</div>
+                <div>Comisión: {formatearMoneda(aplicarPorcentaje(accion.cheque.monto, parsearImporte(formDescontar.tasaDescuento)))}</div>
+                <div>Neto a acreditar: {formatearMoneda(restarImportes(accion.cheque.monto, aplicarPorcentaje(accion.cheque.monto, parsearImporte(formDescontar.tasaDescuento))))}</div>
               </div>
             )}
             {errorAccion && <FormError message={errorAccion} />}

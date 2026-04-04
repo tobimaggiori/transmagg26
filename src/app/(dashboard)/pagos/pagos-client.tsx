@@ -14,6 +14,7 @@ import { Select } from "@/components/ui/select"
 import { FormError } from "@/components/ui/form-error"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
+import { parsearImporte, restarImportes } from "@/lib/money"
 import { Plus } from "lucide-react"
 
 // --- Tipos ---
@@ -81,7 +82,7 @@ function TabRecibidosEmpresas() {
     const res = await fetch("/api/cuentas-corrientes/empresas", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ empresaId: seleccionada, monto: parseFloat(formPago.monto), tipo: formPago.tipo, referencia: formPago.referencia || null, fecha: formPago.fecha }),
+      body: JSON.stringify({ empresaId: seleccionada, monto: parsearImporte(formPago.monto), tipo: formPago.tipo, referencia: formPago.referencia || null, fecha: formPago.fecha }),
     })
     setGuardando(false)
     if (res.ok) { setModalPago(false); cargar() }
@@ -199,7 +200,7 @@ function TabAFleteros() {
     const res = await fetch("/api/cuentas-corrientes/fleteros", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fleteroId: seleccionado, monto: parseFloat(formPago.monto), tipo: formPago.tipo, referencia: formPago.referencia || null, fecha: formPago.fecha }),
+      body: JSON.stringify({ fleteroId: seleccionado, monto: parsearImporte(formPago.monto), tipo: formPago.tipo, referencia: formPago.referencia || null, fecha: formPago.fecha }),
     })
     setGuardando(false)
     if (res.ok) { setModalPago(false); cargar() }
@@ -352,7 +353,7 @@ function TabAdelantosFleteros() {
     const res = await fetch("/api/adelantos-fleteros", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, monto: parseFloat(form.monto), descripcion: form.descripcion || null }),
+      body: JSON.stringify({ ...form, monto: parsearImporte(form.monto), descripcion: form.descripcion || null }),
     })
     setGuardando(false)
     if (res.ok) { setModalAbierto(false); cargar() }
@@ -387,7 +388,7 @@ function TabAdelantosFleteros() {
                 <td className="px-3 py-2"><span className="text-xs bg-muted px-1.5 py-0.5 rounded">{a.tipo}</span></td>
                 <td className="px-3 py-2 text-right">{formatearMoneda(a.monto)}</td>
                 <td className="px-3 py-2 text-right">{formatearMoneda(a.montoDescontado)}</td>
-                <td className="px-3 py-2 text-right font-medium">{formatearMoneda(a.monto - a.montoDescontado)}</td>
+                <td className="px-3 py-2 text-right font-medium">{formatearMoneda(restarImportes(a.monto, a.montoDescontado))}</td>
                 <td className="px-3 py-2"><span className="text-xs bg-muted px-1.5 py-0.5 rounded">{a.estado}</span></td>
               </tr>
             ))}

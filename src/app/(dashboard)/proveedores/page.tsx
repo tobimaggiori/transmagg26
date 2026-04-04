@@ -10,6 +10,7 @@ import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder } from "@/lib/permissions"
 import type { Rol } from "@/types"
+import { sumarImportes, restarImportes, maxMonetario } from "@/lib/money"
 import { ProveedoresClient } from "@/components/proveedores-client"
 
 /**
@@ -46,10 +47,10 @@ export default async function ProveedoresPage() {
   })
 
   const proveedoresConDeuda = proveedores.map((p) => {
-    const deudaTotal = p.facturas.reduce((acc, f) => {
-      const pagado = f.pagos.reduce((s, pago) => s + pago.monto, 0)
-      return acc + Math.max(0, f.total - pagado)
-    }, 0)
+    const deudaTotal = sumarImportes(p.facturas.map(f => {
+      const pagado = sumarImportes(f.pagos.map(pago => pago.monto))
+      return maxMonetario(0, restarImportes(f.total, pagado))
+    }))
     return {
       id: p.id,
       razonSocial: p.razonSocial,

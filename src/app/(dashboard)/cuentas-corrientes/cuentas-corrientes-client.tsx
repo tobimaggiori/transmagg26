@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { FormError } from "@/components/ui/form-error"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
+import { parsearImporte } from "@/lib/money"
 import { Plus, Printer } from "lucide-react"
 
 interface FacturaImpaga {
@@ -107,7 +108,7 @@ export function CuentasCorrientesClient({
     const res = await fetch("/api/cuentas-corrientes/empresas", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ empresaId: empresaSeleccionada, monto: parseFloat(formPago.monto), tipo: formPago.tipo, referencia: formPago.referencia || null, fecha: formPago.fecha }),
+      body: JSON.stringify({ empresaId: empresaSeleccionada, monto: parsearImporte(formPago.monto), tipo: formPago.tipo, referencia: formPago.referencia || null, fecha: formPago.fecha }),
     })
     setGuardando(false)
     if (res.ok) {
@@ -126,7 +127,7 @@ export function CuentasCorrientesClient({
     const res = await fetch("/api/cuentas-corrientes/fleteros", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fleteroId: fleteroSeleccionado, monto: parseFloat(formPago.monto), tipo: formPago.tipo, referencia: formPago.referencia || null, fecha: formPago.fecha }),
+      body: JSON.stringify({ fleteroId: fleteroSeleccionado, monto: parsearImporte(formPago.monto), tipo: formPago.tipo, referencia: formPago.referencia || null, fecha: formPago.fecha }),
     })
     setGuardando(false)
     if (res.ok) {

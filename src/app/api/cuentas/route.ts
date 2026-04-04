@@ -14,6 +14,7 @@ import {
   serverErrorResponse,
 } from "@/lib/financial-api"
 import { crearCuentaSchema } from "@/lib/financial-schemas"
+import { sumarImportes } from "@/lib/money"
 
 /**
  * GET: -> Promise<NextResponse>
@@ -66,17 +67,21 @@ export async function GET() {
 
       const saldoEnFciPropios = calcularSaldoEnFciPropiosCuenta(detalleFci)
       const saldoDisponible = calcularSaldoDisponibleCuenta(saldoContable, saldoEnFciPropios)
-      const capitalEnviado = cuenta.movimientosSinFactura
-        .filter((m) => m.categoria === "ENVIO_A_BROKER")
-        .reduce((acumulado, m) => acumulado + m.monto, 0)
-      const capitalRescatado = cuenta.movimientosSinFactura
-        .filter((m) => m.categoria === "RESCATE_DE_BROKER")
-        .reduce((acumulado, m) => acumulado + m.monto, 0)
+      const capitalEnviado = sumarImportes(
+        cuenta.movimientosSinFactura
+          .filter((m) => m.categoria === "ENVIO_A_BROKER")
+          .map((m) => m.monto)
+      )
+      const capitalRescatado = sumarImportes(
+        cuenta.movimientosSinFactura
+          .filter((m) => m.categoria === "RESCATE_DE_BROKER")
+          .map((m) => m.monto)
+      )
       const capitalNetoEnBroker = calcularCapitalNetoBroker(capitalEnviado, capitalRescatado)
       const rendimiento = calcularRendimientoBroker({
         capitalEnviado,
         capitalRescatado,
-        saldoFcis: detalleFci.reduce((acumulado, fci) => acumulado + fci.saldoInformadoActual, 0),
+        saldoFcis: sumarImportes(detalleFci.map((fci) => fci.saldoInformadoActual)),
       })
 
       return {

@@ -7,6 +7,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { esRolInterno } from "@/lib/permissions"
 import { prisma } from "@/lib/prisma"
+import { sumarImportes, restarImportes } from "@/lib/money"
 import type { Rol } from "@/types"
 
 export async function GET(): Promise<NextResponse> {
@@ -36,28 +37,34 @@ export async function GET(): Promise<NextResponse> {
     ])
 
     const pendientes = [
-      ...facturasProveedor.map((f) => ({
-        id: f.id,
-        tipo: "PROVEEDOR" as const,
-        razonSocial: f.proveedor.razonSocial,
-        nroComprobante: `${f.tipoCbte}-${f.ptoVenta}-${f.nroComprobante}`,
-        fecha: f.fechaCbte,
-        total: f.total,
-        pagado: f.pagosTarjeta.reduce((sum, p) => sum + p.montoPagado, 0),
-        pendiente: f.total - f.pagosTarjeta.reduce((sum, p) => sum + p.montoPagado, 0),
-        estadoPago: f.estadoPago,
-      })),
-      ...facturasSeguro.map((f) => ({
-        id: f.id,
-        tipo: "SEGURO" as const,
-        razonSocial: f.aseguradora.razonSocial,
-        nroComprobante: `${f.tipoComprobante}-${f.nroComprobante}`,
-        fecha: f.fecha,
-        total: f.total,
-        pagado: f.pagosTarjeta.reduce((sum, p) => sum + p.montoPagado, 0),
-        pendiente: f.total - f.pagosTarjeta.reduce((sum, p) => sum + p.montoPagado, 0),
-        estadoPago: f.estadoPago,
-      })),
+      ...facturasProveedor.map((f) => {
+        const pagado = sumarImportes(f.pagosTarjeta.map(p => p.montoPagado))
+        return {
+          id: f.id,
+          tipo: "PROVEEDOR" as const,
+          razonSocial: f.proveedor.razonSocial,
+          nroComprobante: `${f.tipoCbte}-${f.ptoVenta}-${f.nroComprobante}`,
+          fecha: f.fechaCbte,
+          total: f.total,
+          pagado,
+          pendiente: restarImportes(f.total, pagado),
+          estadoPago: f.estadoPago,
+        }
+      }),
+      ...facturasSeguro.map((f) => {
+        const pagado = sumarImportes(f.pagosTarjeta.map(p => p.montoPagado))
+        return {
+          id: f.id,
+          tipo: "SEGURO" as const,
+          razonSocial: f.aseguradora.razonSocial,
+          nroComprobante: `${f.tipoComprobante}-${f.nroComprobante}`,
+          fecha: f.fecha,
+          total: f.total,
+          pagado,
+          pendiente: restarImportes(f.total, pagado),
+          estadoPago: f.estadoPago,
+        }
+      }),
     ]
 
     pendientes.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())

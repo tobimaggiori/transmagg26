@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { FormError } from "@/components/ui/form-error"
+import { parsearImporte } from "@/lib/money"
 import {
   Dialog,
   DialogContent,
@@ -102,7 +103,7 @@ function CuentaFormModal({ cuenta, onSuccess }: { cuenta?: CuentaAbm; onSuccess:
       const method = isEdit ? "PATCH" : "POST"
       const body = isEdit
         ? { nombre: form.nombre, tipo: form.tipo, bancoOEntidad: form.bancoOEntidad, moneda: form.moneda, activa: form.activa, tieneImpuestoDebcred: form.tieneImpuestoDebcred, alicuotaImpuesto: parseFloat(form.alicuotaImpuesto), tieneChequera: form.tieneChequera, tienePlanillaEmisionMasiva: form.tienePlanillaEmisionMasiva, tieneCuentaRemunerada: form.tieneCuentaRemunerada, tieneTarjetasPrepagasChoferes: form.tieneTarjetasPrepagasChoferes, tieneIibbSircrebTucuman: form.tieneIibbSircrebTucuman, alicuotaIibbSircrebTucuman: parseFloat(form.alicuotaIibbSircrebTucuman) }
-        : { ...form, saldoInicial: parseFloat(form.saldoInicial), alicuotaImpuesto: parseFloat(form.alicuotaImpuesto), alicuotaIibbSircrebTucuman: parseFloat(form.alicuotaIibbSircrebTucuman) }
+        : { ...form, saldoInicial: parsearImporte(form.saldoInicial), alicuotaImpuesto: parseFloat(form.alicuotaImpuesto), alicuotaIibbSircrebTucuman: parseFloat(form.alicuotaIibbSircrebTucuman) }
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       if (!res.ok) {
         const d = await res.json()

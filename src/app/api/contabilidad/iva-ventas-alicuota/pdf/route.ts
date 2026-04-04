@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
+import { sumarImportes } from "@/lib/money"
 
 function fmt(n: number) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(n)
@@ -65,7 +66,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       if (!grupoMap.has(tipoCbte)) grupoMap.set(tipoCbte, new Map())
       const byAlic = grupoMap.get(tipoCbte)!
       const prev = byAlic.get(a.alicuota) ?? { neto: 0, iva: 0, count: 0 }
-      byAlic.set(a.alicuota, { neto: prev.neto + a.baseImponible, iva: prev.iva + a.montoIva, count: prev.count + 1 })
+      byAlic.set(a.alicuota, { neto: sumarImportes([prev.neto, a.baseImponible]), iva: sumarImportes([prev.iva, a.montoIva]), count: prev.count + 1 })
     }
 
     let totalNetoGeneral = 0
@@ -73,8 +74,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     const secciones = Array.from(grupoMap.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([tipoCbte, byAlic]) => {
         const filas = Array.from(byAlic.entries()).sort(([a], [b]) => a - b)
-        const subtotalNeto = filas.reduce((acc, [, v]) => acc + v.neto, 0)
-        const subtotalIva = filas.reduce((acc, [, v]) => acc + v.iva, 0)
+        const subtotalNeto = sumarImportes(filas.map(([, v]) => v.neto))
+        const subtotalIva = sumarImportes(filas.map(([, v]) => v.iva))
         totalNetoGeneral += subtotalNeto
         totalIvaGeneral += subtotalIva
         const rows = filas.map(([alic, v]) => `<tr>

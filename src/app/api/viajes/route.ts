@@ -14,11 +14,14 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { esRolInterno, esRolEmpresa } from "@/lib/permissions"
+import { esRolInterno } from "@/lib/permissions"
 import { enriquecerViajeOperativo, ocultarTarifaOperativa } from "@/lib/viaje-serialization"
 import { resolverOperadorId } from "@/lib/session-utils"
 import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
+import { construirWhereViajes, validarEntidadesViaje } from "@/lib/viaje-queries"
 import type { Rol } from "@/types"
+
+// ─── Validación ──────────────────────────────────────────────────────────────
 
 /** Normaliza una provincia: busca match case-insensitive en la lista canónica */
 function normalizarProvincia(valor: string): string {
@@ -64,21 +67,13 @@ const crearViajeSchema = z.object({
   { message: "El PDF de la carta de porte es obligatorio", path: ["cartaPorteS3Key"] }
 )
 
+// ─── GET ──────────────────────────────────────────────────────────────────────
+
 /**
  * GET: NextRequest -> Promise<NextResponse>
  *
  * Devuelve hasta 200 viajes filtrados por rol y parámetros opcionales.
- * Incluye empresa.razonSocial, fletero.razonSocial, estadoLiquidacion, estadoFactura, kilos, tarifa/tarifaEmpresa.
  * Roles externos no reciben tarifa/tarifaEmpresa; roles internos reciben todo.
- * Existe para el listado de viajes con cálculos de toneladas y totales.
- *
- * Ejemplos:
- * GET /api/viajes (sesión ADMIN_TRANSMAGG)
- * // => 200 [{ id, tarifa/tarifaEmpresa, estadoLiquidacion, estadoFactura, toneladas, total, empresa, fletero }]
- * GET /api/viajes?fleteroId=f1 (sesión OPERADOR_TRANSMAGG)
- * // => 200 viajes filtrados por fletero
- * GET /api/viajes (sesión FLETERO)
- * // => 200 viajes propios sin tarifa/tarifaEmpresa
  */
 export async function GET(request: NextRequest) {
   const session = await auth()
@@ -86,53 +81,23 @@ export async function GET(request: NextRequest) {
 
   const rol = session.user.rol as Rol
   const { searchParams } = new URL(request.url)
-  const fleteroId = searchParams.get("fleteroId")
-  const empresaId = searchParams.get("empresaId")
-  const estadoLiquidacion = searchParams.get("estadoLiquidacion")
-  const estadoFactura = searchParams.get("estadoFactura")
-  const desde = searchParams.get("desde")
-  const hasta = searchParams.get("hasta")
 
-  let whereClause: Record<string, unknown> = {}
+  const resultado = await construirWhereViajes(rol, session.user.email!, {
+    fleteroId: searchParams.get("fleteroId"),
+    empresaId: searchParams.get("empresaId"),
+    estadoLiquidacion: searchParams.get("estadoLiquidacion"),
+    estadoFactura: searchParams.get("estadoFactura"),
+    desde: searchParams.get("desde"),
+    hasta: searchParams.get("hasta"),
+  })
 
-  if (rol === "FLETERO") {
-    whereClause = { fletero: { usuario: { email: session.user.email } } }
-  } else if (rol === "CHOFER") {
-    whereClause = { chofer: { email: session.user.email } }
-  } else if (esRolEmpresa(rol)) {
-    const empUsr = await prisma.empresaUsuario.findFirst({
-      where: { usuario: { email: session.user.email } },
-      select: { empresaId: true },
-    })
-    if (!empUsr) return NextResponse.json([])
-    whereClause = { empresaId: empUsr.empresaId }
-  } else if (!esRolInterno(rol)) {
-    return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
-  }
-
-  // Filtros adicionales para roles internos
-  if (esRolInterno(rol)) {
-    if (fleteroId) whereClause.fleteroId = fleteroId
-    if (empresaId) whereClause.empresaId = empresaId
-  }
-
-  if (estadoLiquidacion) whereClause.estadoLiquidacion = estadoLiquidacion
-  if (estadoFactura) whereClause.estadoFactura = estadoFactura
-
-  if (desde || hasta) {
-    const fechaWhere: Record<string, Date> = {}
-    if (desde) fechaWhere.gte = new Date(desde)
-    if (hasta) {
-      const h = new Date(hasta)
-      h.setHours(23, 59, 59, 999)
-      fechaWhere.lte = h
-    }
-    whereClause.fechaViaje = fechaWhere
+  if (!resultado.ok) {
+    return NextResponse.json({ error: resultado.error }, { status: resultado.status })
   }
 
   try {
     const viajes = await prisma.viaje.findMany({
-      where: whereClause,
+      where: resultado.where,
       include: {
         fletero: { select: { razonSocial: true } },
         camion: { select: { patenteChasis: true, tipoCamion: true } },
@@ -143,13 +108,8 @@ export async function GET(request: NextRequest) {
           include: {
             liquidacion: {
               select: {
-                id: true,
-                estado: true,
-                nroComprobante: true,
-                ptoVenta: true,
-                pdfS3Key: true,
-                comisionPct: true,
-                ivaPct: true,
+                id: true, estado: true, nroComprobante: true,
+                ptoVenta: true, pdfS3Key: true, comisionPct: true, ivaPct: true,
               },
             },
           },
@@ -158,12 +118,8 @@ export async function GET(request: NextRequest) {
           include: {
             factura: {
               select: {
-                id: true,
-                nroComprobante: true,
-                pdfS3Key: true,
-                estado: true,
-                tipoCbte: true,
-                ivaPct: true,
+                id: true, nroComprobante: true, pdfS3Key: true,
+                estado: true, tipoCbte: true, ivaPct: true,
               },
             },
           },
@@ -175,11 +131,8 @@ export async function GET(request: NextRequest) {
 
     const viajesConCalculo = viajes.map((v) => enriquecerViajeOperativo(v))
 
-    // No exponer tarifas a roles externos
     if (!esRolInterno(rol)) {
-      return NextResponse.json(
-        viajesConCalculo.map((v) => ocultarTarifaOperativa(v))
-      )
+      return NextResponse.json(viajesConCalculo.map((v) => ocultarTarifaOperativa(v)))
     }
 
     return NextResponse.json(viajesConCalculo)
@@ -192,20 +145,12 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// ─── POST ─────────────────────────────────────────────────────────────────────
+
 /**
  * POST: NextRequest -> Promise<NextResponse>
  *
- * Dado el body con los campos del viaje, crea un viaje con estados
- * estadoLiquidacion="PENDIENTE_LIQUIDAR" y estadoFactura="PENDIENTE_FACTURAR".
- * Existe para que operadores internos carguen viajes standalone.
- *
- * Ejemplos:
- * POST /api/viajes { fleteroId, camionId, choferId, empresaId, fechaViaje: "2026-03-15", tarifa/tarifaEmpresa: 50000 }
- * // => 201 { id, estadoLiquidacion: "PENDIENTE_LIQUIDAR", estadoFactura: "PENDIENTE_FACTURAR" }
- * POST /api/viajes { ...datos, fleteroId: "noexiste" }
- * // => 404 { error: "Fletero no encontrado" }
- * POST /api/viajes (sesión FLETERO)
- * // => 403 { error: "Acceso denegado" }
+ * Crea un viaje standalone. Solo roles internos.
  */
 export async function POST(request: NextRequest) {
   const session = await auth()
@@ -222,38 +167,21 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    console.log("[POST /api/viajes] Body recibido:", JSON.stringify(body))
     const parsed = crearViajeSchema.safeParse(body)
     if (!parsed.success) {
       const detalles = parsed.error.flatten()
-      console.log("[POST /api/viajes] Error de validación:", JSON.stringify(detalles))
       return NextResponse.json({ error: "Datos inválidos", detalles }, { status: 400 })
     }
 
     const { esCamionPropio, fleteroId, camionId, choferId, empresaId, fechaViaje, tarifa, estadoLiquidacion, estadoFactura, ...resto } = parsed.data
 
-    const [fletero, camion, chofer, empresa] = await Promise.all([
-      fleteroId ? prisma.fletero.findUnique({ where: { id: fleteroId, activo: true } }) : Promise.resolve(esCamionPropio ? true : null),
-      prisma.camion.findUnique({ where: { id: camionId, activo: true } }),
-      prisma.usuario.findUnique({ where: { id: choferId, activo: true } }),
-      prisma.empresa.findUnique({ where: { id: empresaId, activa: true } }),
-    ])
-
-    if (!fletero) return NextResponse.json({ error: "Fletero no encontrado" }, { status: 404 })
-    if (!camion) return NextResponse.json({ error: "Camión no encontrado" }, { status: 404 })
-    if (esCamionPropio && !camion.esPropio) return NextResponse.json({ error: "El camión no pertenece a la flota propia de Transmagg" }, { status: 400 })
-    if (!chofer) return NextResponse.json({ error: "Chofer no encontrado" }, { status: 404 })
-    if (!empresa) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 })
-
-    const { nroCartaPorte } = parsed.data
-    if (nroCartaPorte) {
-      const existente = await prisma.viaje.findFirst({ where: { nroCartaPorte } })
-      if (existente) {
-        return NextResponse.json(
-          { error: `Ya existe un viaje con la carta de porte ${nroCartaPorte}` },
-          { status: 409 }
-        )
-      }
+    // Validar que todas las entidades referenciadas existan
+    const validacion = await validarEntidadesViaje({
+      esCamionPropio, fleteroId, camionId, choferId, empresaId,
+      nroCartaPorte: parsed.data.nroCartaPorte,
+    })
+    if (!validacion.ok) {
+      return NextResponse.json({ error: validacion.error }, { status: validacion.status })
     }
 
     const viaje = await prisma.viaje.create({

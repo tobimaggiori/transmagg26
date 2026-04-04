@@ -11,7 +11,7 @@ describe("enriquecerViajeOperativo", () => {
   it("usa tarifaEmpresa para calcular total", () => {
     const r = enriquecerViajeOperativo({ kilos: 25000, tarifa: 40, tarifaEmpresa: 50 })
     expect(r.toneladas).toBe(25)
-    expect(r.total).toBe(25000 * 50)
+    expect(r.total).toBe(1250) // 25 ton × $50/ton
   })
 
   it("kilos null → total null", () => {
@@ -20,7 +20,7 @@ describe("enriquecerViajeOperativo", () => {
 
   it("fallback a tarifa si no hay tarifaEmpresa", () => {
     const r = enriquecerViajeOperativo({ kilos: 10000, tarifa: 30 })
-    expect(r.total).toBe(10000 * 30)
+    expect(r.total).toBe(300) // 10 ton × $30/ton
   })
 })
 

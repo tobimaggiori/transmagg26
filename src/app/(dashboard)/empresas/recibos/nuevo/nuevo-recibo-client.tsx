@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { sumarImportes, restarImportes, parsearImporte } from "@/lib/money"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -154,13 +155,13 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
   // ─── Cálculos ─────────────────────────────────────────────────────────────
 
   const facturasSeleccionadas = facturas.filter((f) => seleccionadas.has(f.id))
-  const totalComprobantes = facturasSeleccionadas.reduce((s, f) => s + f.total, 0)
-  const retGananciasNum = parseFloat(retGanancias) || 0
-  const retIIBBNum = parseFloat(retIIBB) || 0
-  const retSUSSNum = parseFloat(retSUSS) || 0
-  const totalRetenciones = retGananciasNum + retIIBBNum + retSUSSNum
-  const totalMedios = medios.reduce((s, m) => s + (parseFloat(m.monto) || 0), 0)
-  const diferencia = totalComprobantes - totalRetenciones - totalMedios
+  const totalComprobantes = sumarImportes(facturasSeleccionadas.map(f => f.total))
+  const retGananciasNum = parsearImporte(retGanancias)
+  const retIIBBNum = parsearImporte(retIIBB)
+  const retSUSSNum = parsearImporte(retSUSS)
+  const totalRetenciones = sumarImportes([retGananciasNum, retIIBBNum, retSUSSNum])
+  const totalMedios = sumarImportes(medios.map(m => parsearImporte(m.monto)))
+  const diferencia = restarImportes(totalComprobantes, sumarImportes([totalRetenciones, totalMedios]))
 
   // ─── Medios de pago ───────────────────────────────────────────────────────
 
@@ -206,7 +207,7 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
         facturaIds: Array.from(seleccionadas),
         mediosPago: medios.map((m) => ({
           tipo: m.tipo,
-          monto: parseFloat(m.monto) || 0,
+          monto: parsearImporte(m.monto),
           cuentaId: m.cuentaId || undefined,
           fechaTransferencia: m.fechaTransferencia || undefined,
           referencia: m.referencia || undefined,
@@ -731,7 +732,7 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
                   {m.nroCheque ? ` Nro ${m.nroCheque}` : ""}
                   {m.bancoEmisor ? ` — ${m.bancoEmisor}` : ""}
                 </span>
-                <span className="font-mono">{fmt(parseFloat(m.monto) || 0)}</span>
+                <span className="font-mono">{fmt(parsearImporte(m.monto))}</span>
               </div>
             ))}
           </CardContent>

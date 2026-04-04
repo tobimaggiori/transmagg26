@@ -8,6 +8,7 @@ import {
   serverErrorResponse,
 } from "@/lib/financial-api"
 import { crearAdelantoDescuentoSchema } from "@/lib/financial-schemas"
+import { sumarImportes } from "@/lib/money"
 
 /**
  * GET: -> Promise<NextResponse>
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
     if (!adelanto) return notFoundResponse("Adelanto fletero")
     if (!liquidacion) return notFoundResponse("Liquidación")
 
-    const nuevoMontoDescontado = adelanto.montoDescontado + parsed.data.montoDescontado
+    const nuevoMontoDescontado = sumarImportes([adelanto.montoDescontado, parsed.data.montoDescontado])
     if (nuevoMontoDescontado > adelanto.monto) {
       return badRequestResponse("El descuento supera el saldo pendiente del adelanto")
     }

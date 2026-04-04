@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Select } from "@/components/ui/select"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { sumarImportes, restarImportes, maxMonetario } from "@/lib/money"
 
 type Fletero = { id: string; razonSocial: string; cuit: string }
 
@@ -96,8 +97,8 @@ export function GastosClient({ fleteros }: GastosClientProps) {
     }
   }, [fleteroId, estado, desde, hasta])
 
-  const totalMontoPagado = gastos.reduce((acc, g) => acc + g.montoPagado, 0)
-  const totalPendiente = gastos.reduce((acc, g) => acc + Math.max(0, g.montoPagado - g.montoDescontado), 0)
+  const totalMontoPagado = sumarImportes(gastos.map(g => g.montoPagado))
+  const totalPendiente = sumarImportes(gastos.map(g => maxMonetario(0, restarImportes(g.montoPagado, g.montoDescontado))))
 
   return (
     <div className="space-y-6">
@@ -181,7 +182,7 @@ export function GastosClient({ fleteros }: GastosClientProps) {
                     </thead>
                     <tbody className="divide-y">
                       {gastos.map((g) => {
-                        const saldo = Math.max(0, g.montoPagado - g.montoDescontado)
+                        const saldo = maxMonetario(0, restarImportes(g.montoPagado, g.montoDescontado))
                         return (
                           <tr key={g.id} className="hover:bg-muted/50">
                             <td className="py-2 pr-3 whitespace-nowrap">

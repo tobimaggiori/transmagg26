@@ -8,6 +8,7 @@ import { Select } from "@/components/ui/select"
 import { FormError } from "@/components/ui/form-error"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { formatearMoneda } from "@/lib/utils"
+import { sumarImportes, parsearImporte } from "@/lib/money"
 import { Plus, RefreshCw } from "lucide-react"
 
 // --- Tipos ---
@@ -167,10 +168,10 @@ export function BrokersClient() {
     return brokerModels.find((b) => b.cuentaId === cuentaId)?.id
   }
 
-  const totalSaldoBrokers = brokers.reduce((sum, b) => {
-    const saldoFcis = (fcis[b.id] ?? []).reduce((s, f) => s + f.saldoActual, 0)
-    return sum + b.saldoDisponible + saldoFcis
-  }, 0)
+  const totalSaldoBrokers = sumarImportes(brokers.map(b => {
+    const saldoFcis = sumarImportes((fcis[b.id] ?? []).map(f => f.saldoActual))
+    return sumarImportes([b.saldoDisponible, saldoFcis])
+  }))
 
   // --- Guardar broker ---
   async function guardarBroker() {
@@ -234,8 +235,8 @@ export function BrokersClient() {
         return
       }
       const fciCreado: FciItem = await fciRes.json()
-      const saldoInicial = parseFloat(formFci.saldoInicial)
-      if (!isNaN(saldoInicial) && saldoInicial > 0) {
+      const saldoInicial = parsearImporte(formFci.saldoInicial)
+      if (saldoInicial > 0) {
         await fetch(`/api/fci/${fciCreado.id}/actualizar-saldo`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -263,8 +264,8 @@ export function BrokersClient() {
   async function actualizarSaldo() {
     setErrorSaldo("")
     if (!fciParaSaldo) return
-    const saldo = parseFloat(formSaldo.saldoNuevo)
-    if (isNaN(saldo)) { setErrorSaldo("El saldo debe ser un número"); return }
+    const saldo = parsearImporte(formSaldo.saldoNuevo)
+    if (saldo === 0 && formSaldo.saldoNuevo.trim() !== "0") { setErrorSaldo("El saldo debe ser un número"); return }
     if (!formSaldo.fechaConsulta) { setErrorSaldo("La fecha es obligatoria"); return }
     setGuardandoSaldo(true)
     try {
@@ -360,8 +361,8 @@ export function BrokersClient() {
   async function guardarRescate() {
     setErrorRescate("")
     if (!brokerParaRescate) return
-    const monto = parseFloat(formRescate.monto)
-    if (isNaN(monto) || monto <= 0) { setErrorRescate("El monto debe ser mayor a 0"); return }
+    const monto = parsearImporte(formRescate.monto)
+    if (monto <= 0) { setErrorRescate("El monto debe ser mayor a 0"); return }
     if (!formRescate.cuentaDestinoId) { setErrorRescate("Seleccioná una cuenta destino"); return }
     if (!formRescate.fecha) { setErrorRescate("La fecha es obligatoria"); return }
     setGuardandoRescate(true)
@@ -401,8 +402,8 @@ export function BrokersClient() {
     if (!brokerParaChequeBroker) return
     if (!formChequeBroker.nroCheque.trim()) { setErrorChequeBroker("El número de cheque es obligatorio"); return }
     if (!formChequeBroker.bancoEmisor.trim()) { setErrorChequeBroker("El banco emisor es obligatorio"); return }
-    const monto = parseFloat(formChequeBroker.monto)
-    if (isNaN(monto) || monto <= 0) { setErrorChequeBroker("El monto debe ser mayor a 0"); return }
+    const monto = parsearImporte(formChequeBroker.monto)
+    if (monto <= 0) { setErrorChequeBroker("El monto debe ser mayor a 0"); return }
     if (!formChequeBroker.fechaCobro) { setErrorChequeBroker("La fecha de cobro es obligatoria"); return }
     setGuardandoChequeBroker(true)
     try {
@@ -440,8 +441,8 @@ export function BrokersClient() {
   async function guardarSuscripcion() {
     setErrorSuscripcion("")
     if (!fciParaSuscripcion) return
-    const monto = parseFloat(formSuscripcion.monto)
-    if (isNaN(monto) || monto <= 0) { setErrorSuscripcion("El monto debe ser mayor a 0"); return }
+    const monto = parsearImporte(formSuscripcion.monto)
+    if (monto <= 0) { setErrorSuscripcion("El monto debe ser mayor a 0"); return }
     if (!formSuscripcion.cuentaId) { setErrorSuscripcion("Seleccioná una cuenta bancaria"); return }
     if (!formSuscripcion.fecha) { setErrorSuscripcion("La fecha es obligatoria"); return }
     setGuardandoSuscripcion(true)
@@ -474,8 +475,8 @@ export function BrokersClient() {
   async function guardarRescateFci() {
     setErrorRescateFci("")
     if (!fciParaRescate) return
-    const monto = parseFloat(formRescateFci.monto)
-    if (isNaN(monto) || monto <= 0) { setErrorRescateFci("El monto debe ser mayor a 0"); return }
+    const monto = parsearImporte(formRescateFci.monto)
+    if (monto <= 0) { setErrorRescateFci("El monto debe ser mayor a 0"); return }
     if (!formRescateFci.cuentaId) { setErrorRescateFci("Seleccioná una cuenta bancaria"); return }
     if (!formRescateFci.fecha) { setErrorRescateFci("La fecha es obligatoria"); return }
     setGuardandoRescateFci(true)
@@ -517,7 +518,7 @@ export function BrokersClient() {
           <>
             {brokers.map((broker) => {
               const fcisBroker = fcis[broker.id] ?? []
-              const saldoTotalBroker = broker.saldoDisponible + fcisBroker.reduce((s, f) => s + f.saldoActual, 0)
+              const saldoTotalBroker = sumarImportes([broker.saldoDisponible, ...fcisBroker.map(f => f.saldoActual)])
               const chequesEndosadosBroker = chequesEndosados.filter(
                 (c) => c.endosadoABrokerId === broker.id && !c.fechaDepositoBroker
               )

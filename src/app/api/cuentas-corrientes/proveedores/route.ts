@@ -10,6 +10,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
 import { resolverOperadorId } from "@/lib/session-utils"
+import { sumarImportes, restarImportes, maxMonetario, parsearImporte, m } from "@/lib/money"
 import type { Rol } from "@/types"
 
 /**
@@ -49,17 +50,16 @@ export async function GET(request: NextRequest) {
 
     const resultado = proveedores
       .map((prov) => {
-        const totalFacturado = prov.facturas.reduce((acc, f) => acc + f.total, 0)
-        const totalPagado = prov.facturas.reduce(
-          (acc, f) => acc + f.pagos.reduce((s, p) => s + p.monto, 0),
-          0
+        const totalFacturado = sumarImportes(prov.facturas.map(f => f.total))
+        const totalPagado = sumarImportes(
+          prov.facturas.map(f => sumarImportes(f.pagos.map(p => p.monto)))
         )
-        const saldoAPagar = Math.max(0, totalFacturado - totalPagado)
+        const saldoAPagar = maxMonetario(0, restarImportes(totalFacturado, totalPagado))
 
         const facturasImpagas = prov.facturas
           .map((f) => {
-            const pagado = f.pagos.reduce((s, p) => s + p.monto, 0)
-            return { ...f, saldo: Math.max(0, f.total - pagado) }
+            const pagado = sumarImportes(f.pagos.map(p => p.monto))
+            return { ...f, saldo: maxMonetario(0, restarImportes(f.total, pagado)) }
           })
           .filter((f) => f.saldo > 0.01)
 
@@ -134,17 +134,17 @@ export async function POST(request: NextRequest) {
       orderBy: { fechaCbte: "asc" },
     })
 
-    let montoRestante = parseFloat(String(monto))
+    let montoRestante = parsearImporte(String(monto))
     const pagosCreados: { id: string; facturaProveedorId: string; monto: number }[] = []
     const fechaPago = new Date(fecha)
 
     for (const f of facturas) {
       if (montoRestante <= 0) break
-      const pagado = f.pagos.reduce((acc, p) => acc + p.monto, 0)
-      const saldo = f.total - pagado
+      const pagado = sumarImportes(f.pagos.map(p => p.monto))
+      const saldo = restarImportes(f.total, pagado)
       if (saldo <= 0) continue
 
-      const montoAplicar = Math.min(montoRestante, saldo)
+      const montoAplicar = m(Math.min(montoRestante, saldo))
       const pago = await prisma.pagoProveedor.create({
         data: {
           facturaProveedorId: f.id,
@@ -156,12 +156,12 @@ export async function POST(request: NextRequest) {
         },
       })
       pagosCreados.push(pago)
-      montoRestante -= montoAplicar
+      montoRestante = restarImportes(montoRestante, montoAplicar)
     }
 
     // Crear MovimientoSinFactura para TRANSFERENCIA si se provee cuenta y operador
     if (tipo === "TRANSFERENCIA" && cuentaBancariaId && operadorId) {
-      const montoTotal = parseFloat(String(monto))
+      const montoTotal = parsearImporte(String(monto))
       await prisma.movimientoSinFactura.create({
         data: {
           cuentaId: cuentaBancariaId,

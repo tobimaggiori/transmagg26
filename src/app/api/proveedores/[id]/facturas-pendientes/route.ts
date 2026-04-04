@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { esRolInterno } from "@/lib/permissions"
 import { prisma } from "@/lib/prisma"
+import { sumarImportes, restarImportes, maxMonetario } from "@/lib/money"
 import type { Rol } from "@/types"
 
 /**
@@ -45,8 +46,8 @@ export async function GET(
     })
 
     const resultado = facturas.map((f) => {
-      const totalPagado = f.pagos.reduce((acc, p) => acc + p.monto, 0)
-      const saldoPendiente = Math.max(0, f.total - totalPagado)
+      const totalPagado = sumarImportes(f.pagos.map(p => p.monto))
+      const saldoPendiente = maxMonetario(0, restarImportes(f.total, totalPagado))
       return {
         id: f.id,
         nroComprobante: f.nroComprobante,

@@ -2,6 +2,7 @@ import { NextRequest } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { badRequestResponse, notFoundResponse, requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
 import { generarExcelPlanillaGalicia } from "@/lib/galicia-excel"
+import { sumarImportes } from "@/lib/money"
 
 /**
  * POST: NextRequest { params: { id: string } } -> Promise<Response>
@@ -62,7 +63,7 @@ export async function POST(
       where: { id: planilla.id },
       data: {
         estado: "DESCARGADA",
-        totalMonto: planilla.chequesEmitidos.reduce((acumulado, cheque) => acumulado + cheque.monto, 0),
+        totalMonto: sumarImportes(planilla.chequesEmitidos.map((cheque) => cheque.monto)),
         cantidadCheques: planilla.chequesEmitidos.length,
         xlsxS3Key,
       },

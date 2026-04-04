@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { UploadPDF } from "@/components/upload-pdf"
 import { ViewPDF } from "@/components/view-pdf"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { parsearImporte } from "@/lib/money"
 
 // --- Tipos ---
 
@@ -162,7 +163,7 @@ export function RegistrarPagoProveedorClient({
     const body = {
       facturaProveedorId: facturaSeleccionada!.id,
       fecha: new Date(fechaPago + "T12:00:00Z").toISOString(),
-      monto: parseFloat(monto),
+      monto: parsearImporte(monto),
       tipo: tipoPago,
       observaciones: observaciones || null,
       comprobantePdfS3Key: comprobantePdfS3Key || null,
@@ -204,8 +205,8 @@ export function RegistrarPagoProveedorClient({
   function confirmarPago() {
     setError("")
     if (!facturaSeleccionada) { setError("Seleccioná una factura"); return }
-    if (!monto || parseFloat(monto) <= 0) { setError("Ingresá un monto válido"); return }
-    if (parseFloat(monto) > facturaSeleccionada.saldoPendiente + 0.01) {
+    if (!monto || parsearImporte(monto) <= 0) { setError("Ingresá un monto válido"); return }
+    if (parsearImporte(monto) > facturaSeleccionada.saldoPendiente + 0.01) {
       setError(`El monto excede el saldo pendiente (${formatearMoneda(facturaSeleccionada.saldoPendiente)})`)
       return
     }

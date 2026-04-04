@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
+import { sumarImportes, restarImportes } from "@/lib/money"
 import type { Rol } from "@/types"
 
 export async function GET(
@@ -70,14 +71,8 @@ export async function GET(
       const ordenPago =
         liq.pagos.find((p) => p.ordenPago !== null)?.ordenPago ?? null
 
-      const adelantosDesc = liq.adelantoDescuentos.reduce(
-        (s, a) => s + a.montoDescontado,
-        0
-      )
-      const gastosDesc = liq.gastoDescuentos.reduce(
-        (s, g) => s + g.montoDescontado,
-        0
-      )
+      const adelantosDesc = sumarImportes(liq.adelantoDescuentos.map(a => a.montoDescontado))
+      const gastosDesc = sumarImportes(liq.gastoDescuentos.map(g => g.montoDescontado))
 
       return {
         id: liq.id,
@@ -100,11 +95,9 @@ export async function GET(
       }
     })
 
-    const totalEmitido = rows.reduce((s, r) => s + r.total, 0)
-    const totalPagado = rows
-      .filter((r) => r.estado === "PAGADA")
-      .reduce((s, r) => s + r.total, 0)
-    const saldoPendiente = totalEmitido - totalPagado
+    const totalEmitido = sumarImportes(rows.map(r => r.total))
+    const totalPagado = sumarImportes(rows.filter(r => r.estado === "PAGADA").map(r => r.total))
+    const saldoPendiente = restarImportes(totalEmitido, totalPagado)
 
     return NextResponse.json({
       fletero,

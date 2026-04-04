@@ -11,6 +11,7 @@ import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder } from "@/lib/permissions"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { sumarImportes } from "@/lib/money"
 import { FiltroPeriodo } from "@/components/contabilidad/filtro-periodo"
 import type { Rol } from "@/types"
 
@@ -232,17 +233,17 @@ export default async function PercepcionesPage({
   // Subtotals by tipo for percepciones
   const subtotalesPorTipoPerc = new Map<string, number>()
   for (const p of percepciones) {
-    subtotalesPorTipoPerc.set(p.tipo, (subtotalesPorTipoPerc.get(p.tipo) ?? 0) + p.monto)
+    subtotalesPorTipoPerc.set(p.tipo, sumarImportes([subtotalesPorTipoPerc.get(p.tipo) ?? 0, p.monto]))
   }
 
   // Subtotals by tipo for impuestos internos
   const subtotalesPorTipoImp = new Map<string, number>()
   for (const imp of impuestosInternos) {
-    subtotalesPorTipoImp.set(imp.tipo, (subtotalesPorTipoImp.get(imp.tipo) ?? 0) + imp.monto)
+    subtotalesPorTipoImp.set(imp.tipo, sumarImportes([subtotalesPorTipoImp.get(imp.tipo) ?? 0, imp.monto]))
   }
 
-  const totalPercepciones = percepciones.reduce((s, p) => s + p.monto, 0)
-  const totalImpuestos = impuestosInternos.reduce((s, imp) => s + imp.monto, 0)
+  const totalPercepciones = sumarImportes(percepciones.map(p => p.monto))
+  const totalImpuestos = sumarImportes(impuestosInternos.map(imp => imp.monto))
   const totalGeneral = totalPercepciones + totalImpuestos
 
   const hayDatos = percepciones.length > 0 || impuestosInternos.length > 0

@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
+import { sumarImportes, restarImportes } from "@/lib/money"
 
 /**
  * GET: () -> Promise<NextResponse>
@@ -43,9 +44,8 @@ export async function GET() {
     ])
 
     const ingresos = cobrosEfectivo._sum.monto ?? 0
-    const egresos =
-      (pagosFleterosEfectivo._sum.monto ?? 0) + (pagosProveedoresEfectivo._sum.monto ?? 0)
-    const efectivoEnCaja = ingresos - egresos
+    const egresos = sumarImportes([pagosFleterosEfectivo._sum.monto ?? 0, pagosProveedoresEfectivo._sum.monto ?? 0])
+    const efectivoEnCaja = restarImportes(ingresos, egresos)
 
     return NextResponse.json({ efectivoEnCaja, ingresos, egresos })
   } catch (error) {

@@ -5,6 +5,7 @@
  */
 
 import { prisma } from "@/lib/prisma"
+import { dividirImporte, multiplicarImporte } from "@/lib/money"
 import PDFDocument from "pdfkit"
 import QRCode from "qrcode"
 import { obtenerUrlQRFiscal } from "@/lib/arca/qr"
@@ -218,7 +219,7 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
       doc.y = y + fs + 4
     }
 
-    const alicuota = fac.ivaMonto > 0 ? Math.round((fac.ivaMonto / fac.neto) * 100) : 0
+    const alicuota = fac.ivaMonto > 0 ? Math.round(multiplicarImporte(dividirImporte(fac.ivaMonto, fac.neto), 100)) : 0
     totalRow("Neto", fmt(fac.neto))
     totalRow(`IVA (${alicuota}%)`, fmt(fac.ivaMonto))
     const sepY = doc.y + 1

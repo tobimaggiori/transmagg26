@@ -6,6 +6,7 @@
 
 import type { DatosComprobanteBase } from "./mappers"
 import type { ArcaConfig } from "./types"
+import { m, sumarImportes, importesIguales } from "@/lib/money"
 
 /** Tipos de comprobante que requieren comprobante asociado (NC/ND). */
 const TIPOS_CON_ASOCIADO = new Set([2, 3, 7, 8])
@@ -55,14 +56,17 @@ export function validarPreAutorizacion(
   }
 
   // Montos
-  if (datos.neto <= 0) errores.push("El neto debe ser mayor a 0")
-  if (datos.total <= 0) errores.push("El total debe ser mayor a 0")
+  const neto = m(datos.neto)
+  const ivaMonto = m(datos.ivaMonto)
+  const total = m(datos.total)
+  if (neto <= 0) errores.push("El neto debe ser mayor a 0")
+  if (total <= 0) errores.push("El total debe ser mayor a 0")
 
   // Integridad monetaria: total ≈ neto + ivaMonto (tolerancia 1 centavo)
-  const totalEsperado = datos.neto + datos.ivaMonto
-  if (Math.abs(datos.total - totalEsperado) > 0.01) {
+  const totalEsperado = sumarImportes([neto, ivaMonto])
+  if (!importesIguales(total, totalEsperado)) {
     errores.push(
-      `El total (${datos.total}) no coincide con neto (${datos.neto}) + IVA (${datos.ivaMonto}) = ${totalEsperado}`
+      `El total (${total}) no coincide con neto (${neto}) + IVA (${ivaMonto}) = ${totalEsperado}`
     )
   }
 

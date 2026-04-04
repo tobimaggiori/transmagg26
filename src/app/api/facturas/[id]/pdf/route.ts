@@ -11,7 +11,9 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno, esRolEmpresa } from "@/lib/permissions"
 import { obtenerUrlFirmada, storageConfigurado } from "@/lib/storage"
+import { verificarPropietarioEmpresa } from "@/lib/session-utils"
 import type { Rol } from "@/types"
+import { dividirImporte, multiplicarImporte } from "@/lib/money"
 
 function fmt(monto: number) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(monto)
@@ -57,10 +59,8 @@ export async function GET(
   if (!facCheck) return NextResponse.json({ error: "Factura no encontrada" }, { status: 404 })
 
   if (esRolEmpresa(rol)) {
-    const empUsr = await prisma.empresaUsuario.findFirst({
-      where: { usuario: { email: session.user.email }, empresaId: facCheck.empresaId },
-    })
-    if (!empUsr) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
+    const esPropietario = await verificarPropietarioEmpresa(facCheck.empresaId, session.user.email!)
+    if (!esPropietario) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
   }
 
   if (facCheck.pdfS3Key && storageConfigurado()) {
@@ -107,7 +107,7 @@ export async function GET(
     </tr>
   `).join("")
 
-  const alicuota = factura.ivaMonto > 0 ? Math.round((factura.ivaMonto / factura.neto) * 100) : 0
+  const alicuota = factura.ivaMonto > 0 ? Math.round(multiplicarImporte(dividirImporte(factura.ivaMonto, factura.neto), 100)) : 0
 
   const html = `<!DOCTYPE html>
 <html lang="es">

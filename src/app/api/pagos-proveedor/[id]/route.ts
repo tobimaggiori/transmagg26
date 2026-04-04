@@ -17,6 +17,7 @@ import {
 } from "@/lib/financial-api"
 import { prisma } from "@/lib/prisma"
 import { resolverOperadorId } from "@/lib/session-utils"
+import { sumarImportes, importesIguales, esMayorQueCero } from "@/lib/money"
 
 const modificarSchema = z.object({
   justificacion: z.string().min(10, "La justificación debe tener al menos 10 caracteres"),
@@ -136,15 +137,15 @@ export async function PATCH(
       // Recalcular factura original
       const factOrig = pago.facturaProveedor
       const montoAcreditar = nuevaFacturaId ? 0 : (nuevoMonto ?? pago.monto)
-      const totalOtrosPagos = factOrig.pagos
-        .filter((p) => p.id !== id)
-        .reduce((s, p) => s + p.monto, 0)
-      const totalFactOrig = totalOtrosPagos + montoAcreditar
+      const totalOtrosPagos = sumarImportes(
+        factOrig.pagos.filter((p) => p.id !== id).map((p) => p.monto)
+      )
+      const totalFactOrig = sumarImportes([totalOtrosPagos, montoAcreditar])
 
       const estadoFactOrig =
-        totalFactOrig >= factOrig.total - 0.01
+        importesIguales(totalFactOrig, factOrig.total) || totalFactOrig >= factOrig.total
           ? "PAGADA"
-          : totalFactOrig > 0.01
+          : esMayorQueCero(totalFactOrig)
           ? "PARCIALMENTE_PAGADA"
           : "PENDIENTE"
 
@@ -163,13 +164,15 @@ export async function PATCH(
           },
         })
         if (factNueva) {
-          const totalConNuevoPago =
-            factNueva.pagos.reduce((s, p) => s + p.monto, 0) + (nuevoMonto ?? pago.monto)
+          const totalConNuevoPago = sumarImportes([
+            ...factNueva.pagos.map((p) => p.monto),
+            nuevoMonto ?? pago.monto,
+          ])
 
           const estadoFactNueva =
-            totalConNuevoPago >= factNueva.total - 0.01
+            importesIguales(totalConNuevoPago, factNueva.total) || totalConNuevoPago >= factNueva.total
               ? "PAGADA"
-              : totalConNuevoPago > 0.01
+              : esMayorQueCero(totalConNuevoPago)
               ? "PARCIALMENTE_PAGADA"
               : "PENDIENTE"
 

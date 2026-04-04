@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ViewPDF } from "@/components/view-pdf"
 import { UploadPDF } from "@/components/upload-pdf"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { sumarImportes, parsearImporte } from "@/lib/money"
 import { Plus, CreditCard, X, AlertTriangle } from "lucide-react"
 
 // --- Tipos ---
@@ -153,7 +154,7 @@ export function TarjetasClient({ tarjetasIniciales, cuentas, choferes }: Tarjeta
       titularNombre: formNueva.titularNombre,
       cuentaId: formNueva.cuentaId || null,
       choferId: formNueva.choferId || null,
-      limiteMensual: formNueva.limiteMensual ? parseFloat(formNueva.limiteMensual) : null,
+      limiteMensual: formNueva.limiteMensual ? parsearImporte(formNueva.limiteMensual) : null,
     }
     const res = await fetch("/api/tarjetas", {
       method: "POST",
@@ -207,7 +208,7 @@ export function TarjetasClient({ tarjetasIniciales, cuentas, choferes }: Tarjeta
                 Gastos sin asignar a cierre ({gastosSinAsignar.length})
               </span>
               <span className="text-sm text-muted-foreground">
-                — Total: {formatearMoneda(gastosSinAsignar.reduce((s, g) => s + g.monto, 0))}
+                — Total: {formatearMoneda(sumarImportes(gastosSinAsignar.map(g => g.monto)))}
               </span>
             </div>
             <span className="text-xs text-muted-foreground">
@@ -533,7 +534,7 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
     setPagosCierre((prev) => prev.map((p, i) => i === idx ? { ...p, montoPagado: monto } : p))
   }
 
-  const sumaFacturasCierre = pagosCierre.filter((p) => p.seleccionada).reduce((sum, p) => sum + p.montoPagado, 0)
+  const sumaFacturasCierre = sumarImportes(pagosCierre.filter((p) => p.seleccionada).map(p => p.montoPagado))
   const totalCierre = sumaFacturasCierre + cierreDiferencia
 
   async function confirmarCierre() {
@@ -624,8 +625,8 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
       body: JSON.stringify({
         periodo: formResumen.periodo,
         fechaVtoPago: new Date(formResumen.fechaVtoPago + "T12:00:00Z").toISOString(),
-        totalARS: parseFloat(formResumen.totalARS),
-        totalUSD: formResumen.totalUSD ? parseFloat(formResumen.totalUSD) : null,
+        totalARS: parsearImporte(formResumen.totalARS),
+        totalUSD: formResumen.totalUSD ? parsearImporte(formResumen.totalUSD) : null,
         s3Key: formResumen.s3Key || null,
         pagado: formResumen.pagado,
       }),
@@ -659,7 +660,7 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         tipoGasto: formGasto.tipoGasto,
-        monto: parseFloat(formGasto.monto),
+        monto: parsearImporte(formGasto.monto),
         fecha: new Date(formGasto.fecha + "T12:00:00Z").toISOString(),
         descripcion: formGasto.descripcion || null,
         comprobanteS3Key: formGasto.comprobanteS3Key || null,

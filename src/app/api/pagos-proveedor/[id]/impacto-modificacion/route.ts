@@ -16,6 +16,7 @@ import {
   serverErrorResponse,
 } from "@/lib/financial-api"
 import { prisma } from "@/lib/prisma"
+import { sumarImportes, restarImportes, parsearImporte, importesIguales } from "@/lib/money"
 
 type ImpactoItem = {
   tipo: "FACTURA_PROVEEDOR" | "CC_PROVEEDOR" | "CHEQUE_EMITIDO" | "CHEQUE_RECIBIDO"
@@ -43,7 +44,7 @@ export async function GET(
   const { searchParams } = new URL(request.url)
   const nuevoMontoRaw = searchParams.get("nuevoMonto")
   const nuevaFacturaId = searchParams.get("nuevaFacturaId")
-  const nuevoMonto = nuevoMontoRaw ? parseFloat(nuevoMontoRaw) : null
+  const nuevoMonto = nuevoMontoRaw ? parsearImporte(nuevoMontoRaw) : null
 
   try {
     const pago = await prisma.pagoProveedor.findUnique({
@@ -89,25 +90,25 @@ export async function GET(
 
     // ── Impacto en Factura Proveedor ──────────────────────────────────────
     {
-      const totalPagadoActual = fact.pagos.reduce((s, p) => s + p.monto, 0)
+      const totalPagadoActual = sumarImportes(fact.pagos.map(p => p.monto))
       const montoEfectivo = nuevoMonto ?? 0
-      const diferencia = montoEfectivo - pago.monto
-      const totalTrasModif = totalPagadoActual + diferencia
+      const diferencia = restarImportes(montoEfectivo, pago.monto)
+      const totalTrasModif = sumarImportes([totalPagadoActual, diferencia])
 
       let nuevoEstadoPago: string
       if (nuevoMonto !== null && nuevaFacturaId) {
-        const totalSinPago = totalPagadoActual - pago.monto
-        nuevoEstadoPago = totalSinPago <= 0.01 ? "PENDIENTE" : "PARCIALMENTE_PAGADA"
+        const totalSinPago = restarImportes(totalPagadoActual, pago.monto)
+        nuevoEstadoPago = importesIguales(totalSinPago, 0) || totalSinPago < 0 ? "PENDIENTE" : "PARCIALMENTE_PAGADA"
       } else if (nuevoMonto !== null) {
         nuevoEstadoPago =
-          totalTrasModif >= fact.total - 0.01
+          importesIguales(totalTrasModif, fact.total) || totalTrasModif > fact.total
             ? "PAGADA"
-            : totalTrasModif <= 0.01
+            : importesIguales(totalTrasModif, 0) || totalTrasModif < 0
             ? "PENDIENTE"
             : "PARCIALMENTE_PAGADA"
       } else {
-        const totalSinPago = totalPagadoActual - pago.monto
-        nuevoEstadoPago = totalSinPago <= 0.01 ? "PENDIENTE" : "PARCIALMENTE_PAGADA"
+        const totalSinPago = restarImportes(totalPagadoActual, pago.monto)
+        nuevoEstadoPago = importesIguales(totalSinPago, 0) || totalSinPago < 0 ? "PENDIENTE" : "PARCIALMENTE_PAGADA"
       }
 
       impactos.push({
@@ -134,11 +135,11 @@ export async function GET(
         },
       })
       if (factNueva) {
-        const totalPagadoNueva = factNueva.pagos.reduce((s, p) => s + p.monto, 0)
+        const totalPagadoNueva = sumarImportes(factNueva.pagos.map(p => p.monto))
         const montoReasignado = nuevoMonto ?? pago.monto
-        const totalConNuevoPago = totalPagadoNueva + montoReasignado
+        const totalConNuevoPago = sumarImportes([totalPagadoNueva, montoReasignado])
         const nuevoEstadoNueva =
-          totalConNuevoPago >= factNueva.total - 0.01
+          importesIguales(totalConNuevoPago, factNueva.total) || totalConNuevoPago > factNueva.total
             ? "PAGADA"
             : "PARCIALMENTE_PAGADA"
 
@@ -157,7 +158,7 @@ export async function GET(
       tipo: "CC_PROVEEDOR",
       descripcion: `CC Proveedor — ${fact.proveedor.razonSocial}`,
       detalle: nuevoMonto !== null
-        ? `Diferencia: ${nuevoMonto >= pago.monto ? "+" : ""}$${(nuevoMonto - pago.monto).toLocaleString("es-AR")}`
+        ? `Diferencia: ${nuevoMonto >= pago.monto ? "+" : ""}$${restarImportes(nuevoMonto, pago.monto).toLocaleString("es-AR")}`
         : `Se revierte el pago de $${pago.monto.toLocaleString("es-AR")}`,
       estadoActual: "Pago acreditado",
       nuevoEstado: nuevoMonto !== null ? "Pago ajustado" : "Pago revertido (deuda reabierta)",

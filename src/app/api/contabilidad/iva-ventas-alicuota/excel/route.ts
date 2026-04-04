@@ -8,6 +8,7 @@ import { NextRequest } from "next/server"
 import ExcelJS from "exceljs"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
+import { sumarImportes } from "@/lib/money"
 
 function periodoWhere(params: URLSearchParams): Record<string, unknown> {
   const desde = params.get("desde")
@@ -51,7 +52,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       if (!grupoMap.has(tipoCbte)) grupoMap.set(tipoCbte, new Map())
       const byAlic = grupoMap.get(tipoCbte)!
       const prev = byAlic.get(a.alicuota) ?? { neto: 0, iva: 0, count: 0 }
-      byAlic.set(a.alicuota, { neto: prev.neto + a.baseImponible, iva: prev.iva + a.montoIva, count: prev.count + 1 })
+      byAlic.set(a.alicuota, { neto: sumarImportes([prev.neto, a.baseImponible]), iva: sumarImportes([prev.iva, a.montoIva]), count: prev.count + 1 })
     }
 
     const wb = new ExcelJS.Workbook()

@@ -16,6 +16,7 @@ import {
   serverErrorResponse,
 } from "@/lib/financial-api"
 import { prisma } from "@/lib/prisma"
+import { sumarImportes, restarImportes, parsearImporte, importesIguales } from "@/lib/money"
 
 type ImpactoItem = {
   tipo: "LP" | "CC_FLETERO" | "CHEQUE_EMITIDO" | "CHEQUE_RECIBIDO"
@@ -45,7 +46,7 @@ export async function GET(
   const { searchParams } = new URL(request.url)
   const nuevoMontoRaw = searchParams.get("nuevoMonto")
   const nuevaLiquidacionId = searchParams.get("nuevaLiquidacionId")
-  const nuevoMonto = nuevoMontoRaw ? parseFloat(nuevoMontoRaw) : null
+  const nuevoMonto = nuevoMontoRaw ? parsearImporte(nuevoMontoRaw) : null
 
   try {
     const pago = await prisma.pagoAFletero.findUnique({
@@ -95,28 +96,28 @@ export async function GET(
         ? `${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${String(liq.nroComprobante).padStart(8, "0")}`
         : "Borrador"
 
-      const totalPagadoActual = liq.pagos.reduce((s, p) => s + p.monto, 0)
+      const totalPagadoActual = sumarImportes(liq.pagos.map(p => p.monto))
       const montoEfectivo = nuevoMonto ?? 0 // 0 = anulación completa
-      const diferencia = montoEfectivo - pago.monto // negativo si baja o anula
-      const totalTrasModif = totalPagadoActual + diferencia
+      const diferencia = restarImportes(montoEfectivo, pago.monto) // negativo si baja o anula
+      const totalTrasModif = sumarImportes([totalPagadoActual, diferencia])
 
       let nuevoEstadoLiq: string
       if (nuevoMonto !== null && nuevaLiquidacionId) {
         // Reasignación: esta LP pierde el pago completo
-        const totalSinPago = totalPagadoActual - pago.monto
-        nuevoEstadoLiq = totalSinPago <= 0.01 ? "EMITIDA" : "PARCIALMENTE_PAGADA"
+        const totalSinPago = restarImportes(totalPagadoActual, pago.monto)
+        nuevoEstadoLiq = importesIguales(totalSinPago, 0) || totalSinPago < 0 ? "EMITIDA" : "PARCIALMENTE_PAGADA"
       } else if (nuevoMonto !== null) {
         // Cambio de monto
         nuevoEstadoLiq =
-          totalTrasModif >= liq.total - 0.01
+          importesIguales(totalTrasModif, liq.total) || totalTrasModif > liq.total
             ? "PAGADA"
-            : totalTrasModif <= 0.01
+            : importesIguales(totalTrasModif, 0) || totalTrasModif < 0
             ? "EMITIDA"
             : "PARCIALMENTE_PAGADA"
       } else {
         // Anulación: descontar pago completo
-        const totalSinPago = totalPagadoActual - pago.monto
-        nuevoEstadoLiq = totalSinPago <= 0.01 ? "EMITIDA" : "PARCIALMENTE_PAGADA"
+        const totalSinPago = restarImportes(totalPagadoActual, pago.monto)
+        nuevoEstadoLiq = importesIguales(totalSinPago, 0) || totalSinPago < 0 ? "EMITIDA" : "PARCIALMENTE_PAGADA"
       }
 
       impactos.push({
@@ -143,15 +144,15 @@ export async function GET(
         },
       })
       if (liqNueva) {
-        const totalPagadoNueva = liqNueva.pagos.reduce((s, p) => s + p.monto, 0)
+        const totalPagadoNueva = sumarImportes(liqNueva.pagos.map(p => p.monto))
         const montoReasignado = nuevoMonto ?? pago.monto
-        const totalConNuevoPago = totalPagadoNueva + montoReasignado
+        const totalConNuevoPago = sumarImportes([totalPagadoNueva, montoReasignado])
         const nroRef = liqNueva.nroComprobante
           ? `${String(liqNueva.ptoVenta ?? 1).padStart(4, "0")}-${String(liqNueva.nroComprobante).padStart(8, "0")}`
           : "Borrador"
 
         const nuevoEstadoLiqNueva =
-          totalConNuevoPago >= liqNueva.total - 0.01
+          importesIguales(totalConNuevoPago, liqNueva.total) || totalConNuevoPago > liqNueva.total
             ? "PAGADA"
             : "PARCIALMENTE_PAGADA"
 
@@ -170,7 +171,7 @@ export async function GET(
       tipo: "CC_FLETERO",
       descripcion: `CC Fletero`,
       detalle: nuevoMonto !== null
-        ? `Diferencia: ${nuevoMonto >= pago.monto ? "+" : ""}$${(nuevoMonto - pago.monto).toLocaleString("es-AR")}`
+        ? `Diferencia: ${nuevoMonto >= pago.monto ? "+" : ""}$${restarImportes(nuevoMonto, pago.monto).toLocaleString("es-AR")}`
         : `Se revierte el pago de $${pago.monto.toLocaleString("es-AR")}`,
       estadoActual: "Pago acreditado",
       nuevoEstado: nuevoMonto !== null

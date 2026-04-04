@@ -8,7 +8,9 @@ import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno, puedeAcceder } from "@/lib/permissions"
+import { resolverFleteroIdPorEmail } from "@/lib/session-utils"
 import type { Rol } from "@/types"
+import { sumarImportes } from "@/lib/money"
 import { MiFlotaClient } from "./mi-flota-client"
 import { FlotaPropiaClient } from "./flota-propia-client"
 
@@ -105,7 +107,7 @@ export default async function MiFlotaPage() {
           : null) as "SIN_COBERTURA" | "POR_VENCER" | null,
         infracciones: infraccionesMapeadas,
         infrasPendientes: infrasPendientes.length,
-        montoInfrasPendientes: infrasPendientes.reduce((sum, i) => sum + i.monto, 0),
+        montoInfrasPendientes: sumarImportes(infrasPendientes.map(i => i.monto)),
       }
     })
 
@@ -126,8 +128,11 @@ export default async function MiFlotaPage() {
   }
 
   // ── FLETERO: su propia flota ───────────────────────────────────────────────
-  const fletero = await prisma.fletero.findFirst({
-    where: { usuario: { email: session.user.email ?? "" } },
+  const fleteroId = await resolverFleteroIdPorEmail(session.user.email ?? "")
+  if (!fleteroId) redirect("/dashboard")
+
+  const fletero = await prisma.fletero.findUnique({
+    where: { id: fleteroId },
     select: {
       id: true,
       razonSocial: true,

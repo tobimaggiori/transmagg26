@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
+import { sumarImportes, parsearImporte } from "@/lib/money"
 
 type FacturaImpaga = {
   id: string
@@ -62,13 +63,13 @@ export function ProveedoresCCClient({ saldos: saldosIniciales }: ProveedoresCCCl
     s.proveedor.cuit.includes(busqueda)
   )
 
-  const totalDeuda = saldos.reduce((acc, s) => acc + s.saldoAPagar, 0)
+  const totalDeuda = sumarImportes(saldos.map(s => s.saldoAPagar))
 
   const registrarPago = async () => {
     if (!seleccionado) return
     setError(null)
-    const montoNum = parseFloat(monto)
-    if (isNaN(montoNum) || montoNum <= 0) {
+    const montoNum = parsearImporte(monto)
+    if (montoNum <= 0) {
       setError("Ingresá un monto válido")
       return
     }

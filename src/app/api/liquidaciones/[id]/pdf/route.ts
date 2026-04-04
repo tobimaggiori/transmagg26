@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
 import { obtenerUrlFirmada, subirPDF, storageConfigurado } from "@/lib/storage"
 import { generarPDFLiquidacion } from "@/lib/pdf-liquidacion"
+import { verificarPropietarioFletero } from "@/lib/session-utils"
 import crypto from "crypto"
 import type { Rol } from "@/types"
 
@@ -50,10 +51,8 @@ export async function GET(
         select: { fleteroId: true },
       })
       if (!liq) return NextResponse.json({ error: "No encontrada" }, { status: 404 })
-      const fleteroPropio = await prisma.fletero.findFirst({
-        where: { id: liq.fleteroId, usuario: { email: session.user.email } },
-      })
-      if (!fleteroPropio) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
+      const esPropietario = await verificarPropietarioFletero(liq.fleteroId, session.user.email!)
+      if (!esPropietario) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
     }
   }
 

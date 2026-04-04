@@ -8,6 +8,7 @@ import { NextRequest } from "next/server"
 import ExcelJS from "exceljs"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
+import { sumarImportes } from "@/lib/money"
 
 function periodoWhere(params: URLSearchParams): Record<string, unknown> {
   const desde = params.get("desde")
@@ -83,7 +84,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       g.total += a.montoIngreso
     }
     const grupos = Array.from(gruposMap.entries()).sort(([a], [b]) => a.localeCompare(b))
-    const totalGeneral = grupos.reduce((acc, [, g]) => acc + g.total, 0)
+    const totalGeneral = sumarImportes(grupos.map(([, g]) => g.total))
 
     const wb = new ExcelJS.Workbook()
     wb.creator = "Transmagg"

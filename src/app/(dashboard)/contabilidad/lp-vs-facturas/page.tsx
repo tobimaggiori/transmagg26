@@ -9,6 +9,7 @@ import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder } from "@/lib/permissions"
 import { formatearMoneda } from "@/lib/utils"
+import { sumarImportes } from "@/lib/money"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FiltroPeriodo } from "@/components/contabilidad/filtro-periodo"
 import type { Rol } from "@/types"
@@ -119,14 +120,14 @@ export default async function ContabilidadLpVsFacturasPage({
     .map(([nombre, rows]) => ({
       nombre,
       rows,
-      totalNetoLP: rows.reduce((acc, r) => acc + r.netoLP, 0),
-      totalNetoFact: rows.reduce((acc, r) => acc + r.netoFact, 0),
-      totalDiferencia: rows.reduce((acc, r) => acc + r.diferencia, 0),
+      totalNetoLP: sumarImportes(rows.map(r => r.netoLP)),
+      totalNetoFact: sumarImportes(rows.map(r => r.netoFact)),
+      totalDiferencia: sumarImportes(rows.map(r => r.diferencia)),
     }))
 
-  const totalNetoLP = provincias.reduce((acc, p) => acc + p.totalNetoLP, 0)
-  const totalNetoFact = provincias.reduce((acc, p) => acc + p.totalNetoFact, 0)
-  const totalDiferencia = provincias.reduce((acc, p) => acc + p.totalDiferencia, 0)
+  const totalNetoLP = sumarImportes(provincias.map(p => p.totalNetoLP))
+  const totalNetoFact = sumarImportes(provincias.map(p => p.totalNetoFact))
+  const totalDiferencia = sumarImportes(provincias.map(p => p.totalDiferencia))
   const totalViajes = viajes.filter((v) => v.enLiquidaciones[0] && v.enFacturas[0]).length
 
   const exportParams = new URLSearchParams()

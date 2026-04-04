@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { UploadPDF } from "@/components/upload-pdf"
 import { ViewPDF } from "@/components/view-pdf"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { parsearImporte } from "@/lib/money"
 import { Plus, RefreshCw, Download, Trash2, Pencil } from "lucide-react"
 import { diasHabilesDesde } from "@/lib/financial"
 
@@ -205,7 +206,7 @@ function TabMovimientos({ cuenta, esAdmin }: { cuenta: Cuenta; esAdmin: boolean 
       body: JSON.stringify({
         tipo: form.tipo,
         categoria: form.categoria,
-        monto: parseFloat(form.monto),
+        monto: parsearImporte(form.monto),
         fecha: form.fecha,
         descripcion: form.descripcion,
         referencia: form.referencia || null,
@@ -774,7 +775,7 @@ function TabFCI({ cuenta }: { cuenta: Cuenta }) {
     const res = await fetch("/api/saldos-fci", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fciId, saldoInformado: parseFloat(formSaldo.saldoInformado), fechaActualizacion: formSaldo.fechaActualizacion }),
+      body: JSON.stringify({ fciId, saldoInformado: parsearImporte(formSaldo.saldoInformado), fechaActualizacion: formSaldo.fechaActualizacion }),
     })
     setGuardando(false)
     if (res.ok) { setModalSaldo(null); cargar() }
@@ -792,7 +793,7 @@ function TabFCI({ cuenta }: { cuenta: Cuenta }) {
         fciId: modalMovFci.fciId,
         cuentaOrigenDestinoId: cuenta.id,
         tipo: modalMovFci.tipo,
-        monto: parseFloat(formMov.monto),
+        monto: parsearImporte(formMov.monto),
         fecha: formMov.fecha,
         descripcion: formMov.descripcion || null,
       }),
@@ -1041,7 +1042,7 @@ export function CuentasClient({ cuentaInicialId, tabInicial, esAdmin = false }: 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...formCuenta,
-        saldoInicial: parseFloat(formCuenta.saldoInicial),
+        saldoInicial: parsearImporte(formCuenta.saldoInicial),
         alicuotaImpuesto: parseFloat(formCuenta.alicuotaImpuesto),
       }),
     })

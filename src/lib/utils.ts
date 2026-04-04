@@ -19,25 +19,12 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
- * formatearMoneda: number -> string
+ * formatearMoneda: re-exportado desde el módulo monetario central.
+ * Ver src/lib/money.ts para documentación completa.
  *
- * Dado un monto numérico, devuelve un string formateado como moneda ARS
- * con el símbolo "$", separador de miles "." y decimal ",".
- * Existe para presentar valores monetarios con el formato local argentino
- * de manera consistente en toda la interfaz.
- *
- * Ejemplos:
- * formatearMoneda(0)       === "$\u00a00,00"
- * formatearMoneda(1500)    === "$\u00a01.500,00"
- * formatearMoneda(1234.56) === "$\u00a01.234,56"
+ * Acepta number, string o Prisma.Decimal (cualquier MonetaryInput).
  */
-export function formatearMoneda(monto: number): string {
-  return new Intl.NumberFormat("es-AR", {
-    style: "currency",
-    currency: "ARS",
-    minimumFractionDigits: 2,
-  }).format(monto)
-}
+export { formatearMoneda } from "@/lib/money"
 
 /**
  * formatearFecha: Date | string -> string

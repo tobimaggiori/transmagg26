@@ -8,6 +8,7 @@
 import { useState, useCallback } from "react"
 import { SearchCombobox, type SearchComboboxItem } from "@/components/ui/search-combobox"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { sumarImportes } from "@/lib/money"
 import { RegistrarPagoFleteroModal } from "@/components/forms/registrar-pago-fletero-form"
 import { SelectContactoEmail } from "@/components/forms/select-contacto-email"
 
@@ -299,7 +300,7 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera, opera
   }
 
   const lpsSeleccionados = liquidaciones.filter((l) => seleccionados.has(l.id))
-  const saldoTotalSeleccionado = lpsSeleccionados.reduce((s, l) => s + l.saldoPendiente, 0)
+  const saldoTotalSeleccionado = sumarImportes(lpsSeleccionados.map(l => l.saldoPendiente))
 
   // ── Abrir formulario de pago ───────────────────────────────────────────────
   async function abrirPago() {

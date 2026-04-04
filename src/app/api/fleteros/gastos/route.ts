@@ -12,7 +12,10 @@ import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
+import { ejecutarCrearGastoFletero } from "@/lib/gasto-fletero-commands"
 import type { Rol } from "@/types"
+
+// ─── Schemas Zod ────────────────────────────────────────────────────────────
 
 const itemSchema = z.object({
   descripcion: z.string().min(1, "Descripción requerida"),
@@ -31,8 +34,6 @@ const crearGastoFleteroSchema = z.object({
   tipo: z.enum(["COMBUSTIBLE", "OTRO"]),
   items: z.array(itemSchema).min(1, "Debe cargar al menos un ítem"),
 })
-
-const TIPOS_CON_IVA = new Set(["A", "M", "LIQ_PROD"])
 
 /**
  * GET: NextRequest -> Promise<NextResponse>
@@ -135,87 +136,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const data = parsed.data
-    const discriminaIVA = TIPOS_CON_IVA.has(data.tipoCbte)
+    const resultado = await ejecutarCrearGastoFletero(parsed.data)
 
-    const [fletero, proveedor] = await Promise.all([
-      prisma.fletero.findUnique({ where: { id: data.fleteroId, activo: true } }),
-      prisma.proveedor.findUnique({ where: { id: data.proveedorId, activo: true } }),
-    ])
+    if (!resultado.ok) {
+      return NextResponse.json({ error: resultado.error }, { status: resultado.status })
+    }
 
-    if (!fletero) return NextResponse.json({ error: "Fletero no encontrado" }, { status: 404 })
-    if (!proveedor) return NextResponse.json({ error: "Proveedor no encontrado" }, { status: 404 })
-
-    const itemsCalculados = data.items.map((item) => {
-      const subtotalNeto = item.cantidad * item.precioUnitario
-      const alicuota = discriminaIVA ? item.alicuotaIva : 0
-      const montoIva = alicuota > 0 ? subtotalNeto * alicuota / 100 : 0
-      return {
-        descripcion: item.descripcion,
-        cantidad: item.cantidad,
-        precioUnitario: item.precioUnitario,
-        alicuotaIva: alicuota,
-        esExento: false,
-        subtotalNeto,
-        montoIva,
-        subtotalTotal: subtotalNeto + montoIva,
-      }
-    })
-
-    const totalNeto = itemsCalculados.reduce((acc, i) => acc + i.subtotalNeto, 0)
-    const totalIvaMonto = itemsCalculados.reduce((acc, i) => acc + i.montoIva, 0)
-    const total = totalNeto + totalIvaMonto
-
-    const nroComprobanteFormateado =
-      data.ptoVenta.padStart(4, "0") + "-" + data.nroComprobante.padStart(8, "0")
-
-    const result = await prisma.$transaction(async (tx) => {
-      const factura = await tx.facturaProveedor.create({
-        data: {
-          proveedorId: data.proveedorId,
-          nroComprobante: nroComprobanteFormateado,
-          ptoVenta: data.ptoVenta.padStart(4, "0"),
-          tipoCbte: data.tipoCbte,
-          neto: totalNeto,
-          ivaMonto: totalIvaMonto,
-          total,
-          fechaCbte: new Date(data.fechaComprobante),
-          esPorCuentaDeFletero: true,
-          fleteroId: data.fleteroId,
-          tipoGastoFletero: data.tipo,
-        },
-      })
-
-      await tx.itemFacturaProveedor.createMany({
-        data: itemsCalculados.map((item) => ({
-          facturaProveedorId: factura.id,
-          ...item,
-        })),
-      })
-
-      const gasto = await tx.gastoFletero.create({
-        data: {
-          fleteroId: data.fleteroId,
-          facturaProveedorId: factura.id,
-          tipo: data.tipo,
-          montoPagado: total,
-          montoDescontado: 0,
-          estado: "PENDIENTE_PAGO",
-        },
-      })
-
-      return { gasto, factura }
-    })
-
-    return NextResponse.json(
-      {
-        gastoId: result.gasto.id,
-        facturaProveedorId: result.factura.id,
-        total: result.factura.total,
-        nroComprobante: result.factura.nroComprobante,
-      },
-      { status: 201 }
-    )
+    return NextResponse.json(resultado.result, { status: 201 })
   } catch (error) {
     console.error("[POST /api/fleteros/gastos]", error)
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })

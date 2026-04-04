@@ -9,6 +9,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { parsearImporte } from "@/lib/money"
 
 interface Cuenta {
   id: string
@@ -128,7 +129,7 @@ export function NuevoPagoImpuestoClient({ cuentas }: NuevoPagoImpuestoClientProp
           tipoImpuesto,
           descripcion: mostrarDescripcion ? descripcion : undefined,
           periodo,
-          monto: parseFloat(monto),
+          monto: parsearImporte(monto),
           fechaPago,
           medioPago,
           cuentaId:            esCuentaBancaria ? cuentaId    : undefined,

@@ -5,6 +5,7 @@
  */
 
 import type { FECAERequest, FECAEDetRequest, AlicuotaIva, ComprobanteAsociado } from "./types"
+import { m, type MonetaryInput } from "@/lib/money"
 
 // ─── Helpers de formato ──────────────────────────────────────────────────────
 
@@ -39,16 +40,17 @@ export function parsearFechaArca(yyyymmdd: string): Date {
 }
 
 /**
- * redondearArca: number -> number
+ * redondearArca: MonetaryInput -> number
  *
- * Redondea a 2 decimales. ARCA requiere exactamente 2 decimales en montos.
+ * Redondea a 2 decimales usando la política monetaria central.
+ * ARCA requiere exactamente 2 decimales en montos.
  *
  * Ejemplos:
  * redondearArca(1234.567) === 1234.57
  * redondearArca(100) === 100
  */
-export function redondearArca(n: number): number {
-  return Math.round(n * 100) / 100
+export function redondearArca(n: MonetaryInput): number {
+  return m(n)
 }
 
 // ─── Tipos de comprobante ────────────────────────────────────────────────────
@@ -105,9 +107,9 @@ export interface DatosComprobanteBase {
   fecha: Date
   /** CUIT del receptor (sin guiones). */
   cuitReceptor: string
-  neto: number
-  ivaMonto: number
-  total: number
+  neto: MonetaryInput
+  ivaMonto: MonetaryInput
+  total: MonetaryInput
   /** ID alícuota IVA (default: 5 = 21%). */
   ivaAlicuotaId?: number
   /** 1=Productos, 2=Servicios, 3=Ambos. Default: 2 (Servicios). */

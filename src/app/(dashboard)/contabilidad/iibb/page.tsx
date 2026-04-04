@@ -11,7 +11,9 @@ import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder } from "@/lib/permissions"
-import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { formatearFecha } from "@/lib/utils"
+import { sumarImportes, restarImportes, multiplicarImporte, aplicarPorcentaje, formatearMoneda } from "@/lib/money"
+import { calcularTotalViaje } from "@/lib/viajes"
 import { FiltroPeriodo } from "@/components/contabilidad/filtro-periodo"
 // LibroIibbClient removed — data is shown inline, export buttons handle PDF
 import type { Rol } from "@/types"
@@ -99,18 +101,18 @@ async function obtenerDatosActividad(desde: Date, hasta: Date): Promise<FilaActi
 
     const vel = vf.viaje.enLiquidaciones[0]
     const tarifaFletero = vel?.tarifaFletero ?? 0
-    const totalFletero = (kilos / 1000) * tarifaFletero
-    const comisionFact = totalEmpresa - totalFletero // diferencia de tarifa = comisión de la factura
+    const totalFletero = calcularTotalViaje(kilos, tarifaFletero)
+    const comisionFact = restarImportes(totalEmpresa, totalFletero) // diferencia de tarifa = comisión de la factura
 
     let comisionViaje = 0
     if (vel?.liquidacion) {
       const lp = vel.liquidacion
       if (lp.subtotalBruto > 0) {
-        comisionViaje = (lp.comisionMonto / lp.subtotalBruto) * vel.subtotal
+        comisionViaje = multiplicarImporte(aplicarPorcentaje(vel.subtotal, (lp.comisionMonto / lp.subtotalBruto) * 100), 1)
       }
     }
 
-    const baseIIBB = comisionFact + comisionViaje
+    const baseIIBB = sumarImportes([comisionFact, comisionViaje])
 
     filas.push({
       provincia: vf.provinciaOrigen ?? "Sin provincia",
@@ -240,15 +242,15 @@ export default async function ContabilidadIibbPage({
   // Province totals for resumen jurisdiccional
   const provinciaTotales = new Map<string, { totalFacturado: number; baseIIBB: number }>()
   for (const [provincia, filas] of Array.from(porProvincia.entries())) {
-    const totalFacturado = filas.reduce((s: number, f: FilaActividad) => s + f.totalEmpresa, 0)
-    const baseIIBB = filas.reduce((s: number, f: FilaActividad) => s + f.baseIIBB, 0)
+    const totalFacturado = sumarImportes(filas.map(f => f.totalEmpresa))
+    const baseIIBB = sumarImportes(filas.map(f => f.baseIIBB))
     provinciaTotales.set(provincia, { totalFacturado, baseIIBB })
   }
 
-  const totalFacturado = filasActividad.reduce((s, f) => s + f.totalEmpresa, 0)
-  const totalBaseIIBB = filasActividad.reduce((s, f) => s + f.baseIIBB, 0)
-  const totalPercepciones = percepciones.reduce((s, p) => s + p.monto, 0)
-  const totalRetenciones = retenciones.reduce((s, r) => s + r.monto, 0)
+  const totalFacturado = sumarImportes(filasActividad.map(f => f.totalEmpresa))
+  const totalBaseIIBB = sumarImportes(filasActividad.map(f => f.baseIIBB))
+  const totalPercepciones = sumarImportes(percepciones.map(p => p.monto))
+  const totalRetenciones = sumarImportes(retenciones.map(r => r.monto))
 
   // Export params
   const exportParams = new URLSearchParams()
@@ -330,9 +332,9 @@ export default async function ContabilidadIibbPage({
         ) : (
           <div className="space-y-4">
             {provinciasOrdenadas.map(([provincia, filas]) => {
-              const provDifTarifa = filas.reduce((s, f) => s + f.comisionFact, 0)
-              const provComision = filas.reduce((s, f) => s + f.comisionViaje, 0)
-              const provBaseIIBB = filas.reduce((s, f) => s + f.baseIIBB, 0)
+              const provDifTarifa = sumarImportes(filas.map(f => f.comisionFact))
+              const provComision = sumarImportes(filas.map(f => f.comisionViaje))
+              const provBaseIIBB = sumarImportes(filas.map(f => f.baseIIBB))
 
               return (
                 <div key={provincia} className="border rounded-lg overflow-hidden">
@@ -390,7 +392,7 @@ export default async function ContabilidadIibbPage({
                             Subtotal {provincia}
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums">
-                            {formatearMoneda(filas.reduce((s, f) => s + f.subtotalFactura, 0))}
+                            {formatearMoneda(sumarImportes(filas.map(f => f.subtotalFactura)))}
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums">
                             {formatearMoneda(provDifTarifa)}

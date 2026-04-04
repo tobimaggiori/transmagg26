@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { FormError } from "@/components/ui/form-error"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { sumarImportes, parsearImporte } from "@/lib/money"
 import { Download, Plus } from "lucide-react"
 
 type Cuenta = { id: string; nombre: string }
@@ -137,7 +138,7 @@ export function MovimientosClient({ cuentas }: MovimientosClientProps) {
         cuentaId: form.cuentaId,
         tipo: form.tipo,
         categoria: form.categoria,
-        monto: parseFloat(form.monto),
+        monto: parsearImporte(form.monto),
         fecha: form.fecha,
         descripcion: form.descripcion,
         referencia: form.referencia || undefined,
@@ -172,8 +173,8 @@ export function MovimientosClient({ cuentas }: MovimientosClientProps) {
   }
 
   // Calcular totales para los resultados mostrados
-  const totalIngresos = movimientos.filter(m => m.tipo === "INGRESO").reduce((acc, m) => acc + m.monto, 0)
-  const totalEgresos = movimientos.filter(m => m.tipo === "EGRESO").reduce((acc, m) => acc + m.monto, 0)
+  const totalIngresos = sumarImportes(movimientos.filter(m => m.tipo === "INGRESO").map(m => m.monto))
+  const totalEgresos = sumarImportes(movimientos.filter(m => m.tipo === "EGRESO").map(m => m.monto))
 
   return (
     <div className="space-y-6">

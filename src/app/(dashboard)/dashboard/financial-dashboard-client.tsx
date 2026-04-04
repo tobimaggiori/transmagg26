@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { PDFViewer } from "@/components/ui/pdf-viewer"
 import { usePDFViewer } from "@/hooks/use-pdf-viewer"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
+import { sumarImportes } from "@/lib/money"
 import { formatearNroComprobante } from "@/lib/liquidacion-utils"
 
 // --- Tipos ---
@@ -343,7 +344,7 @@ function ChequesCarteraModal({ tipo }: { tipo: "al_dia" | "no_al_dia" }) {
       <tfoot>
         <tr className="font-semibold border-t">
           <td colSpan={3} className="py-1">Total</td>
-          <td className="text-right py-1">{formatearMoneda(data.reduce((acc, c) => acc + c.monto, 0))}</td>
+          <td className="text-right py-1">{formatearMoneda(sumarImportes(data.map(c => c.monto)))}</td>
           <td></td>
         </tr>
       </tfoot>
@@ -375,7 +376,7 @@ function ChequesEmitidosModal() {
       <tfoot>
         <tr className="font-semibold border-t">
           <td colSpan={3} className="py-1">Total</td>
-          <td className="text-right py-1">{formatearMoneda(data.reduce((acc, c) => acc + c.monto, 0))}</td>
+          <td className="text-right py-1">{formatearMoneda(sumarImportes(data.map(c => c.monto)))}</td>
           <td></td>
         </tr>
       </tfoot>

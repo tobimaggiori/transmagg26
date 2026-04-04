@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Truck, User, UserX, Plus, Pencil, Trash2, ShieldAlert, ShieldCheck, ShieldX, X } from "lucide-react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { parsearImporte } from "@/lib/money"
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -331,7 +332,7 @@ function ModalNuevaInfraccion({
       const res = await fetch("/api/mi-flota/infracciones", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ camionId, fecha, organismo, descripcion, monto: parseFloat(monto) }),
+        body: JSON.stringify({ camionId, fecha, organismo, descripcion, monto: parsearImporte(monto) }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error ?? "Error"); return }

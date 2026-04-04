@@ -2,13 +2,27 @@
  * Propósito: Funciones puras de cálculo para viajes, liquidaciones y facturas.
  * Centraliza la lógica de conversión kg→ton y totales para reutilizar
  * en API routes, UI y tests sin dependencias externas.
+ *
+ * Todas las funciones monetarias usan el módulo money.ts para garantizar
+ * precisión decimal y redondeo consistente según la política monetaria.
  */
+
+import {
+  m,
+  sumarImportes,
+  restarImportes,
+  aplicarPorcentaje,
+  calcularIva,
+  type MonetaryInput,
+} from "@/lib/money"
+import { Decimal } from "decimal.js"
 
 /**
  * calcularToneladas: number -> number
  *
  * Dado [kilos], devuelve [las toneladas equivalentes redondeadas a 3 decimales].
  * Existe para centralizar la conversión kg→ton usada en viajes, liquidaciones y facturas.
+ * Nota: 3 decimales porque es unidad de peso, no monetaria.
  *
  * Ejemplos:
  * calcularToneladas(25000) === 25
@@ -16,7 +30,7 @@
  * calcularToneladas(0) === 0
  */
 export function calcularToneladas(kilos: number): number {
-  return Math.round((kilos / 1000) * 1000) / 1000
+  return new Decimal(kilos).dividedBy(1000).toDecimalPlaces(3, Decimal.ROUND_HALF_UP).toNumber()
 }
 
 /**
@@ -31,12 +45,13 @@ export function calcularToneladas(kilos: number): number {
  * calcularTotalViaje(0, 100) === 0
  */
 export function calcularTotalViaje(kilos: number, tarifaPorTonelada: number): number {
-  return Math.round(calcularToneladas(kilos) * tarifaPorTonelada * 100) / 100
+  const toneladas = new Decimal(kilos).dividedBy(1000).toDecimalPlaces(3, Decimal.ROUND_HALF_UP)
+  return toneladas.times(new Decimal(tarifaPorTonelada)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber()
 }
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-export type ViajeParaLiquidar = { kilos: number; tarifaFletero: number }
+export type ViajeParaLiquidar = { kilos: number; tarifaFletero: MonetaryInput }
 export type ResultadoLiquidacion = {
   subtotalBruto: number    // suma de totales de cada viaje
   comisionMonto: number    // subtotalBruto × (comisionPct / 100)
@@ -45,7 +60,7 @@ export type ResultadoLiquidacion = {
   totalFinal: number       // neto + ivaMonto
 }
 
-export type ViajeParaFacturar = { kilos: number; tarifaEmpresa: number }
+export type ViajeParaFacturar = { kilos: number; tarifaEmpresa: MonetaryInput }
 export type ResultadoFactura = {
   neto: number
   ivaMonto: number
@@ -69,13 +84,12 @@ export function calcularLiquidacion(
   comisionPct: number,
   ivaPct: number
 ): ResultadoLiquidacion {
-  const subtotalBruto = Math.round(
-    viajes.reduce((acc, v) => acc + calcularTotalViaje(v.kilos, v.tarifaFletero), 0) * 100
-  ) / 100
-  const comisionMonto = Math.round(subtotalBruto * (comisionPct / 100) * 100) / 100
-  const neto = Math.round((subtotalBruto - comisionMonto) * 100) / 100
-  const ivaMonto = Math.round(neto * (ivaPct / 100) * 100) / 100
-  const totalFinal = Math.round((neto + ivaMonto) * 100) / 100
+  const subtotales = viajes.map(v => calcularTotalViaje(v.kilos, m(v.tarifaFletero)))
+  const subtotalBruto = sumarImportes(subtotales)
+  const comisionMonto = aplicarPorcentaje(subtotalBruto, comisionPct)
+  const neto = restarImportes(subtotalBruto, comisionMonto)
+  const ivaMonto = calcularIva(neto, ivaPct)
+  const totalFinal = sumarImportes([neto, ivaMonto])
 
   return { subtotalBruto, comisionMonto, neto, ivaMonto, totalFinal }
 }
@@ -96,11 +110,10 @@ export function calcularFactura(
   viajes: ViajeParaFacturar[],
   ivaPct: number
 ): ResultadoFactura {
-  const neto = Math.round(
-    viajes.reduce((acc, v) => acc + calcularTotalViaje(v.kilos, v.tarifaEmpresa), 0) * 100
-  ) / 100
-  const ivaMonto = Math.round(neto * (ivaPct / 100) * 100) / 100
-  const total = Math.round((neto + ivaMonto) * 100) / 100
+  const subtotales = viajes.map(v => calcularTotalViaje(v.kilos, m(v.tarifaEmpresa)))
+  const neto = sumarImportes(subtotales)
+  const ivaMonto = calcularIva(neto, ivaPct)
+  const total = sumarImportes([neto, ivaMonto])
 
   return { neto, ivaMonto, total }
 }

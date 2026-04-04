@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { FormError } from "@/components/ui/form-error"
 import { SearchCombobox } from "@/components/ui/search-combobox"
+import { parsearImporte } from "@/lib/money"
 
 interface Fletero { id: string; razonSocial: string; cuit: string }
 interface Camion { id: string; patenteChasis: string; fleteroId: string }
@@ -117,7 +118,7 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
           destino: destino || undefined,
           provinciaDestino: provinciaDestino || undefined,
           kilos: kilos ? parseFloat(kilos) : undefined,
-          tarifa: parseFloat(tarifa),
+          tarifa: parsearImporte(tarifa),
         }),
       })
 

@@ -14,6 +14,7 @@ import {
   serverErrorResponse,
 } from "@/lib/financial-api"
 import { resolverOperadorId } from "@/lib/session-utils"
+import { sumarImportes, restarImportes } from "@/lib/money"
 
 const crearMovimientoSchema = z.object({
   tipo: z.enum(["INGRESO", "EGRESO"]),
@@ -69,10 +70,10 @@ export async function GET(
 
     let saldoAcumulado = cuenta.saldoInicial
     const saldoPorId = new Map<string, number>()
-    for (const m of todosLosMovimientos) {
-      if (m.tipo === "INGRESO") saldoAcumulado += m.monto
-      else saldoAcumulado -= m.monto
-      saldoPorId.set(m.id, saldoAcumulado)
+    for (const mov of todosLosMovimientos) {
+      if (mov.tipo === "INGRESO") saldoAcumulado = sumarImportes([saldoAcumulado, mov.monto])
+      else saldoAcumulado = restarImportes(saldoAcumulado, mov.monto)
+      saldoPorId.set(mov.id, saldoAcumulado)
     }
 
     const where = {
@@ -107,12 +108,12 @@ export async function GET(
       saldoDespues: saldoPorId.get(m.id) ?? null,
     }))
 
-    const totalDebitos = movimientos
-      .filter((m) => m.tipo === "EGRESO")
-      .reduce((acc, m) => acc + m.monto, 0)
-    const totalCreditos = movimientos
-      .filter((m) => m.tipo === "INGRESO")
-      .reduce((acc, m) => acc + m.monto, 0)
+    const totalDebitos = sumarImportes(
+      movimientos.filter((m) => m.tipo === "EGRESO").map((m) => m.monto)
+    )
+    const totalCreditos = sumarImportes(
+      movimientos.filter((m) => m.tipo === "INGRESO").map((m) => m.monto)
+    )
 
     return NextResponse.json({
       movimientos: movimientosConSaldo,

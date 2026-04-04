@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, notFoundResponse, serverErrorResponse } from "@/lib/financial-api"
+import { sumarImportes, restarImportes, maxMonetario } from "@/lib/money"
 
 /**
  * GET: NextRequest -> Promise<NextResponse>
@@ -47,8 +48,8 @@ export async function GET(
     })
 
     const resultado = liquidaciones.map((liq) => {
-      const totalPagado = liq.pagos.reduce((sum, p) => sum + p.monto, 0)
-      const saldoPendiente = Math.max(0, liq.total - totalPagado)
+      const totalPagado = sumarImportes(liq.pagos.map(p => p.monto))
+      const saldoPendiente = maxMonetario(0, restarImportes(liq.total, totalPagado))
       return {
         id: liq.id,
         nroComprobante: liq.nroComprobante,

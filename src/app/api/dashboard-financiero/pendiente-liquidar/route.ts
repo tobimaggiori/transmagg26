@@ -8,6 +8,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
 import { calcularTotalViaje } from "@/lib/viajes"
+import { aplicarPorcentaje, restarImportes, calcularIva, sumarImportes } from "@/lib/money"
 
 export async function GET() {
   const access = await requireFinancialAccess()
@@ -75,12 +76,12 @@ export async function GET() {
       const entry = porFletero.get(key)!
 
       const subtotal = v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifa) : 0
-      const comisionMonto = Math.round(subtotal * (comisionPct / 100) * 100) / 100
-      const neto = Math.round((subtotal - comisionMonto) * 100) / 100
-      const iva = Math.round(neto * 0.21 * 100) / 100
-      const total = Math.round((neto + iva) * 100) / 100
+      const comisionMonto = aplicarPorcentaje(subtotal, comisionPct)
+      const neto = restarImportes(subtotal, comisionMonto)
+      const iva = calcularIva(neto, 21)
+      const total = sumarImportes([neto, iva])
 
-      entry.totalGeneral += total
+      entry.totalGeneral = sumarImportes([entry.totalGeneral, total])
       entry.cantidadViajes += 1
       entry.viajes.push({
         id: v.id,

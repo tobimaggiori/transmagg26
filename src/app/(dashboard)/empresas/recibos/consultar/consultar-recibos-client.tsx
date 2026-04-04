@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
 import { PDFViewer } from "@/components/ui/pdf-viewer"
 import { usePDFViewer } from "@/hooks/use-pdf-viewer"
+import { sumarImportes } from "@/lib/money"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -111,7 +112,7 @@ export function ConsultarRecibosClient({ empresas }: ConsultarRecibosClientProps
       )
     : recibos
 
-  const totalCobradoGeneral = recibosFiltrados.reduce((s, r) => s + r.totalCobrado, 0)
+  const totalCobradoGeneral = sumarImportes(recibosFiltrados.map(r => r.totalCobrado))
 
   return (
     <div className="max-w-6xl mx-auto mt-6 space-y-6">

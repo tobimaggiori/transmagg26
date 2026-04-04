@@ -8,15 +8,14 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import { prisma } from "@/lib/prisma"
 import {
   requireFinancialAccess,
   badRequestResponse,
-  notFoundResponse,
   invalidDataResponse,
   serverErrorResponse,
 } from "@/lib/financial-api"
 import { resolverOperadorId } from "@/lib/session-utils"
+import { ejecutarPagoFleteroDirecto } from "@/lib/pago-fletero-directo-commands"
 
 // ─── Schemas Zod ─────────────────────────────────────────────────────────────
 
@@ -89,210 +88,23 @@ export async function POST(
   const parsed = bodySchema.safeParse(body)
   if (!parsed.success) return invalidDataResponse(parsed.error.flatten())
 
-  const { fechaPago, observaciones, liquidacionIds, items } = parsed.data
-
   try {
-    const fletero = await prisma.fletero.findUnique({
-      where: { id: fleteroId },
-      select: { id: true, razonSocial: true, cuit: true },
-    })
-    if (!fletero) return notFoundResponse("Fletero")
-
-    // Cargar liquidaciones con sus pagos acumulados
-    const liquidaciones = await prisma.liquidacion.findMany({
-      where: {
-        id: { in: liquidacionIds },
+    const resultado = await ejecutarPagoFleteroDirecto(
+      {
         fleteroId,
-        estado: { in: ["EMITIDA", "PARCIALMENTE_PAGADA"] },
+        fechaPago: parsed.data.fechaPago,
+        observaciones: parsed.data.observaciones,
+        liquidacionIds: parsed.data.liquidacionIds,
+        items: parsed.data.items,
       },
-      select: {
-        id: true,
-        total: true,
-        estado: true,
-        nroComprobante: true,
-        ptoVenta: true,
-        pagos: { where: { anulado: false }, select: { monto: true } },
-      },
-    })
+      operadorId
+    )
 
-    if (liquidaciones.length !== liquidacionIds.length) {
-      return badRequestResponse("Una o más liquidaciones no encontradas o no están en estado pagable")
+    if (!resultado.ok) {
+      return NextResponse.json({ error: resultado.error }, { status: resultado.status })
     }
 
-    // Calcular saldo pendiente por liquidación
-    type LiqConSaldo = {
-      id: string
-      total: number
-      estado: string
-      nroComprobante: number | null
-      ptoVenta: number | null
-      totalPagado: number
-      saldoPendiente: number
-    }
-
-    const liqs: LiqConSaldo[] = liquidaciones.map((liq) => {
-      const totalPagado = liq.pagos.reduce((sum, p) => sum + p.monto, 0)
-      return {
-        id: liq.id,
-        total: liq.total,
-        estado: liq.estado,
-        nroComprobante: liq.nroComprobante,
-        ptoVenta: liq.ptoVenta,
-        totalPagado,
-        saldoPendiente: Math.max(0, liq.total - totalPagado),
-      }
-    })
-
-    const totalSaldo = liqs.reduce((sum, l) => sum + l.saldoPendiente, 0)
-    if (totalSaldo <= 0) return badRequestResponse("Las liquidaciones seleccionadas no tienen saldo pendiente")
-
-    const totalPago = items.reduce((sum, i) => sum + i.monto, 0)
-    if (totalPago <= 0) return badRequestResponse("El total del pago debe ser mayor a 0")
-
-    const fechaPagoDate = new Date(fechaPago)
-
-    // Validar cheques de tercero: deben estar EN_CARTERA
-    const chequesTerceroIds = items
-      .filter((i) => i.tipo === "CHEQUE_TERCERO")
-      .map((i) => (i as { tipo: "CHEQUE_TERCERO"; monto: number; chequeRecibidoId: string }).chequeRecibidoId)
-
-    if (chequesTerceroIds.length > 0) {
-      const chequesDB = await prisma.chequeRecibido.findMany({
-        where: { id: { in: chequesTerceroIds } },
-        select: { id: true, estado: true, monto: true },
-      })
-      for (const ch of chequesDB) {
-        if (ch.estado !== "EN_CARTERA") {
-          return badRequestResponse(`El cheque recibido ${ch.id} no está en cartera`)
-        }
-      }
-    }
-
-    // Validar cuentas con chequera para CHEQUE_PROPIO
-    const cuentasChequera = items
-      .filter((i) => i.tipo === "CHEQUE_PROPIO")
-      .map((i) => (i as { tipo: "CHEQUE_PROPIO"; monto: number; cuentaId: string; nroChequePropioEmitir?: string; fechaPagoChequePropioEmitir: string }).cuentaId)
-
-    if (cuentasChequera.length > 0) {
-      const cuentasDB = await prisma.cuenta.findMany({
-        where: { id: { in: cuentasChequera } },
-        select: { id: true, tieneChequera: true, tieneImpuestoDebcred: true, alicuotaImpuesto: true },
-      })
-      for (const c of cuentasDB) {
-        if (!c.tieneChequera) {
-          return badRequestResponse(`La cuenta ${c.id} no tiene chequera`)
-        }
-      }
-    }
-
-    let pagosCreados = 0
-
-    await prisma.$transaction(async (tx) => {
-      // ── Efectos secundarios por ítem (una sola vez) ──────────────────────────
-
-      // Mapa itemIdx → chequeEmitidoId (para CHEQUE_PROPIO)
-      const chequeEmitidoIdPorItem: Map<number, string> = new Map()
-
-      for (let idx = 0; idx < items.length; idx++) {
-        const item = items[idx]
-
-        if (item.tipo === "TRANSFERENCIA") {
-          await tx.cuenta.findUnique({
-            where: { id: item.cuentaId },
-            select: { tieneImpuestoDebcred: true, alicuotaImpuesto: true },
-          })
-          await tx.movimientoSinFactura.create({
-            data: {
-              cuentaId: item.cuentaId,
-              tipo: "EGRESO",
-              categoria: "TRANSFERENCIA_ENVIADA",
-              monto: item.monto,
-              fecha: fechaPagoDate,
-              descripcion: `Pago LP a ${fletero.razonSocial}${observaciones ? ` — ${observaciones}` : ""}`,
-              operadorId,
-            },
-          })
-        } else if (item.tipo === "CHEQUE_PROPIO") {
-          // Emitir el ECheq vinculado a la primera liquidación del lote
-          const primeraLiqId = liqs[0].id
-          const nuevoCheque = await tx.chequeEmitido.create({
-            data: {
-              fleteroId,
-              cuentaId: item.cuentaId,
-              nroCheque: item.nroChequePropioEmitir ?? null,
-              tipoDocBeneficiario: "CUIT",
-              nroDocBeneficiario: fletero.cuit,
-              monto: item.monto,
-              fechaEmision: fechaPagoDate,
-              fechaPago: new Date(item.fechaPagoChequePropioEmitir),
-              motivoPago: "ORDEN_DE_PAGO",
-              clausula: "NO_A_LA_ORDEN",
-              estado: "EMITIDO",
-              esElectronico: true,
-              liquidacionId: primeraLiqId,
-              operadorId,
-            },
-          })
-          chequeEmitidoIdPorItem.set(idx, nuevoCheque.id)
-        } else if (item.tipo === "CHEQUE_TERCERO") {
-          // Endosar el cheque al fletero
-          await tx.chequeRecibido.update({
-            where: { id: item.chequeRecibidoId },
-            data: {
-              estado: "ENDOSADO_FLETERO",
-              endosadoATipo: "FLETERO",
-              endosadoAFleteroId: fleteroId,
-            },
-          })
-        }
-        // EFECTIVO: sin efecto secundario adicional
-      }
-
-      // ── Crear PagoAFletero por cada ítem × cada liquidación (prorrateado) ──
-
-      for (const liq of liqs) {
-        // Proporción de esta liquidación sobre el total del saldo
-        const proporcion = totalSaldo > 0 ? liq.saldoPendiente / totalSaldo : 1 / liqs.length
-
-        for (let idx = 0; idx < items.length; idx++) {
-          const item = items[idx]
-          const montoParaEstaLiq = item.monto * proporcion
-
-          const pagoData: Parameters<typeof tx.pagoAFletero.create>[0]["data"] = {
-            fleteroId,
-            liquidacionId: liq.id,
-            tipoPago: item.tipo,
-            monto: montoParaEstaLiq,
-            fechaPago: fechaPagoDate,
-            operadorId,
-          }
-
-          if (item.tipo === "TRANSFERENCIA") {
-            pagoData.cuentaId = item.cuentaId
-          } else if (item.tipo === "CHEQUE_PROPIO") {
-            const chequeEmitidoId = chequeEmitidoIdPorItem.get(idx)
-            if (chequeEmitidoId) pagoData.chequeEmitidoId = chequeEmitidoId
-          } else if (item.tipo === "CHEQUE_TERCERO") {
-            pagoData.chequeRecibidoId = item.chequeRecibidoId
-          }
-
-          await tx.pagoAFletero.create({ data: pagoData })
-          pagosCreados++
-        }
-
-        // Determinar nuevo estado de la liquidación
-        const montoTotalParaEstaLiq = totalPago * (liq.saldoPendiente / totalSaldo)
-        const nuevoPagado = liq.totalPagado + montoTotalParaEstaLiq
-        const nuevoEstado = nuevoPagado >= liq.total ? "PAGADA" : "PARCIALMENTE_PAGADA"
-
-        await tx.liquidacion.update({
-          where: { id: liq.id },
-          data: { estado: nuevoEstado },
-        })
-      }
-    })
-
-    return NextResponse.json({ ok: true, pagosCreados })
+    return NextResponse.json(resultado.result)
   } catch (error) {
     return serverErrorResponse("POST /api/fleteros/[id]/pago", error)
   }

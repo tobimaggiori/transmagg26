@@ -4,9 +4,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse, badRequestResponse } from "@/lib/financial-api"
 import { resolverOperadorId } from "@/lib/session-utils"
+import { ejecutarResumenTarjetaAseguradora } from "@/lib/tarjeta-commands"
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const acceso = await requireFinancialAccess()
@@ -36,84 +36,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       email: acceso.session.user.email,
     })
 
-    const tarjeta = await prisma.tarjeta.findUnique({ where: { id: data.tarjetaId } })
-    if (!tarjeta) return badRequestResponse("Tarjeta no encontrada")
+    const resultado = await ejecutarResumenTarjetaAseguradora(data, operadorId)
 
-    const resumen = await prisma.$transaction(async (tx) => {
-      // 1. Buscar cuotas pendientes para la tarjeta y mes
-      const cuotas = await tx.cuotaFacturaSeguro.findMany({
-        where: {
-          tarjetaId: data.tarjetaId,
-          mesAnio: data.mesAnio,
-          estado: "PENDIENTE",
-        },
-      })
-
-      if (cuotas.length === 0) {
-        throw new Error("No hay cuotas pendientes para este período y tarjeta")
-      }
-
-      // 2. Sumar montos
-      const totalCuotas = cuotas.reduce((acc, c) => acc + c.monto, 0)
-
-      // 3. Crear o actualizar ResumenTarjeta
-      const resumenExistente = await tx.resumenTarjeta.findFirst({
-        where: { tarjetaId: data.tarjetaId, periodo: data.mesAnio },
-      })
-
-      const nuevoResumen = resumenExistente
-        ? await tx.resumenTarjeta.update({
-            where: { id: resumenExistente.id },
-            data: {
-              totalARS: totalCuotas,
-              pagado: true,
-              fechaVtoPago: new Date(data.fechaPago),
-            },
-          })
-        : await tx.resumenTarjeta.create({
-            data: {
-              tarjetaId: data.tarjetaId,
-              periodo: data.mesAnio,
-              totalARS: totalCuotas,
-              pagado: true,
-              fechaVtoPago: new Date(data.fechaPago),
-            },
-          })
-
-      // 4. Marcar cuotas como PAGADA y vincular al resumen
-      await tx.cuotaFacturaSeguro.updateMany({
-        where: {
-          tarjetaId: data.tarjetaId,
-          mesAnio: data.mesAnio,
-          estado: "PENDIENTE",
-        },
-        data: {
-          estado: "PAGADA",
-          resumenTarjetaId: nuevoResumen.id,
-        },
-      })
-
-      // 5. Crear MovimientoSinFactura EGRESO
-      await tx.movimientoSinFactura.create({
-        data: {
-          cuentaId: data.cuentaPagoId,
-          tipo: "EGRESO",
-          categoria: "PAGO_TARJETA",
-          monto: totalCuotas,
-          fecha: new Date(data.fechaPago),
-          descripcion: `Pago resumen tarjeta ${tarjeta.nombre} ${data.mesAnio}`,
-          operadorId,
-        },
-      })
-
-      return nuevoResumen
-    })
-
-    return NextResponse.json({ resumen }, { status: 201 })
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("No hay cuotas")) {
-      return badRequestResponse(error.message)
+    if (!resultado.ok) {
+      return NextResponse.json({ error: resultado.error }, { status: resultado.status })
     }
+
+    return NextResponse.json({ resumen: resultado.result }, { status: 201 })
+  } catch (error) {
     return serverErrorResponse("POST /api/aseguradoras/resumen-tarjetas", error)
   }
 }

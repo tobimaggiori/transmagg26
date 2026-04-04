@@ -8,6 +8,7 @@ import {
 } from "@/lib/financial-api"
 import { registrarDepositoChequeEmitidoSchema } from "@/lib/financial-schemas"
 import { resolverOperadorId } from "@/lib/session-utils"
+import { importesIguales } from "@/lib/money"
 
 /**
  * POST: NextRequest -> Promise<NextResponse>
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Cheque emitido no encontrado" }, { status: 404 })
     }
 
-    if (Math.abs(cheque.monto - parsed.data.monto) > 0.009) {
+    if (!importesIguales(cheque.monto, parsed.data.monto)) {
       return badRequestResponse("El monto informado no coincide con el cheque emitido")
     }
 

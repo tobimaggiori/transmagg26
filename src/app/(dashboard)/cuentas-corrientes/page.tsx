@@ -9,6 +9,7 @@ import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder } from "@/lib/permissions"
 import { CuentasCorrientesClient } from "./cuentas-corrientes-client"
+import { sumarImportes, restarImportes, maxMonetario, importesIguales } from "@/lib/money"
 import type { Rol } from "@/types"
 
 /**
@@ -58,42 +59,42 @@ export default async function CuentasCorrientesPage() {
 
   // Calcular saldos de empresas
   const deudaEmpresas = empresas.map((emp) => {
-    const saldoDeudor = emp.facturasEmitidas.reduce((acc, f) => {
-      const pagado = f.pagos.reduce((s, p) => s + p.monto, 0)
-      return acc + Math.max(0, f.total - pagado)
-    }, 0)
+    const saldoDeudor = sumarImportes(emp.facturasEmitidas.map(f => {
+      const pagado = sumarImportes(f.pagos.map(p => p.monto))
+      return maxMonetario(0, restarImportes(f.total, pagado))
+    }))
     const facturasImpagas = emp.facturasEmitidas
       .filter((f) => {
-        const pagado = f.pagos.reduce((s, p) => s + p.monto, 0)
-        return f.total - pagado > 0.01
+        const pagado = sumarImportes(f.pagos.map(p => p.monto))
+        return !importesIguales(f.total, pagado) && f.total > pagado
       })
       .map((f) => {
-        const pagado = f.pagos.reduce((s, p) => s + p.monto, 0)
-        return { ...f, saldo: f.total - pagado, emitidaEn: f.emitidaEn }
+        const pagado = sumarImportes(f.pagos.map(p => p.monto))
+        return { ...f, saldo: restarImportes(f.total, pagado), emitidaEn: f.emitidaEn }
       })
-    return { empresa: { id: emp.id, razonSocial: emp.razonSocial, cuit: emp.cuit }, saldoDeudor, facturasImpagas, totalFacturado: emp.facturasEmitidas.reduce((acc, f) => acc + f.total, 0) }
+    return { empresa: { id: emp.id, razonSocial: emp.razonSocial, cuit: emp.cuit }, saldoDeudor, facturasImpagas, totalFacturado: sumarImportes(emp.facturasEmitidas.map(f => f.total)) }
   }).sort((a, b) => b.saldoDeudor - a.saldoDeudor)
 
   // Calcular deudas a fleteros
   const deudaFleteros = fleteros.map((flet) => {
-    const saldoAPagar = flet.liquidaciones.reduce((acc, l) => {
-      const pagado = l.pagos.reduce((s, p) => s + p.monto, 0)
-      return acc + Math.max(0, l.total - pagado)
-    }, 0)
+    const saldoAPagar = sumarImportes(flet.liquidaciones.map(l => {
+      const pagado = sumarImportes(l.pagos.map(p => p.monto))
+      return maxMonetario(0, restarImportes(l.total, pagado))
+    }))
     const liquidacionesImpagas = flet.liquidaciones
       .filter((l) => {
-        const pagado = l.pagos.reduce((s, p) => s + p.monto, 0)
-        return l.total - pagado > 0.01
+        const pagado = sumarImportes(l.pagos.map(p => p.monto))
+        return !importesIguales(l.total, pagado) && l.total > pagado
       })
       .map((l) => {
-        const pagado = l.pagos.reduce((s, p) => s + p.monto, 0)
-        return { ...l, saldo: l.total - pagado, grabadaEn: l.grabadaEn }
+        const pagado = sumarImportes(l.pagos.map(p => p.monto))
+        return { ...l, saldo: restarImportes(l.total, pagado), grabadaEn: l.grabadaEn }
       })
-    return { fletero: { id: flet.id, razonSocial: flet.razonSocial, cuit: flet.cuit }, saldoAPagar, liquidacionesImpagas, totalLiquidado: flet.liquidaciones.reduce((acc, l) => acc + l.total, 0) }
+    return { fletero: { id: flet.id, razonSocial: flet.razonSocial, cuit: flet.cuit }, saldoAPagar, liquidacionesImpagas, totalLiquidado: sumarImportes(flet.liquidaciones.map(l => l.total)) }
   }).sort((a, b) => b.saldoAPagar - a.saldoAPagar)
 
-  const totalDeudaEmpresas = deudaEmpresas.reduce((acc, e) => acc + e.saldoDeudor, 0)
-  const totalDeudaFleteros = deudaFleteros.reduce((acc, f) => acc + f.saldoAPagar, 0)
+  const totalDeudaEmpresas = sumarImportes(deudaEmpresas.map(e => e.saldoDeudor))
+  const totalDeudaFleteros = sumarImportes(deudaFleteros.map(f => f.saldoAPagar))
 
   return (
     <CuentasCorrientesClient

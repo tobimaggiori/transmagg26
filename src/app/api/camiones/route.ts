@@ -9,6 +9,7 @@ import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
+import { resolverFleteroIdPorEmail, verificarPropietarioFletero } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 
 const crearCamionSchema = z.object({
@@ -42,12 +43,9 @@ export async function GET() {
   let whereClause = {}
 
   if (rol === "FLETERO") {
-    const fletero = await prisma.fletero.findFirst({
-      where: { usuario: { email: session.user.email } },
-      select: { id: true },
-    })
-    if (!fletero) return NextResponse.json([])
-    whereClause = { fleteroId: fletero.id }
+    const fleteroId = await resolverFleteroIdPorEmail(session.user.email ?? "")
+    if (!fleteroId) return NextResponse.json([])
+    whereClause = { fleteroId }
   } else if (!esRolInterno(rol)) {
     return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
   }
@@ -102,10 +100,8 @@ export async function POST(request: NextRequest) {
 
     // Un FLETERO solo puede crear camiones bajo su propio fleteroId
     if (rol === "FLETERO") {
-      const fleteroPropio = await prisma.fletero.findFirst({
-        where: { id: fleteroId, usuario: { email: session.user.email } },
-      })
-      if (!fleteroPropio) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
+      const esPropietario = await verificarPropietarioFletero(fleteroId, session.user.email!)
+      if (!esPropietario) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
     } else if (!esRolInterno(rol)) {
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
     }

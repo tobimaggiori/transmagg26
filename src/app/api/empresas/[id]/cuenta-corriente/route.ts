@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
+import { sumarImportes, restarImportes } from "@/lib/money"
 import type { Rol } from "@/types"
 
 interface Movimiento {
@@ -183,9 +184,9 @@ export async function GET(
       }
     })
 
-    const totalDebe = movimientos.reduce((acc, m) => acc + m.debe, 0)
-    const totalHaber = movimientos.reduce((acc, m) => acc + m.haber, 0)
-    const saldoFinal = totalDebe - totalHaber
+    const totalDebe = sumarImportes(movimientos.map(m => m.debe))
+    const totalHaber = sumarImportes(movimientos.map(m => m.haber))
+    const saldoFinal = restarImportes(totalDebe, totalHaber)
 
     return NextResponse.json({
       empresa,

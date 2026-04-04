@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
+import { sumarImportes } from "@/lib/money"
 
 function parsePeriodo(params: URLSearchParams): { desde: Date; hasta: Date } {
   const mes = params.get("mes")
@@ -104,10 +105,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       .map(([nombre, viajesArr]) => ({
         nombre,
         viajes: viajesArr,
-        total: viajesArr.reduce((acc, r) => acc + r.subtotal, 0),
+        total: sumarImportes(viajesArr.map(r => r.subtotal)),
       }))
 
-    const totalGeneral = provincias.reduce((acc, p) => acc + p.total, 0)
+    const totalGeneral = sumarImportes(provincias.map(p => p.total))
 
     return NextResponse.json({ provincias, totalGeneral })
   } catch (error) {

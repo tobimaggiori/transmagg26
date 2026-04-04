@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
+import { verificarPropietarioFletero } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 
 /**
@@ -44,10 +45,8 @@ export async function GET(
 
     // FLETERO solo puede ver su propia flota
     if (rol === "FLETERO") {
-      const fleteroPropio = await prisma.fletero.findFirst({
-        where: { id: params.id, usuario: { email: session.user.email } },
-      })
-      if (!fleteroPropio) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
+      const esPropietario = await verificarPropietarioFletero(params.id, session.user.email!)
+      if (!esPropietario) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
     } else if (!esRolInterno(rol)) {
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
     }

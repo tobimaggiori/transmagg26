@@ -5,6 +5,7 @@
  */
 
 import type { QRFiscalData } from "./types"
+import { m, type MonetaryInput } from "@/lib/money"
 
 /** URL base del QR de AFIP. */
 const QR_BASE_URL = "https://www.afip.gob.ar/fe/qr/"
@@ -39,7 +40,7 @@ export function generarQRFiscal(params: {
   ptoVenta: number
   tipoCbte: number
   nroComprobante: number
-  total: number
+  total: MonetaryInput
   cuitReceptor: string
   cae: string
   fechaEmision: Date
@@ -51,7 +52,7 @@ export function generarQRFiscal(params: {
     ptoVta: params.ptoVenta,
     tipoCmp: params.tipoCbte,
     nroCmp: params.nroComprobante,
-    importe: Math.round(params.total * 100) / 100,
+    importe: m(params.total),
     moneda: "PES",
     ctz: 1,
     tipoDocRec: 80, // CUIT

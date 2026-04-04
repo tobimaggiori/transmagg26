@@ -1,7 +1,131 @@
 /**
  * Propósito: Tests unitarios para cuenta-corriente.ts.
- * Prueba cálculo de saldos de CC para empresas y fleteros, así como lógica de estados.
+ *
+ * Parte 1: Funciones puras (calcularSaldoCC, calcularAjusteNotasCD, calcularSaldoPendiente)
+ *          — sin mock, testean reglas de negocio directamente.
+ * Parte 2: Funciones de orquestación (calcularSaldoCCEmpresa, etc.)
+ *          — con mock de Prisma, testean integración query→cálculo.
  */
+
+// ─── Parte 1: Funciones puras ────────────────────────────────────────────────
+// (imported after mock setup below, alongside the orquestación functions)
+
+describe("calcularSaldoCC (puro)", () => {
+  it("documentos sin pagos → saldoDeudor", () => {
+    expect(calcularSaldoCC(300000, 0, 0)).toEqual({
+      saldoDeudor: 300000, saldoAFavor: 0, saldoNeto: 300000,
+    })
+  })
+
+  it("pagos > documentos → saldoAFavor", () => {
+    expect(calcularSaldoCC(100000, 130000, 0)).toEqual({
+      saldoDeudor: 0, saldoAFavor: 30000, saldoNeto: -30000,
+    })
+  })
+
+  it("todo cero → saldo cero", () => {
+    expect(calcularSaldoCC(0, 0, 0)).toEqual({
+      saldoDeudor: 0, saldoAFavor: 0, saldoNeto: 0,
+    })
+  })
+
+  it("ajuste negativo (NC) reduce deuda", () => {
+    expect(calcularSaldoCC(100000, 0, -20000)).toEqual({
+      saldoDeudor: 80000, saldoAFavor: 0, saldoNeto: 80000,
+    })
+  })
+
+  it("ajuste positivo (ND) aumenta deuda", () => {
+    expect(calcularSaldoCC(100000, 0, 15000)).toEqual({
+      saldoDeudor: 115000, saldoAFavor: 0, saldoNeto: 115000,
+    })
+  })
+
+  it("ajuste que invierte saldo → a favor", () => {
+    expect(calcularSaldoCC(50000, 0, -80000)).toEqual({
+      saldoDeudor: 0, saldoAFavor: 30000, saldoNeto: -30000,
+    })
+  })
+
+  it("pagos + ajuste combinados", () => {
+    // 100000 docs - 20000 NC = 80000 debe, menos 50000 pagos = 30000 deudor
+    expect(calcularSaldoCC(100000, 50000, -20000)).toEqual({
+      saldoDeudor: 30000, saldoAFavor: 0, saldoNeto: 30000,
+    })
+  })
+})
+
+describe("calcularAjusteNotasCD (puro)", () => {
+  it("NC reduce (negativo)", () => {
+    expect(calcularAjusteNotasCD(
+      [{ tipo: "NC_EMITIDA", montoTotal: 20000 }],
+      "NC_EMITIDA", "ND_EMITIDA"
+    )).toBe(-20000)
+  })
+
+  it("ND aumenta (positivo)", () => {
+    expect(calcularAjusteNotasCD(
+      [{ tipo: "ND_EMITIDA", montoTotal: 15000 }],
+      "NC_EMITIDA", "ND_EMITIDA"
+    )).toBe(15000)
+  })
+
+  it("sin notas → 0", () => {
+    expect(calcularAjusteNotasCD([], "NC_EMITIDA", "ND_EMITIDA")).toBe(0)
+  })
+
+  it("NC + ND combinadas", () => {
+    expect(calcularAjusteNotasCD(
+      [
+        { tipo: "NC_EMITIDA", montoTotal: 10000 },
+        { tipo: "ND_EMITIDA", montoTotal: 5000 },
+      ],
+      "NC_EMITIDA", "ND_EMITIDA"
+    )).toBe(-5000)
+  })
+
+  it("notas de otro tipo se ignoran", () => {
+    expect(calcularAjusteNotasCD(
+      [{ tipo: "NC_RECIBIDA", montoTotal: 99999 }],
+      "NC_EMITIDA", "ND_EMITIDA"
+    )).toBe(0)
+  })
+
+  it("funciona con tipos de fletero", () => {
+    expect(calcularAjusteNotasCD(
+      [{ tipo: "NC_RECIBIDA", montoTotal: 30000 }],
+      "NC_RECIBIDA", "ND_RECIBIDA"
+    )).toBe(-30000)
+  })
+})
+
+describe("calcularSaldoPendiente (puro)", () => {
+  it("pago parcial", () => {
+    expect(calcularSaldoPendiente(100000, [40000])).toBe(60000)
+  })
+
+  it("pago total", () => {
+    expect(calcularSaldoPendiente(100000, [100000])).toBe(0)
+  })
+
+  it("pago excedente → 0 (no negativo)", () => {
+    expect(calcularSaldoPendiente(100000, [120000])).toBe(0)
+  })
+
+  it("sin pagos", () => {
+    expect(calcularSaldoPendiente(100000, [])).toBe(100000)
+  })
+
+  it("múltiples pagos parciales", () => {
+    expect(calcularSaldoPendiente(100000, [30000, 25000, 15000])).toBe(30000)
+  })
+
+  it("total cero", () => {
+    expect(calcularSaldoPendiente(0, [50000])).toBe(0)
+  })
+})
+
+// ─── Parte 2: Funciones de orquestación (con mock Prisma) ───────────────────
 
 // Mock Prisma before importing from cuenta-corriente
 const mockPrisma = {
@@ -29,6 +153,9 @@ jest.mock("@/lib/prisma", () => ({
 }))
 
 import {
+  calcularSaldoCC,
+  calcularAjusteNotasCD,
+  calcularSaldoPendiente,
   calcularSaldoCCEmpresa,
   calcularSaldoCCFletero,
   calcularSaldoPendienteFactura,

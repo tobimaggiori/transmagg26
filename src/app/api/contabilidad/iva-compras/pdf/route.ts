@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
+import { sumarImportes } from "@/lib/money"
 
 function fmt(n: number) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(n)
@@ -73,8 +74,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       orderBy: [{ periodo: "asc" }],
     })
 
-    const totalNeto = compras.reduce((acc, a) => acc + a.baseImponible, 0)
-    const totalIva = compras.reduce((acc, a) => acc + a.montoIva, 0)
+    const totalNeto = sumarImportes(compras.map(a => a.baseImponible))
+    const totalIva = sumarImportes(compras.map(a => a.montoIva))
 
     const mes = searchParams.get("mes")
     const anio = searchParams.get("anio")

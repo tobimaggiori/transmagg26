@@ -9,6 +9,7 @@ import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
+import { verificarPropietarioFletero } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 
 const actualizarSchema = z.object({
@@ -53,10 +54,8 @@ export async function PATCH(
 
     // FLETERO solo puede modificar sus propios camiones
     if (rol === "FLETERO") {
-      const fleteroPropio = await prisma.fletero.findFirst({
-        where: { id: camion.fleteroId ?? undefined, usuario: { email: session.user.email } },
-      })
-      if (!fleteroPropio) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
+      const esPropietario = await verificarPropietarioFletero(camion.fleteroId ?? "", session.user.email!)
+      if (!esPropietario) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
     } else if (!esRolInterno(rol)) {
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
     }

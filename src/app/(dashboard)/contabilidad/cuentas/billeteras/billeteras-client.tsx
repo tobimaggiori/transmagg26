@@ -8,6 +8,7 @@ import { Select } from "@/components/ui/select"
 import { FormError } from "@/components/ui/form-error"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { formatearMoneda } from "@/lib/utils"
+import { parsearImporte } from "@/lib/money"
 import { Plus } from "lucide-react"
 
 // --- Tipos ---
@@ -55,7 +56,7 @@ export function BilleterasClient() {
     if (!form.nombre.trim()) { setError("El nombre es obligatorio"); return }
     setGuardando(true)
     try {
-      const saldoInicial = parseFloat(form.saldoInicial) || 0
+      const saldoInicial = parsearImporte(form.saldoInicial)
       const res = await fetch("/api/cuentas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

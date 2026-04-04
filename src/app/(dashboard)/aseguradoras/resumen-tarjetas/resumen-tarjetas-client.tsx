@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { formatearMoneda } from "@/lib/utils"
+import { sumarImportes } from "@/lib/money"
 
 interface Tarjeta {
   id: string
@@ -181,7 +182,7 @@ export function ResumenTarjetasClient({ tarjetas, cuentas }: Props) {
       {tarjetasAMostrar.map((tarjeta) => {
         const cuotas = cuotasPorTarjeta[tarjeta.id] ?? []
         const pendientes = cuotas.filter((c) => c.estado === "PENDIENTE")
-        const total = pendientes.reduce((acc, c) => acc + c.monto, 0)
+        const total = sumarImportes(pendientes.map(c => c.monto))
         const yaCerrado = cuotas.length > 0 && cuotas.every((c) => c.estado === "PAGADA")
 
         return (

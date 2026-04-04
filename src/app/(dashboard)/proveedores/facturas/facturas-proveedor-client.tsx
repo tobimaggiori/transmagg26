@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ViewPDF } from "@/components/view-pdf"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { sumarImportes, parsearImporte } from "@/lib/money"
 
 type Proveedor = { id: string; razonSocial: string; cuit: string }
 
@@ -118,8 +119,8 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
     }
   }, [desde, hasta, proveedorId, nroComprobante, estadoPago])
 
-  const totalGeneral = facturas.reduce((acc, f) => acc + f.total, 0)
-  const totalPendiente = facturas.reduce((acc, f) => acc + f.saldoPendiente, 0)
+  const totalGeneral = sumarImportes(facturas.map(f => f.total))
+  const totalPendiente = sumarImportes(facturas.map(f => f.saldoPendiente))
 
   return (
     <div className="space-y-6">
@@ -610,8 +611,8 @@ function ModalEditarPagoProveedor({
   }, [proveedorId])
 
   async function guardar() {
-    const montoNum = parseFloat(nuevoMonto)
-    if (isNaN(montoNum) || montoNum <= 0) {
+    const montoNum = parsearImporte(nuevoMonto)
+    if (montoNum <= 0) {
       setError("El monto debe ser un número positivo")
       return
     }

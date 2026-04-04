@@ -10,6 +10,7 @@ import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder } from "@/lib/permissions"
 import { formatearMoneda } from "@/lib/utils"
+import { sumarImportes, restarImportes } from "@/lib/money"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import type { Rol } from "@/types"
 
@@ -98,9 +99,9 @@ export default async function IvaPage({
     take: 500,
   })
 
-  const totalVentas = asientos.filter((a) => a.tipo === "VENTA").reduce((acc, a) => acc + a.montoIva, 0)
-  const totalCompras = asientos.filter((a) => a.tipo === "COMPRA").reduce((acc, a) => acc + a.montoIva, 0)
-  const posicionIva = totalVentas - totalCompras
+  const totalVentas = sumarImportes(asientos.filter((a) => a.tipo === "VENTA").map(a => a.montoIva))
+  const totalCompras = sumarImportes(asientos.filter((a) => a.tipo === "COMPRA").map(a => a.montoIva))
+  const posicionIva = restarImportes(totalVentas, totalCompras)
 
   // Construir URL del PDF con los mismos filtros
   const pdfParams = new URLSearchParams()

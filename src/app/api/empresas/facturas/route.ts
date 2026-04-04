@@ -7,6 +7,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno, esRolEmpresa } from "@/lib/permissions"
+import { sumarImportes } from "@/lib/money"
+import { resolverEmpresaIdPorEmail } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 
 /**
@@ -48,14 +50,11 @@ export async function GET(req: NextRequest) {
 
   // Para roles empresa, forzar filtro por su propio empresaId
   if (esRolEmpresa(rol)) {
-    const empUsr = await prisma.empresaUsuario.findFirst({
-      where: { usuario: { email: session.user.email ?? "" } },
-      select: { empresaId: true },
-    })
-    if (!empUsr) {
+    const empresaIdResuelto = await resolverEmpresaIdPorEmail(session.user.email ?? "")
+    if (!empresaIdResuelto) {
       return NextResponse.json({ error: "Sin empresa asociada" }, { status: 403 })
     }
-    empresaId = empUsr.empresaId
+    empresaId = empresaIdResuelto
   }
 
   const where: {
@@ -95,7 +94,7 @@ export async function GET(req: NextRequest) {
 
   const result = facturas.map((f) => ({
     ...f,
-    totalPagado: f.pagos.reduce((sum: number, p: { monto: number }) => sum + p.monto, 0),
+    totalPagado: sumarImportes(f.pagos.map((p: { monto: number }) => p.monto)),
   }))
 
   return NextResponse.json(result)

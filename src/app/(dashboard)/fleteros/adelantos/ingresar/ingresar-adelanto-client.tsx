@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { formatearMoneda } from "@/lib/utils"
+import { parsearImporte } from "@/lib/money"
 
 interface Fletero {
   id: string
@@ -38,8 +39,8 @@ export function IngresarAdelantoClient({ fleteros }: { fleteros: Fletero[] }) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!fleteroId) { setError("Seleccioná un fletero"); return }
-    const montoNum = parseFloat(monto)
-    if (!montoNum || montoNum <= 0) { setError("El monto debe ser mayor a 0"); return }
+    const montoNum = parsearImporte(monto)
+    if (montoNum <= 0) { setError("El monto debe ser mayor a 0"); return }
 
     setError(null)
     setLoading(true)

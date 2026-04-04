@@ -11,6 +11,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
 import type { Rol } from "@/types"
+import { calcularIva, sumarImportes, maxMonetario, restarImportes } from "@/lib/money"
 
 const crearFacturaProveedorSchema = z.object({
   nroComprobante: z.string().min(1, "El número de comprobante es requerido"),
@@ -58,7 +59,7 @@ export async function POST(
     }
 
     const { nroComprobante, tipoCbte, neto, alicuotaIva, total, fechaCbte, concepto } = parsed.data
-    const ivaMonto = neto * (alicuotaIva / 100)
+    const ivaMonto = calcularIva(neto, alicuotaIva)
     const periodo = fechaCbte.slice(0, 7)
 
     const result = await prisma.$transaction(async (tx) => {
@@ -129,8 +130,8 @@ export async function GET(
   })
 
   const facturasConSaldo = facturas.map((f) => {
-    const pagado = f.pagos.reduce((acc, p) => acc + p.monto, 0)
-    return { ...f, saldoPendiente: Math.max(0, f.total - pagado) }
+    const pagado = sumarImportes(f.pagos.map((p) => p.monto))
+    return { ...f, saldoPendiente: maxMonetario(0, restarImportes(f.total, pagado)) }
   })
 
   return NextResponse.json(facturasConSaldo)

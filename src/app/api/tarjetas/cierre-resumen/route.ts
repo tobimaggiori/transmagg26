@@ -10,6 +10,7 @@ import { resolverOperadorId } from "@/lib/session-utils"
 import { prisma } from "@/lib/prisma"
 import { z } from "zod"
 import type { Rol } from "@/types"
+import { ejecutarCierreResumenTarjeta } from "@/lib/tarjeta-commands"
 
 const pagoSchema = z.object({
   facturaId: z.string(),
@@ -77,94 +78,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Datos inválidos", detail: parsed.error.flatten() }, { status: 400 })
   }
 
-  const data = parsed.data
-
   try {
     const operadorId = await resolverOperadorId({
       id: session.user.id,
       email: session.user.email,
     })
 
-    const sumaFacturas = data.pagos.reduce((sum, p) => sum + p.montoPagado, 0)
-    const diferencia = data.diferencia ?? 0
-    const totalPagado = sumaFacturas + diferencia
+    const resultado = await ejecutarCierreResumenTarjeta(parsed.data, operadorId)
 
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Crear CierreResumenTarjeta
-      const cierre = await tx.cierreResumenTarjeta.create({
-        data: {
-          tarjetaId: data.tarjetaId,
-          mesAnio: data.mesAnio,
-          totalPagado,
-          diferencia,
-          descripcionDiferencia: data.descripcionDiferencia ?? null,
-          cuentaPagoId: data.cuentaPagoId,
-          fechaPago: new Date(data.fechaPago),
-          pdfS3Key: data.pdfS3Key ?? null,
-          operadorId,
-        },
-      })
+    if (!resultado.ok) {
+      return NextResponse.json({ error: resultado.error }, { status: resultado.status })
+    }
 
-      // 2. Crear PagoFacturaTarjeta por cada factura incluida
-      for (const pago of data.pagos) {
-        await tx.pagoFacturaTarjeta.create({
-          data: {
-            cierreResumenId: cierre.id,
-            facturaProveedorId: pago.tipo === "PROVEEDOR" ? pago.facturaId : null,
-            facturaSeguroId: pago.tipo === "SEGURO" ? pago.facturaId : null,
-            montoPagado: pago.montoPagado,
-          },
-        })
-
-        // 3. Actualizar estadoPago de cada factura
-        if (pago.tipo === "PROVEEDOR") {
-          const factura = await tx.facturaProveedor.findUniqueOrThrow({ where: { id: pago.facturaId } })
-          const totalPagadoFactura = (
-            await tx.pagoFacturaTarjeta.aggregate({
-              where: { facturaProveedorId: pago.facturaId },
-              _sum: { montoPagado: true },
-            })
-          )._sum.montoPagado ?? 0
-          const nuevoEstado = totalPagadoFactura >= factura.total ? "PAGADA" : "PAGADA_PARCIAL"
-          await tx.facturaProveedor.update({
-            where: { id: pago.facturaId },
-            data: { estadoPago: nuevoEstado },
-          })
-        } else {
-          const factura = await tx.facturaSeguro.findUniqueOrThrow({ where: { id: pago.facturaId } })
-          const totalPagadoFactura = (
-            await tx.pagoFacturaTarjeta.aggregate({
-              where: { facturaSeguroId: pago.facturaId },
-              _sum: { montoPagado: true },
-            })
-          )._sum.montoPagado ?? 0
-          const nuevoEstado = totalPagadoFactura >= factura.total ? "PAGADA" : "PAGADA_PARCIAL"
-          await tx.facturaSeguro.update({
-            where: { id: pago.facturaId },
-            data: { estadoPago: nuevoEstado },
-          })
-        }
-      }
-
-      // 4. Crear MovimientoSinFactura EGRESO en la cuenta de pago
-      const tarjeta = await tx.tarjeta.findUniqueOrThrow({ where: { id: data.tarjetaId } })
-      await tx.movimientoSinFactura.create({
-        data: {
-          cuentaId: data.cuentaPagoId,
-          tipo: "EGRESO",
-          categoria: "PAGO_TARJETA",
-          monto: totalPagado,
-          fecha: new Date(data.fechaPago),
-          descripcion: `Cierre resumen ${tarjeta.nombre} — ${data.mesAnio}`,
-          tarjetaId: data.tarjetaId,
-          operadorId,
-        },
-      })
-
-      return cierre
-    })
-
-    return NextResponse.json(result, { status: 201 })
+    return NextResponse.json(resultado.result, { status: 201 })
   } catch (error) {
     console.error("POST /api/tarjetas/cierre-resumen error:", error)
     return NextResponse.json({ error: "Error al crear cierre de resumen", detail: String(error) }, { status: 500 })

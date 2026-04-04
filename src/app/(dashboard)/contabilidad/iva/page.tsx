@@ -9,6 +9,7 @@ import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder } from "@/lib/permissions"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
+import { sumarImportes, restarImportes } from "@/lib/money"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FiltroPeriodo } from "@/components/contabilidad/filtro-periodo"
 // LibroIvaGeneracion removed — data is shown inline, export buttons handle PDF
@@ -103,11 +104,11 @@ export default async function ContabilidadIvaPage({
   const ventas = asientos.filter((a) => a.tipo === "VENTA")
   const compras = asientos.filter((a) => a.tipo === "COMPRA")
 
-  const totalNetoVentas = ventas.reduce((acc, a) => acc + a.baseImponible, 0)
-  const totalIvaVentas = ventas.reduce((acc, a) => acc + a.montoIva, 0)
-  const totalNetoCompras = compras.reduce((acc, a) => acc + a.baseImponible, 0)
-  const totalIvaCompras = compras.reduce((acc, a) => acc + a.montoIva, 0)
-  const posicionIva = totalIvaVentas - totalIvaCompras
+  const totalNetoVentas = sumarImportes(ventas.map(a => a.baseImponible))
+  const totalIvaVentas = sumarImportes(ventas.map(a => a.montoIva))
+  const totalNetoCompras = sumarImportes(compras.map(a => a.baseImponible))
+  const totalIvaCompras = sumarImportes(compras.map(a => a.montoIva))
+  const posicionIva = restarImportes(totalIvaVentas, totalIvaCompras)
 
   // Grouping for compras-alicuota: tipoCbte → alicuota
   const comprasAlicuotaMap = new Map<string, Map<number, { neto: number; iva: number; count: number }>>()
@@ -118,7 +119,7 @@ export default async function ContabilidadIvaPage({
     if (!comprasAlicuotaMap.has(tipoCbte)) comprasAlicuotaMap.set(tipoCbte, new Map())
     const byAlicuota = comprasAlicuotaMap.get(tipoCbte)!
     const prev = byAlicuota.get(a.alicuota) ?? { neto: 0, iva: 0, count: 0 }
-    byAlicuota.set(a.alicuota, { neto: prev.neto + a.baseImponible, iva: prev.iva + a.montoIva, count: prev.count + 1 })
+    byAlicuota.set(a.alicuota, { neto: sumarImportes([prev.neto, a.baseImponible]), iva: sumarImportes([prev.iva, a.montoIva]), count: prev.count + 1 })
   }
   const comprasAlicuota = Array.from(comprasAlicuotaMap.entries()).sort(([a], [b]) => a.localeCompare(b))
 
@@ -129,7 +130,7 @@ export default async function ContabilidadIvaPage({
     if (!ventasAlicuotaMap.has(tipoCbte)) ventasAlicuotaMap.set(tipoCbte, new Map())
     const byAlicuota = ventasAlicuotaMap.get(tipoCbte)!
     const prev = byAlicuota.get(a.alicuota) ?? { neto: 0, iva: 0, count: 0 }
-    byAlicuota.set(a.alicuota, { neto: prev.neto + a.baseImponible, iva: prev.iva + a.montoIva, count: prev.count + 1 })
+    byAlicuota.set(a.alicuota, { neto: sumarImportes([prev.neto, a.baseImponible]), iva: sumarImportes([prev.iva, a.montoIva]), count: prev.count + 1 })
   }
   const ventasAlicuota = Array.from(ventasAlicuotaMap.entries()).sort(([a], [b]) => a.localeCompare(b))
 
@@ -393,8 +394,8 @@ export default async function ContabilidadIvaPage({
           ) : (
             ventasAlicuota.map(([tipoCbte, byAlicuota]) => {
               const filas = Array.from(byAlicuota.entries()).sort(([a], [b]) => a - b)
-              const totalNeto = filas.reduce((acc, [, v]) => acc + v.neto, 0)
-              const totalIva = filas.reduce((acc, [, v]) => acc + v.iva, 0)
+              const totalNeto = sumarImportes(filas.map(([, v]) => v.neto))
+              const totalIva = sumarImportes(filas.map(([, v]) => v.iva))
               return (
                 <div key={tipoCbte} className="border rounded-lg overflow-hidden">
                   <div className="bg-muted px-4 py-2 font-semibold text-sm">
@@ -452,8 +453,8 @@ export default async function ContabilidadIvaPage({
           ) : (
             comprasAlicuota.map(([tipoCbte, byAlicuota]) => {
               const filas = Array.from(byAlicuota.entries()).sort(([a], [b]) => a - b)
-              const totalNeto = filas.reduce((acc, [, v]) => acc + v.neto, 0)
-              const totalIva = filas.reduce((acc, [, v]) => acc + v.iva, 0)
+              const totalNeto = sumarImportes(filas.map(([, v]) => v.neto))
+              const totalIva = sumarImportes(filas.map(([, v]) => v.iva))
               return (
                 <div key={tipoCbte} className="border rounded-lg overflow-hidden">
                   <div className="bg-muted px-4 py-2 font-semibold text-sm">

@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { ShieldAlert } from "lucide-react"
 import { formatearMoneda } from "@/lib/utils"
+import { parsearImporte } from "@/lib/money"
 import { FormError } from "@/components/ui/form-error"
 import { calcularToneladas, calcularTotalViaje } from "@/lib/viajes"
 import { SearchCombobox } from "@/components/ui/search-combobox"
@@ -61,7 +62,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const empresaItems = empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: e.cuit }))
 
   const kilosNum = parseFloat(kilos) || 0
-  const tarifaNum = parseFloat(tarifaInput) || 0
+  const tarifaNum = parsearImporte(tarifaInput)
   const toneladas = kilosNum > 0 ? calcularToneladas(kilosNum) : null
   const totalCalc = kilosNum > 0 && tarifaNum > 0 ? calcularTotalViaje(kilosNum, tarifaNum) : null
 

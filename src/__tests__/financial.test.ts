@@ -14,6 +14,8 @@ import {
   diasHabilesDesde,
   isDiaHabil,
   sugerirImpuestosMovimientoBancario,
+  clasificarImpuestoMovimiento,
+  calcularMontoImpuestoDebcred,
 } from "@/lib/financial"
 
 describe("isDiaHabil", () => {
@@ -43,6 +45,96 @@ describe("diasHabilesDesde", () => {
     expect(diasHabilesDesde(new Date("2026-03-23T12:00:00.000Z"), new Date("2026-03-30T12:00:00.000Z"))).toBe(5)
   })
 })
+
+// ─── clasificarImpuestoMovimiento (puro — regla de negocio) ─────────────────
+
+describe("clasificarImpuestoMovimiento", () => {
+  it("transferencia recibida → aplica crédito", () => {
+    expect(clasificarImpuestoMovimiento("TRANSFERENCIA_RECIBIDA", true, false))
+      .toEqual({ aplicaDebito: false, aplicaCredito: true })
+  })
+
+  it("transferencia enviada → aplica débito", () => {
+    expect(clasificarImpuestoMovimiento("TRANSFERENCIA_ENVIADA", true, false))
+      .toEqual({ aplicaDebito: true, aplicaCredito: false })
+  })
+
+  it("cheque depositado → aplica crédito", () => {
+    expect(clasificarImpuestoMovimiento("CHEQUE_DEPOSITADO", true, false))
+      .toEqual({ aplicaDebito: false, aplicaCredito: true })
+  })
+
+  it("cheque emitido debitado → aplica débito", () => {
+    expect(clasificarImpuestoMovimiento("CHEQUE_EMITIDO_DEBITADO", true, false))
+      .toEqual({ aplicaDebito: true, aplicaCredito: false })
+  })
+
+  it("cuenta sin impuesto debcred → ninguno aplica", () => {
+    expect(clasificarImpuestoMovimiento("TRANSFERENCIA_ENVIADA", false, false))
+      .toEqual({ aplicaDebito: false, aplicaCredito: false })
+  })
+
+  it("envío a broker desde comitente → exento", () => {
+    expect(clasificarImpuestoMovimiento("ENVIO_A_BROKER", true, true))
+      .toEqual({ aplicaDebito: false, aplicaCredito: false })
+  })
+
+  it("rescate de broker desde comitente → exento", () => {
+    expect(clasificarImpuestoMovimiento("RESCATE_DE_BROKER", true, true))
+      .toEqual({ aplicaDebito: false, aplicaCredito: false })
+  })
+
+  it("envío a broker desde cuenta normal → exento (está en TIPOS_SIN_IMPUESTO)", () => {
+    expect(clasificarImpuestoMovimiento("ENVIO_A_BROKER", true, false))
+      .toEqual({ aplicaDebito: false, aplicaCredito: false })
+  })
+
+  it("pago sueldo → exento", () => {
+    expect(clasificarImpuestoMovimiento("PAGO_SUELDO", true, false))
+      .toEqual({ aplicaDebito: false, aplicaCredito: false })
+  })
+
+  it("transferencia entre propias → exento", () => {
+    expect(clasificarImpuestoMovimiento("TRANSFERENCIA_ENTRE_CUENTAS_PROPIAS", true, false))
+      .toEqual({ aplicaDebito: false, aplicaCredito: false })
+  })
+
+  it("tipo desconocido → ninguno aplica", () => {
+    expect(clasificarImpuestoMovimiento("OTRO_TIPO", true, false))
+      .toEqual({ aplicaDebito: false, aplicaCredito: false })
+  })
+
+  it("interés cuenta remunerada → aplica crédito", () => {
+    expect(clasificarImpuestoMovimiento("INTERES_CUENTA_REMUNERADA", true, false))
+      .toEqual({ aplicaDebito: false, aplicaCredito: true })
+  })
+})
+
+// ─── calcularMontoImpuestoDebcred (puro — cálculo monetario) ────────────────
+
+describe("calcularMontoImpuestoDebcred", () => {
+  it("0.6% de 1000 = 6", () => {
+    expect(calcularMontoImpuestoDebcred(1000, 0.006)).toBe(6)
+  })
+
+  it("valor absoluto de monto negativo", () => {
+    expect(calcularMontoImpuestoDebcred(-1000, 0.006)).toBe(6)
+  })
+
+  it("0.6% de 50000 = 300", () => {
+    expect(calcularMontoImpuestoDebcred(50000, 0.006)).toBe(300)
+  })
+
+  it("alícuota 0 → 0", () => {
+    expect(calcularMontoImpuestoDebcred(1000, 0)).toBe(0)
+  })
+
+  it("monto 0 → 0", () => {
+    expect(calcularMontoImpuestoDebcred(0, 0.006)).toBe(0)
+  })
+})
+
+// ─── sugerirImpuestosMovimientoBancario (compuesta) ─────────────────────────
 
 describe("sugerirImpuestosMovimientoBancario", () => {
   it('sugerirImpuestosMovimientoBancario({ tipo: "TRANSFERENCIA_RECIBIDA", monto: 1000, tieneImpuestoDebcred: true, alicuotaImpuesto: 0.006 }).impuestoCreditoMonto === 6', () => {

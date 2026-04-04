@@ -10,6 +10,7 @@ import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder } from "@/lib/permissions"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { sumarImportes } from "@/lib/money"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FiltroPeriodo } from "@/components/contabilidad/filtro-periodo"
 import type { Rol } from "@/types"
@@ -105,10 +106,10 @@ export default async function ContabilidadGastosPage({
     .map(([nombre, items]) => ({
       nombre,
       items,
-      total: items.reduce((acc, i) => acc + i.monto, 0),
+      total: sumarImportes(items.map(i => i.monto)),
     }))
 
-  const totalGeneral = rubros.reduce((acc, r) => acc + r.total, 0)
+  const totalGeneral = sumarImportes(rubros.map(r => r.total))
   const totalItems = facturas.length + liquidaciones.length
 
   const exportParams = new URLSearchParams()
@@ -149,7 +150,7 @@ export default async function ContabilidadGastosPage({
             <CardTitle className="text-sm font-medium text-muted-foreground">Facturas Proveedor</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{formatearMoneda(facturas.reduce((acc, f) => acc + f.total, 0))}</p>
+            <p className="text-2xl font-bold">{formatearMoneda(sumarImportes(facturas.map(f => f.total)))}</p>
             <p className="text-xs text-muted-foreground">{facturas.length} factura(s)</p>
           </CardContent>
         </Card>
@@ -158,7 +159,7 @@ export default async function ContabilidadGastosPage({
             <CardTitle className="text-sm font-medium text-muted-foreground">Liquidaciones (Viajes)</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{formatearMoneda(liquidaciones.reduce((acc, l) => acc + l.total, 0))}</p>
+            <p className="text-2xl font-bold">{formatearMoneda(sumarImportes(liquidaciones.map(l => l.total)))}</p>
             <p className="text-xs text-muted-foreground">{liquidaciones.length} liquidación(es) emitidas</p>
           </CardContent>
         </Card>

@@ -12,7 +12,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { UploadPDF } from "@/components/upload-pdf"
-import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { formatearFecha } from "@/lib/utils"
+import { sumarImportes, restarImportes, maxMonetario, parsearImporte, importesIguales, formatearMoneda } from "@/lib/money"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -111,8 +112,7 @@ type PagoItem =
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const ars = (n: number) =>
-  new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(n)
+const ars = formatearMoneda
 
 function nroLP(ptoVenta: number | null, nro: number | null): string {
   if (ptoVenta == null || nro == null) return "s/n"
@@ -185,17 +185,18 @@ export function RegistrarPagoFleteroModal({
   const [proximoNro, setProximoNro] = useState<number | null>(null)
 
   // ── Cálculos ────────────────────────────────────────────────────────────────
-  const saldoPendienteTotal = liquidaciones.reduce((s, l) => s + l.saldoPendiente, 0)
+  const saldoPendienteTotal = sumarImportes(liquidaciones.map(l => l.saldoPendiente))
 
-  const totalGastosDescontados = gastosPendientes.reduce((sum, g) => {
-    if (!gastosSeleccionados[g.id]) return sum
-    return sum + (parseFloat(gastosMontos[g.id] ?? "0") || 0)
-  }, 0)
+  const totalGastosDescontados = sumarImportes(
+    gastosPendientes
+      .filter(g => gastosSeleccionados[g.id])
+      .map(g => parsearImporte(gastosMontos[g.id] ?? "0"))
+  )
 
-  const saldoAjustado = Math.max(0, saldoPendienteTotal - totalGastosDescontados)
+  const saldoAjustado = maxMonetario(0, restarImportes(saldoPendienteTotal, totalGastosDescontados))
 
-  const totalMedios = pagos.reduce((sum, p) => sum + (parseFloat(p.monto) || 0), 0)
-  const diferencia = totalMedios - saldoAjustado
+  const totalMedios = sumarImportes(pagos.map(p => parsearImporte(p.monto)))
+  const diferencia = restarImportes(totalMedios, saldoAjustado)
 
   // ── Gestión de gastos ────────────────────────────────────────────────────────
   function toggleGasto(gastoId: string, saldoGasto: number) {
@@ -229,7 +230,7 @@ export function RegistrarPagoFleteroModal({
 
   function confirmarDraft() {
     if (!draft) return
-    const monto = parseFloat(draft.monto)
+    const monto = parsearImporte(draft.monto)
     if (!monto || monto <= 0) { setDraftError("Ingresá un monto válido"); return }
     if (draft.tipoPago === "TRANSFERENCIA" && !draft.cuentaBancariaId) {
       setDraftError("Seleccioná una cuenta bancaria"); return
@@ -263,7 +264,7 @@ export function RegistrarPagoFleteroModal({
     if (pagos.length === 0 && totalGastosDescontados === 0) {
       setError("Agregá al menos un medio de pago o gasto a descontar"); return
     }
-    if (Math.abs(diferencia) > 0.01) {
+    if (!importesIguales(totalMedios, saldoAjustado)) {
       setError(`El total debe cubrir exactamente el saldo (${ars(saldoAjustado)}). Diferencia: ${ars(diferencia)}`); return
     }
     setError(null)
@@ -272,14 +273,14 @@ export function RegistrarPagoFleteroModal({
       const today = new Date().toISOString().split("T")[0]
       const gastosPayload = gastosPendientes
         .filter((g) => gastosSeleccionados[g.id])
-        .map((g) => ({ gastoId: g.id, montoDescontar: parseFloat(gastosMontos[g.id] ?? "0") || 0 }))
+        .map((g) => ({ gastoId: g.id, montoDescontar: parsearImporte(gastosMontos[g.id] ?? "0") }))
         .filter((g) => g.montoDescontar > 0)
 
       const body = {
         fleteroId: fletero.id,
         liquidacionIds: liquidaciones.map((l) => l.id),
         pagos: pagos.map((p) => {
-          const monto = parseFloat(p.monto)
+          const monto = parsearImporte(p.monto)
           if (p.tipoPago === "TRANSFERENCIA") {
             return { tipoPago: p.tipoPago, monto, cuentaBancariaId: p.cuentaBancariaId, referencia: p.referencia || undefined, comprobanteS3Key: p.comprobanteS3Key }
           }
@@ -351,7 +352,7 @@ export function RegistrarPagoFleteroModal({
         gastosDescontados={gastosPendientes.filter((g) => gastosSeleccionados[g.id]).map((g) => ({
           razonSocial: g.facturaProveedor.proveedor.razonSocial,
           comprobante: `${g.facturaProveedor.tipoCbte} ${g.facturaProveedor.nroComprobante ?? "s/n"}`,
-          monto: parseFloat(gastosMontos[g.id] ?? "0") || 0,
+          monto: parsearImporte(gastosMontos[g.id] ?? "0"),
         }))}
         totalMedios={totalMedios}
         totalGastosDescontados={totalGastosDescontados}
@@ -431,7 +432,7 @@ export function RegistrarPagoFleteroModal({
                 </p>
                 <div className="space-y-2">
                   {gastosPendientes.map((g) => {
-                    const saldoGasto = g.montoPagado - g.montoDescontado
+                    const saldoGasto = restarImportes(g.montoPagado, g.montoDescontado)
                     const checked = gastosSeleccionados[g.id] ?? false
                     return (
                       <div key={g.id} className="flex items-start gap-2 rounded border p-2 text-xs">
@@ -457,7 +458,7 @@ export function RegistrarPagoFleteroModal({
                           disabled={!checked}
                           value={gastosMontos[g.id] ?? ""}
                           onChange={(e) => {
-                            const v = Math.min(parseFloat(e.target.value) || 0, saldoGasto)
+                            const v = Math.min(parsearImporte(e.target.value), saldoGasto)
                             setGastosMontos((prev) => ({ ...prev, [g.id]: String(v) }))
                           }}
                           className="w-24 h-6 text-xs text-right px-1"
@@ -521,7 +522,7 @@ export function RegistrarPagoFleteroModal({
                         )}
                       </td>
                       <td className="px-2 py-2 text-right font-mono text-xs">
-                        {ars(parseFloat(p.monto) || 0)}
+                        {ars(parsearImporte(p.monto))}
                       </td>
                       <td className="px-1 py-2">
                         <button
@@ -860,9 +861,6 @@ function PreviewOrdenPago({
   onVolver: () => void
   onConfirmar: () => void
 }) {
-  const ars = (n: number) =>
-    new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(n)
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 md:p-4">
       <div
@@ -950,7 +948,7 @@ function PreviewOrdenPago({
                           {resumenItem(p, cuentasBancarias, chequesEnCartera)}
                         </td>
                         <td className="px-3 py-2 text-right text-xs font-mono">
-                          {ars(parseFloat(p.monto) || 0)}
+                          {ars(parsearImporte(p.monto))}
                         </td>
                       </tr>
                     ))}

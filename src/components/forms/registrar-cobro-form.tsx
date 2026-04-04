@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Select } from "@/components/ui/select"
+import { sumarImportes, restarImportes, maxMonetario, parsearImporte, formatearMoneda as ars } from "@/lib/money"
 
 type CuentaBancaria = {
   id: string
@@ -66,8 +67,7 @@ type PagoItem =
   | PagoItemEfectivo
   | PagoItemSaldoAFavor
 
-const ars = (n: number) =>
-  new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(n)
+// ars = formatearMoneda importado de @/lib/money
 
 function defaultPago(): PagoItem {
   return { tipoPago: "TRANSFERENCIA", monto: "", cuentaBancariaId: "", referencia: "" }
@@ -86,10 +86,10 @@ export function RegistrarCobroModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const saldoPendiente = factura.total - factura.pagosExistentes
-  const totalActual = pagos.reduce((sum, p) => sum + (parseFloat(p.monto) || 0), 0)
-  const despuesCobro = saldoPendiente - totalActual
-  const excedente = Math.max(0, totalActual - saldoPendiente)
+  const saldoPendiente = restarImportes(factura.total, factura.pagosExistentes)
+  const totalActual = sumarImportes(pagos.map(p => parsearImporte(p.monto)))
+  const despuesCobro = restarImportes(saldoPendiente, totalActual)
+  const excedente = maxMonetario(0, restarImportes(totalActual, saldoPendiente))
 
   function updatePago(index: number, updates: Partial<PagoItem>) {
     setPagos((prev) =>
@@ -137,7 +137,7 @@ export function RegistrarCobroModal({
     try {
       const body = {
         pagos: pagos.map((p) => {
-          const monto = parseFloat(p.monto)
+          const monto = parsearImporte(p.monto)
           if (p.tipoPago === "CHEQUE") {
             return { tipoPago: p.tipoPago, monto, esElectronico: p.esElectronico, nroCheque: p.nroCheque, bancoEmisor: p.bancoEmisor, fechaEmision: p.fechaEmision, fechaCobro: p.fechaCobro, cuitLibrador: p.cuitLibrador || undefined }
           } else if (p.tipoPago === "TRANSFERENCIA") {
