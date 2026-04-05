@@ -8,7 +8,7 @@
 |-------|:-----------:|:--------------:|:-----------------:|
 | nroComprobante | Int? | String? | Int? |
 | ptoVenta | Int? (default 1) | **FALTA** | Int? (default 1) |
-| tipoCbte | Int? (default 186) | Int (default 1) | Int? |
+| tipoCbte | Int? (default 60) | Int (default 1) | Int? |
 | cae | String? | **FALTA** | String? |
 | caeVto | DateTime? | **FALTA** | DateTime? |
 | qrData | String? | **FALTA** | String? |

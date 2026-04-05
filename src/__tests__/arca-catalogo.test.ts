@@ -321,3 +321,48 @@ describe("validarComprobanteHabilitado", () => {
     }
   })
 })
+
+// ═════════════════════════════════════════���═════════════════════════════════════
+// 10. Tests de regresión integral — arca-invariantes-y-tests.md §10
+// ════════════════════���════════════════════════════════��═════════════════════════
+
+describe("REGRESIÓN: garantías del catálogo cerrado", () => {
+  it("186 y 187 no existen en ninguna forma en el catálogo", () => {
+    expect(esCodValido(186)).toBe(false)
+    expect(esCodValido(187)).toBe(false)
+    expect(buscarComprobante(186)).toBeUndefined()
+    expect(buscarComprobante(187)).toBeUndefined()
+    expect(esCodOperativo(186)).toBe(false)
+    expect(esCodOperativo(187)).toBe(false)
+  })
+
+  it("65 existe en catálogo pero no es operativo ni visible", () => {
+    expect(esCodValido(65)).toBe(true)
+    expect(esCodOperativo(65)).toBe(false)
+    const c = buscarComprobante(65)!
+    expect(c.visibleEnUI).toBe(false)
+    expect(c.operativo).toBe(false)
+  })
+
+  it("no hay notas operativas para LP (60/61)", () => {
+    expect(notasCompatibles(60)).toEqual([])
+    expect(notasCompatibles(61)).toEqual([])
+  })
+
+  it("65 no puede validarse como habilitado aunque lo configuren", () => {
+    expect(validarComprobanteHabilitado(65, [65])).toContain("no está operativo")
+  })
+
+  it("solo existen 12 códigos en el catálogo — ni más ni menos", () => {
+    expect(CATALOGO_ARCA.length).toBe(12)
+  })
+
+  it("tipoCbteLiquidacion nunca devuelve 186 ni 187", () => {
+    for (const cf of ["RESPONSABLE_INSCRIPTO", "MONOTRIBUTISTA", "CONSUMIDOR_FINAL", "EXENTO"]) {
+      const cod = tipoCbteLiquidacion(cf)
+      expect(cod).not.toBe(186)
+      expect(cod).not.toBe(187)
+      expect([60, 61]).toContain(cod)
+    }
+  })
+})

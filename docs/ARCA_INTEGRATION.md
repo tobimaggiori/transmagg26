@@ -42,7 +42,7 @@ La clase (A o B) se determina por la `condicionIva` del fletero receptor al mome
 
 | Campo ARCA | Descripción | Valor en este sistema |
 |------------|-------------|----------------------|
-| CbteTipo | Tipo de comprobante | 186 (RI→RI) o 187 (RI→otros) |
+| CbteTipo | Tipo de comprobante | 60 (CVLP A) o 61 (CVLP B) |
 | PtoVta | Punto de venta habilitado en ARCA | env: ARCA_PTO_VENTA |
 | CbteDesde / CbteHasta | Número del comprobante | nroComprobante |
 | CbteFch | Fecha del comprobante (YYYYMMDD) | grabadaEn |
@@ -62,7 +62,7 @@ La clase (A o B) se determina por la `condicionIva` del fletero receptor al mome
 |-------|------|-------------|
 | nroComprobante | Int? | Número correlativo del comprobante |
 | ptoVenta | Int? | Punto de venta ARCA (default: 1) |
-| tipoCbte | Int? | 186 o 187 según condición IVA del fletero |
+| tipoCbte | Int? | 60 (CVLP A) o 61 (CVLP B) según condición IVA del fletero |
 | cae | String? | Código de Autorización Electrónica (14 dígitos) |
 | caeVto | DateTime? | Fecha de vencimiento del CAE |
 | qrData | String? | JSON base64 del QR según RG 4291 |
@@ -83,7 +83,7 @@ ARCA_MODO=          # "homologacion" o "produccion"
 
 - La numeración es **global por punto de venta y tipo de comprobante** — ARCA no admite huecos.
 - Si ARCA rechaza el comprobante, el número NO queda consumido; se puede reintentar con el mismo número.
-- El tipoCbte (186 vs 187) debe determinarse automáticamente según `fletero.condicionIva` al momento de autorizar, no al crear la liquidación internamente.
+- El tipoCbte (60=CVLP A vs 61=CVLP B) se determina automáticamente según `fletero.condicionIva`. RI/Monotributista→60, CF/Exento→61.
 - Siempre llamar `FECompUltimoAutorizado` de ARCA justo antes de `FECAESolicitar` para evitar conflictos de numeración (la numeración interna de la BD es orientativa hasta ese momento).
 - El CAE tiene fecha de vencimiento; si vence antes de imprimir/entregar el comprobante, es inválido.
 
