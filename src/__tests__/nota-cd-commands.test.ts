@@ -9,7 +9,7 @@ const mockTx = {
   facturaEmitida: { findUnique: jest.fn(), update: jest.fn() },
   liquidacion: { findUnique: jest.fn(), update: jest.fn() },
   chequeRecibido: { findUnique: jest.fn(), update: jest.fn() },
-  notaCreditoDebito: { create: jest.fn() },
+  notaCreditoDebito: { create: jest.fn(), findFirst: jest.fn() },
   viajeEnNotaCD: { create: jest.fn() },
   viaje: { update: jest.fn(), updateMany: jest.fn() },
 }
@@ -25,7 +25,6 @@ jest.mock("@/lib/nota-cd-utils", () => ({
     montoIva: neto * iva / 100,
     montoTotal: neto * (1 + iva / 100),
   }),
-  calcularProximoNroComprobanteNotaCD: jest.fn().mockResolvedValue(1),
   tipoCbteArcaParaNotaCD: jest.fn().mockReturnValue(3),
 }))
 
@@ -34,6 +33,7 @@ import { ejecutarCrearNotaCD } from "@/lib/nota-cd-commands"
 beforeEach(() => {
   jest.clearAllMocks()
   mockTx.notaCreditoDebito.create.mockResolvedValue({ id: "nota-1" })
+  mockTx.notaCreditoDebito.findFirst.mockResolvedValue(null) // no hay notas previas → nro = 1
   mockTx.viajeEnNotaCD.create.mockResolvedValue({})
   mockTx.viaje.update.mockResolvedValue({})
   mockTx.viaje.updateMany.mockResolvedValue({ count: 1 })

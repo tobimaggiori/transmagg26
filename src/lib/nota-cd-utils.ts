@@ -7,7 +7,6 @@
  */
 
 import { calcularNetoMasIva, type MonetaryInput } from "@/lib/money"
-import { prisma } from "@/lib/prisma"
 
 /**
  * labelTipoNotaCD: string -> string
@@ -117,26 +116,6 @@ export function tipoCbteArcaParaNotaCD(tipo: string, condicionIva: string): numb
   if (tipo === "NC_EMITIDA") return esClaseA ? 3 : 8
   if (tipo === "ND_EMITIDA") return esClaseA ? 2 : 7
   return 0
-}
-
-/**
- * calcularProximoNroComprobanteNotaCD: string -> Promise<number>
- *
- * Dado el tipo de nota (NC_EMITIDA, ND_EMITIDA, etc.), devuelve el próximo
- * número de comprobante disponible (máximo existente + 1, o 1 si no hay ninguno).
- * Existe para asignar numeración correlativa antes de enviar a ARCA.
- *
- * Ejemplos:
- * calcularProximoNroComprobanteNotaCD("NC_EMITIDA") === Promise<1>  // sin notas previas
- * calcularProximoNroComprobanteNotaCD("ND_EMITIDA") === Promise<6>  // última nro = 5
- */
-export async function calcularProximoNroComprobanteNotaCD(tipo: string): Promise<number> {
-  const ultima = await prisma.notaCreditoDebito.findFirst({
-    where: { tipo },
-    orderBy: { nroComprobante: "desc" },
-    select: { nroComprobante: true },
-  })
-  return (ultima?.nroComprobante ?? 0) + 1
 }
 
 /**

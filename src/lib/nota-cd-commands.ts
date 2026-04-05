@@ -11,10 +11,20 @@
 import { prisma } from "@/lib/prisma"
 import {
   calcularTotalesNotaCD,
-  calcularProximoNroComprobanteNotaCD,
   tipoCbteArcaParaNotaCD,
 } from "@/lib/nota-cd-utils"
 import { EstadoFacturaViaje, EstadoLiquidacionViaje } from "@/lib/viaje-workflow"
+
+// ─── Próximo nro comprobante (server-only, usa prisma) ──────────────────────
+
+async function calcularProximoNroComprobanteNotaCD(tipo: string): Promise<number> {
+  const ultima = await prisma.notaCreditoDebito.findFirst({
+    where: { tipo },
+    orderBy: { nroComprobante: "desc" },
+    select: { nroComprobante: true },
+  })
+  return (ultima?.nroComprobante ?? 0) + 1
+}
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
