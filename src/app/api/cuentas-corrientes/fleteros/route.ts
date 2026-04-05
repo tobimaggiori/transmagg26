@@ -16,9 +16,9 @@ import type { Rol } from "@/types"
  * GET: () -> Promise<NextResponse>
  *
  * Devuelve todos los fleteros con saldo a pagar calculado como
- * suma(liquidaciones.total) - suma(pagos.monto) + ajuste por NC_RECIBIDA:
- *   - NC_RECIBIDA/ANULACION_LIQUIDACION reduce lo que Transmagg debe al fletero
- *     (la liquidación anulada ya no cuenta como deuda).
+ * suma(liquidaciones.total) - suma(pagos.monto) + ajuste por NC/ND:
+ *   - NC_EMITIDA/NC_RECIBIDA con liquidacionId reduce lo que Transmagg debe al fletero
+ *   - ND_EMITIDA/ND_RECIBIDA con liquidacionId incrementa la deuda
  * Solo se incluyen NC/ND con estado distinto de ANULADA.
  * Ordenados por saldo desc.
  * Existe para el módulo de cuentas corrientes donde el operador
@@ -44,7 +44,7 @@ export async function GET() {
       where: { activo: true },
       include: {
         liquidaciones: {
-          where: { estado: "EMITIDA" },
+          where: { estado: { in: ["EMITIDA", "PARCIALMENTE_PAGADA", "PAGADA"] } },
           include: {
             pagos: { where: { anulado: false }, select: { monto: true } },
           },
@@ -56,7 +56,7 @@ export async function GET() {
     prisma.notaCreditoDebito.findMany({
       where: {
         estado: { not: "ANULADA" },
-        tipo: "NC_RECIBIDA",
+        tipo: { in: ["NC_EMITIDA", "ND_EMITIDA", "NC_RECIBIDA", "ND_RECIBIDA"] },
         liquidacionId: { not: null },
       },
       include: {
@@ -65,14 +65,19 @@ export async function GET() {
     }),
   ])
 
-  // Agrupar ajustes NC_RECIBIDA por fletero
+  // Agrupar ajustes NC/ND por fletero
   const ajustesPorFletero = new Map<string, number>()
   for (const nota of notasCD) {
     const fleteroId = nota.liquidacion?.fleteroId
     if (!fleteroId) continue
     const actual = ajustesPorFletero.get(fleteroId) ?? 0
-    // NC_RECIBIDA reduce lo que Transmagg le debe al fletero
-    ajustesPorFletero.set(fleteroId, restarImportes(actual, nota.montoTotal))
+    // NC reduce lo que Transmagg le debe al fletero, ND lo incrementa
+    const esCredito = nota.tipo === "NC_EMITIDA" || nota.tipo === "NC_RECIBIDA"
+    if (esCredito) {
+      ajustesPorFletero.set(fleteroId, restarImportes(actual, nota.montoTotal))
+    } else {
+      ajustesPorFletero.set(fleteroId, sumarImportes([actual, nota.montoTotal]))
+    }
   }
 
   const resultado = fleteros.map((flet) => {

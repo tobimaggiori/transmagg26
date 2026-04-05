@@ -1166,7 +1166,7 @@ async function main() {
   // Viajes 1, 7 → LP1 (EMITIDA, CAE) → facturables
   // Viajes 2, 3, 8 → LP2 (EMITIDA, sin CAE) → NO facturables aún
   // Viajes 4, 9 → LP3 (EMITIDA, CAE) → facturables
-  // Viaje 5 → LP4 (BORRADOR)
+  // Viaje 5 → LP4 (EMITIDA, sin CAE)
   // Viajes 6, 10-15 → sin LP, PENDIENTE_LIQUIDAR
 
   const v1 = await prisma.viaje.create({
@@ -1423,7 +1423,7 @@ async function main() {
     data: { viajeEnLiqId: lp3v4.id, tablaOrigen: "viajes_en_liquidacion", provincia: "Santa Fe", montoIngreso: 195000, periodo: "2026-02" },
   })
 
-  // LP4: Rutas Centro, RI, BORRADOR
+  // LP4: Rutas Centro, RI, EMITIDA (sin CAE)
   // Viaje 5 ($310k); comision 15%
   const lp4 = await prisma.liquidacion.create({
     data: {
@@ -1435,7 +1435,7 @@ async function main() {
       neto: 263500,
       ivaMonto: 55335,
       total: 318835,
-      estado: "BORRADOR",
+      estado: "EMITIDA",
     },
   })
   await prisma.viajeEnLiquidacion.create({

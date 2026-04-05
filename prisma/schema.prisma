@@ -437,7 +437,7 @@ model Liquidacion {
   neto          Decimal
   ivaMonto      Decimal    @map("iva_monto")
   total         Decimal
-  estado             String   @default("BORRADOR")
+  estado             String   @default("EMITIDA")
   nroComprobante     Int?     @map("nro_comprobante")
   ptoVenta           Int?     @default(1)   @map("pto_venta")
   tipoCbte           Int?     @default(186) @map("tipo_cbte")
@@ -506,7 +506,7 @@ model FacturaEmitida {
   // Timestamp de autorización exitosa en ARCA
   idempotencyKey     String?   @map("idempotency_key")
   // UUID para prevenir doble emisión
-  estado           String   @default("BORRADOR")
+  estado           String   @default("EMITIDA")
   pdfS3Key         String?  @map("pdf_s3_key")
   emitidaEn        DateTime @default(now()) @map("emitida_en")
   reciboId         String?  @map("recibo_id")
@@ -1256,7 +1256,7 @@ model NotaCreditoDebito {
   descripcion         String?
   motivoDetalle       String?   @map("motivo_detalle")
 
-  estado              String    @default("BORRADOR")
+  estado              String    @default("EMITIDA")
 
   nroComprobante      Int?      @map("nro_comprobante")
   ptoVenta            Int?      @default(1) @map("pto_venta")

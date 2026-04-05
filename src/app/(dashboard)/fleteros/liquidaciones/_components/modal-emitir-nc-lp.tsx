@@ -60,19 +60,24 @@ export function ModalEmitirNCLP({
     setEnviando(true)
     setError(null)
     try {
+      // Mapear subtipos LP a subtipos NC_EMITIDA estándar
+      const subtipoEmitida = subtipo === "ANULACION_LIQUIDACION" ? "ANULACION_TOTAL"
+        : subtipo === "ANULACION_PARCIAL_LIQUIDACION" ? "ANULACION_PARCIAL"
+        : "CORRECCION_IMPORTE"
+
       const body: Record<string, unknown> = {
-        tipo: "NC_RECIBIDA",
-        subtipo,
+        tipo: "NC_EMITIDA",
+        subtipo: subtipoEmitida,
         liquidacionId,
         montoNeto: montoNetoReal,
         ivaPct,
         descripcion,
         motivoDetalle: motivoDetalle || undefined,
-        nroComprobanteExterno: nroComprobanteExterno || undefined,
-        fechaComprobanteExterno: fechaComprobanteExterno || undefined,
         viajesIds: subtipo === "ANULACION_PARCIAL_LIQUIDACION"
           ? Array.from(viajesSeleccionados)
           : undefined,
+        emisionArca: true,
+        idempotencyKey: crypto.randomUUID(),
       }
       const res = await fetch("/api/notas-credito-debito", {
         method: "POST",

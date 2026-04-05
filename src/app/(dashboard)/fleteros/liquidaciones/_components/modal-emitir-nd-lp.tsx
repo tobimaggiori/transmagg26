@@ -31,15 +31,15 @@ export function ModalEmitirNDLP({
     setError(null)
     try {
       const body = {
-        tipo: "ND_RECIBIDA",
+        tipo: "ND_EMITIDA",
         subtipo: "AJUSTE_LIQUIDACION",
         liquidacionId,
         montoNeto,
         ivaPct,
         descripcion,
         motivoDetalle: motivoDetalle || undefined,
-        nroComprobanteExterno: nroComprobanteExterno || undefined,
-        fechaComprobanteExterno: fechaComprobanteExterno || undefined,
+        emisionArca: true,
+        idempotencyKey: crypto.randomUUID(),
       }
       const res = await fetch("/api/notas-credito-debito", {
         method: "POST",

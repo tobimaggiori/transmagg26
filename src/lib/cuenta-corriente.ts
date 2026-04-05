@@ -177,7 +177,10 @@ export async function calcularSaldoCCFletero(fleteroId: string): Promise<SaldoCC
 
   const totalLiquidaciones = sumarImportes(liquidaciones.map(l => l.total))
   const totalPagos = sumarImportes(pagos.map(p => p.monto))
-  const ajuste = calcularAjusteNotasCD(notasCD, "NC_RECIBIDA", "ND_RECIBIDA")
+  // NC/ND sobre LP pueden ser emitidas (por Transmagg) o recibidas (legacy)
+  const ajusteEmitidas = calcularAjusteNotasCD(notasCD, "NC_EMITIDA", "ND_EMITIDA")
+  const ajusteRecibidas = calcularAjusteNotasCD(notasCD, "NC_RECIBIDA", "ND_RECIBIDA")
+  const ajuste = sumarImportes([ajusteEmitidas, ajusteRecibidas])
 
   return calcularSaldoCC(totalLiquidaciones, totalPagos, ajuste)
 }
