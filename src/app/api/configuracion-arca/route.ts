@@ -91,14 +91,7 @@ export async function GET() {
     return NextResponse.json(null)
   }
 
-  const { certificadoB64: _b64, certificadoPass: _cert_pass, ...safe } = config
-  void _cert_pass
-  return NextResponse.json({
-    ...safe,
-    tieneCertificado: !!_b64,
-    puntosVenta: parsearPuntosVenta(safe.puntosVenta),
-    comprobantesHabilitados: parsearComprobantesHabilitados(safe.comprobantesHabilitados),
-  })
+  return NextResponse.json(serializarConfig(config))
 }
 
 export async function PATCH(req: NextRequest) {
@@ -151,12 +144,33 @@ export async function PATCH(req: NextRequest) {
     },
   })
 
-  const { certificadoB64: _b64patch, certificadoPass: _passpatch, ...safe } = updated
-  void _passpatch
-  return NextResponse.json({
-    ...safe,
-    tieneCertificado: !!_b64patch,
-    puntosVenta: parsearPuntosVenta(safe.puntosVenta),
-    comprobantesHabilitados: parsearComprobantesHabilitados(safe.comprobantesHabilitados),
-  })
+  return NextResponse.json(serializarConfig(updated))
+}
+
+/** Serializa ConfiguracionArca de Prisma a JSON seguro para el cliente */
+function serializarConfig(row: {
+  id: string; cuit: string; razonSocial: string;
+  certificadoB64: string | null; certificadoPass: string | null;
+  modo: string; puntosVenta: string; comprobantesHabilitados: string;
+  cbuMiPymes: string | null; activa: boolean;
+  actualizadoEn: Date; actualizadoPor: string | null;
+}) {
+  return {
+    id: row.id,
+    cuit: row.cuit,
+    razonSocial: row.razonSocial,
+    tieneCertificado: !!row.certificadoB64,
+    modo: row.modo,
+    puntosVenta: (() => {
+      const pv = parsearPuntosVenta(row.puntosVenta)
+      const result: Record<string, string> = {}
+      for (const [k, v] of Object.entries(pv)) result[k] = String(v)
+      return result
+    })(),
+    comprobantesHabilitados: parsearComprobantesHabilitados(row.comprobantesHabilitados),
+    cbuMiPymes: row.cbuMiPymes,
+    activa: row.activa,
+    actualizadoEn: row.actualizadoEn.toISOString(),
+    actualizadoPor: row.actualizadoPor,
+  }
 }
