@@ -93,10 +93,12 @@ async function crearNCEmitida(
   totales: TotalesNotaCD,
   operadorId: string
 ): Promise<ResultadoNotaCD> {
-  // NC_EMITIDA puede corregir factura o liquidación
-  if (data.liquidacionId) return crearNCEmitidaSobreLiquidacion(data, totales, operadorId)
+  // NC/ND sobre LP bloqueada en esta etapa (arca-matriz-comprobantes.md)
+  if (data.liquidacionId) {
+    return { ok: false, status: 400, error: "La emisión de NC/ND sobre liquidaciones no está habilitada en esta etapa" }
+  }
   if (!data.facturaId) {
-    return { ok: false, status: 400, error: "Se requiere facturaId o liquidacionId para NC_EMITIDA" }
+    return { ok: false, status: 400, error: "Se requiere facturaId para NC_EMITIDA" }
   }
 
   const factura = await prisma.facturaEmitida.findUnique({
@@ -115,7 +117,8 @@ async function crearNCEmitida(
     return { ok: false, status: 400, error: "La factura ya tiene una NC de anulación total emitida" }
   }
 
-  const tipoCbte = tipoCbteArcaParaNotaCD("NC_EMITIDA", factura.empresa.condicionIva)
+  const tipoCbte = tipoCbteArcaParaNotaCD("NC_EMITIDA", factura.tipoCbte)
+  if (!tipoCbte) return { ok: false, status: 400, error: "No se puede emitir NC para este tipo de comprobante" }
   const nroComprobante = await calcularProximoNroComprobanteNotaCD("NC_EMITIDA")
 
   const baseData = {
@@ -210,111 +213,6 @@ async function crearNCEmitida(
 
 // ─── NC_EMITIDA sobre Liquidación ───────────────────────────────────────────
 
-async function crearNCEmitidaSobreLiquidacion(
-  data: DatosNotaCD,
-  totales: TotalesNotaCD,
-  operadorId: string
-): Promise<ResultadoNotaCD> {
-  const liquidacion = await prisma.liquidacion.findUnique({
-    where: { id: data.liquidacionId! },
-    include: {
-      fletero: { select: { condicionIva: true } },
-      viajes: { select: { viajeId: true, tarifaFletero: true, kilos: true, subtotal: true } },
-      notasCreditoDebito: {
-        where: { tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL" },
-        select: { id: true },
-      },
-    },
-  })
-  if (!liquidacion) return { ok: false, status: 404, error: "Liquidación no encontrada" }
-  if (data.subtipo === "ANULACION_TOTAL" && liquidacion.notasCreditoDebito.length > 0) {
-    return { ok: false, status: 400, error: "La liquidación ya tiene una NC de anulación total emitida" }
-  }
-
-  const condIva = (liquidacion.fletero as { condicionIva?: string }).condicionIva ?? "RESPONSABLE_INSCRIPTO"
-  const tipoCbte = tipoCbteArcaParaNotaCD("NC_EMITIDA", condIva)
-  const nroComprobante = await calcularProximoNroComprobanteNotaCD("NC_EMITIDA")
-
-  const baseData = {
-    tipo: data.tipo,
-    subtipo: data.subtipo,
-    liquidacionId: data.liquidacionId,
-    ...totales,
-    descripcion: data.descripcion,
-    motivoDetalle: data.motivoDetalle ?? null,
-    estado: "EMITIDA" as const,
-    nroComprobante,
-    tipoCbte,
-    arcaEstado: "PENDIENTE" as const,
-    operadorId,
-  }
-
-  if (data.subtipo === "ANULACION_TOTAL") {
-    const nota = await prisma.$transaction(async (tx) => {
-      const nuevaNota = await tx.notaCreditoDebito.create({ data: baseData })
-      for (const vel of liquidacion.viajes) {
-        await tx.viajeEnNotaCD.create({
-          data: {
-            notaId: nuevaNota.id,
-            viajeId: vel.viajeId,
-            tarifaOriginal: vel.tarifaFletero,
-            kilosOriginal: vel.kilos ?? null,
-            subtotalOriginal: vel.subtotal,
-          },
-        })
-        await tx.viaje.update({
-          where: { id: vel.viajeId },
-          data: { estadoLiquidacion: EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR },
-        })
-      }
-      return nuevaNota
-    })
-    return { ok: true, nota }
-  }
-
-  if (data.subtipo === "ANULACION_PARCIAL") {
-    if (!data.viajesIds || data.viajesIds.length === 0) {
-      return { ok: false, status: 400, error: "Se requieren viajesIds para ANULACION_PARCIAL" }
-    }
-    const viajeIdsEnLiq = liquidacion.viajes.map((v) => v.viajeId)
-    const todosPertenecen = data.viajesIds.every((id) => viajeIdsEnLiq.includes(id))
-    if (!todosPertenecen) {
-      return { ok: false, status: 400, error: "Uno o más viajes no pertenecen a la liquidación" }
-    }
-
-    const nota = await prisma.$transaction(async (tx) => {
-      const nuevaNota = await tx.notaCreditoDebito.create({ data: baseData })
-      for (const viajeId of data.viajesIds!) {
-        const vel = liquidacion.viajes.find((v) => v.viajeId === viajeId)!
-        await tx.viajeEnNotaCD.create({
-          data: {
-            notaId: nuevaNota.id,
-            viajeId,
-            tarifaOriginal: vel.tarifaFletero,
-            kilosOriginal: vel.kilos ?? null,
-            subtotalOriginal: vel.subtotal,
-          },
-        })
-        await tx.viaje.update({
-          where: { id: viajeId },
-          data: { estadoLiquidacion: EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR },
-        })
-      }
-      return nuevaNota
-    })
-    return { ok: true, nota }
-  }
-
-  if (data.subtipo === "CORRECCION_IMPORTE") {
-    const nota = await prisma.$transaction(async (tx) => {
-      return await tx.notaCreditoDebito.create({ data: baseData })
-    })
-    return { ok: true, nota }
-  }
-
-  return { ok: false, status: 400, error: "Subtipo NC_EMITIDA sobre liquidación no reconocido" }
-}
-
 // ─── ND_EMITIDA ──────────────────────────────────────────────────────────────
 
 async function crearNDEmitida(
@@ -322,30 +220,22 @@ async function crearNDEmitida(
   totales: TotalesNotaCD,
   operadorId: string
 ): Promise<ResultadoNotaCD> {
-  // ND_EMITIDA puede corregir factura o liquidación
-  if (!data.facturaId && !data.liquidacionId) {
-    return { ok: false, status: 400, error: "Se requiere facturaId o liquidacionId para ND_EMITIDA" }
+  // ND sobre LP no operativa en esta etapa (arca-matriz-comprobantes.md)
+  if (data.liquidacionId) {
+    return { ok: false, status: 400, error: "La emisión de NC/ND sobre liquidaciones no está habilitada en esta etapa" }
+  }
+  if (!data.facturaId) {
+    return { ok: false, status: 400, error: "Se requiere facturaId para ND_EMITIDA" }
   }
 
-  let condIva: string
+  const factura = await prisma.facturaEmitida.findUnique({
+    where: { id: data.facturaId },
+    include: { empresa: { select: { condicionIva: true } } },
+  })
+  if (!factura) return { ok: false, status: 404, error: "Factura no encontrada" }
 
-  if (data.facturaId) {
-    const factura = await prisma.facturaEmitida.findUnique({
-      where: { id: data.facturaId },
-      include: { empresa: { select: { condicionIva: true } } },
-    })
-    if (!factura) return { ok: false, status: 404, error: "Factura no encontrada" }
-    condIva = factura.empresa.condicionIva
-  } else {
-    const liquidacion = await prisma.liquidacion.findUnique({
-      where: { id: data.liquidacionId! },
-      include: { fletero: { select: { condicionIva: true } } },
-    })
-    if (!liquidacion) return { ok: false, status: 404, error: "Liquidación no encontrada" }
-    condIva = (liquidacion.fletero as { condicionIva?: string }).condicionIva ?? "RESPONSABLE_INSCRIPTO"
-  }
-
-  const tipoCbte = tipoCbteArcaParaNotaCD("ND_EMITIDA", condIva)
+  const tipoCbte = tipoCbteArcaParaNotaCD("ND_EMITIDA", factura.tipoCbte)
+  if (!tipoCbte) return { ok: false, status: 400, error: "No se puede emitir ND para este tipo de comprobante" }
   const nroComprobante = await calcularProximoNroComprobanteNotaCD("ND_EMITIDA")
 
   const nota = await prisma.$transaction(async (tx) => {
@@ -376,6 +266,11 @@ async function crearNCRecibida(
   totales: TotalesNotaCD,
   operadorId: string
 ): Promise<ResultadoNotaCD> {
+  // NC/ND recibidas sobre LP bloqueadas en esta etapa (arca-matriz-comprobantes.md)
+  if (data.liquidacionId) {
+    return { ok: false, status: 400, error: "La emisión de NC/ND sobre liquidaciones no está habilitada en esta etapa" }
+  }
+
   if (data.subtipo === "ANULACION_LIQUIDACION") {
     if (!data.nroComprobanteExterno || !data.fechaComprobanteExterno) {
       return { ok: false, status: 400, error: "Se requieren nroComprobanteExterno y fechaComprobanteExterno para NC_RECIBIDA" }
@@ -535,6 +430,11 @@ async function crearNDRecibida(
   totales: TotalesNotaCD,
   operadorId: string
 ): Promise<ResultadoNotaCD> {
+  // ND recibidas sobre LP bloqueadas en esta etapa (arca-matriz-comprobantes.md)
+  if (data.liquidacionId) {
+    return { ok: false, status: 400, error: "La emisión de NC/ND sobre liquidaciones no está habilitada en esta etapa" }
+  }
+
   if (data.subtipo === "CHEQUE_RECHAZADO") {
     if (!data.chequeRecibidoId) {
       return { ok: false, status: 400, error: "Se requiere chequeRecibidoId para ND_RECIBIDA/CHEQUE_RECHAZADO" }

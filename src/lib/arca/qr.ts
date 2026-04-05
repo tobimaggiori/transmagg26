@@ -29,7 +29,7 @@ const QR_BASE_URL = "https://www.afip.gob.ar/fe/qr/"
  *
  * Ejemplos:
  * generarQRFiscal({
- *   cuitEmisor: "30709381683", ptoVenta: 1, tipoCbte: 186,
+ *   cuitEmisor: "30709381683", ptoVenta: 1, tipoCbte: 60,
  *   nroComprobante: 43, total: 121000, cuitReceptor: "20123456789",
  *   cae: "74123456789012", fechaEmision: new Date("2026-04-03")
  * })

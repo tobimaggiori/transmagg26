@@ -127,7 +127,7 @@ export async function ejecutarCrearLiquidacion(
         estado: EstadoLiquidacionDocumento.EMITIDA,
         nroComprobante,
         ptoVenta: 1,
-        tipoCbte: 186,
+        tipoCbte: 60,
         arcaEstado: "PENDIENTE",
       },
     })

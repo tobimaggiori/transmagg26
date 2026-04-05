@@ -264,10 +264,10 @@ export async function autorizarLiquidacionArca(
     throw new DocumentoEnProcesoError()
   }
 
-  // Determinar tipo de comprobante por condición IVA del fletero
+  // Determinar tipo de comprobante por condición IVA del fletero (60=CVLP A, 61=CVLP B)
   const condIva = (liq.fletero as { condicionIva?: string }).condicionIva ?? "RESPONSABLE_INSCRIPTO"
-  const tipoCbte = condIva === "RESPONSABLE_INSCRIPTO" || condIva === "MONOTRIBUTISTA" ? 186 : 187
-  const tipoKey = tipoCbte === 186 ? "FACTURA_A" : "FACTURA_B"
+  const tipoCbte = condIva === "RESPONSABLE_INSCRIPTO" || condIva === "MONOTRIBUTISTA" ? 60 : 61
+  const tipoKey = tipoCbte === 60 ? "LP_A" : "LP_B"
   const ptoVenta = config.puntosVenta[tipoKey] ?? config.puntosVenta["FACTURA_A"] ?? 1
 
   try {
@@ -465,7 +465,7 @@ export async function autorizarNotaCDArca(
   } else if (nota.liquidacion) {
     cuitReceptor = nota.liquidacion.fletero.cuit.replace(/\D/g, "")
     comprobanteAsociado = {
-      tipo: nota.liquidacion.tipoCbte ?? 186,
+      tipo: nota.liquidacion.tipoCbte ?? 60,
       ptoVta: nota.liquidacion.ptoVenta ?? 1,
       nro: nota.liquidacion.nroComprobante ?? 0,
       cuit: config.cuit,

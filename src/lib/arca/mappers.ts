@@ -65,19 +65,19 @@ export const IVA_0_ID = 3
 /**
  * determinarTipoCbteLiquidacion: string -> number
  *
- * Dado la condición IVA del fletero receptor, devuelve el código de tipo
- * de comprobante ARCA para liquidaciones (186=A, 187=B).
+ * Dado la condición IVA del fletero receptor, devuelve el código ARCA
+ * para liquidaciones: 60 = CVLP A, 61 = CVLP B.
  *
  * Ejemplos:
- * determinarTipoCbteLiquidacion("RESPONSABLE_INSCRIPTO") === 186
- * determinarTipoCbteLiquidacion("CONSUMIDOR_FINAL") === 187
- * determinarTipoCbteLiquidacion("EXENTO") === 187
+ * determinarTipoCbteLiquidacion("RESPONSABLE_INSCRIPTO") === 60
+ * determinarTipoCbteLiquidacion("CONSUMIDOR_FINAL") === 61
+ * determinarTipoCbteLiquidacion("EXENTO") === 61
  */
 export function determinarTipoCbteLiquidacion(condicionIva: string): number {
   if (condicionIva === "RESPONSABLE_INSCRIPTO" || condicionIva === "MONOTRIBUTISTA") {
-    return 186
+    return 60
   }
-  return 187
+  return 61
 }
 
 /**
@@ -145,12 +145,12 @@ export interface DatosComprobanteBase {
  *
  * Ejemplos:
  * mapearComprobanteArca({
- *   tipoCbte: 186, ptoVenta: 1, nroComprobante: 43,
+ *   tipoCbte: 60, ptoVenta: 1, nroComprobante: 43,
  *   fecha: new Date("2026-04-03"), cuitReceptor: "20123456789",
  *   neto: 100000, ivaMonto: 21000, total: 121000,
  *   concepto: 2, fechaServDesde: new Date("2026-03-01"), ...
  * })
- * // → { FeCabReq: { CantReg: 1, PtoVta: 1, CbteTipo: 186 }, FeDetReq: { ... } }
+ * // → { FeCabReq: { CantReg: 1, PtoVta: 1, CbteTipo: 60 }, FeDetReq: { ... } }
  */
 export function mapearComprobanteArca(datos: DatosComprobanteBase): FECAERequest {
   const neto = redondearArca(datos.neto)

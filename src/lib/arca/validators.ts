@@ -9,10 +9,10 @@ import type { ArcaConfig } from "./types"
 import { m, sumarImportes, importesIguales } from "@/lib/money"
 
 /** Tipos de comprobante que requieren comprobante asociado (NC/ND). */
-const TIPOS_CON_ASOCIADO = new Set([2, 3, 7, 8])
+const TIPOS_CON_ASOCIADO = new Set([2, 3, 7, 8, 202, 203])
 
-/** Tipos de comprobante soportados. */
-const TIPOS_SOPORTADOS = new Set([1, 2, 3, 6, 7, 8, 186, 187, 201])
+/** Tipos de comprobante soportados — catálogo cerrado ARCA de Transmagg. */
+const TIPOS_SOPORTADOS = new Set([1, 2, 3, 6, 7, 8, 60, 61, 201, 202, 203])
 
 /**
  * validarPreAutorizacion: (config, datos) -> string[]

@@ -178,7 +178,7 @@ Soporte puede rastrear en qué punto exacto falló una emisión.
 
 2. **Concurrencia de renovación WSAA**: Dos invocaciones simultáneas pueden ambas renovar el ticket. No hay corrupción ni impacto funcional, solo una llamada extra a WSAA. Aceptable para el volumen esperado.
 
-3. **Tipos de comprobante soportados**: Factura A/B (1/6), Factura A MiPyme (201), LP A/B (186/187), NC A/B (3/8), ND A/B (2/7). No se soportan comprobantes C, M ni E.
+3. **Tipos de comprobante soportados**: Factura A/B (1/6), Factura A MiPyme (201), CVLP A/B (60/61), NC A/B (3/8), ND A/B (2/7), NC/ND FCE (203/202). Catálogo cerrado según `arca-matriz-comprobantes.md`. No se soportan comprobantes C, M ni E.
 
 ---
 

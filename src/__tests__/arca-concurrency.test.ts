@@ -83,7 +83,7 @@ const LIQ_MOCK = {
   qrData: null,
   nroComprobante: 1,
   ptoVenta: 1,
-  tipoCbte: 186,
+  tipoCbte: 60,
   neto: 100000,
   ivaMonto: 21000,
   total: 121000,
@@ -99,7 +99,7 @@ const TICKET_MOCK = {
 }
 
 const FECAE_RESPONSE_OK = {
-  FeCabResp: { Cuit: 30709381683, PtoVta: 1, CbteTipo: 186, FchProceso: "20260401", CantReg: 1, Resultado: "A" },
+  FeCabResp: { Cuit: 30709381683, PtoVta: 1, CbteTipo: 60, FchProceso: "20260401", CantReg: 1, Resultado: "A" },
   FeDetResp: {
     FECAEDetResponse: [{
       Concepto: 2, DocTipo: 80, DocNro: 20123456789,
@@ -120,7 +120,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   (cargarConfigArca as jest.Mock).mockResolvedValue(CONFIG_MOCK);
   (obtenerTicketWsaa as jest.Mock).mockResolvedValue(TICKET_MOCK);
-  (feCompUltimoAutorizado as jest.Mock).mockResolvedValue({ PtoVta: 1, CbteTipo: 186, CbteNro: 41 });
+  (feCompUltimoAutorizado as jest.Mock).mockResolvedValue({ PtoVta: 1, CbteTipo: 60, CbteNro: 41 });
   (feCAESolicitar as jest.Mock).mockResolvedValue(FECAE_RESPONSE_OK)
   mockPrisma.liquidacion.update.mockResolvedValue({})
 })

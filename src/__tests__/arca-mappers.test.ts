@@ -62,20 +62,20 @@ describe("redondearArca", () => {
 // ─── determinarTipoCbteLiquidacion ───────────────────────────────────────────
 
 describe("determinarTipoCbteLiquidacion", () => {
-  it("RI → LP tipo A (186)", () => {
-    expect(determinarTipoCbteLiquidacion("RESPONSABLE_INSCRIPTO")).toBe(186)
+  it("RI → LP tipo A (60)", () => {
+    expect(determinarTipoCbteLiquidacion("RESPONSABLE_INSCRIPTO")).toBe(60)
   })
 
-  it("Monotributista → LP tipo A (186)", () => {
-    expect(determinarTipoCbteLiquidacion("MONOTRIBUTISTA")).toBe(186)
+  it("Monotributista → LP tipo A (60)", () => {
+    expect(determinarTipoCbteLiquidacion("MONOTRIBUTISTA")).toBe(60)
   })
 
-  it("Consumidor Final → LP tipo B (187)", () => {
-    expect(determinarTipoCbteLiquidacion("CONSUMIDOR_FINAL")).toBe(187)
+  it("Consumidor Final → LP tipo B (61)", () => {
+    expect(determinarTipoCbteLiquidacion("CONSUMIDOR_FINAL")).toBe(61)
   })
 
-  it("Exento → LP tipo B (187)", () => {
-    expect(determinarTipoCbteLiquidacion("EXENTO")).toBe(187)
+  it("Exento → LP tipo B (61)", () => {
+    expect(determinarTipoCbteLiquidacion("EXENTO")).toBe(61)
   })
 })
 
@@ -103,7 +103,7 @@ describe("determinarTipoCbteFactura", () => {
 
 describe("mapearComprobanteArca", () => {
   const datosBase = {
-    tipoCbte: 186,
+    tipoCbte: 60,
     ptoVenta: 1,
     nroComprobante: 43,
     fecha: new Date(2026, 3, 3),
@@ -120,7 +120,7 @@ describe("mapearComprobanteArca", () => {
     const req = mapearComprobanteArca(datosBase)
     expect(req.FeCabReq.CantReg).toBe(1)
     expect(req.FeCabReq.PtoVta).toBe(1)
-    expect(req.FeCabReq.CbteTipo).toBe(186)
+    expect(req.FeCabReq.CbteTipo).toBe(60)
   })
 
   it("genera detalle con montos correctos", () => {

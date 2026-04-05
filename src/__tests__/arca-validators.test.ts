@@ -19,7 +19,7 @@ const configOk: ArcaConfig = {
 }
 
 const datosOk: DatosComprobanteBase = {
-  tipoCbte: 186,
+  tipoCbte: 60,
   ptoVenta: 1,
   nroComprobante: 43,
   fecha: new Date(2026, 3, 3),
@@ -93,7 +93,7 @@ describe("validarPreAutorizacion", () => {
     expect(errores.some((e) => e.includes("comprobante asociado"))).toBe(true)
   })
 
-  it("no requiere comprobante asociado para LP tipo 186", () => {
+  it("no requiere comprobante asociado para LP tipo 60", () => {
     const errores = validarPreAutorizacion(configOk, datosOk)
     expect(errores.some((e) => e.includes("comprobante asociado"))).toBe(false)
   })

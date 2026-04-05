@@ -215,12 +215,38 @@ describe("ND_EMITIDA", () => {
   })
 })
 
-// ─── NC_RECIBIDA / ANULACION_LIQUIDACION ────────────────────────────────────
+// ─── NC/ND sobre LP bloqueadas (arca-matriz-comprobantes.md) ────────────────
 
-describe("NC_RECIBIDA / ANULACION_LIQUIDACION", () => {
-  it("libera viajes a PENDIENTE_LIQUIDAR", async () => {
-    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK)
+describe("NC/ND sobre LP rechazadas en esta etapa", () => {
+  it("NC_EMITIDA sobre liquidación → rechazada", async () => {
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_EMITIDA",
+      subtipo: "ANULACION_TOTAL",
+      liquidacionId: "liq-1",
+      montoNeto: 1200,
+      ivaPct: 21,
+      descripcion: "Anulación LP",
+    }, "op1")
 
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("no está habilitada")
+  })
+
+  it("ND_EMITIDA sobre liquidación → rechazada", async () => {
+    const r = await ejecutarCrearNotaCD({
+      tipo: "ND_EMITIDA",
+      subtipo: "AJUSTE_LIQUIDACION",
+      liquidacionId: "liq-1",
+      montoNeto: 500,
+      ivaPct: 21,
+      descripcion: "Ajuste LP",
+    }, "op1")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("no está habilitada")
+  })
+
+  it("NC_RECIBIDA sobre liquidación → rechazada", async () => {
     const r = await ejecutarCrearNotaCD({
       tipo: "NC_RECIBIDA",
       subtipo: "ANULACION_LIQUIDACION",
@@ -232,32 +258,22 @@ describe("NC_RECIBIDA / ANULACION_LIQUIDACION", () => {
       fechaComprobanteExterno: "2026-01-15",
     }, "op1")
 
-    expect(r.ok).toBe(true)
-
-    expect(mockTx.viaje.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: { in: ["v1", "v2"] } },
-        data: { estadoLiquidacion: "PENDIENTE_LIQUIDAR" },
-      })
-    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("no está habilitada")
   })
 
-  it("NO pone la liquidación en ANULADA (preserva historial)", async () => {
-    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK)
-
-    await ejecutarCrearNotaCD({
-      tipo: "NC_RECIBIDA",
-      subtipo: "ANULACION_LIQUIDACION",
+  it("ND_RECIBIDA sobre liquidación → rechazada", async () => {
+    const r = await ejecutarCrearNotaCD({
+      tipo: "ND_RECIBIDA",
+      subtipo: "AJUSTE_LIQUIDACION",
       liquidacionId: "liq-1",
-      montoNeto: 1200,
+      montoNeto: 300,
       ivaPct: 21,
-      descripcion: "Anulación LP",
-      nroComprobanteExterno: "001",
-      fechaComprobanteExterno: "2026-01-15",
+      descripcion: "Ajuste LP",
     }, "op1")
 
-    // liquidacion.update NO debe haberse llamado con estado ANULADA
-    expect(mockPrisma.liquidacion.update).not.toHaveBeenCalled()
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("no está habilitada")
   })
 })
 
@@ -308,146 +324,7 @@ describe("validaciones NC/ND", () => {
   })
 })
 
-// ─── NC_RECIBIDA / ANULACION_PARCIAL_LIQUIDACION ────────────────────────────
-
-const LIQ_MOCK_CON_VIAJES = {
-  id: "liq-1",
-  estado: "EMITIDA",
-  viajes: [
-    { viajeId: "v1", tarifaFletero: 40, kilos: 30000, subtotal: 1200 },
-    { viajeId: "v2", tarifaFletero: 35, kilos: 25000, subtotal: 875 },
-  ],
-}
-
-describe("NC_RECIBIDA / ANULACION_PARCIAL_LIQUIDACION", () => {
-  it("pone viajes seleccionados en PENDIENTE_LIQUIDAR (revertidos totalmente)", async () => {
-    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK_CON_VIAJES)
-
-    const r = await ejecutarCrearNotaCD({
-      tipo: "NC_RECIBIDA",
-      subtipo: "ANULACION_PARCIAL_LIQUIDACION",
-      liquidacionId: "liq-1",
-      montoNeto: 1200,
-      ivaPct: 21,
-      descripcion: "Anulación parcial viaje v1",
-      viajesIds: ["v1"],
-    }, "op1")
-
-    expect(r.ok).toBe(true)
-
-    // v1 queda totalmente revertido → PENDIENTE_LIQUIDAR
-    expect(mockTx.viaje.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "v1" },
-        data: { estadoLiquidacion: "PENDIENTE_LIQUIDAR" },
-      })
-    )
-
-    // v2 NO debe haber sido tocado
-    expect(mockTx.viaje.update).not.toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "v2" } })
-    )
-  })
-
-  it("crea snapshots ViajeEnNotaCD para viajes seleccionados", async () => {
-    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK_CON_VIAJES)
-
-    await ejecutarCrearNotaCD({
-      tipo: "NC_RECIBIDA",
-      subtipo: "ANULACION_PARCIAL_LIQUIDACION",
-      liquidacionId: "liq-1",
-      montoNeto: 1200,
-      ivaPct: 21,
-      descripcion: "Ajuste parcial",
-      viajesIds: ["v1"],
-    }, "op1")
-
-    expect(mockTx.viajeEnNotaCD.create).toHaveBeenCalledTimes(1)
-    expect(mockTx.viajeEnNotaCD.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          viajeId: "v1",
-          tarifaOriginal: 40,
-        }),
-      })
-    )
-  })
-
-  it("sin viajesIds → error", async () => {
-    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK_CON_VIAJES)
-
-    const r = await ejecutarCrearNotaCD({
-      tipo: "NC_RECIBIDA",
-      subtipo: "ANULACION_PARCIAL_LIQUIDACION",
-      liquidacionId: "liq-1",
-      montoNeto: 1200,
-      ivaPct: 21,
-      descripcion: "test",
-    }, "op1")
-
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.status).toBe(400)
-  })
-
-  it("viaje que no pertenece a la liquidación → error", async () => {
-    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK_CON_VIAJES)
-
-    const r = await ejecutarCrearNotaCD({
-      tipo: "NC_RECIBIDA",
-      subtipo: "ANULACION_PARCIAL_LIQUIDACION",
-      liquidacionId: "liq-1",
-      montoNeto: 500,
-      ivaPct: 21,
-      descripcion: "test",
-      viajesIds: ["v99-no-existe"],
-    }, "op1")
-
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.status).toBe(400)
-  })
-})
-
-// ─── NC_RECIBIDA / CORRECCION_IMPORTE_LIQUIDACION ───────────────────────────
-
-describe("NC_RECIBIDA / CORRECCION_IMPORTE_LIQUIDACION", () => {
-  it("no modifica estado de viajes", async () => {
-    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK)
-
-    const r = await ejecutarCrearNotaCD({
-      tipo: "NC_RECIBIDA",
-      subtipo: "CORRECCION_IMPORTE_LIQUIDACION",
-      liquidacionId: "liq-1",
-      montoNeto: 200,
-      ivaPct: 21,
-      descripcion: "Corrección menor",
-    }, "op1")
-
-    expect(r.ok).toBe(true)
-    expect(mockTx.viaje.update).not.toHaveBeenCalled()
-    expect(mockTx.viaje.updateMany).not.toHaveBeenCalled()
-  })
-})
-
-// ─── ND_RECIBIDA / AJUSTE_LIQUIDACION ───────────────────────────────────────
-
-describe("ND_RECIBIDA / AJUSTE_LIQUIDACION", () => {
-  it("no modifica estado de viajes ni liquidación", async () => {
-    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK)
-
-    const r = await ejecutarCrearNotaCD({
-      tipo: "ND_RECIBIDA",
-      subtipo: "AJUSTE_LIQUIDACION",
-      liquidacionId: "liq-1",
-      montoNeto: 300,
-      ivaPct: 21,
-      descripcion: "Ajuste incremento",
-    }, "op1")
-
-    expect(r.ok).toBe(true)
-    expect(mockTx.viaje.update).not.toHaveBeenCalled()
-    expect(mockPrisma.liquidacion.update).not.toHaveBeenCalled()
-  })
-})
+// (NC/ND sobre LP bloqueadas en esta etapa — tests de rechazo arriba)
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONGELADO: semántica NC parcial — reversión por viaje vs corrección de importe
@@ -513,59 +390,9 @@ describe("CONGELADO: NC parcial empresa — corrección de importe", () => {
   })
 })
 
-describe("CONGELADO: NC parcial LP — reversión por viaje", () => {
-  it("viaje seleccionado queda PENDIENTE_LIQUIDAR (totalmente revertido)", async () => {
-    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK_CON_VIAJES)
-    await ejecutarCrearNotaCD({
-      tipo: "NC_RECIBIDA", subtipo: "ANULACION_PARCIAL_LIQUIDACION", liquidacionId: "liq-1",
-      montoNeto: 1200, ivaPct: 21, descripcion: "Reverso v1", viajesIds: ["v1"],
-    }, "op1")
+// (NC/ND parcial LP: tests de operación eliminados — bloqueado en esta etapa)
 
-    expect(mockTx.viaje.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "v1" }, data: { estadoLiquidacion: "PENDIENTE_LIQUIDAR" } })
-    )
-  })
-
-  it("viaje NO seleccionado permanece sin cambios", async () => {
-    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK_CON_VIAJES)
-    await ejecutarCrearNotaCD({
-      tipo: "NC_RECIBIDA", subtipo: "ANULACION_PARCIAL_LIQUIDACION", liquidacionId: "liq-1",
-      montoNeto: 1200, ivaPct: 21, descripcion: "Reverso v1", viajesIds: ["v1"],
-    }, "op1")
-
-    const calls = mockTx.viaje.update.mock.calls.map((c: unknown[]) => (c[0] as { where: { id: string } }).where.id)
-    expect(calls).toContain("v1")
-    expect(calls).not.toContain("v2")
-  })
-
-  it("se crean snapshots ViajeEnNotaCD solo para viajes seleccionados", async () => {
-    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK_CON_VIAJES)
-    await ejecutarCrearNotaCD({
-      tipo: "NC_RECIBIDA", subtipo: "ANULACION_PARCIAL_LIQUIDACION", liquidacionId: "liq-1",
-      montoNeto: 1200, ivaPct: 21, descripcion: "Reverso v1", viajesIds: ["v1"],
-    }, "op1")
-
-    expect(mockTx.viajeEnNotaCD.create).toHaveBeenCalledTimes(1)
-    expect(mockTx.viajeEnNotaCD.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ viajeId: "v1" }) })
-    )
-  })
-})
-
-describe("CONGELADO: NC parcial LP — corrección de importe", () => {
-  it("CORRECCION_IMPORTE_LIQUIDACION no cambia estadoLiquidacion de ningún viaje", async () => {
-    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK)
-    await ejecutarCrearNotaCD({
-      tipo: "NC_RECIBIDA", subtipo: "CORRECCION_IMPORTE_LIQUIDACION", liquidacionId: "liq-1",
-      montoNeto: 200, ivaPct: 21, descripcion: "Corrección económica LP",
-    }, "op1")
-
-    expect(mockTx.viaje.update).not.toHaveBeenCalled()
-    expect(mockTx.viaje.updateMany).not.toHaveBeenCalled()
-  })
-})
-
-describe("CONGELADO: ND no libera viajes en ningún circuito", () => {
+describe("CONGELADO: ND no libera viajes", () => {
   it("ND_EMITIDA sobre factura no cambia estados de viaje", async () => {
     mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
       ...FACTURA_MOCK, empresa: { condicionIva: "RESPONSABLE_INSCRIPTO" },
@@ -573,16 +400,6 @@ describe("CONGELADO: ND no libera viajes en ningún circuito", () => {
     await ejecutarCrearNotaCD({
       tipo: "ND_EMITIDA", subtipo: "DIFERENCIA_TARIFA", facturaId: "fact-1",
       montoNeto: 500, ivaPct: 21, descripcion: "Diferencia",
-    }, "op1")
-
-    expect(mockTx.viaje.update).not.toHaveBeenCalled()
-  })
-
-  it("ND_RECIBIDA/AJUSTE_LIQUIDACION no cambia estados de viaje", async () => {
-    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK)
-    await ejecutarCrearNotaCD({
-      tipo: "ND_RECIBIDA", subtipo: "AJUSTE_LIQUIDACION", liquidacionId: "liq-1",
-      montoNeto: 300, ivaPct: 21, descripcion: "Ajuste",
     }, "op1")
 
     expect(mockTx.viaje.update).not.toHaveBeenCalled()

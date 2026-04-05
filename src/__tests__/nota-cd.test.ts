@@ -97,33 +97,37 @@ describe("esEmitida", () => {
   })
 })
 
-describe("tipoCbteArcaParaNotaCD", () => {
-  it('tipoCbteArcaParaNotaCD("NC_EMITIDA", "RESPONSABLE_INSCRIPTO") === 3', () => {
-    expect(tipoCbteArcaParaNotaCD("NC_EMITIDA", "RESPONSABLE_INSCRIPTO")).toBe(3)
+describe("tipoCbteArcaParaNotaCD (por origen)", () => {
+  it("NC sobre Factura A (1) → 3", () => {
+    expect(tipoCbteArcaParaNotaCD("NC_EMITIDA", 1)).toBe(3)
   })
 
-  it('tipoCbteArcaParaNotaCD("NC_EMITIDA", "CONSUMIDOR_FINAL") === 8', () => {
-    expect(tipoCbteArcaParaNotaCD("NC_EMITIDA", "CONSUMIDOR_FINAL")).toBe(8)
+  it("NC sobre Factura B (6) → 8", () => {
+    expect(tipoCbteArcaParaNotaCD("NC_EMITIDA", 6)).toBe(8)
   })
 
-  it('tipoCbteArcaParaNotaCD("ND_EMITIDA", "RESPONSABLE_INSCRIPTO") === 2', () => {
-    expect(tipoCbteArcaParaNotaCD("ND_EMITIDA", "RESPONSABLE_INSCRIPTO")).toBe(2)
+  it("ND sobre Factura A (1) → 2", () => {
+    expect(tipoCbteArcaParaNotaCD("ND_EMITIDA", 1)).toBe(2)
   })
 
-  it('tipoCbteArcaParaNotaCD("ND_EMITIDA", "EXENTO") === 7', () => {
-    expect(tipoCbteArcaParaNotaCD("ND_EMITIDA", "EXENTO")).toBe(7)
+  it("ND sobre Factura B (6) → 7", () => {
+    expect(tipoCbteArcaParaNotaCD("ND_EMITIDA", 6)).toBe(7)
   })
 
-  it('tipoCbteArcaParaNotaCD("NC_EMITIDA", "MONOTRIBUTISTA") === 3 (clase A)', () => {
-    expect(tipoCbteArcaParaNotaCD("NC_EMITIDA", "MONOTRIBUTISTA")).toBe(3)
+  it("NC sobre FCE A (201) → 203", () => {
+    expect(tipoCbteArcaParaNotaCD("NC_EMITIDA", 201)).toBe(203)
   })
 
-  it('tipoCbteArcaParaNotaCD("ND_EMITIDA", "MONOTRIBUTISTA") === 2 (clase A)', () => {
-    expect(tipoCbteArcaParaNotaCD("ND_EMITIDA", "MONOTRIBUTISTA")).toBe(2)
+  it("ND sobre FCE A (201) → 202", () => {
+    expect(tipoCbteArcaParaNotaCD("ND_EMITIDA", 201)).toBe(202)
   })
 
-  it('tipoCbteArcaParaNotaCD("NC_RECIBIDA", "RESPONSABLE_INSCRIPTO") === 0 (no aplica)', () => {
-    expect(tipoCbteArcaParaNotaCD("NC_RECIBIDA", "RESPONSABLE_INSCRIPTO")).toBe(0)
+  it("NC sobre origen no soportado → 0", () => {
+    expect(tipoCbteArcaParaNotaCD("NC_EMITIDA", 60)).toBe(0)
+  })
+
+  it("NC_RECIBIDA → 0 (no aplica)", () => {
+    expect(tipoCbteArcaParaNotaCD("NC_RECIBIDA", 1)).toBe(0)
   })
 })
 

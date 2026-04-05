@@ -440,7 +440,7 @@ model Liquidacion {
   estado             String   @default("EMITIDA")
   nroComprobante     Int?     @map("nro_comprobante")
   ptoVenta           Int?     @default(1)   @map("pto_venta")
-  tipoCbte           Int?     @default(186) @map("tipo_cbte")
+  tipoCbte           Int?     @default(60) @map("tipo_cbte")
   cae                String?  @map("cae")
   caeVto             DateTime? @map("cae_vto")
   qrData             String?  @map("qr_data")

@@ -9,7 +9,7 @@ describe("generarQRFiscal", () => {
   const params = {
     cuitEmisor: "30709381683",
     ptoVenta: 1,
-    tipoCbte: 186,
+    tipoCbte: 60,
     nroComprobante: 43,
     total: 121000,
     cuitReceptor: "20123456789",
@@ -33,7 +33,7 @@ describe("generarQRFiscal", () => {
     expect(data.fecha).toBe("2026-04-03")
     expect(data.cuit).toBe(30709381683)
     expect(data.ptoVta).toBe(1)
-    expect(data.tipoCmp).toBe(186)
+    expect(data.tipoCmp).toBe(60)
     expect(data.nroCmp).toBe(43)
     expect(data.importe).toBe(121000)
     expect(data.moneda).toBe("PES")

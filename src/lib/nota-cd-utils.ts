@@ -92,26 +92,37 @@ export function esEmitida(tipo: string): boolean {
 }
 
 /**
- * tipoCbteArcaParaNotaCD: string string -> number
+ * tipoCbteArcaParaNotaCD: string number -> number
  *
- * Dado el tipo de nota (NC_EMITIDA o ND_EMITIDA) y la condición IVA del receptor,
- * devuelve el código de tipo de comprobante ARCA correspondiente según la normativa AFIP:
- *   2 = ND "A" (receptor RI o Monotributista)
- *   3 = NC "A" (receptor RI o Monotributista)
- *   7 = ND "B" (receptor Exento o Consumidor Final)
- *   8 = NC "B" (receptor Exento o Consumidor Final)
- *   0 = no aplica (nota recibida, sin código ARCA propio)
- * Esta función existe para calcular automáticamente el tipoCbte al emitir
- * una NC/ND por ARCA sin necesidad de que el operador lo seleccione manualmente.
+ * Dado el tipo de nota (NC_EMITIDA o ND_EMITIDA) y el tipoCbte del comprobante
+ * origen, devuelve el código ARCA de la nota según la matriz cerrada:
  *
- * Ejemplos:
- * tipoCbteArcaParaNotaCD("NC_EMITIDA", "RESPONSABLE_INSCRIPTO") === 3
- * tipoCbteArcaParaNotaCD("NC_EMITIDA", "CONSUMIDOR_FINAL")      === 8
- * tipoCbteArcaParaNotaCD("ND_EMITIDA", "RESPONSABLE_INSCRIPTO") === 2
- * tipoCbteArcaParaNotaCD("ND_EMITIDA", "EXENTO")                === 7
- * tipoCbteArcaParaNotaCD("NC_RECIBIDA", "RESPONSABLE_INSCRIPTO") === 0
+ * Origen 1  → NC=3,  ND=2
+ * Origen 6  → NC=8,  ND=7
+ * Origen 201 → NC=203, ND=202
+ *
+ * 0 = no aplica (nota recibida o comprobante origen no compatible).
  */
-export function tipoCbteArcaParaNotaCD(tipo: string, condicionIva: string): number {
+export function tipoCbteArcaParaNotaCD(tipo: string, tipoCbteOrigen: number): number {
+  const MATRIZ: Record<number, { nc: number; nd: number }> = {
+    1: { nc: 3, nd: 2 },
+    6: { nc: 8, nd: 7 },
+    201: { nc: 203, nd: 202 },
+  }
+  const entrada = MATRIZ[tipoCbteOrigen]
+  if (!entrada) return 0
+  if (tipo === "NC_EMITIDA") return entrada.nc
+  if (tipo === "ND_EMITIDA") return entrada.nd
+  return 0
+}
+
+/**
+ * tipoCbteArcaParaNotaCDLegacy: string string -> number
+ *
+ * Versión legacy que usa condicionIva (solo para NC/ND recibidas que no tienen
+ * comprobante origen en el sistema). Para NC/ND emitidas, usar tipoCbteArcaParaNotaCD.
+ */
+export function tipoCbteArcaParaNotaCDLegacy(tipo: string, condicionIva: string): number {
   const esClaseA = condicionIva === "RESPONSABLE_INSCRIPTO" || condicionIva === "MONOTRIBUTISTA"
   if (tipo === "NC_EMITIDA") return esClaseA ? 3 : 8
   if (tipo === "ND_EMITIDA") return esClaseA ? 2 : 7
