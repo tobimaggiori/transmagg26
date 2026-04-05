@@ -325,3 +325,106 @@ describe("invariantes de emisión directa", () => {
     expect(r.error).toContain("No se pudo emitir el comprobante")
   })
 })
+
+// ══════════════════════════════════��════════════════════════════════════════════
+// Rollback / compensación completa
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("rollback ARCA FAIL — limpieza completa de efectos", () => {
+  it("factura: borra asientos IIBB antes de borrar ViajeEnFactura", async () => {
+    mockEjecutarCrearFactura.mockResolvedValue({ ok: true, factura: { id: "fact-1" } })
+    mockAutorizarFacturaArca.mockRejectedValue(new Error("ARCA error"))
+    mockTx.viajeEnFactura.findMany.mockResolvedValue([{ id: "vef-1" }, { id: "vef-2" }])
+
+    await emitirFacturaDirecta(
+      { empresaId: "e1", viajeIds: ["v1", "v2"], tipoCbte: 1, ivaPct: 21 },
+      "op1", "key-1"
+    )
+
+    // IIBB borrados usando IDs de ViajeEnFactura
+    expect(mockTx.asientoIibb.deleteMany).toHaveBeenCalledWith({
+      where: { viajeEnFactId: { in: ["vef-1", "vef-2"] } },
+    })
+    // IVA borrado
+    expect(mockTx.asientoIva.deleteMany).toHaveBeenCalledWith({
+      where: { facturaEmitidaId: "fact-1" },
+    })
+    // Factura borrada (cascade → ViajeEnFactura)
+    expect(mockTx.facturaEmitida.delete).toHaveBeenCalledWith({
+      where: { id: "fact-1" },
+    })
+    // Viajes revertidos
+    expect(mockTx.viaje.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["v1", "v2"] } },
+      data: { estadoFactura: "PENDIENTE_FACTURAR" },
+    })
+  })
+
+  it("liquidación: borra asientos IIBB y IVA antes de borrar LP", async () => {
+    mockEjecutarCrearLiquidacion.mockResolvedValue({ ok: true, liquidacion: { id: "liq-1" } })
+    mockAutorizarLiquidacionArca.mockRejectedValue(new Error("ARCA error"))
+    mockTx.viajeEnLiquidacion.findMany.mockResolvedValue([{ id: "vel-1" }])
+
+    await emitirLiquidacionDirecta(
+      { fleteroId: "f1", comisionPct: 5, ivaPct: 21, viajes: [{ viajeId: "v1", fechaViaje: "2026-01-01", kilos: 30000, tarifaFletero: 40 }] },
+      "op1", "key-1"
+    )
+
+    expect(mockTx.asientoIibb.deleteMany).toHaveBeenCalledWith({
+      where: { viajeEnLiqId: { in: ["vel-1"] } },
+    })
+    expect(mockTx.asientoIva.deleteMany).toHaveBeenCalledWith({
+      where: { liquidacionId: "liq-1" },
+    })
+    expect(mockTx.liquidacion.delete).toHaveBeenCalledWith({
+      where: { id: "liq-1" },
+    })
+    expect(mockTx.viaje.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["v1"] } },
+      data: { estadoLiquidacion: "PENDIENTE_LIQUIDAR" },
+    })
+  })
+
+  it("NC total: borra nota y revierte viajes a FACTURADO", async () => {
+    mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-1" } })
+    mockAutorizarNotaCDArca.mockRejectedValue(new Error("ARCA error"))
+    mockTx.viajeEnFactura.findMany.mockResolvedValue([{ viajeId: "v1" }, { viajeId: "v2" }])
+
+    await emitirNotaCDDirecta({
+      tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL",
+      facturaId: "fact-1", montoNeto: 1000, ivaPct: 21, descripcion: "test",
+    }, "op1", "key-1")
+
+    expect(mockTx.notaCreditoDebito.delete).toHaveBeenCalledWith({ where: { id: "nota-1" } })
+    expect(mockTx.viaje.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["v1", "v2"] } },
+      data: { estadoFactura: "FACTURADO" },
+    })
+  })
+
+  it("ND emitida: borra nota sin tocar viajes", async () => {
+    mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-2" } })
+    mockAutorizarNotaCDArca.mockRejectedValue(new Error("ARCA error"))
+
+    await emitirNotaCDDirecta({
+      tipo: "ND_EMITIDA", subtipo: "DIFERENCIA_TARIFA",
+      facturaId: "fact-1", montoNeto: 200, ivaPct: 21, descripcion: "test",
+    }, "op1", "key-1")
+
+    expect(mockTx.notaCreditoDebito.delete).toHaveBeenCalledWith({ where: { id: "nota-2" } })
+    expect(mockTx.viaje.updateMany).not.toHaveBeenCalled()
+  })
+
+  it("compensación ejecuta todo dentro de una transacción", async () => {
+    mockEjecutarCrearFactura.mockResolvedValue({ ok: true, factura: { id: "fact-1" } })
+    mockAutorizarFacturaArca.mockRejectedValue(new Error("error"))
+
+    await emitirFacturaDirecta(
+      { empresaId: "e1", viajeIds: ["v1"], tipoCbte: 1, ivaPct: 21 },
+      "op1", "key-1"
+    )
+
+    // La compensación usa $transaction
+    expect(mockPrisma.$transaction).toHaveBeenCalled()
+  })
+})
