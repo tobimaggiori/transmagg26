@@ -41,6 +41,7 @@ interface ConfigProp {
   tieneCertificado: boolean
   modo: string
   puntosVenta: Record<string, string>
+  comprobantesHabilitados: number[]
   cbuMiPymes: string | null
   activa: boolean
   actualizadoEn: string
@@ -138,7 +139,7 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
 
   // Comprobantes habilitados
   const [comprobantesHab, setComprobantesHab] = useState<Set<number>>(
-    new Set((config as unknown as Record<string, unknown>)?.comprobantesHabilitados as number[] ?? [])
+    new Set(config?.comprobantesHabilitados ?? [])
   )
 
   function toggleComprobante(codigo: number) {

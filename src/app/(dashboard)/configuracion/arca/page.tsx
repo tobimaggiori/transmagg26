@@ -23,8 +23,12 @@ export default async function ArcaPage() {
           tieneCertificado: !!certificadoB64,
           actualizadoEn: safe.actualizadoEn.toISOString(),
           puntosVenta: (() => {
-            try { return JSON.parse(safe.puntosVenta) as Record<string, string> }
-            catch { return {} }
+            try {
+              const raw = JSON.parse(safe.puntosVenta) as Record<string, unknown>
+              const result: Record<string, string> = {}
+              for (const [k, v] of Object.entries(raw)) result[k] = String(v)
+              return result
+            } catch { return {} }
           })(),
           comprobantesHabilitados: (() => {
             try { return JSON.parse(safe.comprobantesHabilitados || "[]") as number[] }
