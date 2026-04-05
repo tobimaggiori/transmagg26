@@ -9,6 +9,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esAdmin } from "@/lib/permissions"
 import { cifrarValor } from "@/lib/arca/crypto"
+import { CODIGOS_CATALOGO } from "@/lib/arca/catalogo"
 import { z } from "zod"
 import type { Rol } from "@/types"
 
@@ -19,6 +20,7 @@ const patchSchema = z.object({
   certificadoPass: z.string().optional(),
   modo: z.enum(["homologacion", "produccion", "simulacion"]).optional(),
   puntosVenta: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
+  comprobantesHabilitados: z.array(z.number().int()).optional(),
   cbuMiPymes: z.string().nullable().optional(),
   activa: z.boolean().optional(),
 })
@@ -58,6 +60,23 @@ function normalizarPuntosVentaInput(input: Record<string, string | number>): str
   return JSON.stringify(result)
 }
 
+/**
+ * parsearComprobantesHabilitados: string -> number[]
+ *
+ * Parsea el JSON array de comprobantes habilitados.
+ * Solo incluye códigos que pertenecen al catálogo cerrado ARCA.
+ */
+function parsearComprobantesHabilitados(json: string): number[] {
+  try {
+    const raw = JSON.parse(json) as unknown[]
+    return raw
+      .map((v) => typeof v === "number" ? v : parseInt(String(v), 10))
+      .filter((n) => !isNaN(n) && CODIGOS_CATALOGO.has(n))
+  } catch {
+    return []
+  }
+}
+
 export async function GET() {
   const session = await auth()
   if (!session?.user) {
@@ -72,13 +91,13 @@ export async function GET() {
     return NextResponse.json(null)
   }
 
-  // Never return certificadoB64 or certificadoPass
   const { certificadoB64: _b64, certificadoPass: _cert_pass, ...safe } = config
   void _cert_pass
   return NextResponse.json({
     ...safe,
     tieneCertificado: !!_b64,
     puntosVenta: parsearPuntosVenta(safe.puntosVenta),
+    comprobantesHabilitados: parsearComprobantesHabilitados(safe.comprobantesHabilitados),
   })
 }
 
@@ -97,7 +116,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
 
-  const { puntosVenta, certificadoB64, certificadoPass, ...rest } = parsed.data
+  const { puntosVenta, comprobantesHabilitados, certificadoB64, certificadoPass, ...rest } = parsed.data
 
   // Cifrar certificado y password si están presentes
   const datosSensibles: Record<string, string> = {}
@@ -106,12 +125,18 @@ export async function PATCH(req: NextRequest) {
 
   const pvJson = puntosVenta !== undefined ? normalizarPuntosVentaInput(puntosVenta) : undefined
 
+  // Filtrar comprobantesHabilitados: solo códigos del catálogo cerrado
+  const chJson = comprobantesHabilitados !== undefined
+    ? JSON.stringify(comprobantesHabilitados.filter((c) => CODIGOS_CATALOGO.has(c)))
+    : undefined
+
   const updated = await prisma.configuracionArca.upsert({
     where: { id: "unico" },
     update: {
       ...rest,
       ...datosSensibles,
       ...(pvJson !== undefined ? { puntosVenta: pvJson } : {}),
+      ...(chJson !== undefined ? { comprobantesHabilitados: chJson } : {}),
       actualizadoPor: session.user.email ?? undefined,
     },
     create: {
@@ -121,6 +146,7 @@ export async function PATCH(req: NextRequest) {
       ...rest,
       ...datosSensibles,
       ...(pvJson !== undefined ? { puntosVenta: pvJson } : {}),
+      ...(chJson !== undefined ? { comprobantesHabilitados: chJson } : {}),
       actualizadoPor: session.user.email ?? undefined,
     },
   })
@@ -131,5 +157,6 @@ export async function PATCH(req: NextRequest) {
     ...safe,
     tieneCertificado: !!_b64patch,
     puntosVenta: parsearPuntosVenta(safe.puntosVenta),
+    comprobantesHabilitados: parsearComprobantesHabilitados(safe.comprobantesHabilitados),
   })
 }

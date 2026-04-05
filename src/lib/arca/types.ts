@@ -182,6 +182,7 @@ export interface ArcaConfig {
   certificadoPass: string
   modo: "homologacion" | "produccion" | "simulacion"
   puntosVenta: Record<string, number>
+  comprobantesHabilitados: number[]
   cbuMiPymes: string | null
   activa: boolean
 }

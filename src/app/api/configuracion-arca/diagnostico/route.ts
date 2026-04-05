@@ -89,6 +89,7 @@ export async function GET() {
         modo: config.modo === "produccion" ? "produccion" : "homologacion",
         puntosVenta: {},
         cbuMiPymes: null,
+        comprobantesHabilitados: [],
         activa: config.activa,
       })
     } catch { /* ignore */ }

@@ -4,6 +4,7 @@
  * Cubre:
  * - Catálogo cerrado (invariante 1)
  * - Operatividad actual (invariante 2)
+ * - Configuración ARCA por código (invariante 3)
  * - Notas derivadas del origen (invariante 6)
  * - LP restringido (invariante 7)
  * - Integración ARCA exacta (invariante 8)
@@ -24,6 +25,7 @@ import {
   tipoCbteFactura,
   validarNotaContraOrigen,
   buscarComprobante,
+  validarComprobanteHabilitado,
 } from "@/lib/arca/catalogo"
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -274,6 +276,48 @@ describe("estructura del catálogo", () => {
       if (c.rol === "base") {
         expect(c.origenCompatible).toEqual([])
       }
+    }
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 9. Tests de configuración ARCA por código (invariante C1-C3)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("validarComprobanteHabilitado", () => {
+  const habilitados = [1, 6, 60, 61, 201]
+
+  it("código habilitado → null (válido)", () => {
+    expect(validarComprobanteHabilitado(1, habilitados)).toBeNull()
+    expect(validarComprobanteHabilitado(60, habilitados)).toBeNull()
+    expect(validarComprobanteHabilitado(201, habilitados)).toBeNull()
+  })
+
+  it("código deshabilitado → error con mensaje", () => {
+    expect(validarComprobanteHabilitado(2, habilitados)).toContain("no está habilitado")
+    expect(validarComprobanteHabilitado(3, habilitados)).toContain("no está habilitado")
+    expect(validarComprobanteHabilitado(7, habilitados)).toContain("no está habilitado")
+  })
+
+  it("65 configurable pero no operativo → rechazado por operatividad", () => {
+    const habConc65 = [...habilitados, 65]
+    expect(validarComprobanteHabilitado(65, habConc65)).toContain("no está operativo")
+  })
+
+  it("código fuera del catálogo → rechazado", () => {
+    expect(validarComprobanteHabilitado(186, habilitados)).toContain("no pertenece al catálogo")
+    expect(validarComprobanteHabilitado(999, habilitados)).toContain("no pertenece al catálogo")
+  })
+
+  it("lista vacía de habilitados → todo deshabilitado", () => {
+    expect(validarComprobanteHabilitado(1, [])).toContain("no está habilitado")
+    expect(validarComprobanteHabilitado(60, [])).toContain("no está habilitado")
+  })
+
+  it("todos los operativos habilitados → todos válidos", () => {
+    const todos = [1, 2, 3, 6, 7, 8, 60, 61, 201, 202, 203]
+    for (const cod of todos) {
+      expect(validarComprobanteHabilitado(cod, todos)).toBeNull()
     }
   })
 })

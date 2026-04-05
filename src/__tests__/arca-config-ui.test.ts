@@ -16,6 +16,7 @@ describe("configuración ARCA — validaciones", () => {
     modo: "homologacion",
     puntosVenta: { FACTURA_A: 1 },
     cbuMiPymes: null,
+    comprobantesHabilitados: [1, 6, 60, 61, 201],
     activa: true,
   }
 

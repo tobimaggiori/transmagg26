@@ -89,10 +89,30 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"]
 
-const TIPOS_COMPROBANTE = [
-  "FACTURA_A", "FACTURA_B", "FACTURA_C", "FACTURA_M",
-  "NOTA_CREDITO_A", "NOTA_CREDITO_B", "NOTA_CREDITO_C",
-  "NOTA_DEBITO_A", "NOTA_DEBITO_B", "NOTA_DEBITO_C",
+/** Claves de puntos de venta alineadas con catálogo ARCA cerrado */
+const CLAVES_PTO_VENTA = [
+  { clave: "FACTURA_A", label: "Factura A (1) / FCE (201/202/203)" },
+  { clave: "FACTURA_B", label: "Factura B (6)" },
+  { clave: "NOTA_CREDITO_A", label: "NC/ND A (2/3)" },
+  { clave: "NOTA_CREDITO_B", label: "NC/ND B (7/8)" },
+  { clave: "LP_A", label: "CVLP A (60)" },
+  { clave: "LP_B", label: "CVLP B (61)" },
+]
+
+/** Comprobantes configurables por código ARCA — catálogo cerrado */
+const COMPROBANTES_CONFIGURABLES = [
+  { codigo: 1, nombre: "Factura A", circuito: "Empresa" },
+  { codigo: 6, nombre: "Factura B", circuito: "Empresa" },
+  { codigo: 201, nombre: "FCE MiPyMEs A", circuito: "Empresa" },
+  { codigo: 2, nombre: "Nota de Débito A", circuito: "Empresa" },
+  { codigo: 3, nombre: "Nota de Crédito A", circuito: "Empresa" },
+  { codigo: 7, nombre: "Nota de Débito B", circuito: "Empresa" },
+  { codigo: 8, nombre: "Nota de Crédito B", circuito: "Empresa" },
+  { codigo: 202, nombre: "ND FCE MiPyMEs A", circuito: "Empresa" },
+  { codigo: 203, nombre: "NC FCE MiPyMEs A", circuito: "Empresa" },
+  { codigo: 60, nombre: "CVLP A", circuito: "Fletero" },
+  { codigo: 61, nombre: "CVLP B", circuito: "Fletero" },
+  { codigo: 65, nombre: "NC CVLP A (reservado)", circuito: "Fletero" },
 ]
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -115,6 +135,20 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
 
   // Puntos de venta
   const [puntosVenta, setPuntosVenta] = useState<Record<string, string>>(config?.puntosVenta ?? {})
+
+  // Comprobantes habilitados
+  const [comprobantesHab, setComprobantesHab] = useState<Set<number>>(
+    new Set((config as unknown as Record<string, unknown>)?.comprobantesHabilitados as number[] ?? [])
+  )
+
+  function toggleComprobante(codigo: number) {
+    setComprobantesHab((prev) => {
+      const next = new Set(prev)
+      if (next.has(codigo)) next.delete(codigo)
+      else next.add(codigo)
+      return next
+    })
+  }
 
   // MiPyME
   const [cbuMiPymes, setCbuMiPymes] = useState(config?.cbuMiPymes ?? "")
@@ -455,25 +489,49 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
         )}
 
         {tab === "puntos-venta" && (
-          <div className="rounded-lg border p-5 space-y-3">
-            <p className="text-sm font-semibold">Puntos de venta por tipo de comprobante</p>
-            <p className="text-xs text-muted-foreground">Configurá el número de punto de venta habilitado en ARCA para cada tipo de comprobante.</p>
-            <div className="grid md:grid-cols-2 gap-2 max-h-80 overflow-y-auto">
-              {TIPOS_COMPROBANTE.map((tipo) => (
-                <div key={tipo} className="flex items-center gap-2">
-                  <Label className="text-xs w-36 truncate" title={tipo}>{tipo.replace(/_/g, " ")}</Label>
-                  <Input
-                    value={puntosVenta[tipo] ?? ""}
-                    onChange={(e) => setPuntosVenta((prev) => ({ ...prev, [tipo]: e.target.value.replace(/\D/g, "") }))}
-                    className="h-7 text-xs w-20"
-                    placeholder="N°"
-                  />
-                </div>
-              ))}
+          <div className="rounded-lg border p-5 space-y-5">
+            {/* Puntos de venta */}
+            <div className="space-y-3">
+              <p className="text-sm font-semibold">Puntos de venta</p>
+              <p className="text-xs text-muted-foreground">Número de punto de venta habilitado en ARCA para cada grupo de comprobantes.</p>
+              <div className="grid md:grid-cols-2 gap-2">
+                {CLAVES_PTO_VENTA.map(({ clave, label }) => (
+                  <div key={clave} className="flex items-center gap-2">
+                    <Label className="text-xs w-48 truncate" title={clave}>{label}</Label>
+                    <Input
+                      value={puntosVenta[clave] ?? ""}
+                      onChange={(e) => setPuntosVenta((prev) => ({ ...prev, [clave]: e.target.value.replace(/\D/g, "") }))}
+                      className="h-7 text-xs w-20"
+                      placeholder="N°"
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
-            <Button size="sm" onClick={() => patch({ puntosVenta }, "puntos_venta").then(() => cargarDiagnostico())} disabled={saving === "puntos_venta"}>
+
+            {/* Comprobantes habilitados */}
+            <div className="space-y-3 border-t pt-4">
+              <p className="text-sm font-semibold">Comprobantes habilitados</p>
+              <p className="text-xs text-muted-foreground">Marcá los tipos de comprobante ARCA que la empresa puede emitir. Solo los habilitados aparecerán en la UI y serán aceptados por el backend.</p>
+              <div className="grid md:grid-cols-2 gap-1.5">
+                {COMPROBANTES_CONFIGURABLES.map(({ codigo, nombre, circuito }) => (
+                  <label key={codigo} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer text-xs">
+                    <input
+                      type="checkbox"
+                      checked={comprobantesHab.has(codigo)}
+                      onChange={() => toggleComprobante(codigo)}
+                      className="rounded"
+                    />
+                    <span className="font-mono text-muted-foreground w-8">{codigo}</span>
+                    <span>{nombre}</span>
+                    <span className="text-muted-foreground ml-auto">{circuito}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <Button size="sm" onClick={() => patch({ puntosVenta, comprobantesHabilitados: Array.from(comprobantesHab) }, "puntos_venta").then(() => cargarDiagnostico())} disabled={saving === "puntos_venta"}>
               {saving === "puntos_venta" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-              Guardar puntos de venta
+              Guardar configuración de comprobantes
             </Button>
           </div>
         )}

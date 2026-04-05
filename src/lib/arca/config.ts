@@ -7,6 +7,7 @@
 import { prisma } from "@/lib/prisma"
 import { ArcaNoConfiguradaError, ArcaConfigIncompletaError } from "./errors"
 import { descifrarValor } from "./crypto"
+import { CODIGOS_CATALOGO } from "./catalogo"
 import type { ArcaConfig, ArcaUrls } from "./types"
 
 const WSAA_URLS = {
@@ -62,15 +63,25 @@ export async function cargarConfigArca(): Promise<ArcaConfig> {
     throw new ArcaConfigIncompletaError("puntos de venta (JSON inválido)")
   }
 
+  // Parsear comprobantes habilitados: JSON array de números, filtrar solo los del catálogo
+  let comprobantesHabilitados: number[] = []
+  try {
+    const rawCH = JSON.parse(row.comprobantesHabilitados || "[]") as unknown[]
+    comprobantesHabilitados = rawCH
+      .map((v) => typeof v === "number" ? v : parseInt(String(v), 10))
+      .filter((n) => !isNaN(n) && CODIGOS_CATALOGO.has(n))
+  } catch {
+    // Si el JSON es inválido, queda vacío (nada habilitado)
+  }
+
   return {
     cuit: row.cuit.replace(/\D/g, ""),
     razonSocial: row.razonSocial,
-    // Descifrar certificado y password (backward compatible con plaintext legacy)
-    // En modo simulación pueden ser null
     certificadoB64: row.certificadoB64 ? descifrarValor(row.certificadoB64) : "",
     certificadoPass: row.certificadoPass ? descifrarValor(row.certificadoPass) : "",
     modo: row.modo === "produccion" ? "produccion" : row.modo === "simulacion" ? "simulacion" : "homologacion",
     puntosVenta,
+    comprobantesHabilitados,
     cbuMiPymes: row.cbuMiPymes ?? null,
     activa: row.activa,
   }

@@ -248,6 +248,31 @@ export function facturasParaCondicionFiscal(condicionFiscal: string): number[] {
 }
 
 /**
+ * Valida que un código esté habilitado en la configuración ARCA.
+ * Devuelve null si es válido, o string de error si no.
+ *
+ * Chequea 3 condiciones:
+ * 1. Pertenece al catálogo cerrado
+ * 2. Está operativo en esta etapa
+ * 3. Está en la lista de comprobantesHabilitados de la config
+ */
+export function validarComprobanteHabilitado(
+  codigo: number,
+  comprobantesHabilitados: number[]
+): string | null {
+  if (!esCodValido(codigo)) {
+    return `Código ${codigo} no pertenece al catálogo ARCA de Transmagg`
+  }
+  if (!esCodOperativo(codigo)) {
+    return `Código ${codigo} no está operativo en esta etapa`
+  }
+  if (!comprobantesHabilitados.includes(codigo)) {
+    return `Código ${codigo} no está habilitado en la configuración ARCA`
+  }
+  return null
+}
+
+/**
  * Devuelve el tipoCbte correcto para una liquidación según la condición fiscal del fletero.
  * Reemplaza el legacy determinarTipoCbteLiquidacion que usaba 186/187.
  */

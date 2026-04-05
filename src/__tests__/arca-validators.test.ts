@@ -15,6 +15,7 @@ const configOk: ArcaConfig = {
   modo: "homologacion",
   puntosVenta: { FACTURA_A: 1 },
   cbuMiPymes: null,
+  comprobantesHabilitados: [1, 2, 3, 6, 7, 8, 60, 61, 201, 202, 203],
   activa: true,
 }
 

@@ -15,6 +15,7 @@
 
 import { prisma } from "@/lib/prisma"
 import { cargarConfigArca, resolverUrls } from "./config"
+import { validarComprobanteHabilitado } from "./catalogo"
 import { obtenerTicketWsaa } from "./wsaa"
 import { feCompUltimoAutorizado, feCAESolicitar } from "./wsfev1"
 import { mapearComprobanteArca, parsearFechaArca } from "./mappers"
@@ -596,6 +597,12 @@ async function _autorizarComprobante(
     id: input.documentoId,
     tipoCbte: input.tipoCbte,
   })
+
+  // ── Validar comprobante habilitado en configuración ARCA ──
+  const errorHabilitacion = validarComprobanteHabilitado(input.tipoCbte, config.comprobantesHabilitados)
+  if (errorHabilitacion) {
+    throw new ArcaValidacionError([errorHabilitacion])
+  }
 
   // ── Modo simulación: generar datos ficticios sin llamar a ARCA ──
   if (config.modo === "simulacion") {
