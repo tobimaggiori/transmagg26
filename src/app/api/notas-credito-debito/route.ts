@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
  *
  * Ejemplos:
  * POST { tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL", facturaId: "f1", montoNeto: 1000, descripcion: "Anulación" }
- * // => 201 { id, tipo: "NC_EMITIDA", estado: "BORRADOR", montoTotal: 1210 }
+ * // => 201 { id, tipo: "NC_EMITIDA", estado: "EMITIDA", montoTotal: 1210 }
  * POST { tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL", facturaId: "anulada", montoNeto: 1, descripcion: "..." }
  * // => 400 { error: "La factura ya está anulada" }
  */

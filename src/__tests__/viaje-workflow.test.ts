@@ -30,8 +30,8 @@ describe("tarifaEsEditable", () => {
 })
 
 describe("tieneDocumentosActivos", () => {
-  it('tieneDocumentosActivos(["BORRADOR"], "ANULADA") === true', () => {
-    expect(tieneDocumentosActivos(["BORRADOR"], "ANULADA")).toBe(true)
+  it('tieneDocumentosActivos(["EMITIDA"], "ANULADA") === true', () => {
+    expect(tieneDocumentosActivos(["EMITIDA"], "ANULADA")).toBe(true)
   })
 
   it('tieneDocumentosActivos(["ANULADA", "PAGADA"], "ANULADA") === true', () => {
@@ -44,8 +44,8 @@ describe("tieneDocumentosActivos", () => {
 })
 
 describe("resolverEstadoLiquidacionViaje", () => {
-  it('resolverEstadoLiquidacionViaje(["BORRADOR"]) === "LIQUIDADO"', () => {
-    expect(resolverEstadoLiquidacionViaje([EstadoLiquidacionDocumento.BORRADOR])).toBe(
+  it('resolverEstadoLiquidacionViaje(["EMITIDA"]) === "LIQUIDADO"', () => {
+    expect(resolverEstadoLiquidacionViaje([EstadoLiquidacionDocumento.EMITIDA])).toBe(
       EstadoLiquidacionViaje.LIQUIDADO
     )
   })
@@ -62,8 +62,8 @@ describe("resolverEstadoLiquidacionViaje", () => {
 })
 
 describe("resolverEstadoFacturaViaje", () => {
-  it('resolverEstadoFacturaViaje(["BORRADOR"]) === "FACTURADO"', () => {
-    expect(resolverEstadoFacturaViaje([EstadoFacturaDocumento.BORRADOR])).toBe(
+  it('resolverEstadoFacturaViaje(["EMITIDA"]) === "FACTURADO"', () => {
+    expect(resolverEstadoFacturaViaje([EstadoFacturaDocumento.EMITIDA])).toBe(
       EstadoFacturaViaje.FACTURADO
     )
   })

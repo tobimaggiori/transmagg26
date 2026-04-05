@@ -1,7 +1,7 @@
 /**
  * API Routes para liquidación individual.
  * GET   /api/liquidaciones/[id] - Detalle de liquidación con viajes
- * PATCH /api/liquidaciones/[id] - Cambia estado (BORRADOR→EMITIDA / ANULADA)
+ * PATCH /api/liquidaciones/[id] - Cambia estado (EMITIDA→PAGADA / ANULADA)
  *
  * Cuando se ANULA una liquidación, sus viajes vuelven a estadoLiquidacion="PENDIENTE_LIQUIDAR".
  * Al pasar a EMITIDA el operador confirma que está cargada en ARCA.
@@ -20,10 +20,6 @@ import { verificarPropietarioFletero } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 
 const TRANSICIONES_VALIDAS: Record<string, string[]> = {
-  [EstadoLiquidacionDocumento.BORRADOR]: [
-    EstadoLiquidacionDocumento.EMITIDA,
-    EstadoLiquidacionDocumento.ANULADA,
-  ],
   [EstadoLiquidacionDocumento.EMITIDA]: [
     EstadoLiquidacionDocumento.PAGADA,
     EstadoLiquidacionDocumento.ANULADA,
@@ -112,17 +108,17 @@ export async function GET(
  * PATCH: NextRequest { params: { id } } -> Promise<NextResponse>
  *
  * Dado el id de la liquidación y { estado }, avanza el estado según
- * las transiciones válidas: BORRADOR→EMITIDA/ANULADA, EMITIDA→PAGADA/ANULADA.
+ * las transiciones válidas: EMITIDA→PAGADA/ANULADA.
  * Al anular, devuelve todos los viajes asociados a estadoLiquidacion="PENDIENTE_LIQUIDAR".
  * Existe para gestionar el ciclo de vida de una liquidación y permitir correcciones.
  *
  * Ejemplos:
- * PATCH /api/liquidaciones/liq1 { estado: "EMITIDA" } (liq en BORRADOR)
- * // => 200 { id: "liq1", estado: "EMITIDA" }
+ * PATCH /api/liquidaciones/liq1 { estado: "PAGADA" } (liq en EMITIDA)
+ * // => 200 { id: "liq1", estado: "PAGADA" }
  * PATCH /api/liquidaciones/liq1 { estado: "ANULADA" } (liq en EMITIDA)
  * // => 200 { id: "liq1", estado: "ANULADA" } (viajes vuelven a PENDIENTE_LIQUIDAR)
- * PATCH /api/liquidaciones/liq1 { estado: "BORRADOR" } (transición inválida)
- * // => 422 { error: "No se puede cambiar de EMITIDA a BORRADOR" }
+ * PATCH /api/liquidaciones/liq1 { estado: "EMITIDA" } (liq ya EMITIDA, transición inválida)
+ * // => 422 { error: "No se puede cambiar de EMITIDA a EMITIDA" }
  */
 export async function PATCH(
   request: NextRequest,

@@ -355,19 +355,6 @@ describe("PATCH /api/liquidaciones/[id] — transiciones de estado", () => {
     expect(res.status).toBe(422)
   })
 
-  it("BORRADOR → PAGADA (inválida, salta EMITIDA) → 422", async () => {
-    mockAuth.mockResolvedValue(session("ADMIN_TRANSMAGG"))
-    mockPrisma.liquidacion.findUnique.mockResolvedValue({
-      id: "liq-1",
-      estado: "BORRADOR",
-      viajes: [],
-      asientoIva: null,
-    })
-
-    const res = await patchLiquidacion(patchReq({ estado: "PAGADA" }), params)
-    expect(res.status).toBe(422)
-  })
-
   it("EMITIDA → PAGADA (válida) → 200", async () => {
     mockAuth.mockResolvedValue(session("ADMIN_TRANSMAGG"))
     mockPrisma.liquidacion.findUnique.mockResolvedValue({
@@ -391,11 +378,11 @@ describe("PATCH /api/liquidaciones/[id] — transiciones de estado", () => {
     expect(body.estado).toBe("PAGADA")
   })
 
-  it("BORRADOR → EMITIDA (válida) → 200", async () => {
+  it("EMITIDA → ANULADA (válida) → 200", async () => {
     mockAuth.mockResolvedValue(session("OPERADOR_TRANSMAGG"))
     mockPrisma.liquidacion.findUnique.mockResolvedValue({
       id: "liq-1",
-      estado: "BORRADOR",
+      estado: "EMITIDA",
       neto: 99173.55,
       ivaPct: 21,
       ivaMonto: 20826.45,
@@ -405,12 +392,12 @@ describe("PATCH /api/liquidaciones/[id] — transiciones de estado", () => {
     })
     mockTx.liquidacion.update.mockResolvedValue({
       id: "liq-1",
-      estado: "EMITIDA",
+      estado: "ANULADA",
     })
 
-    const res = await patchLiquidacion(patchReq({ estado: "EMITIDA" }), params)
+    const res = await patchLiquidacion(patchReq({ estado: "ANULADA" }), params)
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.estado).toBe("EMITIDA")
+    expect(body.estado).toBe("ANULADA")
   })
 })

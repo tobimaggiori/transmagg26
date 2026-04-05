@@ -66,10 +66,10 @@ export default async function ContabilidadViajesSinLpPage({
   const registros = await prisma.viajeEnFactura.findMany({
     where: {
       fechaViaje: { gte: desde, lt: hasta },
-      factura: { estado: { notIn: ["ANULADA", "BORRADOR"] } },
+      factura: { estado: { notIn: ["ANULADA"] } },
       viaje: {
         enLiquidaciones: {
-          none: { liquidacion: { estado: { notIn: ["ANULADA", "BORRADOR"] } } },
+          none: { liquidacion: { estado: { notIn: ["ANULADA"] } } },
         },
       },
     },

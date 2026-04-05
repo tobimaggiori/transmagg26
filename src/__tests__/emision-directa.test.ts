@@ -18,7 +18,7 @@ const mockTx = {
   viajeEnLiquidacion: { findMany: jest.fn() },
   asientoIibb: { deleteMany: jest.fn() },
   asientoIva: { deleteMany: jest.fn() },
-  facturaEmitida: { delete: jest.fn(), update: jest.fn() },
+  facturaEmitida: { delete: jest.fn(), update: jest.fn(), findUnique: jest.fn() },
   liquidacion: { delete: jest.fn(), findUnique: jest.fn() },
   notaCreditoDebito: { delete: jest.fn(), update: jest.fn() },
   viaje: { updateMany: jest.fn() },
@@ -58,6 +58,7 @@ beforeEach(() => {
   mockTx.asientoIva.deleteMany.mockResolvedValue({ count: 0 })
   mockTx.facturaEmitida.delete.mockResolvedValue({})
   mockTx.facturaEmitida.update.mockResolvedValue({ id: "fact-1", estado: "EMITIDA" })
+  mockTx.facturaEmitida.findUnique.mockResolvedValue({ id: "fact-1", estado: "EMITIDA" })
   mockTx.liquidacion.delete.mockResolvedValue({})
   mockTx.liquidacion.findUnique.mockResolvedValue({ id: "liq-1" })
   mockTx.notaCreditoDebito.delete.mockResolvedValue({})
@@ -91,11 +92,7 @@ describe("emitirFacturaDirecta", () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.arca.cae).toBe("74120000000001")
-    // Debe haber seteado estado=EMITIDA
-    expect(mockTx.facturaEmitida.update).toHaveBeenCalledWith({
-      where: { id: "fact-1" },
-      data: { estado: "EMITIDA" },
-    })
+    // Creación ya pone EMITIDA, no necesita update adicional
   })
 
   it("ARCA FAIL → ok=false, sin documento, con mensaje claro", async () => {
@@ -200,17 +197,15 @@ describe("emitirNotaCDDirecta — NC_EMITIDA", () => {
     descripcion: "Anulación total",
   }
 
-  it("ARCA OK → nota EMITIDA", async () => {
+  it("ARCA OK → nota emitida con CAE", async () => {
     mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-1" } })
     mockAutorizarNotaCDArca.mockResolvedValue(ARCA_RESULT)
 
     const r = await emitirNotaCDDirecta(ncTotal, "op1", "key-1")
 
     expect(r.ok).toBe(true)
-    expect(mockTx.notaCreditoDebito.update).toHaveBeenCalledWith({
-      where: { id: "nota-1" },
-      data: { estado: "EMITIDA" },
-    })
+    if (!r.ok) return
+    expect(r.arca.cae).toBe("74120000000001")
   })
 
   it("ARCA FAIL → nota eliminada, viajes revertidos a FACTURADO", async () => {
@@ -233,7 +228,7 @@ describe("emitirNotaCDDirecta — NC_EMITIDA", () => {
 })
 
 describe("emitirNotaCDDirecta — NC parcial ARCA FAIL", () => {
-  it("revierte viajes a FACTURADO (no AJUSTADO_PARCIAL)", async () => {
+  it("revierte viajes a FACTURADO (estaban en PENDIENTE tras NC parcial)", async () => {
     const ncParcial = {
       tipo: "NC_EMITIDA",
       subtipo: "ANULACION_PARCIAL",

@@ -34,7 +34,6 @@ export type { LiquidacionesClientProps } from "./_components/types"
 
 function EstadoBadge({ estado }: { estado: string }) {
   const estilos: Record<string, string> = {
-    BORRADOR: "bg-yellow-100 text-yellow-800",
     EMITIDA: "bg-blue-100 text-blue-800",
     PARCIALMENTE_PAGADA: "bg-amber-100 text-amber-800",
     PAGADA: "bg-green-100 text-green-800",

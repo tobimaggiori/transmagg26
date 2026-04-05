@@ -110,7 +110,7 @@ export async function GET(
  * PATCH: NextRequest { params: { id } } -> Promise<NextResponse>
  *
  * Dado el id de la nota y el body { estado }, actualiza únicamente el campo estado.
- * Permite transicionar entre BORRADOR, EMITIDA, REGISTRADA, ANULADA según corresponda.
+ * Permite transicionar entre EMITIDA, REGISTRADA, ANULADA según corresponda.
  * Esta ruta existe para gestionar el ciclo de vida de una NC/ND, por ejemplo
  * marcarla como EMITIDA luego de la autorización ARCA o ANULADA si hubo error.
  *

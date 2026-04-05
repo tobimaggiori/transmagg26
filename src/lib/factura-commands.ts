@@ -48,7 +48,7 @@ type ResultadoFactura =
  *
  * Ejemplos:
  * ejecutarCrearFactura({ empresaId: "e1", viajeIds: ["v1"], tipoCbte: 1, ivaPct: 21 }, "op1")
- *   // => { ok: true, factura: { id, estado: "BORRADOR", ... } }
+ *   // => { ok: true, factura: { id, estado: "EMITIDA", ... } }
  * ejecutarCrearFactura({ empresaId: "noexiste", ... }, "op1")
  *   // => { ok: false, status: 404, error: "Empresa no encontrada" }
  */
@@ -135,7 +135,7 @@ export async function ejecutarCrearFactura(
         ivaMonto,
         total,
         estadoArca: "PENDIENTE",
-        estado: EstadoFacturaDocumento.BORRADOR,
+        estado: EstadoFacturaDocumento.EMITIDA,
       },
     })
 

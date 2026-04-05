@@ -333,18 +333,6 @@ describe("PATCH /api/facturas/[id] — transiciones de estado", () => {
     expect(res.status).toBe(422)
   })
 
-  it("BORRADOR → COBRADA (inválida, salta EMITIDA) → 422", async () => {
-    mockAuth.mockResolvedValue(session("ADMIN_TRANSMAGG"))
-    mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
-      id: "fact-1",
-      estado: "BORRADOR",
-      viajes: [],
-    })
-
-    const res = await patchFactura(patchReq({ estado: "COBRADA" }), params)
-    expect(res.status).toBe(422)
-  })
-
   it("EMITIDA → COBRADA (válida) → 200", async () => {
     mockAuth.mockResolvedValue(session("ADMIN_TRANSMAGG"))
     mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
@@ -363,25 +351,21 @@ describe("PATCH /api/facturas/[id] — transiciones de estado", () => {
     expect(body.estado).toBe("COBRADA")
   })
 
-  it("BORRADOR → EMITIDA (válida) → 200", async () => {
+  it("EMITIDA → ANULADA (válida) → 200", async () => {
     mockAuth.mockResolvedValue(session("OPERADOR_TRANSMAGG"))
     mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
       id: "fact-1",
-      estado: "BORRADOR",
+      estado: "EMITIDA",
       viajes: [],
     })
     mockTx.facturaEmitida.update.mockResolvedValue({
       id: "fact-1",
-      estado: "EMITIDA",
-      nroComprobante: "0001-00000001",
+      estado: "ANULADA",
     })
 
-    const res = await patchFactura(
-      patchReq({ estado: "EMITIDA", nroComprobante: "0001-00000001" }),
-      params
-    )
+    const res = await patchFactura(patchReq({ estado: "ANULADA" }), params)
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.estado).toBe("EMITIDA")
+    expect(body.estado).toBe("ANULADA")
   })
 })

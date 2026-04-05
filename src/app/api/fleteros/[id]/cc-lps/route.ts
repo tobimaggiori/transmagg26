@@ -38,7 +38,7 @@ export async function GET(
 
   const estadoWhere =
     estadoFiltro === "pendientes"
-      ? { in: ["EMITIDA", "BORRADOR", "PARCIALMENTE_PAGADA"] }
+      ? { in: ["EMITIDA", "PARCIALMENTE_PAGADA"] }
       : estadoFiltro === "pagados"
       ? { equals: "PAGADA" }
       : { not: "ANULADA" }

@@ -48,22 +48,22 @@ export async function GET(request: NextRequest): Promise<Response> {
       where: {
         fechaViaje: { gte: desde, lt: hasta },
         enLiquidaciones: {
-          some: { liquidacion: { estado: { notIn: ["ANULADA", "BORRADOR"] } } },
+          some: { liquidacion: { estado: { notIn: ["ANULADA"] } } },
         },
         enFacturas: {
-          some: { factura: { estado: { notIn: ["ANULADA", "BORRADOR"] } } },
+          some: { factura: { estado: { notIn: ["ANULADA"] } } },
         },
       },
       include: {
         empresa: { select: { razonSocial: true } },
         enLiquidaciones: {
-          where: { liquidacion: { estado: { notIn: ["ANULADA", "BORRADOR"] } } },
+          where: { liquidacion: { estado: { notIn: ["ANULADA"] } } },
           include: { liquidacion: { select: { nroComprobante: true } } },
           orderBy: { liquidacion: { grabadaEn: "asc" } },
           take: 1,
         },
         enFacturas: {
-          where: { factura: { estado: { notIn: ["ANULADA", "BORRADOR"] } } },
+          where: { factura: { estado: { notIn: ["ANULADA"] } } },
           include: { factura: { select: { nroComprobante: true } } },
           orderBy: { factura: { emitidaEn: "asc" } },
           take: 1,

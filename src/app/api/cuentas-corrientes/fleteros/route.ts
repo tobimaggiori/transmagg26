@@ -44,7 +44,7 @@ export async function GET() {
       where: { activo: true },
       include: {
         liquidaciones: {
-          where: { estado: { in: ["EMITIDA", "BORRADOR"] } },
+          where: { estado: "EMITIDA" },
           include: {
             pagos: { where: { anulado: false }, select: { monto: true } },
           },

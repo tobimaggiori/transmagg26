@@ -49,7 +49,7 @@ export default async function CuentasCorrientesPage() {
       where: { activo: true },
       include: {
         liquidaciones: {
-          where: { estado: { in: ["EMITIDA", "BORRADOR"] } },
+          where: { estado: "EMITIDA" },
           include: { pagos: { select: { monto: true } } },
           orderBy: { grabadaEn: "desc" },
         },

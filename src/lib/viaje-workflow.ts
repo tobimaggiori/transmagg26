@@ -45,11 +45,10 @@ export const EstadoFacturaViaje = {
  * Existe para distinguir el estado del documento del estado del viaje base.
  *
  * Ejemplos:
- * EstadoLiquidacionDocumento.BORRADOR === "BORRADOR"
+ * EstadoLiquidacionDocumento.EMITIDA === "EMITIDA"
  * EstadoLiquidacionDocumento.ANULADA === "ANULADA"
  */
 export const EstadoLiquidacionDocumento = {
-  BORRADOR: "BORRADOR",
   EMITIDA: "EMITIDA",
   PAGADA: "PAGADA",
   ANULADA: "ANULADA",
@@ -62,11 +61,10 @@ export const EstadoLiquidacionDocumento = {
  * Existe para distinguir el estado del documento del estado del viaje base.
  *
  * Ejemplos:
- * EstadoFacturaDocumento.BORRADOR === "BORRADOR"
+ * EstadoFacturaDocumento.EMITIDA === "EMITIDA"
  * EstadoFacturaDocumento.COBRADA === "COBRADA"
  */
 export const EstadoFacturaDocumento = {
-  BORRADOR: "BORRADOR",
   EMITIDA: "EMITIDA",
   COBRADA: "COBRADA",
   ANULADA: "ANULADA",
@@ -100,7 +98,7 @@ export function tarifaEsEditable(tarifa?: number | null): boolean {
  * se anula un documento pero puede existir otro documento vigente del mismo circuito.
  *
  * Ejemplos:
- * tieneDocumentosActivos(["BORRADOR"], "ANULADA") === true
+ * tieneDocumentosActivos(["EMITIDA"], "ANULADA") === true
  * tieneDocumentosActivos(["ANULADA", "PAGADA"], "ANULADA") === true
  * tieneDocumentosActivos(["ANULADA"], "ANULADA") === false
  */
@@ -117,7 +115,7 @@ export function tieneDocumentosActivos(estados: string[], estadoAnulado: string)
  * liquidación activa luego de una anulación o corrección.
  *
  * Ejemplos:
- * resolverEstadoLiquidacionViaje(["BORRADOR"]) === "LIQUIDADO"
+ * resolverEstadoLiquidacionViaje(["EMITIDA"]) === "LIQUIDADO"
  * resolverEstadoLiquidacionViaje(["ANULADA"]) === "PENDIENTE_LIQUIDAR"
  * resolverEstadoLiquidacionViaje([]) === "PENDIENTE_LIQUIDAR"
  */
@@ -138,7 +136,7 @@ export function resolverEstadoLiquidacionViaje(
  * factura activa luego de una anulación o recreación documental.
  *
  * Ejemplos:
- * resolverEstadoFacturaViaje(["BORRADOR"]) === "FACTURADO"
+ * resolverEstadoFacturaViaje(["EMITIDA"]) === "FACTURADO"
  * resolverEstadoFacturaViaje(["ANULADA"]) === "PENDIENTE_FACTURAR"
  * resolverEstadoFacturaViaje([]) === "PENDIENTE_FACTURAR"
  */

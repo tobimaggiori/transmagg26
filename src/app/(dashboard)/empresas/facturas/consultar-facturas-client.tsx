@@ -94,7 +94,7 @@ function hoy(): string {
  * EstadoBadge: { estado: string } -> JSX.Element
  *
  * Dado un string de estado de factura, devuelve un badge de colores
- * correspondiente al estado. Cubre BORRADOR, EMITIDA, PARCIALMENTE_COBRADA,
+ * correspondiente al estado. Cubre EMITIDA, PARCIALMENTE_COBRADA,
  * COBRADA y ANULADA.
  * Existe para mostrar estados de forma visual y uniforme en la tabla.
  *
@@ -104,7 +104,6 @@ function hoy(): string {
  */
 function EstadoBadge({ estado }: { estado: string }) {
   const estilos: Record<string, string> = {
-    BORRADOR: "bg-yellow-100 text-yellow-800",
     EMITIDA: "bg-blue-100 text-blue-800",
     PARCIALMENTE_COBRADA: "bg-amber-100 text-amber-800",
     COBRADA: "bg-green-100 text-green-800",
@@ -130,8 +129,7 @@ function EstadoBadge({ estado }: { estado: string }) {
  * Al buscar consulta GET /api/empresas/facturas con los filtros activos.
  * Muestra tabla con totales y permite ver el detalle de cada factura en un modal.
  * El modal de detalle muestra viajes, pagos recibidos y botones de acción:
- * registrar cobro (EMITIDA/PARCIALMENTE_COBRADA), marcar emitida (BORRADOR),
- * anular (BORRADOR/EMITIDA).
+ * registrar cobro (EMITIDA/PARCIALMENTE_COBRADA), anular (EMITIDA).
  * Existe para que los operadores internos puedan gestionar el historial de facturas
  * sin mezclar con el flujo de creación.
  *
@@ -256,7 +254,6 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
                 className="h-9 w-full rounded-md border bg-background px-3 text-sm"
               >
                 <option value="">Todos</option>
-                <option value="BORRADOR">Borrador</option>
                 <option value="EMITIDA">Emitida</option>
                 <option value="PARCIALMENTE_COBRADA">Parcialmente Cobrada</option>
                 <option value="COBRADA">Cobrada</option>
@@ -463,16 +460,7 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
                   Registrar cobro
                 </Button>
               )}
-              {facturaDetalle.estado === "BORRADOR" && (
-                <Button
-                  onClick={() => void cambiarEstado(facturaDetalle.id, "EMITIDA")}
-                  disabled={cambioEstadoCargando}
-                  variant="default"
-                >
-                  Marcar Emitida
-                </Button>
-              )}
-              {(facturaDetalle.estado === "BORRADOR" || facturaDetalle.estado === "EMITIDA") && (
+              {facturaDetalle.estado === "EMITIDA" && (
                 <Button
                   onClick={() => void cambiarEstado(facturaDetalle.id, "ANULADA")}
                   disabled={cambioEstadoCargando}

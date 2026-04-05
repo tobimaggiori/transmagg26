@@ -12,7 +12,6 @@ import { HistorialPagoFletero } from "./historial-pago-fletero"
 
 function EstadoBadge({ estado }: { estado: string }) {
   const estilos: Record<string, string> = {
-    BORRADOR: "bg-yellow-100 text-yellow-800",
     EMITIDA: "bg-blue-100 text-blue-800",
     PARCIALMENTE_PAGADA: "bg-amber-100 text-amber-800",
     PAGADA: "bg-green-100 text-green-800",
@@ -252,16 +251,7 @@ export function ModalDetalleLiquidacion({
             Descargar PDF
           </button>
           <div className="flex gap-2">
-            {liq.estado === "BORRADOR" && (
-              <button
-                onClick={() => onCambiarEstado("EMITIDA")}
-                disabled={cargando}
-                className="h-9 px-4 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-              >
-                Marcar como emitida en ARCA
-              </button>
-            )}
-            {(liq.estado === "BORRADOR" || liq.estado === "EMITIDA") && (
+            {liq.estado === "EMITIDA" && (
               <button
                 onClick={() => onCambiarEstado("ANULADA")}
                 disabled={cargando}

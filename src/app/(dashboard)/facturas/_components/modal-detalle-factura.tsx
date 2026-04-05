@@ -13,7 +13,6 @@ import type { Factura, NotaCDResumen } from "./types"
 
 function EstadoBadge({ estado }: { estado: string }) {
   const estilos: Record<string, string> = {
-    BORRADOR: "bg-yellow-100 text-yellow-800",
     EMITIDA: "bg-blue-100 text-blue-800",
     PARCIALMENTE_COBRADA: "bg-amber-100 text-amber-800",
     COBRADA: "bg-green-100 text-green-800",
@@ -53,7 +52,6 @@ export function ModalDetalleFactura({
   onCerrar: () => void
   cargando: boolean
 }) {
-  const [nroComprobante, setNroComprobante] = useState(factura.nroComprobante ?? "")
   const [notasCD, setNotasCD] = useState<NotaCDResumen[]>([])
   const [mostrarModalNC, setMostrarModalNC] = useState(false)
   const [mostrarModalND, setMostrarModalND] = useState(false)
@@ -137,20 +135,6 @@ export function ModalDetalleFactura({
           )}
         </div>
 
-        {/* Nro comprobante (solo al emitir) */}
-        {factura.estado === "BORRADOR" && (
-          <div className="mb-4">
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Nro. Comprobante (opcional)</label>
-            <input
-              type="text"
-              value={nroComprobante}
-              onChange={(e) => setNroComprobante(e.target.value)}
-              placeholder="0001-00000001"
-              className="h-8 rounded border bg-background px-2 text-sm w-48"
-            />
-          </div>
-        )}
-
         {/* Sección NC/ND */}
         <div className="mt-4 border-t pt-4">
           <div className="flex items-center justify-between mb-2">
@@ -214,15 +198,6 @@ export function ModalDetalleFactura({
             Descargar PDF
           </button>
           <div className="flex gap-2">
-            {factura.estado === "BORRADOR" && (
-              <button
-                onClick={() => onCambiarEstado("EMITIDA", nroComprobante || undefined)}
-                disabled={cargando}
-                className="h-9 px-4 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-              >
-                Marcar como emitida en ARCA
-              </button>
-            )}
             {(factura.estado === "EMITIDA" || factura.estado === "PARCIALMENTE_COBRADA") && (
               <button
                 onClick={onRegistrarCobro}
@@ -232,7 +207,7 @@ export function ModalDetalleFactura({
                 Registrar cobro
               </button>
             )}
-            {(factura.estado === "BORRADOR" || factura.estado === "EMITIDA") && (
+            {factura.estado === "EMITIDA" && (
               <button
                 onClick={() => onCambiarEstado("ANULADA")}
                 disabled={cargando}

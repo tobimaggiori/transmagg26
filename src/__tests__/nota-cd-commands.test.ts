@@ -2,7 +2,7 @@
  * Propósito: Tests de dominio para nota-cd-commands.ts.
  * Verifica que NC/ND preservan historial documental, que NC total
  * libera viajes pero no anula factura, que NC parcial deja viajes
- * en AJUSTADO_PARCIAL, y que NC recibida no anula liquidación.
+ * a PENDIENTE, y que NC recibida no anula liquidación.
  */
 
 const mockTx = {
@@ -122,7 +122,7 @@ describe("NC_EMITIDA / ANULACION_TOTAL", () => {
 // ─── NC_EMITIDA / ANULACION_PARCIAL ─────────────────────────────────────────
 
 describe("NC_EMITIDA / ANULACION_PARCIAL", () => {
-  it("pone viajes seleccionados en FACTURADO_AJUSTADO_PARCIAL (no PENDIENTE)", async () => {
+  it("pone viajes seleccionados en PENDIENTE_FACTURAR (revertidos totalmente)", async () => {
     mockPrisma.facturaEmitida.findUnique.mockResolvedValue(FACTURA_MOCK)
 
     const r = await ejecutarCrearNotaCD({
@@ -131,17 +131,17 @@ describe("NC_EMITIDA / ANULACION_PARCIAL", () => {
       facturaId: "fact-1",
       montoNeto: 1500,
       ivaPct: 21,
-      descripcion: "Ajuste parcial v1",
+      descripcion: "Anulación parcial v1",
       viajesIds: ["v1"],
     }, "op1")
 
     expect(r.ok).toBe(true)
 
-    // v1 debe quedar AJUSTADO_PARCIAL
+    // v1 queda totalmente revertido → PENDIENTE_FACTURAR
     expect(mockTx.viaje.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "v1" },
-        data: { estadoFactura: "FACTURADO_AJUSTADO_PARCIAL" },
+        data: { estadoFactura: "PENDIENTE_FACTURAR" },
       })
     )
 
@@ -318,7 +318,7 @@ const LIQ_MOCK_CON_VIAJES = {
 }
 
 describe("NC_RECIBIDA / ANULACION_PARCIAL_LIQUIDACION", () => {
-  it("pone viajes seleccionados en LIQUIDADO_AJUSTADO_PARCIAL", async () => {
+  it("pone viajes seleccionados en PENDIENTE_LIQUIDAR (revertidos totalmente)", async () => {
     mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK_CON_VIAJES)
 
     const r = await ejecutarCrearNotaCD({
@@ -327,17 +327,17 @@ describe("NC_RECIBIDA / ANULACION_PARCIAL_LIQUIDACION", () => {
       liquidacionId: "liq-1",
       montoNeto: 1200,
       ivaPct: 21,
-      descripcion: "Ajuste parcial viaje v1",
+      descripcion: "Anulación parcial viaje v1",
       viajesIds: ["v1"],
     }, "op1")
 
     expect(r.ok).toBe(true)
 
-    // v1 debe quedar LIQUIDADO_AJUSTADO_PARCIAL
+    // v1 queda totalmente revertido → PENDIENTE_LIQUIDAR
     expect(mockTx.viaje.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "v1" },
-        data: { estadoLiquidacion: "LIQUIDADO_AJUSTADO_PARCIAL" },
+        data: { estadoLiquidacion: "PENDIENTE_LIQUIDAR" },
       })
     )
 

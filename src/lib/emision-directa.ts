@@ -40,9 +40,9 @@ function mensajeErrorArca(err: unknown): string {
 /**
  * emitirFacturaDirecta: DatosCrearFactura string string -> Promise<ResultadoEmisionDirecta>
  *
- * 1. Crea factura (BORRADOR + viajes FACTURADO + snapshots + contabilidad).
+ * 1. Crea factura (EMITIDA + viajes FACTURADO + snapshots + contabilidad).
  * 2. Autoriza en ARCA.
- * 3. Si ARCA OK → pone estado=EMITIDA, devuelve éxito.
+ * 3. Si ARCA OK → devuelve éxito con CAE.
  * 4. Si ARCA FAIL → borra todo lo creado, revierte viajes, devuelve error.
  */
 export async function emitirFacturaDirecta(
@@ -58,13 +58,12 @@ export async function emitirFacturaDirecta(
   try {
     const arca = await autorizarFacturaArca(factura.id, idempotencyKey)
 
-    // ARCA OK → marcar como EMITIDA
-    const facturaEmitida = await prisma.facturaEmitida.update({
+    // ARCA OK → re-leer con datos ARCA persistidos
+    const facturaFinal = await prisma.facturaEmitida.findUnique({
       where: { id: factura.id },
-      data: { estado: "EMITIDA" },
     })
 
-    return { ok: true, documento: facturaEmitida, arca }
+    return { ok: true, documento: facturaFinal, arca }
   } catch (err) {
     // ARCA FAIL → compensar: borrar comprobante + revertir viajes
     await _revertirFactura(factura.id, data.viajeIds)
@@ -194,12 +193,6 @@ export async function emitirNotaCDDirecta(
   try {
     const arca = await autorizarNotaCDArca(nota.id, idempotencyKey)
 
-    // ARCA OK → marcar como EMITIDA
-    await prisma.notaCreditoDebito.update({
-      where: { id: nota.id },
-      data: { estado: "EMITIDA" },
-    })
-
     return { ok: true, documento: nota, arca }
   } catch (err) {
     await _revertirNotaCD(nota.id, data)
@@ -229,7 +222,7 @@ async function _revertirNotaCD(notaId: string, data: DatosNotaCD) {
             })
           }
         } else if (data.subtipo === "ANULACION_PARCIAL" && data.viajesIds?.length) {
-          // NC parcial puso viajes en AJUSTADO_PARCIAL → revertir a FACTURADO
+          // NC parcial puso viajes seleccionados en PENDIENTE → revertir a FACTURADO
           await tx.viaje.updateMany({
             where: { id: { in: data.viajesIds } },
             data: { estadoFactura: "FACTURADO" },

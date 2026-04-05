@@ -1,7 +1,7 @@
 /**
  * API Routes para factura individual.
  * GET   /api/facturas/[id] - Detalle de factura con viajes copiados
- * PATCH /api/facturas/[id] - Cambia estado (BORRADOR→EMITIDA→COBRADA / ANULADA)
+ * PATCH /api/facturas/[id] - Cambia estado (EMITIDA→COBRADA / ANULADA)
  *
  * Cuando se ANULA una factura, sus viajes vuelven a estadoFactura="PENDIENTE_FACTURAR".
  * NO se toca estadoLiquidacion.
@@ -20,10 +20,6 @@ import { verificarPropietarioEmpresa } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 
 const TRANSICIONES_VALIDAS: Record<string, string[]> = {
-  [EstadoFacturaDocumento.BORRADOR]: [
-    EstadoFacturaDocumento.EMITIDA,
-    EstadoFacturaDocumento.ANULADA,
-  ],
   [EstadoFacturaDocumento.EMITIDA]: [
     EstadoFacturaDocumento.COBRADA,
     EstadoFacturaDocumento.ANULADA,
@@ -113,7 +109,7 @@ export async function GET(
  * PATCH: NextRequest { params: { id } } -> Promise<NextResponse>
  *
  * Dado el id de la factura y { estado, nroComprobante?, estadoArca? },
- * avanza el estado: BORRADOR→EMITIDA/ANULADA, EMITIDA→COBRADA/ANULADA.
+ * avanza el estado: EMITIDA→COBRADA/ANULADA.
  * Al anular, devuelve todos los viajes asociados a estadoFactura="PENDIENTE_FACTURAR"
  * sin tocar estadoLiquidacion.
  * Existe para gestionar el ciclo de vida de una factura.
@@ -123,8 +119,8 @@ export async function GET(
  * // => 200 { id: "fact1", estado: "EMITIDA", nroComprobante: "0001-00000001" }
  * PATCH /api/facturas/fact1 { estado: "ANULADA" }
  * // => 200 { id: "fact1", estado: "ANULADA" } (viajes vuelven a PENDIENTE_FACTURAR)
- * PATCH /api/facturas/fact1 { estado: "COBRADA" } (fact en BORRADOR)
- * // => 422 { error: "No se puede cambiar de BORRADOR a COBRADA" }
+ * PATCH /api/facturas/fact1 { estado: "COBRADA" } (fact en ANULADA)
+ * // => 422 { error: "No se puede cambiar de ANULADA a COBRADA" }
  */
 export async function PATCH(
   request: NextRequest,

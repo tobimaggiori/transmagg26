@@ -52,7 +52,7 @@ export type DatosNotaCD = {
  *
  * Ejemplos:
  * ejecutarCrearNotaCD({ tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL", facturaId: "f1", ... }, "op1")
- *   // => { ok: true, nota: { id, tipo, estado: "BORRADOR", ... } }
+ *   // => { ok: true, nota: { id, tipo, estado: "EMITIDA", ... } }
  * ejecutarCrearNotaCD({ tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL", facturaId: "anulada", ... }, "op1")
  *   // => { ok: false, status: 400, error: "La factura ya está anulada" }
  */
@@ -107,7 +107,7 @@ async function crearNCEmitida(
     ...totales,
     descripcion: data.descripcion,
     motivoDetalle: data.motivoDetalle ?? null,
-    estado: "BORRADOR" as const,
+    estado: "EMITIDA" as const,
     nroComprobante,
     tipoCbte,
     arcaEstado: "PENDIENTE" as const,
@@ -168,11 +168,11 @@ async function crearNCEmitida(
             subtotalOriginal: vef.subtotal,
           },
         })
-        // NC parcial: el viaje sigue facturado pero con ajuste parcial.
-        // No se libera para refacturación total.
+        // NC parcial por viaje: el viaje seleccionado queda totalmente revertido
+        // de esta factura → habilitado para refacturación.
         await tx.viaje.update({
           where: { id: viajeId },
-          data: { estadoFactura: EstadoFacturaViaje.FACTURADO_AJUSTADO_PARCIAL },
+          data: { estadoFactura: EstadoFacturaViaje.PENDIENTE_FACTURAR },
         })
       }
 
@@ -220,7 +220,7 @@ async function crearNDEmitida(
         ...totales,
         descripcion: data.descripcion,
         motivoDetalle: data.motivoDetalle ?? null,
-        estado: "BORRADOR",
+        estado: "EMITIDA",
         nroComprobante,
         tipoCbte,
         arcaEstado: "PENDIENTE",
@@ -338,10 +338,11 @@ async function crearNCRecibida(
             subtotalOriginal: vel.subtotal,
           },
         })
-        // NC parcial: el viaje sigue liquidado pero con ajuste parcial.
+        // NC parcial por viaje: el viaje seleccionado queda totalmente revertido
+        // de esta liquidación → habilitado para reliquidación.
         await tx.viaje.update({
           where: { id: viajeId },
-          data: { estadoLiquidacion: EstadoLiquidacionViaje.LIQUIDADO_AJUSTADO_PARCIAL },
+          data: { estadoLiquidacion: EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR },
         })
       }
 
