@@ -26,6 +26,10 @@ export default async function ArcaPage() {
             try { return JSON.parse(safe.puntosVenta) as Record<string, string> }
             catch { return {} }
           })(),
+          comprobantesHabilitados: (() => {
+            try { return JSON.parse(safe.comprobantesHabilitados || "[]") as number[] }
+            catch { return [] }
+          })(),
         }
       })()
     : null
