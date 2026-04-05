@@ -104,10 +104,16 @@ async function crearNCEmitida(
     include: {
       empresa: { select: { condicionIva: true } },
       viajes: { include: { viaje: { select: { id: true } } } },
+      notasCreditoDebito: {
+        where: { tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL" },
+        select: { id: true },
+      },
     },
   })
   if (!factura) return { ok: false, status: 404, error: "Factura no encontrada" }
-  if (factura.estado === "ANULADA") return { ok: false, status: 400, error: "La factura ya está anulada" }
+  if (data.subtipo === "ANULACION_TOTAL" && factura.notasCreditoDebito.length > 0) {
+    return { ok: false, status: 400, error: "La factura ya tiene una NC de anulación total emitida" }
+  }
 
   const tipoCbte = tipoCbteArcaParaNotaCD("NC_EMITIDA", factura.empresa.condicionIva)
   const nroComprobante = await calcularProximoNroComprobanteNotaCD("NC_EMITIDA")
@@ -215,10 +221,16 @@ async function crearNCEmitidaSobreLiquidacion(
     include: {
       fletero: { select: { condicionIva: true } },
       viajes: { select: { viajeId: true, tarifaFletero: true, kilos: true, subtotal: true } },
+      notasCreditoDebito: {
+        where: { tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL" },
+        select: { id: true },
+      },
     },
   })
   if (!liquidacion) return { ok: false, status: 404, error: "Liquidación no encontrada" }
-  if (liquidacion.estado === "ANULADA") return { ok: false, status: 400, error: "La liquidación ya está anulada" }
+  if (data.subtipo === "ANULACION_TOTAL" && liquidacion.notasCreditoDebito.length > 0) {
+    return { ok: false, status: 400, error: "La liquidación ya tiene una NC de anulación total emitida" }
+  }
 
   const condIva = (liquidacion.fletero as { condicionIva?: string }).condicionIva ?? "RESPONSABLE_INSCRIPTO"
   const tipoCbte = tipoCbteArcaParaNotaCD("NC_EMITIDA", condIva)
@@ -375,10 +387,18 @@ async function crearNCRecibida(
 
     const liquidacion = await prisma.liquidacion.findUnique({
       where: { id: data.liquidacionId },
-      include: { viajes: { select: { viajeId: true } } },
+      include: {
+        viajes: { select: { viajeId: true } },
+        notasCreditoDebito: {
+          where: { tipo: "NC_RECIBIDA", subtipo: "ANULACION_LIQUIDACION" },
+          select: { id: true },
+        },
+      },
     })
     if (!liquidacion) return { ok: false, status: 404, error: "Liquidación no encontrada" }
-    if (liquidacion.estado === "ANULADA") return { ok: false, status: 400, error: "La liquidación ya está anulada" }
+    if (liquidacion.notasCreditoDebito.length > 0) {
+      return { ok: false, status: 400, error: "La liquidación ya tiene una NC de anulación total recibida" }
+    }
 
     const nota = await prisma.$transaction(async (tx) => {
       const nuevaNota = await tx.notaCreditoDebito.create({
@@ -429,7 +449,6 @@ async function crearNCRecibida(
       },
     })
     if (!liquidacion) return { ok: false, status: 404, error: "Liquidación no encontrada" }
-    if (liquidacion.estado === "ANULADA") return { ok: false, status: 400, error: "La liquidación ya está anulada" }
 
     const viajeIdsEnLiq = liquidacion.viajes.map((v) => v.viajeId)
     const todosPertenecen = data.viajesIds.every((id) => viajeIdsEnLiq.includes(id))

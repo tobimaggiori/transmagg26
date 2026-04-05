@@ -47,12 +47,14 @@ const FACTURA_MOCK = {
     { viajeId: "v1", tarifaEmpresa: 50, kilos: 30000, subtotal: 1500, viaje: { id: "v1" } },
     { viajeId: "v2", tarifaEmpresa: 40, kilos: 25000, subtotal: 1000, viaje: { id: "v2" } },
   ],
+  notasCreditoDebito: [],
 }
 
 const LIQ_MOCK = {
   id: "liq-1",
   estado: "EMITIDA",
   viajes: [{ viajeId: "v1" }, { viajeId: "v2" }],
+  notasCreditoDebito: [],
 }
 
 // ─── NC_EMITIDA / ANULACION_TOTAL ───────────────────────────────────────────
@@ -274,10 +276,10 @@ describe("validaciones NC/ND", () => {
     if (!r.ok) expect(r.status).toBe(400)
   })
 
-  it("NC_EMITIDA sobre factura ya anulada → error", async () => {
+  it("NC_EMITIDA ANULACION_TOTAL sobre factura que ya tiene NC total → error", async () => {
     mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
       ...FACTURA_MOCK,
-      estado: "ANULADA",
+      notasCreditoDebito: [{ id: "nc-existente" }],
     })
     const r = await ejecutarCrearNotaCD({
       tipo: "NC_EMITIDA",

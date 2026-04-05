@@ -107,7 +107,6 @@ function EstadoBadge({ estado }: { estado: string }) {
     EMITIDA: "bg-blue-100 text-blue-800",
     PARCIALMENTE_COBRADA: "bg-amber-100 text-amber-800",
     COBRADA: "bg-green-100 text-green-800",
-    ANULADA: "bg-red-100 text-red-800",
   }
   const labels: Record<string, string> = {
     PARCIALMENTE_COBRADA: "Parcial",
@@ -150,7 +149,6 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
   const [facturaDetalle, setFacturaDetalle] = useState<FacturaRow | null>(null)
   const [cobrandoFactura, setCobrandoFactura] = useState<FacturaRow | null>(null)
   const [saldoAFavorCC, setSaldoAFavorCC] = useState(0)
-  const [cambioEstadoCargando, setCambioEstadoCargando] = useState(false)
 
   const handleBuscar = useCallback(async () => {
     setLoading(true)
@@ -177,22 +175,6 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function cambiarEstado(id: string, estado: string) {
-    setCambioEstadoCargando(true)
-    try {
-      const res = await fetch(`/api/facturas/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ estado }),
-      })
-      if (res.ok) {
-        setFacturaDetalle(null)
-        void handleBuscar()
-      }
-    } finally {
-      setCambioEstadoCargando(false)
-    }
-  }
 
   async function abrirCobro(factura: FacturaRow) {
     try {
@@ -257,7 +239,6 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
                 <option value="EMITIDA">Emitida</option>
                 <option value="PARCIALMENTE_COBRADA">Parcialmente Cobrada</option>
                 <option value="COBRADA">Cobrada</option>
-                <option value="ANULADA">Anulada</option>
               </select>
             </div>
             <div className="flex items-end">
@@ -458,15 +439,6 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
                   variant="default"
                 >
                   Registrar cobro
-                </Button>
-              )}
-              {facturaDetalle.estado === "EMITIDA" && (
-                <Button
-                  onClick={() => void cambiarEstado(facturaDetalle.id, "ANULADA")}
-                  disabled={cambioEstadoCargando}
-                  variant="destructive"
-                >
-                  Anular
                 </Button>
               )}
               <Button variant="outline" onClick={() => setFacturaDetalle(null)}>

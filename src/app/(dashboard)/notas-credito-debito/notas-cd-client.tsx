@@ -120,8 +120,8 @@ function etiquetaAsociado(nota: NotaCD): string {
  * ModalDetalleNota: { nota: NotaCD; onClose: () => void } -> JSX.Element
  *
  * Dado una nota CD y función de cierre, renderiza un modal con todos los campos
- * de la nota, tabla de viajes afectados, botón "Descargar PDF" y botón
- * "Autorizar en ARCA" deshabilitado con tooltip "Próximamente".
+ * de la nota, tabla de viajes afectados y botón "Descargar PDF".
+ * La autorización ARCA se realiza al momento de crear la nota (emisión directa).
  * Existe para la vista de detalle de una NC/ND sin navegación a página nueva.
  *
  * Ejemplos:
@@ -246,14 +246,6 @@ function ModalDetalleNota({ nota, onClose }: { nota: NotaCD; onClose: () => void
           >
             Descargar PDF
           </button>
-          <div title="Próximamente">
-            <button
-              disabled
-              className="rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-400 cursor-not-allowed"
-            >
-              Autorizar en ARCA
-            </button>
-          </div>
           <button
             onClick={onClose}
             className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"

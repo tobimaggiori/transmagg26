@@ -1,8 +1,14 @@
 /**
- * Propósito: Congelar la decisión de negocio de que BORRADOR no existe
- * como estado funcional de comprobantes ARCA.
+ * Propósito: Congelar la decisión de negocio del modelo documental.
  *
- * Estos tests fallan si alguien reintroduce BORRADOR en el sistema.
+ * Reglas cerradas:
+ * - BORRADOR no existe como estado de comprobantes ARCA
+ * - ANULADA no existe — los documentos son inmutables
+ * - Si ARCA devuelve CAE => el comprobante queda EMITIDA
+ * - Si ARCA no devuelve CAE => el comprobante no se emite
+ * - La corrección económica se hace por NC/ND, no por destruir el documento
+ *
+ * Estos tests fallan si alguien reintroduce BORRADOR o ANULADA en el sistema.
  */
 
 import {
@@ -10,29 +16,31 @@ import {
   EstadoLiquidacionDocumento,
 } from "@/lib/viaje-workflow"
 
-// ─── BORRADOR no existe en constantes de documento ──────────────────────────
+// ─── BORRADOR y ANULADA no existen en constantes de documento ───────────────
 
-describe("BORRADOR eliminado de estados de documento", () => {
+describe("modelo documental inmutable", () => {
   it("EstadoFacturaDocumento no contiene BORRADOR", () => {
-    const valores = Object.values(EstadoFacturaDocumento)
-    expect(valores).not.toContain("BORRADOR")
+    expect(Object.values(EstadoFacturaDocumento)).not.toContain("BORRADOR")
   })
 
   it("EstadoLiquidacionDocumento no contiene BORRADOR", () => {
-    const valores = Object.values(EstadoLiquidacionDocumento)
-    expect(valores).not.toContain("BORRADOR")
+    expect(Object.values(EstadoLiquidacionDocumento)).not.toContain("BORRADOR")
   })
 
-  it("EstadoFacturaDocumento solo contiene EMITIDA, COBRADA, ANULADA", () => {
-    expect(Object.values(EstadoFacturaDocumento).sort()).toEqual(
-      ["ANULADA", "COBRADA", "EMITIDA"]
-    )
+  it("EstadoFacturaDocumento no contiene ANULADA", () => {
+    expect(Object.values(EstadoFacturaDocumento)).not.toContain("ANULADA")
   })
 
-  it("EstadoLiquidacionDocumento solo contiene EMITIDA, PAGADA, ANULADA", () => {
-    expect(Object.values(EstadoLiquidacionDocumento).sort()).toEqual(
-      ["ANULADA", "EMITIDA", "PAGADA"]
-    )
+  it("EstadoLiquidacionDocumento no contiene ANULADA", () => {
+    expect(Object.values(EstadoLiquidacionDocumento)).not.toContain("ANULADA")
+  })
+
+  it("EstadoFacturaDocumento solo contiene EMITIDA y COBRADA", () => {
+    expect(Object.values(EstadoFacturaDocumento).sort()).toEqual(["COBRADA", "EMITIDA"])
+  })
+
+  it("EstadoLiquidacionDocumento solo contiene EMITIDA y PAGADA", () => {
+    expect(Object.values(EstadoLiquidacionDocumento).sort()).toEqual(["EMITIDA", "PAGADA"])
   })
 })
 
@@ -55,7 +63,7 @@ jest.mock("@/lib/prisma", () => ({ prisma: mockPrisma }))
 
 import { ejecutarCrearFactura } from "@/lib/factura-commands"
 
-describe("facturas se crean como EMITIDA, no BORRADOR", () => {
+describe("facturas se crean como EMITIDA (inmutable)", () => {
   beforeEach(() => jest.clearAllMocks())
 
   it("ejecutarCrearFactura persiste estado=EMITIDA", async () => {
@@ -80,13 +88,7 @@ describe("facturas se crean como EMITIDA, no BORRADOR", () => {
     }, "op1")
 
     expect(r.ok).toBe(true)
-    expect(mockPrisma.facturaEmitida.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ estado: "EMITIDA" }),
-      })
-    )
-    // Verificar que NO se pasó BORRADOR
     const createCall = mockPrisma.facturaEmitida.create.mock.calls[0][0]
-    expect(createCall.data.estado).not.toBe("BORRADOR")
+    expect(createCall.data.estado).toBe("EMITIDA")
   })
 })

@@ -15,7 +15,6 @@ function EstadoBadge({ estado }: { estado: string }) {
     EMITIDA: "bg-blue-100 text-blue-800",
     PARCIALMENTE_PAGADA: "bg-amber-100 text-amber-800",
     PAGADA: "bg-green-100 text-green-800",
-    ANULADA: "bg-red-100 text-red-800",
   }
   const labels: Record<string, string> = {
     PARCIALMENTE_PAGADA: "Parcial",
@@ -38,18 +37,16 @@ function EstadoBadge({ estado }: { estado: string }) {
  */
 export function ModalDetalleLiquidacion({
   liq,
-  onCambiarEstado,
   onAnularPago,
   onEditarPago,
   onCerrar,
-  cargando,
 }: {
   liq: Liquidacion
-  onCambiarEstado: (estado: string) => void
+  onCambiarEstado?: (estado: string) => void
   onAnularPago?: (pagoId: string) => void
   onEditarPago?: (pagoId: string) => void
   onCerrar: () => void
-  cargando: boolean
+  cargando?: boolean
 }) {
   const [modalEmail, setModalEmail] = useState<{ opId: string; opNro: number } | null>(null)
 
@@ -250,17 +247,7 @@ export function ModalDetalleLiquidacion({
           >
             Descargar PDF
           </button>
-          <div className="flex gap-2">
-            {liq.estado === "EMITIDA" && (
-              <button
-                onClick={() => onCambiarEstado("ANULADA")}
-                disabled={cargando}
-                className="h-9 px-4 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
-              >
-                Anular
-              </button>
-            )}
-          </div>
+          <div className="flex gap-2" />
         </div>
       </div>
     </div>

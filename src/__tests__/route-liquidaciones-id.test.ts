@@ -9,15 +9,8 @@ import { NextRequest } from "next/server"
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
 const mockAuth = jest.fn()
-const mockTx = {
-  liquidacion: { update: jest.fn() },
-  asientoIva: { create: jest.fn(), delete: jest.fn() },
-  viajeEnLiquidacion: { findMany: jest.fn() },
-  viaje: { update: jest.fn() },
-}
 const mockPrisma = {
   liquidacion: { findUnique: jest.fn(), update: jest.fn() },
-  $transaction: jest.fn((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx)),
 }
 const mockVerificarPropietarioFletero = jest.fn()
 const mockObtenerUrlFirmada = jest.fn()
@@ -342,32 +335,13 @@ describe("PATCH /api/liquidaciones/[id] — transiciones de estado", () => {
     expect(body.error).toContain("No se puede cambiar de PAGADA a EMITIDA")
   })
 
-  it("ANULADA → PAGADA (inválida) → 422", async () => {
-    mockAuth.mockResolvedValue(session("ADMIN_TRANSMAGG"))
-    mockPrisma.liquidacion.findUnique.mockResolvedValue({
-      id: "liq-1",
-      estado: "ANULADA",
-      viajes: [],
-      asientoIva: null,
-    })
-
-    const res = await patchLiquidacion(patchReq({ estado: "PAGADA" }), params)
-    expect(res.status).toBe(422)
-  })
-
   it("EMITIDA → PAGADA (válida) → 200", async () => {
     mockAuth.mockResolvedValue(session("ADMIN_TRANSMAGG"))
     mockPrisma.liquidacion.findUnique.mockResolvedValue({
       id: "liq-1",
       estado: "EMITIDA",
-      neto: 99173.55,
-      ivaPct: 21,
-      ivaMonto: 20826.45,
-      grabadaEn: new Date("2026-01-15"),
-      viajes: [{ viajeId: "v1" }],
-      asientoIva: { id: "aiva-1" },
     })
-    mockTx.liquidacion.update.mockResolvedValue({
+    mockPrisma.liquidacion.update.mockResolvedValue({
       id: "liq-1",
       estado: "PAGADA",
     })
@@ -378,26 +352,10 @@ describe("PATCH /api/liquidaciones/[id] — transiciones de estado", () => {
     expect(body.estado).toBe("PAGADA")
   })
 
-  it("EMITIDA → ANULADA (válida) → 200", async () => {
+  it("ANULADA ya no es transición válida → 400 (datos inválidos)", async () => {
     mockAuth.mockResolvedValue(session("OPERADOR_TRANSMAGG"))
-    mockPrisma.liquidacion.findUnique.mockResolvedValue({
-      id: "liq-1",
-      estado: "EMITIDA",
-      neto: 99173.55,
-      ivaPct: 21,
-      ivaMonto: 20826.45,
-      grabadaEn: new Date("2026-01-15"),
-      viajes: [],
-      asientoIva: null,
-    })
-    mockTx.liquidacion.update.mockResolvedValue({
-      id: "liq-1",
-      estado: "ANULADA",
-    })
 
     const res = await patchLiquidacion(patchReq({ estado: "ANULADA" }), params)
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.estado).toBe("ANULADA")
+    expect(res.status).toBe(400)
   })
 })

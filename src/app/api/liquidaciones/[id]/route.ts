@@ -1,10 +1,10 @@
 /**
  * API Routes para liquidación individual.
  * GET   /api/liquidaciones/[id] - Detalle de liquidación con viajes
- * PATCH /api/liquidaciones/[id] - Cambia estado (EMITIDA→PAGADA / ANULADA)
+ * PATCH /api/liquidaciones/[id] - Cambia estado (EMITIDA→PAGADA)
  *
- * Cuando se ANULA una liquidación, sus viajes vuelven a estadoLiquidacion="PENDIENTE_LIQUIDAR".
- * Al pasar a EMITIDA el operador confirma que está cargada en ARCA.
+ * Los documentos son inmutables: no se anulan. La corrección se hace por NC/ND.
+ * CAE/nroComprobante/arcaEstado se asignan por ARCA al crear (emisión directa).
  */
 
 import { NextRequest, NextResponse } from "next/server"
@@ -12,27 +12,19 @@ import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno, puedeVerTarifaFletero } from "@/lib/permissions"
-import {
-  EstadoLiquidacionDocumento,
-  resolverEstadoLiquidacionViaje,
-} from "@/lib/viaje-workflow"
+import { EstadoLiquidacionDocumento } from "@/lib/viaje-workflow"
 import { verificarPropietarioFletero } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 
 const TRANSICIONES_VALIDAS: Record<string, string[]> = {
-  [EstadoLiquidacionDocumento.EMITIDA]: [
-    EstadoLiquidacionDocumento.PAGADA,
-    EstadoLiquidacionDocumento.ANULADA,
-  ],
+  [EstadoLiquidacionDocumento.EMITIDA]: [EstadoLiquidacionDocumento.PAGADA],
   [EstadoLiquidacionDocumento.PAGADA]: [],
-  [EstadoLiquidacionDocumento.ANULADA]: [],
 }
 
 const actualizarSchema = z.object({
   estado: z.enum([
     EstadoLiquidacionDocumento.EMITIDA,
     EstadoLiquidacionDocumento.PAGADA,
-    EstadoLiquidacionDocumento.ANULADA,
   ]),
 })
 
@@ -41,16 +33,6 @@ const actualizarSchema = z.object({
  *
  * Dado el id de la liquidación, devuelve el detalle completo con viajes copiados,
  * pagos y datos del fletero. FLETERO solo accede a las suyas; tarifaFletero oculta si no tiene permiso.
- * Existe para la vista de detalle de una liquidación con toda la información
- * necesaria para verificar y aprobar el pago al fletero.
- *
- * Ejemplos:
- * GET /api/liquidaciones/liq1 (sesión ADMIN_TRANSMAGG)
- * // => 200 { id: "liq1", total, viajes: [{ tarifaFletero, subtotal, kilos, ... }], pagos: [...] }
- * GET /api/liquidaciones/liq1 (sesión FLETERO dueño)
- * // => 200 { id: "liq1", viajes: [{ tarifaFletero, subtotal, kilos, ... }] }
- * GET /api/liquidaciones/liq1 (sesión ADMIN_EMPRESA)
- * // => 403 { error: "Acceso denegado" }
  */
 export async function GET(
   _request: NextRequest,
@@ -107,18 +89,12 @@ export async function GET(
 /**
  * PATCH: NextRequest { params: { id } } -> Promise<NextResponse>
  *
- * Dado el id de la liquidación y { estado }, avanza el estado según
- * las transiciones válidas: EMITIDA→PAGADA/ANULADA.
- * Al anular, devuelve todos los viajes asociados a estadoLiquidacion="PENDIENTE_LIQUIDAR".
- * Existe para gestionar el ciclo de vida de una liquidación y permitir correcciones.
+ * Dado el id de la liquidación y { estado }, avanza el estado: EMITIDA→PAGADA.
+ * Documentos inmutables: la corrección se hace por NC/ND, no por anulación.
  *
  * Ejemplos:
  * PATCH /api/liquidaciones/liq1 { estado: "PAGADA" } (liq en EMITIDA)
  * // => 200 { id: "liq1", estado: "PAGADA" }
- * PATCH /api/liquidaciones/liq1 { estado: "ANULADA" } (liq en EMITIDA)
- * // => 200 { id: "liq1", estado: "ANULADA" } (viajes vuelven a PENDIENTE_LIQUIDAR)
- * PATCH /api/liquidaciones/liq1 { estado: "EMITIDA" } (liq ya EMITIDA, transición inválida)
- * // => 422 { error: "No se puede cambiar de EMITIDA a EMITIDA" }
  */
 export async function PATCH(
   request: NextRequest,
@@ -138,10 +114,6 @@ export async function PATCH(
 
     const liquidacion = await prisma.liquidacion.findUnique({
       where: { id: params.id },
-      include: {
-        viajes: { select: { viajeId: true } },
-        asientoIva: { select: { id: true } },
-      },
     })
     if (!liquidacion) return NextResponse.json({ error: "Liquidación no encontrada" }, { status: 404 })
 
@@ -153,73 +125,9 @@ export async function PATCH(
       )
     }
 
-    const actualizada = await prisma.$transaction(async (tx) => {
-      const liq = await tx.liquidacion.update({
-        where: { id: params.id },
-        data: { estado: parsed.data.estado },
-      })
-
-      // Al emitir: crear AsientoIva de Ventas (comisión Transmagg)
-      if (parsed.data.estado === EstadoLiquidacionDocumento.EMITIDA && !liquidacion.asientoIva) {
-        await tx.asientoIva.create({
-          data: {
-            tipo: "VENTA",
-            tipoReferencia: "LIQUIDACION",
-            periodo: liquidacion.grabadaEn.toISOString().slice(0, 7),
-            baseImponible: liquidacion.neto,
-            alicuota: liquidacion.ivaPct,
-            montoIva: liquidacion.ivaMonto,
-            liquidacionId: liquidacion.id,
-          },
-        })
-      }
-
-      // Si se anula: eliminar AsientoIva y liberar viajes
-      if (parsed.data.estado === EstadoLiquidacionDocumento.ANULADA) {
-        if (liquidacion.asientoIva) {
-          await tx.asientoIva.delete({ where: { id: liquidacion.asientoIva.id } })
-        }
-      }
-
-      if (parsed.data.estado === EstadoLiquidacionDocumento.ANULADA) {
-        const viajeIds = liquidacion.viajes.map((v) => v.viajeId)
-        if (viajeIds.length > 0) {
-          const liquidacionesActivasRestantes = await tx.viajeEnLiquidacion.findMany({
-            where: {
-              viajeId: { in: viajeIds },
-              liquidacionId: { not: params.id },
-              liquidacion: {
-                estado: { not: EstadoLiquidacionDocumento.ANULADA },
-              },
-            },
-            select: { viajeId: true, liquidacion: { select: { estado: true } } },
-          })
-
-          const estadosPorViaje = new Map<string, Array<typeof EstadoLiquidacionDocumento[keyof typeof EstadoLiquidacionDocumento]>>()
-          for (const viajeId of viajeIds) {
-            estadosPorViaje.set(viajeId, [])
-          }
-
-          for (const liquidacionRelacionada of liquidacionesActivasRestantes) {
-            const estados = estadosPorViaje.get(liquidacionRelacionada.viajeId) ?? []
-            estados.push(liquidacionRelacionada.liquidacion.estado as typeof EstadoLiquidacionDocumento[keyof typeof EstadoLiquidacionDocumento])
-            estadosPorViaje.set(liquidacionRelacionada.viajeId, estados)
-          }
-
-          for (const viajeId of viajeIds) {
-            await tx.viaje.update({
-              where: { id: viajeId },
-              data: {
-                estadoLiquidacion: resolverEstadoLiquidacionViaje(
-                  estadosPorViaje.get(viajeId) ?? []
-                ),
-              },
-            })
-          }
-        }
-      }
-
-      return liq
+    const actualizada = await prisma.liquidacion.update({
+      where: { id: params.id },
+      data: { estado: parsed.data.estado },
     })
 
     return NextResponse.json(actualizada)

@@ -41,24 +41,23 @@ export const EstadoFacturaViaje = {
 /**
  * EstadoLiquidacionDocumento: { ... } constante
  *
- * Representa los estados de una liquidación ya guardada como documento.
- * Existe para distinguir el estado del documento del estado del viaje base.
+ * Representa los estados de una liquidación ya guardada como documento inmutable.
+ * Un documento emitido nunca se "anula" — la corrección se hace por NC/ND.
  *
  * Ejemplos:
  * EstadoLiquidacionDocumento.EMITIDA === "EMITIDA"
- * EstadoLiquidacionDocumento.ANULADA === "ANULADA"
+ * EstadoLiquidacionDocumento.PAGADA === "PAGADA"
  */
 export const EstadoLiquidacionDocumento = {
   EMITIDA: "EMITIDA",
   PAGADA: "PAGADA",
-  ANULADA: "ANULADA",
 } as const
 
 /**
  * EstadoFacturaDocumento: { ... } constante
  *
- * Representa los estados de una factura ya guardada como documento.
- * Existe para distinguir el estado del documento del estado del viaje base.
+ * Representa los estados de una factura ya guardada como documento inmutable.
+ * Un documento emitido nunca se "anula" — la corrección se hace por NC/ND.
  *
  * Ejemplos:
  * EstadoFacturaDocumento.EMITIDA === "EMITIDA"
@@ -67,7 +66,6 @@ export const EstadoLiquidacionDocumento = {
 export const EstadoFacturaDocumento = {
   EMITIDA: "EMITIDA",
   COBRADA: "COBRADA",
-  ANULADA: "ANULADA",
 } as const
 
 export type EstadoLiquidacionViajeType =
@@ -89,40 +87,22 @@ export function tarifaEsEditable(tarifa?: number | null): boolean {
 }
 
 /**
- * tieneDocumentosActivos: string[] string -> boolean
- *
- * Dada [la lista de estados de documentos guardados y el estado que significa anulado],
- * devuelve [true si al menos uno sigue activo, false si todos están anulados
- * o si la lista está vacía].
- * Existe para decidir correctamente el estado actual del viaje base cuando
- * se anula un documento pero puede existir otro documento vigente del mismo circuito.
- *
- * Ejemplos:
- * tieneDocumentosActivos(["EMITIDA"], "ANULADA") === true
- * tieneDocumentosActivos(["ANULADA", "PAGADA"], "ANULADA") === true
- * tieneDocumentosActivos(["ANULADA"], "ANULADA") === false
- */
-export function tieneDocumentosActivos(estados: string[], estadoAnulado: string): boolean {
-  return estados.some((estado) => estado !== estadoAnulado)
-}
-
-/**
  * resolverEstadoLiquidacionViaje: EstadoLiquidacionDocumentoType[] -> EstadoLiquidacionViajeType
  *
  * Dada [la lista de estados de todas las liquidaciones asociadas al viaje],
  * devuelve [el estado actual del circuito de liquidación del viaje base].
- * Existe para que un viaje solo vuelva a pendiente si ya no queda ninguna
- * liquidación activa luego de una anulación o corrección.
+ * Un viaje con al menos una liquidación vigente está LIQUIDADO.
+ * La liberación de viajes se hace por NC/ND, no por "anular" el documento.
  *
  * Ejemplos:
  * resolverEstadoLiquidacionViaje(["EMITIDA"]) === "LIQUIDADO"
- * resolverEstadoLiquidacionViaje(["ANULADA"]) === "PENDIENTE_LIQUIDAR"
+ * resolverEstadoLiquidacionViaje(["PAGADA"]) === "LIQUIDADO"
  * resolverEstadoLiquidacionViaje([]) === "PENDIENTE_LIQUIDAR"
  */
 export function resolverEstadoLiquidacionViaje(
   estadosLiquidaciones: EstadoLiquidacionDocumentoType[]
 ): EstadoLiquidacionViajeType {
-  return tieneDocumentosActivos(estadosLiquidaciones, EstadoLiquidacionDocumento.ANULADA)
+  return estadosLiquidaciones.length > 0
     ? EstadoLiquidacionViaje.LIQUIDADO
     : EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR
 }
@@ -132,18 +112,18 @@ export function resolverEstadoLiquidacionViaje(
  *
  * Dada [la lista de estados de todas las facturas asociadas al viaje],
  * devuelve [el estado actual del circuito de facturación del viaje base].
- * Existe para que un viaje solo vuelva a pendiente si ya no queda ninguna
- * factura activa luego de una anulación o recreación documental.
+ * Un viaje con al menos una factura vigente está FACTURADO.
+ * La liberación de viajes se hace por NC/ND, no por "anular" el documento.
  *
  * Ejemplos:
  * resolverEstadoFacturaViaje(["EMITIDA"]) === "FACTURADO"
- * resolverEstadoFacturaViaje(["ANULADA"]) === "PENDIENTE_FACTURAR"
+ * resolverEstadoFacturaViaje(["COBRADA"]) === "FACTURADO"
  * resolverEstadoFacturaViaje([]) === "PENDIENTE_FACTURAR"
  */
 export function resolverEstadoFacturaViaje(
   estadosFacturas: EstadoFacturaDocumentoType[]
 ): EstadoFacturaViajeType {
-  return tieneDocumentosActivos(estadosFacturas, EstadoFacturaDocumento.ANULADA)
+  return estadosFacturas.length > 0
     ? EstadoFacturaViaje.FACTURADO
     : EstadoFacturaViaje.PENDIENTE_FACTURAR
 }

@@ -1,9 +1,9 @@
 /**
  * API Routes para factura individual.
  * GET   /api/facturas/[id] - Detalle de factura con viajes copiados
- * PATCH /api/facturas/[id] - Cambia estado (EMITIDA→COBRADA / ANULADA)
+ * PATCH /api/facturas/[id] - Cambia estado (EMITIDA→COBRADA)
  *
- * Cuando se ANULA una factura, sus viajes vuelven a estadoFactura="PENDIENTE_FACTURAR".
+ * Los documentos son inmutables: no se anulan. La corrección se hace por NC/ND.
  * NO se toca estadoLiquidacion.
  */
 
@@ -12,30 +12,20 @@ import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno, esRolEmpresa, puedeVerTarifaEmpresa } from "@/lib/permissions"
-import {
-  EstadoFacturaDocumento,
-  resolverEstadoFacturaViaje,
-} from "@/lib/viaje-workflow"
+import { EstadoFacturaDocumento } from "@/lib/viaje-workflow"
 import { verificarPropietarioEmpresa } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 
 const TRANSICIONES_VALIDAS: Record<string, string[]> = {
-  [EstadoFacturaDocumento.EMITIDA]: [
-    EstadoFacturaDocumento.COBRADA,
-    EstadoFacturaDocumento.ANULADA,
-  ],
+  [EstadoFacturaDocumento.EMITIDA]: [EstadoFacturaDocumento.COBRADA],
   [EstadoFacturaDocumento.COBRADA]: [],
-  [EstadoFacturaDocumento.ANULADA]: [],
 }
 
 const actualizarSchema = z.object({
   estado: z.enum([
     EstadoFacturaDocumento.EMITIDA,
     EstadoFacturaDocumento.COBRADA,
-    EstadoFacturaDocumento.ANULADA,
   ]),
-  nroComprobante: z.string().optional(),
-  estadoArca: z.enum(["PENDIENTE", "ACEPTADA", "RECHAZADA"]).optional(),
 })
 
 /**
@@ -108,19 +98,15 @@ export async function GET(
 /**
  * PATCH: NextRequest { params: { id } } -> Promise<NextResponse>
  *
- * Dado el id de la factura y { estado, nroComprobante?, estadoArca? },
- * avanza el estado: EMITIDA→COBRADA/ANULADA.
- * Al anular, devuelve todos los viajes asociados a estadoFactura="PENDIENTE_FACTURAR"
- * sin tocar estadoLiquidacion.
- * Existe para gestionar el ciclo de vida de una factura.
+ * Dado el id de la factura y { estado }, avanza el estado: EMITIDA→COBRADA.
+ * Documentos inmutables: la corrección se hace por NC/ND, no por anulación.
+ * CAE/nroComprobante/estadoArca se asignan por ARCA al crear.
  *
  * Ejemplos:
- * PATCH /api/facturas/fact1 { estado: "EMITIDA", nroComprobante: "0001-00000001" }
- * // => 200 { id: "fact1", estado: "EMITIDA", nroComprobante: "0001-00000001" }
- * PATCH /api/facturas/fact1 { estado: "ANULADA" }
- * // => 200 { id: "fact1", estado: "ANULADA" } (viajes vuelven a PENDIENTE_FACTURAR)
- * PATCH /api/facturas/fact1 { estado: "COBRADA" } (fact en ANULADA)
- * // => 422 { error: "No se puede cambiar de ANULADA a COBRADA" }
+ * PATCH /api/facturas/fact1 { estado: "COBRADA" }
+ * // => 200 { id: "fact1", estado: "COBRADA" }
+ * PATCH /api/facturas/fact1 { estado: "COBRADA" } (fact ya COBRADA)
+ * // => 422 { error: "No se puede cambiar de COBRADA a COBRADA" }
  */
 export async function PATCH(
   request: NextRequest,
@@ -140,7 +126,6 @@ export async function PATCH(
 
     const factura = await prisma.facturaEmitida.findUnique({
       where: { id: params.id },
-      include: { viajes: { select: { viajeId: true } } },
     })
     if (!factura) return NextResponse.json({ error: "Factura no encontrada" }, { status: 404 })
 
@@ -152,54 +137,9 @@ export async function PATCH(
       )
     }
 
-    const actualizada = await prisma.$transaction(async (tx) => {
-      const fact = await tx.facturaEmitida.update({
-        where: { id: params.id },
-        data: {
-          estado: parsed.data.estado,
-          ...(parsed.data.nroComprobante ? { nroComprobante: parsed.data.nroComprobante } : {}),
-          ...(parsed.data.estadoArca ? { estadoArca: parsed.data.estadoArca } : {}),
-        },
-      })
-
-      // Al anular, liberar viajes (solo estadoFactura, NO tocar estadoLiquidacion)
-      if (parsed.data.estado === EstadoFacturaDocumento.ANULADA) {
-        const viajeIds = factura.viajes.map((v) => v.viajeId)
-        if (viajeIds.length > 0) {
-          const facturasActivasRestantes = await tx.viajeEnFactura.findMany({
-            where: {
-              viajeId: { in: viajeIds },
-              facturaId: { not: params.id },
-              factura: {
-                estado: { not: EstadoFacturaDocumento.ANULADA },
-              },
-            },
-            select: { viajeId: true, factura: { select: { estado: true } } },
-          })
-
-          const estadosPorViaje = new Map<string, Array<typeof EstadoFacturaDocumento[keyof typeof EstadoFacturaDocumento]>>()
-          for (const viajeId of viajeIds) {
-            estadosPorViaje.set(viajeId, [])
-          }
-
-          for (const facturaRelacionada of facturasActivasRestantes) {
-            const estados = estadosPorViaje.get(facturaRelacionada.viajeId) ?? []
-            estados.push(facturaRelacionada.factura.estado as typeof EstadoFacturaDocumento[keyof typeof EstadoFacturaDocumento])
-            estadosPorViaje.set(facturaRelacionada.viajeId, estados)
-          }
-
-          for (const viajeId of viajeIds) {
-            await tx.viaje.update({
-              where: { id: viajeId },
-              data: {
-                estadoFactura: resolverEstadoFacturaViaje(estadosPorViaje.get(viajeId) ?? []),
-              },
-            })
-          }
-        }
-      }
-
-      return fact
+    const actualizada = await prisma.facturaEmitida.update({
+      where: { id: params.id },
+      data: { estado: parsed.data.estado },
     })
 
     return NextResponse.json(actualizada)

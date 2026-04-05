@@ -39,7 +39,7 @@ export default async function CuentasCorrientesPage() {
       where: { activa: true },
       include: {
         facturasEmitidas: {
-          where: { estado: { not: "ANULADA" } },
+          where: {},
           include: { pagos: { select: { monto: true } } },
           orderBy: { emitidaEn: "desc" },
         },

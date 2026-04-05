@@ -47,7 +47,6 @@ export async function GET() {
     try {
       const facturasAgg = await prisma.facturaEmitida.aggregate({
         _sum: { total: true },
-        where: { estado: { not: "ANULADA" } },
       })
       const pagosEmpresasAgg = await prisma.pagoDeEmpresa.aggregate({
         _sum: { monto: true },
@@ -58,7 +57,6 @@ export async function GET() {
     try {
       const liquidacionesAgg = await prisma.liquidacion.aggregate({
         _sum: { total: true },
-        where: { estado: { not: "ANULADA" } },
       })
       const pagosFleterosAgg = await prisma.pagoAFletero.aggregate({
         _sum: { monto: true },

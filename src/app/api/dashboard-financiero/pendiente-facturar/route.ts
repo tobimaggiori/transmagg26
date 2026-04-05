@@ -79,8 +79,8 @@ export async function GET() {
       entry.total += totalEmpresa ?? 0
       entry.cantidadViajes += 1
 
-      // Find the active (non-ANULADA) liquidación if any
-      const liqActiva = v.enLiquidaciones.find((el) => el.liquidacion.estado !== "ANULADA")
+      // Find the liquidación if any
+      const liqActiva = v.enLiquidaciones[0]
 
       entry.viajes.push({
         id: v.id,

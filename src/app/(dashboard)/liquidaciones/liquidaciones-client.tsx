@@ -37,7 +37,6 @@ function EstadoBadge({ estado }: { estado: string }) {
     EMITIDA: "bg-blue-100 text-blue-800",
     PARCIALMENTE_PAGADA: "bg-amber-100 text-amber-800",
     PAGADA: "bg-green-100 text-green-800",
-    ANULADA: "bg-red-100 text-red-800",
   }
   const labels: Record<string, string> = {
     PARCIALMENTE_PAGADA: "Parcial",
@@ -204,6 +203,8 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
           kilos: v.kilosEdit ?? v.kilos ?? 0,
           tarifaFletero: v.tarifaEdit ?? v.tarifaFletero,
         })),
+        emisionArca: true,
+        idempotencyKey: crypto.randomUUID(),
       }
       const res = await fetch("/api/liquidaciones", {
         method: "POST",

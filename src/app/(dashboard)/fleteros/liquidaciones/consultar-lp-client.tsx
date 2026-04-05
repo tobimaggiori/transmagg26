@@ -131,8 +131,6 @@ function ComboboxFletero({ fleteros, value, onChange }: { fleteros: Fletero[]; v
 function resolverEstadoLP(liq: Liquidacion): "EMITIDO" | "PAGADO" | "NO_PAGADO" {
   const tienePagoConfirmado = liq.pagos.some((p) => !p.anulado && p.ordenPago)
   if (tienePagoConfirmado) return "PAGADO"
-  if (liq.estado === "ANULADA") return "NO_PAGADO"
-  // Emitido sin OP o con OP pendiente
   return liq.nroComprobante ? "EMITIDO" : "NO_PAGADO"
 }
 
@@ -172,7 +170,7 @@ function ModalDetalleLP({
 
   const nroLP = liq.nroComprobante
     ? `${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${formatearNroComprobante(liq.nroComprobante)}`
-    : "Borrador"
+    : "Sin nro"
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -259,16 +257,14 @@ function ModalDetalleLP({
         <div className="px-6 py-4 border-t">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold">Notas de Crédito / Débito</h3>
-            {liq.estado !== "ANULADA" && (
-              <div className="flex gap-2">
-                <button onClick={() => setMostrarNC(true)} className="rounded-md bg-blue-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-blue-700">
-                  Emitir NC
-                </button>
-                <button onClick={() => setMostrarND(true)} className="rounded-md bg-orange-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-orange-700">
-                  Emitir ND
-                </button>
-              </div>
-            )}
+            <div className="flex gap-2">
+              <button onClick={() => setMostrarNC(true)} className="rounded-md bg-blue-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-blue-700">
+                Emitir NC
+              </button>
+              <button onClick={() => setMostrarND(true)} className="rounded-md bg-orange-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-orange-700">
+                Emitir ND
+              </button>
+            </div>
           </div>
           {notasCD.length > 0 ? (
             <div className="overflow-x-auto rounded border">
@@ -377,7 +373,7 @@ function TablaLiquidaciones({
                       {nroLP}
                     </button>
                   ) : (
-                    <span className="text-muted-foreground">Borrador</span>
+                    <span className="text-muted-foreground">Sin nro</span>
                   )}
                 </td>
                 <td className="px-3 py-2 uppercase">{liq.fletero.razonSocial}</td>

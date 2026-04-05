@@ -209,7 +209,7 @@ async function _revertirNotaCD(notaId: string, data: DatosNotaCD) {
       // 2. Revertir viaje states según subtipo
       if (data.tipo === "NC_EMITIDA") {
         if (data.subtipo === "ANULACION_TOTAL" && data.facturaId) {
-          // NC total puso viajes en PENDIENTE_FACTURAR → revertir a FACTURADO
+          // NC total sobre factura puso viajes en PENDIENTE_FACTURAR → revertir a FACTURADO
           const vefs = await tx.viajeEnFactura.findMany({
             where: { facturaId: data.facturaId },
             select: { viajeId: true },
@@ -221,11 +221,30 @@ async function _revertirNotaCD(notaId: string, data: DatosNotaCD) {
               data: { estadoFactura: "FACTURADO" },
             })
           }
-        } else if (data.subtipo === "ANULACION_PARCIAL" && data.viajesIds?.length) {
-          // NC parcial puso viajes seleccionados en PENDIENTE → revertir a FACTURADO
+        } else if (data.subtipo === "ANULACION_TOTAL" && data.liquidacionId) {
+          // NC total sobre LP puso viajes en PENDIENTE_LIQUIDAR → revertir a LIQUIDADO
+          const vels = await tx.viajeEnLiquidacion.findMany({
+            where: { liquidacionId: data.liquidacionId },
+            select: { viajeId: true },
+          })
+          const ids = vels.map((v) => v.viajeId)
+          if (ids.length > 0) {
+            await tx.viaje.updateMany({
+              where: { id: { in: ids } },
+              data: { estadoLiquidacion: "LIQUIDADO" },
+            })
+          }
+        } else if (data.subtipo === "ANULACION_PARCIAL" && data.viajesIds?.length && data.facturaId) {
+          // NC parcial sobre factura → revertir viajes seleccionados a FACTURADO
           await tx.viaje.updateMany({
             where: { id: { in: data.viajesIds } },
             data: { estadoFactura: "FACTURADO" },
+          })
+        } else if (data.subtipo === "ANULACION_PARCIAL" && data.viajesIds?.length && data.liquidacionId) {
+          // NC parcial sobre LP → revertir viajes seleccionados a LIQUIDADO
+          await tx.viaje.updateMany({
+            where: { id: { in: data.viajesIds } },
+            data: { estadoLiquidacion: "LIQUIDADO" },
           })
         }
         // CORRECCION_IMPORTE: no tocó viajes, nada que revertir

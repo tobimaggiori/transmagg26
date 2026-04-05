@@ -23,7 +23,6 @@ function EstadoBadge({ estado }: { estado: string }) {
     EMITIDA: "bg-blue-100 text-blue-800",
     PARCIALMENTE_COBRADA: "bg-amber-100 text-amber-800",
     COBRADA: "bg-green-100 text-green-800",
-    ANULADA: "bg-red-100 text-red-800",
   }
   const labels: Record<string, string> = {
     PARCIALMENTE_COBRADA: "Parcial",
@@ -148,21 +147,17 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
         empresaId,
         tipoCbte,
         ivaPct,
-        viajes: viajesSeleccionados.map((v) => ({
-          viajeId: v.id,
-          camionId: v.camionIdEdit ?? v.camionId,
-          choferId: v.choferIdEdit ?? v.choferId,
-          fechaViaje: v.fechaEdit ?? v.fechaViaje.slice(0, 10),
-          remito: v.remitoEdit || null,
-          cupo: v.cupoEdit || null,
-          mercaderia: v.mercaderiaEdit || null,
-          procedencia: v.procedenciaEdit || null,
-          provinciaOrigen: v.origenEdit || null,
-          destino: v.destinoEdit || null,
-          provinciaDestino: v.provinciaDestinoEdit || null,
-          kilos: v.kilosEdit ?? v.kilos ?? 0,
-          tarifaEmpresa: v.tarifaEmpresaEdit ?? v.tarifaEmpresa,
-        })),
+        viajeIds: viajesSeleccionados.map((v) => v.id),
+        ediciones: Object.fromEntries(
+          viajesSeleccionados
+            .filter((v) => v.kilosEdit !== undefined || v.tarifaEmpresaEdit !== undefined)
+            .map((v) => [v.id, {
+              ...(v.kilosEdit !== undefined ? { kilos: v.kilosEdit } : {}),
+              ...(v.tarifaEmpresaEdit !== undefined ? { tarifaEmpresa: v.tarifaEmpresaEdit } : {}),
+            }])
+        ),
+        emisionArca: true,
+        idempotencyKey: crypto.randomUUID(),
       }
       const res = await fetch("/api/facturas", {
         method: "POST",

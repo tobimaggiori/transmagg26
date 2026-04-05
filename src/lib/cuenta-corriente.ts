@@ -24,6 +24,36 @@ export type SaldoCC = {
 
 type NotaCD = { tipo: string; montoTotal: MonetaryInput }
 
+// ─── Neto vigente por documento ──────────────────────────────────────────────
+
+/**
+ * calcularNetoVigente: number NotaCD[] -> number
+ *
+ * Dado [el total original de un documento y las NC/ND asociadas],
+ * devuelve [el neto vigente económico: total original - NC + ND].
+ *
+ * Regla documental:
+ * - El documento original es inmutable (nunca se anula)
+ * - La verdad económica sale de la suma documental vigente
+ * - NC reduce el neto vigente, ND lo aumenta
+ *
+ * Ejemplos:
+ * calcularNetoVigente(100000, []) === 100000
+ * calcularNetoVigente(100000, [{ tipo: "NC_EMITIDA", montoTotal: 100000 }]) === 0
+ * calcularNetoVigente(100000, [{ tipo: "NC_EMITIDA", montoTotal: 30000 }, { tipo: "ND_EMITIDA", montoTotal: 5000 }]) === 75000
+ */
+export function calcularNetoVigente(
+  totalOriginal: number,
+  notasCD: NotaCD[]
+): number {
+  const ajuste = notasCD.reduce((sum, n) => {
+    if (n.tipo === "NC_EMITIDA" || n.tipo === "NC_RECIBIDA") return restarImportes(sum, n.montoTotal)
+    if (n.tipo === "ND_EMITIDA" || n.tipo === "ND_RECIBIDA") return sumarImportes([sum, n.montoTotal])
+    return sum
+  }, 0)
+  return maxMonetario(0, sumarImportes([totalOriginal, ajuste]))
+}
+
 // ─── Funciones puras de cálculo ──────────────────────────────────────────────
 
 /**
@@ -120,10 +150,7 @@ export function calcularSaldoPendiente(
 export async function calcularSaldoCCEmpresa(empresaId: string): Promise<SaldoCC> {
   const [facturas, pagos, notasCD] = await Promise.all([
     prisma.facturaEmitida.findMany({
-      where: {
-        empresaId,
-        estado: { in: ["EMITIDA", "PARCIALMENTE_COBRADA", "COBRADA"] },
-      },
+      where: { empresaId },
       select: { total: true },
     }),
     prisma.pagoDeEmpresa.findMany({
@@ -131,10 +158,7 @@ export async function calcularSaldoCCEmpresa(empresaId: string): Promise<SaldoCC
       select: { monto: true },
     }),
     prisma.notaCreditoDebito.findMany({
-      where: {
-        factura: { empresaId },
-        estado: { not: "ANULADA" },
-      },
+      where: { factura: { empresaId } },
       select: { tipo: true, montoTotal: true },
     }),
   ])
@@ -156,10 +180,7 @@ export async function calcularSaldoCCEmpresa(empresaId: string): Promise<SaldoCC
 export async function calcularSaldoCCFletero(fleteroId: string): Promise<SaldoCC> {
   const [liquidaciones, pagos, notasCD] = await Promise.all([
     prisma.liquidacion.findMany({
-      where: {
-        fleteroId,
-        estado: { in: ["EMITIDA", "PARCIALMENTE_PAGADA", "PAGADA"] },
-      },
+      where: { fleteroId },
       select: { total: true },
     }),
     prisma.pagoAFletero.findMany({
@@ -167,10 +188,7 @@ export async function calcularSaldoCCFletero(fleteroId: string): Promise<SaldoCC
       select: { monto: true },
     }),
     prisma.notaCreditoDebito.findMany({
-      where: {
-        liquidacion: { fleteroId },
-        estado: { not: "ANULADA" },
-      },
+      where: { liquidacion: { fleteroId } },
       select: { tipo: true, montoTotal: true },
     }),
   ])

@@ -59,10 +59,9 @@ export async function GET(request: NextRequest): Promise<Response> {
     const registros = await prisma.viajeEnFactura.findMany({
       where: {
         fechaViaje: { gte: desde, lt: hasta },
-        factura: { estado: { notIn: ["ANULADA"] } },
         viaje: {
           enLiquidaciones: {
-            none: { liquidacion: { estado: { notIn: ["ANULADA"] } } },
+            none: {},
           },
         },
       },

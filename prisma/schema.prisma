@@ -13,8 +13,8 @@ datasource db {
 // Rol:                         ADMIN_TRANSMAGG | OPERADOR_TRANSMAGG | FLETERO | CHOFER | ADMIN_EMPRESA | OPERADOR_EMPRESA
 // Canal OTP:                   EMAIL | SMS
 // Estado viaje:                PENDIENTE | EN_LIQUIDACION | EN_FACTURA | COMPLETO
-// Estado liquidación:          BORRADOR | EMITIDA | PARCIALMENTE_PAGADA | PAGADA | ANULADA
-// Estado factura:              BORRADOR | EMITIDA | PARCIALMENTE_COBRADA | COBRADA | ANULADA
+// Estado liquidación:          EMITIDA | PARCIALMENTE_PAGADA | PAGADA  (inmutable, corrección por NC/ND)
+// Estado factura:              EMITIDA | PARCIALMENTE_COBRADA | COBRADA  (inmutable, corrección por NC/ND)
 // Estado ARCA:                 PENDIENTE | ACEPTADA | RECHAZADA
 // Tipo pago fletero:           CHEQUE_PROPIO | CHEQUE_TERCERO | TRANSFERENCIA | EFECTIVO | ADELANTO
 // Tipo pago empresa:           CHEQUE | TRANSFERENCIA | EFECTIVO

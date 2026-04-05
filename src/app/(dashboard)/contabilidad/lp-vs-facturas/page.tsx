@@ -57,23 +57,17 @@ export default async function ContabilidadLpVsFacturasPage({
   const viajes = await prisma.viaje.findMany({
     where: {
       fechaViaje: { gte: desde, lt: hasta },
-      enLiquidaciones: {
-        some: { liquidacion: { estado: { notIn: ["ANULADA"] } } },
-      },
-      enFacturas: {
-        some: { factura: { estado: { notIn: ["ANULADA"] } } },
-      },
+      enLiquidaciones: { some: {} },
+      enFacturas: { some: {} },
     },
     include: {
       empresa: { select: { razonSocial: true } },
       enLiquidaciones: {
-        where: { liquidacion: { estado: { notIn: ["ANULADA"] } } },
         include: { liquidacion: { select: { nroComprobante: true } } },
         orderBy: { liquidacion: { grabadaEn: "asc" } },
         take: 1,
       },
       enFacturas: {
-        where: { factura: { estado: { notIn: ["ANULADA"] } } },
         include: { factura: { select: { nroComprobante: true } } },
         orderBy: { factura: { emitidaEn: "asc" } },
         take: 1,

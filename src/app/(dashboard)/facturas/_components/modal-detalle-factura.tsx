@@ -16,7 +16,6 @@ function EstadoBadge({ estado }: { estado: string }) {
     EMITIDA: "bg-blue-100 text-blue-800",
     PARCIALMENTE_COBRADA: "bg-amber-100 text-amber-800",
     COBRADA: "bg-green-100 text-green-800",
-    ANULADA: "bg-red-100 text-red-800",
   }
   const labels: Record<string, string> = {
     PARCIALMENTE_COBRADA: "Parcial",
@@ -41,13 +40,12 @@ function EstadoBadge({ estado }: { estado: string }) {
  */
 export function ModalDetalleFactura({
   factura,
-  onCambiarEstado,
   onRegistrarCobro,
   onCerrar,
   cargando,
 }: {
   factura: Factura
-  onCambiarEstado: (estado: string, nroComprobante?: string) => void
+  onCambiarEstado?: (estado: string, nroComprobante?: string) => void
   onRegistrarCobro: () => void
   onCerrar: () => void
   cargando: boolean
@@ -139,8 +137,7 @@ export function ModalDetalleFactura({
         <div className="mt-4 border-t pt-4">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-semibold text-gray-700">Notas de Crédito / Débito</h3>
-            {factura.estado !== "ANULADA" && (
-              <div className="flex gap-2">
+            <div className="flex gap-2">
                 <button
                   onClick={() => setMostrarModalNC(true)}
                   className="h-7 px-3 rounded-md bg-blue-100 text-blue-700 text-xs font-medium hover:bg-blue-200"
@@ -154,7 +151,6 @@ export function ModalDetalleFactura({
                   Emitir ND
                 </button>
               </div>
-            )}
           </div>
           {notasCD.length === 0 ? (
             <p className="text-xs text-muted-foreground">No hay NC/ND para esta factura.</p>
@@ -205,15 +201,6 @@ export function ModalDetalleFactura({
                 className="h-9 px-4 rounded-md bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50"
               >
                 Registrar cobro
-              </button>
-            )}
-            {factura.estado === "EMITIDA" && (
-              <button
-                onClick={() => onCambiarEstado("ANULADA")}
-                disabled={cargando}
-                className="h-9 px-4 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
-              >
-                Anular
               </button>
             )}
           </div>

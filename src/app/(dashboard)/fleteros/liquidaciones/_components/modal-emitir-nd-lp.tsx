@@ -13,6 +13,7 @@ export function ModalEmitirNDLP({
   onExito: () => void
   onClose: () => void
 }) {
+  const [subtipo, setSubtipo] = useState("AJUSTE_LIQUIDACION")
   const [montoNeto, setMontoNeto] = useState(0)
   const [ivaPct, setIvaPct] = useState(21)
   const [descripcion, setDescripcion] = useState("")
@@ -32,7 +33,7 @@ export function ModalEmitirNDLP({
     try {
       const body = {
         tipo: "ND_EMITIDA",
-        subtipo: "AJUSTE_LIQUIDACION",
+        subtipo,
         liquidacionId,
         montoNeto,
         ivaPct,
@@ -66,6 +67,17 @@ export function ModalEmitirNDLP({
         </div>
         <div className="px-6 py-4 space-y-4">
           {error && <div className="p-3 bg-red-50 text-red-700 rounded text-sm">{error}</div>}
+
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Subtipo *</label>
+            <select value={subtipo} onChange={(e) => setSubtipo(e.target.value)} className="w-full h-9 rounded border bg-white px-2 text-sm">
+              <option value="AJUSTE_LIQUIDACION">Ajuste sobre liquidación</option>
+              <option value="DIFERENCIA_TARIFA">Diferencia de tarifa</option>
+              <option value="COSTO_ADICIONAL">Costo adicional</option>
+              <option value="PENALIDAD">Penalidad</option>
+              <option value="CORRECCION_ADMINISTRATIVA">Corrección administrativa</option>
+            </select>
+          </div>
 
           <div>
             <label className="text-xs font-medium text-gray-600 block mb-1">Monto neto *</label>

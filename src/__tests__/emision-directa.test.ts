@@ -402,6 +402,39 @@ describe("rollback ARCA FAIL — limpieza completa de efectos", () => {
     })
   })
 
+  it("NC total sobre LP: borra nota y revierte viajes a LIQUIDADO", async () => {
+    mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-lp" } })
+    mockAutorizarNotaCDArca.mockRejectedValue(new Error("ARCA error"))
+    mockTx.viajeEnLiquidacion.findMany.mockResolvedValue([{ viajeId: "v1" }, { viajeId: "v2" }])
+
+    await emitirNotaCDDirecta({
+      tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL",
+      liquidacionId: "liq-1", montoNeto: 1000, ivaPct: 21, descripcion: "test",
+    }, "op1", "key-1")
+
+    expect(mockTx.notaCreditoDebito.delete).toHaveBeenCalledWith({ where: { id: "nota-lp" } })
+    expect(mockTx.viaje.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["v1", "v2"] } },
+      data: { estadoLiquidacion: "LIQUIDADO" },
+    })
+  })
+
+  it("NC parcial sobre LP: revierte viajes seleccionados a LIQUIDADO", async () => {
+    mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-lp2" } })
+    mockAutorizarNotaCDArca.mockRejectedValue(new Error("ARCA error"))
+
+    await emitirNotaCDDirecta({
+      tipo: "NC_EMITIDA", subtipo: "ANULACION_PARCIAL",
+      liquidacionId: "liq-1", montoNeto: 500, ivaPct: 21, descripcion: "test",
+      viajesIds: ["v1"],
+    }, "op1", "key-1")
+
+    expect(mockTx.viaje.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["v1"] } },
+      data: { estadoLiquidacion: "LIQUIDADO" },
+    })
+  })
+
   it("ND emitida: borra nota sin tocar viajes", async () => {
     mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-2" } })
     mockAutorizarNotaCDArca.mockRejectedValue(new Error("ARCA error"))

@@ -9,14 +9,8 @@ import { NextRequest } from "next/server"
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
 const mockAuth = jest.fn()
-const mockTx = {
-  facturaEmitida: { update: jest.fn() },
-  viajeEnFactura: { findMany: jest.fn() },
-  viaje: { update: jest.fn() },
-}
 const mockPrisma = {
-  facturaEmitida: { findUnique: jest.fn() },
-  $transaction: jest.fn((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx)),
+  facturaEmitida: { findUnique: jest.fn(), update: jest.fn() },
 }
 const mockVerificarPropietarioEmpresa = jest.fn()
 const mockObtenerUrlFirmada = jest.fn()
@@ -321,26 +315,13 @@ describe("PATCH /api/facturas/[id] — transiciones de estado", () => {
     expect(body.error).toContain("No se puede cambiar de COBRADA a EMITIDA")
   })
 
-  it("ANULADA → COBRADA (inválida) → 422", async () => {
-    mockAuth.mockResolvedValue(session("ADMIN_TRANSMAGG"))
-    mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
-      id: "fact-1",
-      estado: "ANULADA",
-      viajes: [],
-    })
-
-    const res = await patchFactura(patchReq({ estado: "COBRADA" }), params)
-    expect(res.status).toBe(422)
-  })
-
   it("EMITIDA → COBRADA (válida) → 200", async () => {
     mockAuth.mockResolvedValue(session("ADMIN_TRANSMAGG"))
     mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
       id: "fact-1",
       estado: "EMITIDA",
-      viajes: [{ viajeId: "v1" }],
     })
-    mockTx.facturaEmitida.update.mockResolvedValue({
+    mockPrisma.facturaEmitida.update.mockResolvedValue({
       id: "fact-1",
       estado: "COBRADA",
     })
@@ -351,21 +332,10 @@ describe("PATCH /api/facturas/[id] — transiciones de estado", () => {
     expect(body.estado).toBe("COBRADA")
   })
 
-  it("EMITIDA → ANULADA (válida) → 200", async () => {
+  it("ANULADA ya no es transición válida → 400 (datos inválidos)", async () => {
     mockAuth.mockResolvedValue(session("OPERADOR_TRANSMAGG"))
-    mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
-      id: "fact-1",
-      estado: "EMITIDA",
-      viajes: [],
-    })
-    mockTx.facturaEmitida.update.mockResolvedValue({
-      id: "fact-1",
-      estado: "ANULADA",
-    })
 
     const res = await patchFactura(patchReq({ estado: "ANULADA" }), params)
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.estado).toBe("ANULADA")
+    expect(res.status).toBe(400)
   })
 })

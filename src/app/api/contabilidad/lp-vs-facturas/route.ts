@@ -51,22 +51,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       where: {
         fechaViaje: { gte: desde, lt: hasta },
         enLiquidaciones: {
-          some: { liquidacion: { estado: { notIn: ["ANULADA"] } } },
+          some: {},
         },
         enFacturas: {
-          some: { factura: { estado: { notIn: ["ANULADA"] } } },
+          some: {},
         },
       },
       include: {
         empresa: { select: { razonSocial: true } },
         enLiquidaciones: {
-          where: { liquidacion: { estado: { notIn: ["ANULADA"] } } },
           include: { liquidacion: { select: { nroComprobante: true } } },
           orderBy: { liquidacion: { grabadaEn: "asc" } },
           take: 1,
         },
         enFacturas: {
-          where: { factura: { estado: { notIn: ["ANULADA"] } } },
           include: { factura: { select: { nroComprobante: true } } },
           orderBy: { factura: { emitidaEn: "asc" } },
           take: 1,

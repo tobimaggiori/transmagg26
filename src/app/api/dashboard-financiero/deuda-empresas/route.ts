@@ -29,7 +29,6 @@ export async function GET() {
       where: { activa: true },
       include: {
         facturasEmitidas: {
-          where: { estado: { not: "ANULADA" } },
           include: { pagos: { select: { monto: true } } }, // PagoDeEmpresa
           orderBy: { emitidaEn: "desc" },
         },

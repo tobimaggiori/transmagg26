@@ -125,6 +125,42 @@ describe("calcularSaldoPendiente (puro)", () => {
   })
 })
 
+describe("calcularNetoVigente (puro)", () => {
+  it("sin notas → total original", () => {
+    expect(calcularNetoVigente(100000, [])).toBe(100000)
+  })
+
+  it("NC total anula el neto → 0", () => {
+    expect(calcularNetoVigente(100000, [{ tipo: "NC_EMITIDA", montoTotal: 100000 }])).toBe(0)
+  })
+
+  it("NC parcial reduce neto", () => {
+    expect(calcularNetoVigente(100000, [{ tipo: "NC_EMITIDA", montoTotal: 30000 }])).toBe(70000)
+  })
+
+  it("ND aumenta neto", () => {
+    expect(calcularNetoVigente(100000, [{ tipo: "ND_EMITIDA", montoTotal: 15000 }])).toBe(115000)
+  })
+
+  it("NC + ND combinadas", () => {
+    expect(calcularNetoVigente(100000, [
+      { tipo: "NC_EMITIDA", montoTotal: 30000 },
+      { tipo: "ND_EMITIDA", montoTotal: 5000 },
+    ])).toBe(75000)
+  })
+
+  it("NC que excede total → 0 (no negativo)", () => {
+    expect(calcularNetoVigente(50000, [{ tipo: "NC_EMITIDA", montoTotal: 80000 }])).toBe(0)
+  })
+
+  it("funciona con NC_RECIBIDA / ND_RECIBIDA (fletero)", () => {
+    expect(calcularNetoVigente(200000, [
+      { tipo: "NC_RECIBIDA", montoTotal: 50000 },
+      { tipo: "ND_RECIBIDA", montoTotal: 10000 },
+    ])).toBe(160000)
+  })
+})
+
 // ─── Parte 2: Funciones de orquestación (con mock Prisma) ───────────────────
 
 // Mock Prisma before importing from cuenta-corriente
@@ -156,6 +192,7 @@ import {
   calcularSaldoCC,
   calcularAjusteNotasCD,
   calcularSaldoPendiente,
+  calcularNetoVigente,
   calcularSaldoCCEmpresa,
   calcularSaldoCCFletero,
   calcularSaldoPendienteFactura,

@@ -1,8 +1,11 @@
 /**
- * Propósito: Tests de integración para los endpoints POST con emisionArca: true.
- * Verifica que los handlers delegan correctamente a emision-directa,
- * que ARCA OK devuelve 201, que ARCA FAIL devuelve error HTTP sin efectos,
- * y que el response tiene la forma esperada para el frontend.
+ * Propósito: Tests de integración para los endpoints POST de comprobantes.
+ *
+ * Regla cerrada:
+ * - ARCA devuelve CAE => comprobante queda EMITIDA
+ * - ARCA no devuelve CAE => comprobante no se emite (no queda nada persistido)
+ * - No existe flujo clásico (crear sin ARCA) para documentos emitidos
+ * - NC/ND recibidas se crean sin ARCA (son documentos externos)
  */
 
 import { NextRequest } from "next/server"
@@ -14,8 +17,6 @@ const mockResolverOperadorId = jest.fn()
 const mockEmitirFacturaDirecta = jest.fn()
 const mockEmitirLiquidacionDirecta = jest.fn()
 const mockEmitirNotaCDDirecta = jest.fn()
-const mockEjecutarCrearFactura = jest.fn()
-const mockEjecutarCrearLiquidacion = jest.fn()
 const mockEjecutarCrearNotaCD = jest.fn()
 
 jest.mock("@/lib/auth", () => ({ auth: mockAuth }))
@@ -29,15 +30,11 @@ jest.mock("@/lib/emision-directa", () => ({
   emitirLiquidacionDirecta: mockEmitirLiquidacionDirecta,
   emitirNotaCDDirecta: mockEmitirNotaCDDirecta,
 }))
-jest.mock("@/lib/factura-commands", () => ({
-  ejecutarCrearFactura: mockEjecutarCrearFactura,
-}))
-jest.mock("@/lib/liquidacion-commands", () => ({
-  ejecutarCrearLiquidacion: mockEjecutarCrearLiquidacion,
-  calcularProximoNroComprobanteLiquidacion: jest.fn().mockResolvedValue(1),
-}))
 jest.mock("@/lib/nota-cd-commands", () => ({
   ejecutarCrearNotaCD: mockEjecutarCrearNotaCD,
+}))
+jest.mock("@/lib/liquidacion-commands", () => ({
+  calcularProximoNroComprobanteLiquidacion: jest.fn().mockResolvedValue(1),
 }))
 jest.mock("@/lib/prisma", () => ({
   prisma: {
@@ -80,13 +77,15 @@ beforeEach(() => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// POST /api/facturas con emisionArca
+// Regla cerrada: factura SIEMPRE pasa por ARCA
 // ═══════════════════════════════════════════════════════════════════════════════
 
-describe("POST /api/facturas — emisionArca: true", () => {
+describe("POST /api/facturas — emisión directa obligatoria", () => {
   const body = {
-    empresaId: "a0000000-0000-4000-8000-000000000010", viajeIds: ["a0000000-0000-4000-8000-000000000011"], tipoCbte: 1, ivaPct: 21,
-    emisionArca: true, idempotencyKey: "a0000000-0000-4000-8000-000000000001",
+    empresaId: "a0000000-0000-4000-8000-000000000010",
+    viajeIds: ["a0000000-0000-4000-8000-000000000011"],
+    tipoCbte: 1,
+    ivaPct: 21,
   }
 
   it("ARCA OK → 201 con documento y arca", async () => {
@@ -105,7 +104,7 @@ describe("POST /api/facturas — emisionArca: true", () => {
     expect(data.arca.cae).toBe("74120000000001")
   })
 
-  it("ARCA FAIL → error HTTP con mensaje claro (sin 201)", async () => {
+  it("ARCA FAIL → error HTTP con mensaje claro, sin documento", async () => {
     mockEmitirFacturaDirecta.mockResolvedValue({
       ok: false, status: 502,
       error: "No se pudo emitir el comprobante porque no fue posible obtener CAE de ARCA. El comprobante no quedó emitido. Motivo informado por ARCA: CUIT inválido.",
@@ -117,50 +116,49 @@ describe("POST /api/facturas — emisionArca: true", () => {
     const data = await res.json()
     expect(data.error).toContain("No se pudo emitir")
     expect(data.error).toContain("no quedó emitido")
-    expect(data.error).toContain("CUIT inválido")
+    expect(data).not.toHaveProperty("documento")
   })
 
-  it("ARCA FAIL → no llama a ejecutarCrearFactura separado", async () => {
-    mockEmitirFacturaDirecta.mockResolvedValue({ ok: false, status: 502, error: "ARCA error" })
-
-    await postFactura(jsonReq("http://localhost/api/facturas", body))
-
-    // emitirFacturaDirecta se llama (incluye creación + ARCA + rollback)
-    expect(mockEmitirFacturaDirecta).toHaveBeenCalledTimes(1)
-    // ejecutarCrearFactura NO se llama por separado
-    expect(mockEjecutarCrearFactura).not.toHaveBeenCalled()
-  })
-
-  it("delega a emitirFacturaDirecta con idempotencyKey correcta", async () => {
+  it("siempre usa emitirFacturaDirecta (nunca ejecutarCrearFactura directo)", async () => {
     mockEmitirFacturaDirecta.mockResolvedValue({
       ok: true, documento: { id: "f1" }, arca: ARCA_RESULT,
     })
 
     await postFactura(jsonReq("http://localhost/api/facturas", body))
 
-    expect(mockEmitirFacturaDirecta).toHaveBeenCalledWith(
-      expect.objectContaining({ empresaId: "a0000000-0000-4000-8000-000000000010", emisionArca: true }),
-      "op1",
-      "a0000000-0000-4000-8000-000000000001"
-    )
+    expect(mockEmitirFacturaDirecta).toHaveBeenCalledTimes(1)
+  })
+
+  it("sin emisionArca ni idempotencyKey igual pasa por ARCA (auto-genera key)", async () => {
+    mockEmitirFacturaDirecta.mockResolvedValue({
+      ok: true, documento: { id: "f1" }, arca: ARCA_RESULT,
+    })
+
+    // Body sin emisionArca ni idempotencyKey
+    await postFactura(jsonReq("http://localhost/api/facturas", body))
+
+    expect(mockEmitirFacturaDirecta).toHaveBeenCalledTimes(1)
+    // Se llamó con un idempotencyKey auto-generado (string UUID)
+    const [, , key] = mockEmitirFacturaDirecta.mock.calls[0]
+    expect(typeof key).toBe("string")
+    expect(key.length).toBeGreaterThan(0)
   })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// POST /api/liquidaciones con emisionArca
+// Regla cerrada: liquidación SIEMPRE pasa por ARCA
 // ═══════════════════════════════════════════════════════════════════════════════
 
-describe("POST /api/liquidaciones — emisionArca: true", () => {
+describe("POST /api/liquidaciones — emisión directa obligatoria", () => {
   const body = {
     fleteroId: "a0000000-0000-4000-8000-000000000020", comisionPct: 5, ivaPct: 21,
     viajes: [{ viajeId: "a0000000-0000-4000-8000-000000000021", fechaViaje: "2026-01-01", kilos: 30000, tarifaFletero: 40 }],
-    emisionArca: true, idempotencyKey: "a0000000-0000-4000-8000-000000000002",
   }
 
   it("ARCA OK → 201 con documento y arca", async () => {
     mockEmitirLiquidacionDirecta.mockResolvedValue({
       ok: true,
-      documento: { id: "liq-1", estado: "EMITIDA", nroComprobante: 42, ptoVenta: 1 },
+      documento: { id: "liq-1", estado: "EMITIDA" },
       arca: ARCA_RESULT,
     })
 
@@ -183,44 +181,76 @@ describe("POST /api/liquidaciones — emisionArca: true", () => {
     const data = await res.json()
     expect(data.error).toContain("No se pudo emitir")
   })
+
+  it("sin emisionArca igual pasa por ARCA (auto-genera key)", async () => {
+    mockEmitirLiquidacionDirecta.mockResolvedValue({
+      ok: true, documento: { id: "liq-1" }, arca: ARCA_RESULT,
+    })
+
+    await postLiquidacion(jsonReq("http://localhost/api/liquidaciones", body))
+
+    expect(mockEmitirLiquidacionDirecta).toHaveBeenCalledTimes(1)
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// POST /api/notas-credito-debito con emisionArca
+// Regla cerrada: NC/ND emitidas SIEMPRE pasan por ARCA
 // ═══════════════════════════════════════════════════════════════════════════════
 
-describe("POST /api/notas-credito-debito — emisionArca: true", () => {
-  const body = {
+describe("POST /api/notas-credito-debito — NC/ND emitidas por ARCA", () => {
+  const bodyNCEmitida = {
     tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL",
     facturaId: "a0000000-0000-4000-8000-000000000030", montoNeto: 1000, ivaPct: 21, descripcion: "Anulación",
-    emisionArca: true, idempotencyKey: "a0000000-0000-4000-8000-000000000003",
   }
 
-  it("ARCA OK → 201 con nota emitida", async () => {
+  it("NC_EMITIDA → emisión directa ARCA", async () => {
     mockEmitirNotaCDDirecta.mockResolvedValue({
       ok: true, documento: { id: "nota-1", estado: "EMITIDA" }, arca: ARCA_RESULT,
     })
 
-    const res = await postNotaCD(jsonReq("http://localhost/api/notas-credito-debito", body))
+    const res = await postNotaCD(jsonReq("http://localhost/api/notas-credito-debito", bodyNCEmitida))
 
     expect(res.status).toBe(201)
-    const data = await res.json()
-    expect(data.ok).toBe(true)
+    expect(mockEmitirNotaCDDirecta).toHaveBeenCalledTimes(1)
+    expect(mockEjecutarCrearNotaCD).not.toHaveBeenCalled()
   })
 
-  it("ARCA FAIL → error HTTP, nota no emitida", async () => {
+  it("ND_EMITIDA → emisión directa ARCA", async () => {
+    mockEmitirNotaCDDirecta.mockResolvedValue({
+      ok: true, documento: { id: "nota-2", estado: "EMITIDA" }, arca: ARCA_RESULT,
+    })
+
+    const bodyND = {
+      tipo: "ND_EMITIDA", subtipo: "DIFERENCIA_TARIFA",
+      facturaId: "a0000000-0000-4000-8000-000000000030", montoNeto: 500, ivaPct: 21, descripcion: "Diferencia",
+    }
+    const res = await postNotaCD(jsonReq("http://localhost/api/notas-credito-debito", bodyND))
+
+    expect(res.status).toBe(201)
+    expect(mockEmitirNotaCDDirecta).toHaveBeenCalledTimes(1)
+    expect(mockEjecutarCrearNotaCD).not.toHaveBeenCalled()
+  })
+
+  it("ARCA FAIL en NC_EMITIDA → error HTTP, nota no persiste", async () => {
     mockEmitirNotaCDDirecta.mockResolvedValue({
       ok: false, status: 502, error: "ARCA rechazó: comprobante asociado inválido.",
     })
 
-    const res = await postNotaCD(jsonReq("http://localhost/api/notas-credito-debito", body))
+    const res = await postNotaCD(jsonReq("http://localhost/api/notas-credito-debito", bodyNCEmitida))
 
     expect(res.status).toBe(502)
     const data = await res.json()
     expect(data.error).toContain("ARCA rechazó")
+    expect(data).not.toHaveProperty("documento")
   })
+})
 
-  it("NC_RECIBIDA sin emisionArca → flujo clásico directo", async () => {
+// ═══════════════════════════════════════════════════════════════════════════════
+// NC/ND recibidas: flujo clásico (sin ARCA)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("POST /api/notas-credito-debito — NC/ND recibidas sin ARCA", () => {
+  it("NC_RECIBIDA → flujo clásico, sin ARCA", async () => {
     const bodyRecibida = {
       tipo: "NC_RECIBIDA", subtipo: "ANULACION_LIQUIDACION",
       liquidacionId: "a0000000-0000-4000-8000-000000000040", montoNeto: 500, ivaPct: 21, descripcion: "Anulación LP",
@@ -231,30 +261,44 @@ describe("POST /api/notas-credito-debito — emisionArca: true", () => {
     const res = await postNotaCD(jsonReq("http://localhost/api/notas-credito-debito", bodyRecibida))
 
     expect(res.status).toBe(201)
-    // Usa flujo clásico, no emision directa
+    // Usa flujo clásico, no emisión directa
+    expect(mockEmitirNotaCDDirecta).not.toHaveBeenCalled()
+    expect(mockEjecutarCrearNotaCD).toHaveBeenCalled()
+  })
+
+  it("ND_RECIBIDA → flujo clásico, sin ARCA", async () => {
+    const bodyND = {
+      tipo: "ND_RECIBIDA", subtipo: "CHEQUE_RECHAZADO",
+      chequeRecibidoId: "a0000000-0000-4000-8000-000000000050", montoNeto: 300, ivaPct: 21, descripcion: "Cheque rechazado",
+    }
+    mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-3" } })
+
+    const res = await postNotaCD(jsonReq("http://localhost/api/notas-credito-debito", bodyND))
+
+    expect(res.status).toBe(201)
     expect(mockEmitirNotaCDDirecta).not.toHaveBeenCalled()
     expect(mockEjecutarCrearNotaCD).toHaveBeenCalled()
   })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Rollback completo verificado en emision-directa
+// Invariantes de respuesta
 // ═══════════════════════════════════════════════════════════════════════════════
 
-describe("rollback ARCA FAIL — verificación de limpieza completa", () => {
-  it("el response ARCA FAIL no contiene documento ni arca", async () => {
+describe("invariantes de respuesta", () => {
+  it("ARCA FAIL no contiene documento ni arca en response", async () => {
     mockEmitirFacturaDirecta.mockResolvedValue({
       ok: false, status: 502, error: "Error ARCA.",
     })
 
     const body = {
-      empresaId: "00000000-0000-0000-0000-000000000010", viajeIds: ["00000000-0000-0000-0000-000000000011"], tipoCbte: 1, ivaPct: 21,
-      emisionArca: true, idempotencyKey: "a0000000-0000-4000-8000-000000000004",
+      empresaId: "00000000-0000-0000-0000-000000000010",
+      viajeIds: ["00000000-0000-0000-0000-000000000011"],
+      tipoCbte: 1, ivaPct: 21,
     }
     const res = await postFactura(jsonReq("http://localhost/api/facturas", body))
     const data = await res.json()
 
-    // No debe haber documento ni arca en el response de error
     expect(data).not.toHaveProperty("documento")
     expect(data).not.toHaveProperty("arca")
     expect(data).toHaveProperty("error")

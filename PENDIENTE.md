@@ -47,7 +47,7 @@
 ### Liquidaciones a fleteros
 - Creación de liquidaciones ("Cuenta de Venta y Líquido Producto") con viajes incluidos
 - Cálculo automático: subtotal bruto, comisión, neto, IVA, total final
-- Estados del documento: BORRADOR → EMITIDA → PAGADA / ANULADA
+- Estados del documento: EMITIDA → PAGADA / ANULADA
 - Al anular: viajes vuelven a PENDIENTE_LIQUIDAR independientemente
 - Numeración correlativa con nroComprobante + ptoVenta + tipoCbte para ARCA
 - Asientos IIBB automáticos por provincia de origen
@@ -55,7 +55,7 @@
 ### Facturas emitidas a empresas
 - Creación de facturas con viajes incluidos (tipos A/B/C/M/X)
 - Cálculo automático: neto, IVA, total
-- Estados del documento: BORRADOR → EMITIDA → COBRADA / ANULADA
+- Estados del documento: EMITIDA → COBRADA / ANULADA
 - Al anular: viajes vuelven a PENDIENTE_FACTURAR independientemente
 - Asientos IVA y IIBB automáticos
 
