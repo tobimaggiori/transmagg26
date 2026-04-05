@@ -128,7 +128,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "ABM",
     icon: Settings2,
     seccion: "abm",
-    pathPrefix: "/abm",
+    pathPrefix: "/abm/base-de-datos",
     items: [
       { href: "/abm/base-de-datos", label: "Base de datos", seccion: "" },
       { href: "/abm/contabilidad",  label: "Contabilidad",  seccion: "" },
@@ -140,7 +140,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Configuración",
     icon: Cog,
     seccion: "abm",
-    pathPrefix: "/abm/configuracion",
+    pathPrefix: "/abm/arca",
     items: [
       { href: "/abm/arca", label: "ARCA", seccion: "" },
       { href: "/abm/otp",  label: "OTP",  seccion: "" },
