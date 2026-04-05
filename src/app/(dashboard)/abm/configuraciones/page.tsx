@@ -17,8 +17,8 @@ export default async function ConfiguracionesPage() {
         <p className="text-muted-foreground mt-2">¿Qué querés configurar?</p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-2xl">
-        <ActionCard title="ARCA" subtitle="Configuración ARCA" href="/abm/arca" icon={FileText} />
-        <ActionCard title="OTP"  subtitle="Configuración OTP"  href="/abm/otp"  icon={Mail} />
+        <ActionCard title="ARCA" subtitle="Configuración ARCA" href="/configuracion/arca" icon={FileText} />
+        <ActionCard title="OTP"  subtitle="Configuración OTP"  href="/configuracion/otp"  icon={Mail} />
       </div>
     </div>
   )

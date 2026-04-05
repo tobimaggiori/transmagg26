@@ -194,14 +194,14 @@ ARCA_WSAA_URL=             # Override URL WSAA (default: según modo homo/prod)
 ARCA_WSFEV1_URL=           # Override URL WSFEv1 (default: según modo homo/prod)
 ```
 
-La configuración principal (CUIT, certificado, puntos de venta, modo) se gestiona desde `/abm?tab=arca`.
+La configuración principal (CUIT, certificado, puntos de venta, modo) se gestiona desde `/configuracion/arca`.
 
 ---
 
 ## Pasos para configurar ARCA en producción
 
 1. Obtener certificado digital desde ARCA (Clave Fiscal → Administración de Certificados Digitales)
-2. En `/abm?tab=arca`:
+2. En `/configuracion/arca`:
    - Cargar CUIT y razón social
    - Subir certificado (.pfx o .p12) con su password
    - Configurar puntos de venta por tipo de comprobante

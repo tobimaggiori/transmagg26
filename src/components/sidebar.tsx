@@ -140,10 +140,10 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Configuración",
     icon: Cog,
     seccion: "abm",
-    pathPrefix: "/abm/arca",
+    pathPrefix: "/configuracion",
     items: [
-      { href: "/abm/arca", label: "ARCA", seccion: "" },
-      { href: "/abm/otp",  label: "OTP",  seccion: "" },
+      { href: "/configuracion/arca", label: "ARCA", seccion: "" },
+      { href: "/configuracion/otp",  label: "OTP",  seccion: "" },
     ],
   },
 ]
@@ -295,7 +295,7 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
 
           {!collapsed && rol === "ADMIN_TRANSMAGG" && !arcaActiva && (
             <a
-              href="/abm/arca"
+              href="/configuracion/arca"
               className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs text-yellow-300 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors ml-2"
             >
               <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
