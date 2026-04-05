@@ -13,6 +13,7 @@ import { esRolInterno } from "@/lib/permissions"
 import { crearNotaCDSchema } from "@/lib/financial-schemas"
 import { resolverOperadorId } from "@/lib/session-utils"
 import { ejecutarCrearNotaCD } from "@/lib/nota-cd-commands"
+import { emitirNotaCDDirecta } from "@/lib/emision-directa"
 import type { Rol } from "@/types"
 
 /**
@@ -123,7 +124,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    // Ejecución
+    // Emisión directa: crear + autorizar ARCA en un solo flujo
+    if (parsed.data.emisionArca && parsed.data.idempotencyKey) {
+      const resultado = await emitirNotaCDDirecta(parsed.data, operadorId, parsed.data.idempotencyKey)
+      if (!resultado.ok) {
+        return NextResponse.json({ error: resultado.error }, { status: resultado.status })
+      }
+      return NextResponse.json(resultado, { status: 201 })
+    }
+
+    // Flujo clásico: solo crear (autorizar ARCA por separado)
     const resultado = await ejecutarCrearNotaCD(parsed.data, operadorId)
 
     if (!resultado.ok) {

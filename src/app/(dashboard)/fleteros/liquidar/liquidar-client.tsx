@@ -274,6 +274,8 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
           kilos: v.kilos ?? 0,
           tarifaFletero: v.tarifa,
         })),
+        emisionArca: true,
+        idempotencyKey: crypto.randomUUID(),
       }
       const res = await fetch("/api/liquidaciones", {
         method: "POST",
@@ -285,7 +287,8 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
         setErrorGen(err.error ?? "Error al generar liquidación")
         return
       }
-      const liqCreada = await res.json() as { id: string; nroComprobante?: number; ptoVenta?: number }
+      const data = await res.json() as { ok: boolean; documento: { id: string; nroComprobante?: number; ptoVenta?: number }; arca: unknown }
+      const liqCreada = data.documento
       const nroLP = liqCreada.nroComprobante
         ? `${String(liqCreada.ptoVenta ?? 1).padStart(4, "0")}-${formatearNroComprobante(liqCreada.nroComprobante)}`
         : "LP"

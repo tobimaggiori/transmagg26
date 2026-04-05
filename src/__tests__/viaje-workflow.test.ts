@@ -79,6 +79,18 @@ describe("resolverEstadoFacturaViaje", () => {
   })
 })
 
+// ─── Regresión: nuevos estados de ajuste parcial ────────────────────────────
+
+describe("estados de ajuste parcial", () => {
+  it("FACTURADO_AJUSTADO_PARCIAL existe en EstadoFacturaViaje", () => {
+    expect(EstadoFacturaViaje.FACTURADO_AJUSTADO_PARCIAL).toBe("FACTURADO_AJUSTADO_PARCIAL")
+  })
+
+  it("LIQUIDADO_AJUSTADO_PARCIAL existe en EstadoLiquidacionViaje", () => {
+    expect(EstadoLiquidacionViaje.LIQUIDADO_AJUSTADO_PARCIAL).toBe("LIQUIDADO_AJUSTADO_PARCIAL")
+  })
+})
+
 describe("construirAvisosEdicionViaje", () => {
   it('construirAvisosEdicionViaje("LIQUIDADO", "PENDIENTE_FACTURAR").length === 1', () => {
     expect(

@@ -25,32 +25,79 @@ export type ResumenWorkflowViajes = {
  * describirCircuitoViaje("LIQUIDADO", "PENDIENTE_FACTURAR") === "Liquidado al fletero, pendiente de facturar"
  * describirCircuitoViaje("LIQUIDADO", "FACTURADO") === "Liquidado y facturado"
  */
+/**
+ * esLiquidado: string -> boolean
+ *
+ * Dado un estadoLiquidacion, devuelve true si el viaje tiene liquidación vigente
+ * (completa o ajustada parcialmente).
+ */
+export function esLiquidado(estadoLiquidacion: string): boolean {
+  return (
+    estadoLiquidacion === EstadoLiquidacionViaje.LIQUIDADO ||
+    estadoLiquidacion === EstadoLiquidacionViaje.LIQUIDADO_AJUSTADO_PARCIAL
+  )
+}
+
+/**
+ * esFacturado: string -> boolean
+ *
+ * Dado un estadoFactura, devuelve true si el viaje tiene facturación vigente
+ * (completa o ajustada parcialmente).
+ */
+export function esFacturado(estadoFactura: string): boolean {
+  return (
+    estadoFactura === EstadoFacturaViaje.FACTURADO ||
+    estadoFactura === EstadoFacturaViaje.FACTURADO_AJUSTADO_PARCIAL
+  )
+}
+
+/**
+ * labelEstadoLiquidacion: string -> string
+ */
+export function labelEstadoLiquidacion(estado: string): string {
+  switch (estado) {
+    case EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR: return "Pendiente"
+    case EstadoLiquidacionViaje.LIQUIDADO: return "Liquidado"
+    case EstadoLiquidacionViaje.LIQUIDADO_AJUSTADO_PARCIAL: return "Liquidado (ajustado)"
+    default: return estado
+  }
+}
+
+/**
+ * labelEstadoFactura: string -> string
+ */
+export function labelEstadoFactura(estado: string): string {
+  switch (estado) {
+    case EstadoFacturaViaje.PENDIENTE_FACTURAR: return "Pendiente"
+    case EstadoFacturaViaje.FACTURADO: return "Facturado"
+    case EstadoFacturaViaje.FACTURADO_AJUSTADO_PARCIAL: return "Facturado (ajustado)"
+    default: return estado
+  }
+}
+
 export function describirCircuitoViaje(
   estadoLiquidacion: string,
   estadoFactura: string
 ): string {
-  if (
-    estadoLiquidacion === EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR &&
-    estadoFactura === EstadoFacturaViaje.PENDIENTE_FACTURAR
-  ) {
-    return "Pendiente de liquidar y de facturar"
+  const liq = esLiquidado(estadoLiquidacion)
+  const fac = esFacturado(estadoFactura)
+
+  if (!liq && !fac) return "Pendiente de liquidar y de facturar"
+  if (liq && !fac) {
+    const sufijo = estadoLiquidacion === EstadoLiquidacionViaje.LIQUIDADO_AJUSTADO_PARCIAL ? " (ajustado parcial)" : ""
+    return `Liquidado al fletero${sufijo}, pendiente de facturar`
+  }
+  if (!liq && fac) {
+    const sufijo = estadoFactura === EstadoFacturaViaje.FACTURADO_AJUSTADO_PARCIAL ? " (ajustado parcial)" : ""
+    return `Facturado a la empresa${sufijo}, pendiente de liquidar`
   }
 
-  if (
-    estadoLiquidacion === EstadoLiquidacionViaje.LIQUIDADO &&
-    estadoFactura === EstadoFacturaViaje.PENDIENTE_FACTURAR
-  ) {
-    return "Liquidado al fletero, pendiente de facturar"
-  }
-
-  if (
-    estadoLiquidacion === EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR &&
-    estadoFactura === EstadoFacturaViaje.FACTURADO
-  ) {
-    return "Facturado a la empresa, pendiente de liquidar"
-  }
-
-  return "Liquidado y facturado"
+  const parts: string[] = []
+  if (estadoLiquidacion === EstadoLiquidacionViaje.LIQUIDADO_AJUSTADO_PARCIAL) parts.push("liquidado (ajustado)")
+  else parts.push("liquidado")
+  if (estadoFactura === EstadoFacturaViaje.FACTURADO_AJUSTADO_PARCIAL) parts.push("facturado (ajustado)")
+  else parts.push("facturado")
+  return parts[0].charAt(0).toUpperCase() + parts[0].slice(1) + " y " + parts[1]
 }
 
 /**
@@ -88,10 +135,7 @@ export function resumirWorkflowViajes(
         acumulado.pendientesAmbos += 1
       }
 
-      if (
-        viaje.estadoLiquidacion === EstadoLiquidacionViaje.LIQUIDADO &&
-        viaje.estadoFactura === EstadoFacturaViaje.FACTURADO
-      ) {
+      if (esLiquidado(viaje.estadoLiquidacion) && esFacturado(viaje.estadoFactura)) {
         acumulado.cerradosAmbos += 1
       }
 

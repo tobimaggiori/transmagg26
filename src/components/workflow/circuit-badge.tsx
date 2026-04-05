@@ -26,14 +26,21 @@ export function CircuitBadge({
   estado: string
 }) {
   const esPendiente = estado.startsWith("PENDIENTE")
+  const esAjustado = estado.includes("AJUSTADO_PARCIAL")
+
+  const color = esPendiente
+    ? "bg-amber-100 text-amber-900"
+    : esAjustado
+      ? "bg-sky-100 text-sky-900"
+      : "bg-emerald-100 text-emerald-900"
+
+  const label = esPendiente ? "Pendiente" : esAjustado ? "Ajustado" : "Resuelto"
 
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
-        esPendiente ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-900"
-      }`}
+      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${color}`}
     >
-      {etiqueta}: {esPendiente ? "Pendiente" : "Resuelto"}
+      {etiqueta}: {label}
     </span>
   )
 }

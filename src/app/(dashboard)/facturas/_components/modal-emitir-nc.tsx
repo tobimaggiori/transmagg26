@@ -74,6 +74,8 @@ export function ModalEmitirNC({
         descripcion,
         motivoDetalle: motivoDetalle || undefined,
         viajesIds: subtipo === "ANULACION_PARCIAL" ? Array.from(viajesSeleccionados) : undefined,
+        emisionArca: true,
+        idempotencyKey: crypto.randomUUID(),
       }
       const res = await fetch("/api/notas-credito-debito", {
         method: "POST",

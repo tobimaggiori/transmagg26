@@ -51,6 +51,8 @@ export function ModalEmitirND({
         ivaPct,
         descripcion,
         motivoDetalle: motivoDetalle || undefined,
+        emisionArca: true,
+        idempotencyKey: crypto.randomUUID(),
       }
       const res = await fetch("/api/notas-credito-debito", {
         method: "POST",

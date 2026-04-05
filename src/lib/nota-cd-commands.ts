@@ -14,6 +14,7 @@ import {
   calcularProximoNroComprobanteNotaCD,
   tipoCbteArcaParaNotaCD,
 } from "@/lib/nota-cd-utils"
+import { EstadoFacturaViaje, EstadoLiquidacionViaje } from "@/lib/viaje-workflow"
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -127,16 +128,15 @@ async function crearNCEmitida(
             subtotalOriginal: vef.subtotal,
           },
         })
+        // Viajes totalmente revertidos → habilitados para refacturación
         await tx.viaje.update({
           where: { id: vef.viajeId },
-          data: { estadoFactura: "PENDIENTE_FACTURAR" },
+          data: { estadoFactura: EstadoFacturaViaje.PENDIENTE_FACTURAR },
         })
       }
 
-      await tx.facturaEmitida.update({
-        where: { id: data.facturaId },
-        data: { estado: "ANULADA" },
-      })
+      // La factura original se preserva históricamente — NO se pone en ANULADA.
+      // El efecto económico vigente queda revertido por la NC, no por destruir la factura.
 
       return nuevaNota
     })
@@ -168,9 +168,11 @@ async function crearNCEmitida(
             subtotalOriginal: vef.subtotal,
           },
         })
+        // NC parcial: el viaje sigue facturado pero con ajuste parcial.
+        // No se libera para refacturación total.
         await tx.viaje.update({
           where: { id: viajeId },
-          data: { estadoFactura: "PENDIENTE_FACTURAR" },
+          data: { estadoFactura: EstadoFacturaViaje.FACTURADO_AJUSTADO_PARCIAL },
         })
       }
 
@@ -268,16 +270,15 @@ async function crearNCRecibida(
         },
       })
 
-      await tx.liquidacion.update({
-        where: { id: data.liquidacionId },
-        data: { estado: "ANULADA" },
-      })
+      // La liquidación original se preserva históricamente — NO se pone en ANULADA.
+      // El efecto económico queda revertido por la NC, no por destruir el LP.
 
       const viajeIds = liquidacion.viajes.map((v) => v.viajeId)
       if (viajeIds.length > 0) {
+        // Viajes totalmente revertidos → habilitados para reliquidación
         await tx.viaje.updateMany({
           where: { id: { in: viajeIds } },
-          data: { estadoLiquidacion: "PENDIENTE_LIQUIDAR" },
+          data: { estadoLiquidacion: EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR },
         })
       }
 

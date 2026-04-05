@@ -54,6 +54,19 @@ describe("puedeVerTarifaFletero", () => {
   it('puedeVerTarifaFletero("CHOFER") === false', () => {
     expect(puedeVerTarifaFletero("CHOFER")).toBe(false)
   })
+
+  // ── Regresión: matriz completa de roles ──
+  it('puedeVerTarifaFletero("ADMIN_TRANSMAGG") === true', () => {
+    expect(puedeVerTarifaFletero("ADMIN_TRANSMAGG")).toBe(true)
+  })
+
+  it('puedeVerTarifaFletero("OPERADOR_TRANSMAGG") === true', () => {
+    expect(puedeVerTarifaFletero("OPERADOR_TRANSMAGG")).toBe(true)
+  })
+
+  it('puedeVerTarifaFletero("OPERADOR_EMPRESA") === false', () => {
+    expect(puedeVerTarifaFletero("OPERADOR_EMPRESA")).toBe(false)
+  })
 })
 
 describe("puedeVerTarifaEmpresa", () => {
@@ -67,6 +80,19 @@ describe("puedeVerTarifaEmpresa", () => {
 
   it('puedeVerTarifaEmpresa("CHOFER") === false', () => {
     expect(puedeVerTarifaEmpresa("CHOFER")).toBe(false)
+  })
+
+  // ── Regresión: matriz completa de roles ──
+  it('puedeVerTarifaEmpresa("ADMIN_TRANSMAGG") === true', () => {
+    expect(puedeVerTarifaEmpresa("ADMIN_TRANSMAGG")).toBe(true)
+  })
+
+  it('puedeVerTarifaEmpresa("OPERADOR_TRANSMAGG") === true', () => {
+    expect(puedeVerTarifaEmpresa("OPERADOR_TRANSMAGG")).toBe(true)
+  })
+
+  it('puedeVerTarifaEmpresa("OPERADOR_EMPRESA") === true', () => {
+    expect(puedeVerTarifaEmpresa("OPERADOR_EMPRESA")).toBe(true)
   })
 })
 

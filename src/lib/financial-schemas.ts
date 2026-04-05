@@ -300,4 +300,6 @@ export const crearNotaCDSchema = z.object({
   nroComprobanteExterno: z.string().optional(),
   fechaComprobanteExterno: z.string().optional(),
   emisorExterno: z.string().optional(),
+  emisionArca: z.boolean().optional(),
+  idempotencyKey: z.string().uuid().optional(),
 })

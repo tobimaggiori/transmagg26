@@ -17,6 +17,7 @@ import { calcularToneladas, calcularTotalViaje } from "@/lib/viajes"
 import { EstadoLiquidacionViaje } from "@/lib/viaje-workflow"
 import { resolverOperadorId, resolverFleteroIdPorEmail } from "@/lib/session-utils"
 import { ejecutarCrearLiquidacion, calcularProximoNroComprobanteLiquidacion } from "@/lib/liquidacion-commands"
+import { emitirLiquidacionDirecta } from "@/lib/emision-directa"
 import type { Rol } from "@/types"
 
 // ─── Validación ──────────────────────────────────────────────────────────────
@@ -42,6 +43,8 @@ const crearLiquidacionSchema = z.object({
   comisionPct: z.number().min(0).max(100),
   ivaPct: z.number().min(0).max(100).default(21),
   viajes: z.array(viajeEnLiqSchema).min(1, "Debe incluir al menos un viaje"),
+  emisionArca: z.boolean().optional(),
+  idempotencyKey: z.string().uuid().optional(),
 })
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
@@ -204,6 +207,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
+    // Emisión directa: crear + autorizar ARCA en un solo flujo
+    if (parsed.data.emisionArca && parsed.data.idempotencyKey) {
+      const resultado = await emitirLiquidacionDirecta(parsed.data, operadorId, parsed.data.idempotencyKey)
+      if (!resultado.ok) {
+        return NextResponse.json({ error: resultado.error }, { status: resultado.status })
+      }
+      return NextResponse.json(resultado, { status: 201 })
+    }
+
+    // Flujo clásico: solo crear (autorizar ARCA por separado)
     const resultado = await ejecutarCrearLiquidacion(parsed.data, operadorId)
 
     if (!resultado.ok) {

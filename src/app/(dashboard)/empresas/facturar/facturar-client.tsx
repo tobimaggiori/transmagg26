@@ -166,6 +166,8 @@ export function FacturarEmpresaClient({ empresas }: FacturarEmpresaClientProps) 
         modalidadMiPymes: modalidadMiPymes ?? undefined,
         ivaPct,
         ediciones: Object.keys(edicionesAEnviar).length > 0 ? edicionesAEnviar : undefined,
+        emisionArca: true,
+        idempotencyKey: crypto.randomUUID(),
       }
       const res = await fetch("/api/facturas", {
         method: "POST",
@@ -179,7 +181,7 @@ export function FacturarEmpresaClient({ empresas }: FacturarEmpresaClientProps) 
       }
       setSeleccionados(new Set())
       setEdiciones({})
-      setExitoMsg("Factura creada exitosamente.")
+      setExitoMsg("Factura emitida y autorizada en ARCA exitosamente.")
       cargarDatos()
     } finally {
       setGenerando(false)
