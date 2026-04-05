@@ -354,12 +354,18 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
                   Producción activa — los comprobantes tienen efecto fiscal real
                 </div>
               )}
+              {modoSel === "simulacion" && (
+                <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
+                  Modo simulación: no se conecta a ARCA. Genera CAE, nro de comprobante y QR ficticios para probar el flujo completo (emisión, PDF, cuenta corriente) sin certificado ni conexión real.
+                </div>
+              )}
               <div className="space-y-2">
-                {(["homologacion", "produccion"] as const).map((m) => (
+                {(["simulacion", "homologacion", "produccion"] as const).map((m) => (
                   <label key={m} className="flex items-center gap-2 cursor-pointer">
                     <input type="radio" name="modo" value={m} checked={modoSel === m} onChange={() => setModoSel(m)} className="h-3.5 w-3.5" />
-                    <span className="text-sm">{m === "homologacion" ? "Homologación (pruebas)" : "Producción"}</span>
+                    <span className="text-sm">{m === "simulacion" ? "Simulación (sin ARCA, datos ficticios)" : m === "homologacion" ? "Homologación (pruebas)" : "Producción"}</span>
                     {m === "produccion" && <Badge variant="destructive" className="text-[10px] px-1.5">REAL</Badge>}
+                    {m === "simulacion" && <Badge variant="outline" className="text-[10px] px-1.5">SIN ARCA</Badge>}
                   </label>
                 ))}
               </div>

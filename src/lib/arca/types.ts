@@ -180,7 +180,7 @@ export interface ArcaConfig {
   razonSocial: string
   certificadoB64: string
   certificadoPass: string
-  modo: "homologacion" | "produccion"
+  modo: "homologacion" | "produccion" | "simulacion"
   puntosVenta: Record<string, number>
   cbuMiPymes: string | null
   activa: boolean

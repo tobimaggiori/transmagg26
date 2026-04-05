@@ -17,7 +17,7 @@ const patchSchema = z.object({
   razonSocial: z.string().min(1).optional(),
   certificadoB64: z.string().optional(),
   certificadoPass: z.string().optional(),
-  modo: z.enum(["homologacion", "produccion"]).optional(),
+  modo: z.enum(["homologacion", "produccion", "simulacion"]).optional(),
   puntosVenta: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
   cbuMiPymes: z.string().nullable().optional(),
   activa: z.boolean().optional(),

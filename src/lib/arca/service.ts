@@ -525,6 +525,68 @@ interface AutorizarInput extends Omit<DatosComprobanteBase, "nroComprobante"> {
   modalidadMiPymes?: string | null
 }
 
+// ─── Simulación ─────────────────────────────────────────────────────────────
+
+/**
+ * _autorizarSimulado: genera respuesta ARCA ficticia sin conectar a ARCA.
+ * Persiste datos simulados (CAE, QR, nro comprobante) exactamente como lo haría
+ * una autorización real, para que PDFs, CC y listados funcionen normalmente.
+ */
+async function _autorizarSimulado(
+  config: ArcaConfig,
+  input: AutorizarInput
+): Promise<AutorizarComprobanteResult> {
+  // Nro comprobante secuencial simulado (basado en timestamp para unicidad)
+  const nroDefinitivo = Math.floor(Date.now() / 1000) % 100000000
+
+  // CAE ficticio (14 dígitos, empieza con 99 para distinguir de reales)
+  const cae = `99${String(Date.now()).slice(-12)}`
+  const caeVto = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000) // +10 días
+
+  const qrData = generarQRFiscal({
+    cuitEmisor: config.cuit,
+    ptoVenta: input.ptoVenta,
+    tipoCbte: input.tipoCbte,
+    nroComprobante: nroDefinitivo,
+    total: input.total,
+    cuitReceptor: input.cuitReceptor,
+    cae,
+    fechaEmision: input.fecha,
+  })
+
+  logArca("info", "completado", "Comprobante autorizado en SIMULACIÓN", {
+    tipo: input.tipoDocumento,
+    id: input.documentoId,
+    cae: cae.slice(0, 4) + "..." + cae.slice(-4),
+    nroDefinitivo,
+    simulacion: true,
+  })
+
+  await _persistirResultado(input.tipoDocumento, input.documentoId, {
+    arcaEstado: "AUTORIZADA",
+    arcaObservaciones: "SIMULACIÓN — datos ficticios, sin conexión a ARCA",
+    cae,
+    caeVto,
+    qrData,
+    autorizadaEn: new Date(),
+    requestArcaJson: JSON.stringify({ simulacion: true, tipoCbte: input.tipoCbte, ptoVenta: input.ptoVenta }),
+    responseArcaJson: JSON.stringify({ simulacion: true, cae, nroDefinitivo }),
+    nroComprobante: nroDefinitivo,
+    ptoVenta: input.ptoVenta,
+    tipoCbte: input.tipoCbte,
+  })
+
+  return {
+    ok: true,
+    cae,
+    caeVto,
+    nroComprobante: nroDefinitivo,
+    ptoVenta: input.ptoVenta,
+    tipoCbte: input.tipoCbte,
+    qrData,
+  }
+}
+
 async function _autorizarComprobante(
   config: ArcaConfig,
   input: AutorizarInput
@@ -534,6 +596,11 @@ async function _autorizarComprobante(
     id: input.documentoId,
     tipoCbte: input.tipoCbte,
   })
+
+  // ── Modo simulación: generar datos ficticios sin llamar a ARCA ──
+  if (config.modo === "simulacion") {
+    return _autorizarSimulado(config, input)
+  }
 
   // 1. Obtener ticket WSAA
   const ticket = await obtenerTicketWsaa(config)

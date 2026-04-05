@@ -41,8 +41,14 @@ export async function cargarConfigArca(): Promise<ArcaConfig> {
   if (!row.cuit || row.cuit.replace(/\D/g, "").length !== 11) {
     throw new ArcaConfigIncompletaError("CUIT válido (11 dígitos)")
   }
-  if (!row.certificadoB64) throw new ArcaConfigIncompletaError("certificado digital")
-  if (!row.certificadoPass) throw new ArcaConfigIncompletaError("contraseña del certificado")
+
+  const esSimulacion = row.modo === "simulacion"
+
+  // En modo simulación no se requiere certificado
+  if (!esSimulacion) {
+    if (!row.certificadoB64) throw new ArcaConfigIncompletaError("certificado digital")
+    if (!row.certificadoPass) throw new ArcaConfigIncompletaError("contraseña del certificado")
+  }
 
   const puntosVenta: Record<string, number> = {}
   try {
@@ -60,9 +66,10 @@ export async function cargarConfigArca(): Promise<ArcaConfig> {
     cuit: row.cuit.replace(/\D/g, ""),
     razonSocial: row.razonSocial,
     // Descifrar certificado y password (backward compatible con plaintext legacy)
-    certificadoB64: descifrarValor(row.certificadoB64),
-    certificadoPass: descifrarValor(row.certificadoPass),
-    modo: row.modo === "produccion" ? "produccion" : "homologacion",
+    // En modo simulación pueden ser null
+    certificadoB64: row.certificadoB64 ? descifrarValor(row.certificadoB64) : "",
+    certificadoPass: row.certificadoPass ? descifrarValor(row.certificadoPass) : "",
+    modo: row.modo === "produccion" ? "produccion" : row.modo === "simulacion" ? "simulacion" : "homologacion",
     puntosVenta,
     cbuMiPymes: row.cbuMiPymes ?? null,
     activa: row.activa,
@@ -81,9 +88,11 @@ export async function cargarConfigArca(): Promise<ArcaConfig> {
  * // { wsaaUrl: "https://wsaahomo.afip.gov.ar/...", wsfev1Url: "https://wswhomo.afip.gov.ar/..." }
  */
 export function resolverUrls(config: ArcaConfig): ArcaUrls {
+  // Modo simulación no usa URLs reales
+  const modo = config.modo === "simulacion" ? "homologacion" : config.modo
   return {
-    wsaaUrl: process.env.ARCA_WSAA_URL || WSAA_URLS[config.modo],
-    wsfev1Url: process.env.ARCA_WSFEV1_URL || WSFEV1_URLS[config.modo],
+    wsaaUrl: process.env.ARCA_WSAA_URL || WSAA_URLS[modo],
+    wsfev1Url: process.env.ARCA_WSFEV1_URL || WSFEV1_URLS[modo],
   }
 }
 
