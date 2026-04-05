@@ -206,7 +206,8 @@ export async function calcularSaldoCCFletero(fleteroId: string): Promise<SaldoCC
 /**
  * calcularSaldoPendienteFactura: (facturaId: string) -> Promise<number>
  *
- * Dado el ID de una factura, devuelve el saldo pendiente de cobro.
+ * Dado el ID de una factura, devuelve el saldo pendiente de cobro
+ * basado en el neto vigente documental (total - NC + ND) menos pagos.
  * Retorna 0 si la factura no existe o ya está completamente cobrada.
  */
 export async function calcularSaldoPendienteFactura(facturaId: string): Promise<number> {
@@ -215,18 +216,21 @@ export async function calcularSaldoPendienteFactura(facturaId: string): Promise<
     select: {
       total: true,
       pagos: { select: { monto: true } },
+      notasCreditoDebito: { select: { tipo: true, montoTotal: true } },
     },
   })
 
   if (!factura) return 0
 
-  return calcularSaldoPendiente(factura.total, factura.pagos.map(p => p.monto))
+  const netoVigente = calcularNetoVigente(factura.total, factura.notasCreditoDebito)
+  return calcularSaldoPendiente(netoVigente, factura.pagos.map(p => p.monto))
 }
 
 /**
  * calcularSaldoPendienteLiquidacion: (liquidacionId: string) -> Promise<number>
  *
- * Dado el ID de una liquidación, devuelve el saldo pendiente de pago.
+ * Dado el ID de una liquidación, devuelve el saldo pendiente de pago
+ * basado en el neto vigente documental (total - NC + ND) menos pagos.
  * Retorna 0 si la liquidación no existe o ya está completamente pagada.
  */
 export async function calcularSaldoPendienteLiquidacion(liquidacionId: string): Promise<number> {
@@ -235,10 +239,12 @@ export async function calcularSaldoPendienteLiquidacion(liquidacionId: string): 
     select: {
       total: true,
       pagos: { where: { anulado: false }, select: { monto: true } },
+      notasCreditoDebito: { select: { tipo: true, montoTotal: true } },
     },
   })
 
   if (!liquidacion) return 0
 
-  return calcularSaldoPendiente(liquidacion.total, liquidacion.pagos.map(p => p.monto))
+  const netoVigente = calcularNetoVigente(liquidacion.total, liquidacion.notasCreditoDebito)
+  return calcularSaldoPendiente(netoVigente, liquidacion.pagos.map(p => p.monto))
 }

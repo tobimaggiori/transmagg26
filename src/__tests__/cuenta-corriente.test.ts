@@ -274,48 +274,86 @@ describe("calcularSaldoCCEmpresa", () => {
   })
 })
 
-// ─── calcularSaldoPendienteFactura ────────────────────────────────────────────
+// ─── calcularSaldoPendienteFactura (con neto vigente documental) ─────────────
 
 describe("calcularSaldoPendienteFactura", () => {
-  it("pago parcial → saldo pendiente correcto", async () => {
+  it("sin notas, pago parcial → neto vigente = total", async () => {
     mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
       total: 100000,
       pagos: [{ monto: 40000 }],
+      notasCreditoDebito: [],
     })
 
-    const saldo = await calcularSaldoPendienteFactura("fact1")
-
-    expect(saldo).toBe(60000)
+    expect(await calcularSaldoPendienteFactura("fact1")).toBe(60000)
   })
 
-  it("pago total → saldo pendiente 0", async () => {
+  it("sin notas, pago total → 0", async () => {
     mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
       total: 100000,
       pagos: [{ monto: 100000 }],
+      notasCreditoDebito: [],
     })
 
-    const saldo = await calcularSaldoPendienteFactura("fact1")
-
-    expect(saldo).toBe(0)
+    expect(await calcularSaldoPendienteFactura("fact1")).toBe(0)
   })
 
-  it("pago excedente → saldo pendiente no negativo (0)", async () => {
+  it("NC parcial reduce neto vigente → saldo baja", async () => {
     mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
       total: 100000,
-      pagos: [{ monto: 120000 }],
+      pagos: [],
+      notasCreditoDebito: [{ tipo: "NC_EMITIDA", montoTotal: 30000 }],
     })
 
-    const saldo = await calcularSaldoPendienteFactura("fact1")
+    // neto vigente = 100000 - 30000 = 70000
+    expect(await calcularSaldoPendienteFactura("fact1")).toBe(70000)
+  })
 
-    expect(saldo).toBe(0)
+  it("NC total deja neto vigente en 0 → saldo 0", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
+      total: 100000,
+      pagos: [],
+      notasCreditoDebito: [{ tipo: "NC_EMITIDA", montoTotal: 100000 }],
+    })
+
+    expect(await calcularSaldoPendienteFactura("fact1")).toBe(0)
+  })
+
+  it("ND aumenta neto vigente → saldo sube", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
+      total: 100000,
+      pagos: [],
+      notasCreditoDebito: [{ tipo: "ND_EMITIDA", montoTotal: 15000 }],
+    })
+
+    // neto vigente = 100000 + 15000 = 115000
+    expect(await calcularSaldoPendienteFactura("fact1")).toBe(115000)
+  })
+
+  it("pagos + NC combinados", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
+      total: 100000,
+      pagos: [{ monto: 40000 }],
+      notasCreditoDebito: [{ tipo: "NC_EMITIDA", montoTotal: 20000 }],
+    })
+
+    // neto vigente = 100000 - 20000 = 80000, saldo = 80000 - 40000 = 40000
+    expect(await calcularSaldoPendienteFactura("fact1")).toBe(40000)
+  })
+
+  it("pagos exceden neto vigente → 0 (no negativo)", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
+      total: 100000,
+      pagos: [{ monto: 80000 }],
+      notasCreditoDebito: [{ tipo: "NC_EMITIDA", montoTotal: 50000 }],
+    })
+
+    // neto vigente = 100000 - 50000 = 50000, saldo = 50000 - 80000 → 0
+    expect(await calcularSaldoPendienteFactura("fact1")).toBe(0)
   })
 
   it("factura no encontrada → 0", async () => {
     mockPrisma.facturaEmitida.findUnique.mockResolvedValue(null)
-
-    const saldo = await calcularSaldoPendienteFactura("nonexistent")
-
-    expect(saldo).toBe(0)
+    expect(await calcularSaldoPendienteFactura("nonexistent")).toBe(0)
   })
 })
 
@@ -405,25 +443,78 @@ describe("calcularSaldoCCFletero", () => {
   })
 })
 
-// ─── calcularSaldoPendienteLiquidacion ────────────────────────────────────────
+// ─── calcularSaldoPendienteLiquidacion (con neto vigente documental) ─────────
 
 describe("calcularSaldoPendienteLiquidacion", () => {
-  it("pago parcial → saldo pendiente correcto", async () => {
+  it("sin notas, pago parcial → neto vigente = total", async () => {
     mockPrisma.liquidacion.findUnique.mockResolvedValue({
       total: 200000,
       pagos: [{ monto: 80000 }],
+      notasCreditoDebito: [],
     })
 
-    const saldo = await calcularSaldoPendienteLiquidacion("liq1")
+    expect(await calcularSaldoPendienteLiquidacion("liq1")).toBe(120000)
+  })
 
-    expect(saldo).toBe(120000)
+  it("NC parcial reduce neto vigente → saldo baja", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue({
+      total: 200000,
+      pagos: [],
+      notasCreditoDebito: [{ tipo: "NC_EMITIDA", montoTotal: 50000 }],
+    })
+
+    // neto vigente = 200000 - 50000 = 150000
+    expect(await calcularSaldoPendienteLiquidacion("liq1")).toBe(150000)
+  })
+
+  it("NC total deja neto vigente en 0 → saldo 0", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue({
+      total: 200000,
+      pagos: [],
+      notasCreditoDebito: [{ tipo: "NC_EMITIDA", montoTotal: 200000 }],
+    })
+
+    expect(await calcularSaldoPendienteLiquidacion("liq1")).toBe(0)
+  })
+
+  it("NC recibida también reduce neto vigente", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue({
+      total: 200000,
+      pagos: [{ monto: 50000 }],
+      notasCreditoDebito: [{ tipo: "NC_RECIBIDA", montoTotal: 30000 }],
+    })
+
+    // neto vigente = 200000 - 30000 = 170000, saldo = 170000 - 50000 = 120000
+    expect(await calcularSaldoPendienteLiquidacion("liq1")).toBe(120000)
+  })
+
+  it("ND aumenta neto vigente", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue({
+      total: 200000,
+      pagos: [],
+      notasCreditoDebito: [{ tipo: "ND_RECIBIDA", montoTotal: 10000 }],
+    })
+
+    // neto vigente = 200000 + 10000 = 210000
+    expect(await calcularSaldoPendienteLiquidacion("liq1")).toBe(210000)
+  })
+
+  it("pagos + NC combinados", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue({
+      total: 200000,
+      pagos: [{ monto: 100000 }],
+      notasCreditoDebito: [
+        { tipo: "NC_EMITIDA", montoTotal: 40000 },
+        { tipo: "ND_EMITIDA", montoTotal: 10000 },
+      ],
+    })
+
+    // neto vigente = 200000 - 40000 + 10000 = 170000, saldo = 170000 - 100000 = 70000
+    expect(await calcularSaldoPendienteLiquidacion("liq1")).toBe(70000)
   })
 
   it("liquidacion no encontrada → 0", async () => {
     mockPrisma.liquidacion.findUnique.mockResolvedValue(null)
-
-    const saldo = await calcularSaldoPendienteLiquidacion("nonexistent")
-
-    expect(saldo).toBe(0)
+    expect(await calcularSaldoPendienteLiquidacion("nonexistent")).toBe(0)
   })
 })
