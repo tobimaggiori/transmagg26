@@ -9,6 +9,9 @@
 import React, { useState, useCallback, useEffect, useMemo } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { formatearNroComprobante } from "@/lib/liquidacion-utils"
+import { labelSubtipoNotaCD } from "@/lib/nota-cd-utils"
+import { ModalEmitirNCLP } from "./_components/modal-emitir-nc-lp"
+import { ModalEmitirNDLP } from "./_components/modal-emitir-nd-lp"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { PDFViewer } from "@/components/ui/pdf-viewer"
@@ -23,6 +26,7 @@ type Fletero = { id: string; razonSocial: string; cuit: string }
 
 type ViajeEnLiquidacion = {
   id: string
+  viajeId: string
   fechaViaje: string
   remito: string | null
   cupo: string | null
@@ -138,11 +142,34 @@ function ModalDetalleLP({
   liq,
   onCerrar,
   onAbrirPDF,
+  onNotaCreada,
 }: {
   liq: Liquidacion
   onCerrar: () => void
   onAbrirPDF: (params: { s3Key: string; titulo: string }) => void
+  onNotaCreada: () => void
 }) {
+  const [mostrarNC, setMostrarNC] = useState(false)
+  const [mostrarND, setMostrarND] = useState(false)
+  const [notasCD, setNotasCD] = useState<{ id: string; tipo: string; subtipo: string | null; montoTotal: number; estado: string; creadoEn: string }[]>([])
+
+  useEffect(() => {
+    fetch(`/api/notas-credito-debito?liquidacionId=${liq.id}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => setNotasCD(Array.isArray(data) ? data : []))
+      .catch(() => {})
+  }, [liq.id])
+
+  function handleExitoNota() {
+    setMostrarNC(false)
+    setMostrarND(false)
+    fetch(`/api/notas-credito-debito?liquidacionId=${liq.id}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => setNotasCD(Array.isArray(data) ? data : []))
+      .catch(() => {})
+    onNotaCreada()
+  }
+
   const nroLP = liq.nroComprobante
     ? `${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${formatearNroComprobante(liq.nroComprobante)}`
     : "Borrador"
@@ -227,6 +254,64 @@ function ModalDetalleLP({
             <div className="flex justify-between font-bold text-base border-t pt-1"><span>TOTAL:</span><span>{formatearMoneda(liq.total)}</span></div>
           </div>
         </div>
+
+        {/* NC/ND section */}
+        <div className="px-6 py-4 border-t">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold">Notas de Crédito / Débito</h3>
+            {liq.estado !== "ANULADA" && (
+              <div className="flex gap-2">
+                <button onClick={() => setMostrarNC(true)} className="rounded-md bg-blue-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-blue-700">
+                  Emitir NC
+                </button>
+                <button onClick={() => setMostrarND(true)} className="rounded-md bg-orange-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-orange-700">
+                  Emitir ND
+                </button>
+              </div>
+            )}
+          </div>
+          {notasCD.length > 0 ? (
+            <div className="overflow-x-auto rounded border">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50">
+                  <tr><th className="px-2 py-1.5 text-left">Tipo</th><th className="px-2 py-1.5 text-left">Subtipo</th><th className="px-2 py-1.5 text-left">Fecha</th><th className="px-2 py-1.5 text-right">Monto</th><th className="px-2 py-1.5 text-left">Estado</th></tr>
+                </thead>
+                <tbody className="divide-y">
+                  {notasCD.map((n) => (
+                    <tr key={n.id}>
+                      <td className="px-2 py-1.5">{n.tipo}</td>
+                      <td className="px-2 py-1.5">{n.subtipo ? labelSubtipoNotaCD(n.subtipo) : "—"}</td>
+                      <td className="px-2 py-1.5">{formatearFecha(new Date(n.creadoEn))}</td>
+                      <td className="px-2 py-1.5 text-right">{formatearMoneda(n.montoTotal)}</td>
+                      <td className="px-2 py-1.5">{n.estado}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">Sin notas asociadas.</p>
+          )}
+        </div>
+
+        {/* Modales NC/ND */}
+        {mostrarNC && (
+          <ModalEmitirNCLP
+            liquidacionId={liq.id}
+            totalLP={liq.total}
+            netoLP={liq.neto}
+            viajes={liq.viajes.map((v) => ({ ...v, viajeId: v.viajeId }))}
+            onExito={handleExitoNota}
+            onClose={() => setMostrarNC(false)}
+          />
+        )}
+        {mostrarND && (
+          <ModalEmitirNDLP
+            liquidacionId={liq.id}
+            onExito={handleExitoNota}
+            onClose={() => setMostrarND(false)}
+          />
+        )}
 
         {/* Footer */}
         <div className="sticky bottom-0 bg-background border-t px-6 py-4 flex justify-end">
@@ -491,6 +576,7 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
           liq={liquidacionDetalle}
           onCerrar={() => setLiquidacionDetalle(null)}
           onAbrirPDF={(params) => abrirPDF(params)}
+          onNotaCreada={cargarDatos}
         />
       )}
 

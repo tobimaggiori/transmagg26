@@ -305,3 +305,144 @@ describe("validaciones NC/ND", () => {
     if (!r.ok) expect(r.status).toBe(400)
   })
 })
+
+// ─── NC_RECIBIDA / ANULACION_PARCIAL_LIQUIDACION ────────────────────────────
+
+const LIQ_MOCK_CON_VIAJES = {
+  id: "liq-1",
+  estado: "EMITIDA",
+  viajes: [
+    { viajeId: "v1", tarifaFletero: 40, kilos: 30000, subtotal: 1200 },
+    { viajeId: "v2", tarifaFletero: 35, kilos: 25000, subtotal: 875 },
+  ],
+}
+
+describe("NC_RECIBIDA / ANULACION_PARCIAL_LIQUIDACION", () => {
+  it("pone viajes seleccionados en LIQUIDADO_AJUSTADO_PARCIAL", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK_CON_VIAJES)
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_RECIBIDA",
+      subtipo: "ANULACION_PARCIAL_LIQUIDACION",
+      liquidacionId: "liq-1",
+      montoNeto: 1200,
+      ivaPct: 21,
+      descripcion: "Ajuste parcial viaje v1",
+      viajesIds: ["v1"],
+    }, "op1")
+
+    expect(r.ok).toBe(true)
+
+    // v1 debe quedar LIQUIDADO_AJUSTADO_PARCIAL
+    expect(mockTx.viaje.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "v1" },
+        data: { estadoLiquidacion: "LIQUIDADO_AJUSTADO_PARCIAL" },
+      })
+    )
+
+    // v2 NO debe haber sido tocado
+    expect(mockTx.viaje.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "v2" } })
+    )
+  })
+
+  it("crea snapshots ViajeEnNotaCD para viajes seleccionados", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK_CON_VIAJES)
+
+    await ejecutarCrearNotaCD({
+      tipo: "NC_RECIBIDA",
+      subtipo: "ANULACION_PARCIAL_LIQUIDACION",
+      liquidacionId: "liq-1",
+      montoNeto: 1200,
+      ivaPct: 21,
+      descripcion: "Ajuste parcial",
+      viajesIds: ["v1"],
+    }, "op1")
+
+    expect(mockTx.viajeEnNotaCD.create).toHaveBeenCalledTimes(1)
+    expect(mockTx.viajeEnNotaCD.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          viajeId: "v1",
+          tarifaOriginal: 40,
+        }),
+      })
+    )
+  })
+
+  it("sin viajesIds → error", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK_CON_VIAJES)
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_RECIBIDA",
+      subtipo: "ANULACION_PARCIAL_LIQUIDACION",
+      liquidacionId: "liq-1",
+      montoNeto: 1200,
+      ivaPct: 21,
+      descripcion: "test",
+    }, "op1")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.status).toBe(400)
+  })
+
+  it("viaje que no pertenece a la liquidación → error", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK_CON_VIAJES)
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_RECIBIDA",
+      subtipo: "ANULACION_PARCIAL_LIQUIDACION",
+      liquidacionId: "liq-1",
+      montoNeto: 500,
+      ivaPct: 21,
+      descripcion: "test",
+      viajesIds: ["v99-no-existe"],
+    }, "op1")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.status).toBe(400)
+  })
+})
+
+// ─── NC_RECIBIDA / CORRECCION_IMPORTE_LIQUIDACION ───────────────────────────
+
+describe("NC_RECIBIDA / CORRECCION_IMPORTE_LIQUIDACION", () => {
+  it("no modifica estado de viajes", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK)
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_RECIBIDA",
+      subtipo: "CORRECCION_IMPORTE_LIQUIDACION",
+      liquidacionId: "liq-1",
+      montoNeto: 200,
+      ivaPct: 21,
+      descripcion: "Corrección menor",
+    }, "op1")
+
+    expect(r.ok).toBe(true)
+    expect(mockTx.viaje.update).not.toHaveBeenCalled()
+    expect(mockTx.viaje.updateMany).not.toHaveBeenCalled()
+  })
+})
+
+// ─── ND_RECIBIDA / AJUSTE_LIQUIDACION ───────────────────────────────────────
+
+describe("ND_RECIBIDA / AJUSTE_LIQUIDACION", () => {
+  it("no modifica estado de viajes ni liquidación", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK)
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "ND_RECIBIDA",
+      subtipo: "AJUSTE_LIQUIDACION",
+      liquidacionId: "liq-1",
+      montoNeto: 300,
+      ivaPct: 21,
+      descripcion: "Ajuste incremento",
+    }, "op1")
+
+    expect(r.ok).toBe(true)
+    expect(mockTx.viaje.update).not.toHaveBeenCalled()
+    expect(mockPrisma.liquidacion.update).not.toHaveBeenCalled()
+  })
+})

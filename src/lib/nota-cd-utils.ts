@@ -66,6 +66,9 @@ export function labelSubtipoNotaCD(subtipo: string): string {
     PENALIDAD: "Penalidad al cliente",
     CORRECCION_ADMINISTRATIVA: "Corrección administrativa",
     ANULACION_LIQUIDACION: "Anulación de liquidación",
+    ANULACION_PARCIAL_LIQUIDACION: "Anulación parcial de liquidación",
+    CORRECCION_IMPORTE_LIQUIDACION: "Corrección de importe de liquidación",
+    AJUSTE_LIQUIDACION: "Ajuste sobre liquidación",
     CHEQUE_RECHAZADO: "Cheque rechazado",
   }
   return mapa[subtipo] ?? subtipo
