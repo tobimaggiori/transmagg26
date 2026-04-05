@@ -1257,14 +1257,10 @@ export function ConsultarViajesClient({
                   <div className="flex gap-1">
                     {v.estadoLiquidacion === "LIQUIDADO"
                       ? <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">LP</span>
-                      : v.estadoLiquidacion === "LIQUIDADO_AJUSTADO_PARCIAL"
-                        ? <span className="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800">LP (ajust.)</span>
-                        : <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Sin LP</span>}
+                      : <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Sin LP</span>}
                     {v.estadoFactura === "FACTURADO"
                       ? <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">Fact.</span>
-                      : v.estadoFactura === "FACTURADO_AJUSTADO_PARCIAL"
-                        ? <span className="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800">Fact. (ajust.)</span>
-                        : <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">Sin fact.</span>}
+                      : <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">Sin fact.</span>}
                   </div>
                 </td>
                 {/* NRO LP */}

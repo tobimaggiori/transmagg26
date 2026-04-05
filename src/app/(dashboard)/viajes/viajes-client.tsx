@@ -22,15 +22,13 @@ import type { ViajeAPI, ViajesClientProps } from "./_components/types"
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 
-type Vista = "todos" | "pend_liquidar" | "pend_facturar" | "pend_ambos" | "ajust_liquidacion" | "ajust_factura"
+type Vista = "todos" | "pend_liquidar" | "pend_facturar" | "pend_ambos"
 
 const VISTAS: { id: Vista; label: string }[] = [
   { id: "todos", label: "Todos" },
   { id: "pend_liquidar", label: "Pend. liquidar" },
   { id: "pend_facturar", label: "Pend. facturar" },
   { id: "pend_ambos", label: "Pend. ambos" },
-  { id: "ajust_liquidacion", label: "Ajust. liquidacion" },
-  { id: "ajust_factura", label: "Ajust. factura" },
 ]
 
 // ─── Carta de porte cell ──────────────────────────────────────────────────────
@@ -149,8 +147,6 @@ export function ViajesClient({
     if (vista === "pend_liquidar") return v.estadoLiquidacion === "PENDIENTE_LIQUIDAR" && !v.esCamionPropio
     if (vista === "pend_facturar") return v.estadoFactura === "PENDIENTE_FACTURAR"
     if (vista === "pend_ambos") return v.estadoLiquidacion === "PENDIENTE_LIQUIDAR" && v.estadoFactura === "PENDIENTE_FACTURAR" && !v.esCamionPropio
-    if (vista === "ajust_liquidacion") return v.estadoLiquidacion === "LIQUIDADO_AJUSTADO_PARCIAL"
-    if (vista === "ajust_factura") return v.estadoFactura === "FACTURADO_AJUSTADO_PARCIAL"
     return true
   }).filter((v) => {
     if (!buscarCarta.trim()) return true

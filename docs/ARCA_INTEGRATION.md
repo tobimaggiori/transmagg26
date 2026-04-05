@@ -4,8 +4,8 @@
 
 | Código | Descripción | Cuándo usar |
 |--------|-------------|-------------|
-| 186 | Cuenta de Venta y Líquido Producto "A" | Emisor RI → Receptor RI o Monotributo |
-| 187 | Cuenta de Venta y Líquido Producto "B" | Emisor RI → Receptor Exento o Consumidor Final |
+| 60 | Cuenta de Venta y Líquido Producto "A" | Emisor RI → Receptor RI o Monotributo |
+| 61 | Cuenta de Venta y Líquido Producto "B" | Emisor RI → Receptor Exento o Consumidor Final |
 
 La clase (A o B) se determina por la `condicionIva` del fletero receptor al momento de autorizar.
 

@@ -19,7 +19,7 @@ import type { Rol } from "@/types"
  * suma(liquidaciones.total) - suma(pagos.monto) + ajuste por NC/ND:
  *   - NC_EMITIDA/NC_RECIBIDA con liquidacionId reduce lo que Transmagg debe al fletero
  *   - ND_EMITIDA/ND_RECIBIDA con liquidacionId incrementa la deuda
- * Solo se incluyen NC/ND activas (estado distinto de ANULADA).
+ * Se incluyen todas las NC/ND (los documentos son inmutables).
  * Ordenados por saldo desc.
  * Existe para el módulo de cuentas corrientes donde el operador
  * monitorea qué fleteros tienen cobros pendientes de Transmagg,
@@ -55,7 +55,6 @@ export async function GET() {
     }),
     prisma.notaCreditoDebito.findMany({
       where: {
-        estado: { not: "ANULADA" },
         tipo: { in: ["NC_EMITIDA", "ND_EMITIDA", "NC_RECIBIDA", "ND_RECIBIDA"] },
         liquidacionId: { not: null },
       },

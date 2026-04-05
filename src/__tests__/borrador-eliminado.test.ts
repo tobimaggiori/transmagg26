@@ -13,7 +13,9 @@
 
 import {
   EstadoFacturaDocumento,
+  EstadoFacturaViaje,
   EstadoLiquidacionDocumento,
+  EstadoLiquidacionViaje,
 } from "@/lib/viaje-workflow"
 
 // ─── BORRADOR y ANULADA no existen en constantes de documento ───────────────
@@ -41,6 +43,14 @@ describe("modelo documental inmutable", () => {
 
   it("EstadoLiquidacionDocumento solo contiene EMITIDA y PAGADA", () => {
     expect(Object.values(EstadoLiquidacionDocumento).sort()).toEqual(["EMITIDA", "PAGADA"])
+  })
+
+  it("EstadoLiquidacionViaje no contiene AJUSTADO_PARCIAL", () => {
+    expect(Object.values(EstadoLiquidacionViaje)).not.toContain("LIQUIDADO_AJUSTADO_PARCIAL")
+  })
+
+  it("EstadoFacturaViaje no contiene AJUSTADO_PARCIAL", () => {
+    expect(Object.values(EstadoFacturaViaje)).not.toContain("FACTURADO_AJUSTADO_PARCIAL")
   })
 })
 

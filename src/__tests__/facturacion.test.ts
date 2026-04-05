@@ -55,15 +55,16 @@ describe("viajeEsFacturable", () => {
     expect(viajeEsFacturable(v)).toBe(false)
   })
 
-  it("returns false when LP is ANULADA", () => {
-    const v = mkViaje({ enLiquidaciones: [mkLiquidacion({ estado: "ANULADA" })] })
+  it("returns false when LP has non-active estado", () => {
+    // LP con estado desconocido no es facturable
+    const v = mkViaje({ enLiquidaciones: [mkLiquidacion({ estado: "DESCONOCIDO" })] })
     expect(viajeEsFacturable(v)).toBe(false)
   })
 
   it("returns true when one of multiple LPs is in active state", () => {
     const v = mkViaje({
       enLiquidaciones: [
-        mkLiquidacion({ estado: "ANULADA" }),
+        mkLiquidacion({ estado: "DESCONOCIDO" }),
         mkLiquidacion({ estado: "EMITIDA" }),
       ],
     })
@@ -73,7 +74,7 @@ describe("viajeEsFacturable", () => {
   it("returns false when all LPs are inactive", () => {
     const v = mkViaje({
       enLiquidaciones: [
-        mkLiquidacion({ estado: "ANULADA" }),
+        mkLiquidacion({ estado: "DESCONOCIDO" }),
       ],
     })
     expect(viajeEsFacturable(v)).toBe(false)
@@ -93,8 +94,8 @@ describe("razonNoFacturable", () => {
     expect(razonNoFacturable(v)).toMatch(/liquidaci[oó]n asignada/i)
   })
 
-  it("returns LP not active message when all LPs are ANULADA", () => {
-    const v = mkViaje({ enLiquidaciones: [mkLiquidacion({ estado: "ANULADA" })] })
+  it("returns LP not active message when LP has non-active estado", () => {
+    const v = mkViaje({ enLiquidaciones: [mkLiquidacion({ estado: "DESCONOCIDO" })] })
     expect(razonNoFacturable(v)).toMatch(/activo|emitida/i)
   })
 })

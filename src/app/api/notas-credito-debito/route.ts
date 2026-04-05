@@ -100,8 +100,8 @@ export async function GET(request: NextRequest) {
  * Ejemplos:
  * POST { tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL", facturaId: "f1", montoNeto: 1000, descripcion: "Anulación" }
  * // => 201 { id, tipo: "NC_EMITIDA", estado: "EMITIDA", montoTotal: 1210 }
- * POST { tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL", facturaId: "anulada", montoNeto: 1, descripcion: "..." }
- * // => 400 { error: "La factura ya está anulada" }
+ * POST { tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL", facturaId: "inexistente", montoNeto: 1, descripcion: "..." }
+ * // => 400 { error: "Factura no encontrada" }
  */
 export async function POST(request: NextRequest) {
   // Auth

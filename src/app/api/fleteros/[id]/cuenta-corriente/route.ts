@@ -80,7 +80,6 @@ export async function GET(
       prisma.liquidacion.findMany({
         where: {
           fleteroId: params.id,
-          estado: { not: "ANULADA" },
           grabadaEn: { gte: desdeDate, lte: hastaDate },
         },
         select: {
@@ -107,7 +106,6 @@ export async function GET(
       }),
       prisma.notaCreditoDebito.findMany({
         where: {
-          estado: { not: "ANULADA" },
           liquidacion: { fleteroId: params.id },
           creadoEn: { gte: desdeDate, lte: hastaDate },
         },

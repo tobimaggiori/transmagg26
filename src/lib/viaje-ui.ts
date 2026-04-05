@@ -12,43 +12,21 @@ export type ResumenWorkflowViajes = {
 }
 
 /**
- * describirCircuitoViaje: string string -> string
- *
- * Dados [el estado de liquidación y el estado de facturación del viaje],
- * devuelve [una descripción corta del punto exacto del workflow operativo].
- * Existe para explicar de forma legible en la UI que ambos circuitos son
- * independientes y que un mismo viaje puede estar resuelto en uno y pendiente
- * en el otro.
- *
- * Ejemplos:
- * describirCircuitoViaje("PENDIENTE_LIQUIDAR", "PENDIENTE_FACTURAR") === "Pendiente de liquidar y de facturar"
- * describirCircuitoViaje("LIQUIDADO", "PENDIENTE_FACTURAR") === "Liquidado al fletero, pendiente de facturar"
- * describirCircuitoViaje("LIQUIDADO", "FACTURADO") === "Liquidado y facturado"
- */
-/**
  * esLiquidado: string -> boolean
  *
- * Dado un estadoLiquidacion, devuelve true si el viaje tiene liquidación vigente
- * (completa o ajustada parcialmente).
+ * Dado un estadoLiquidacion, devuelve true si el viaje tiene liquidación vigente.
  */
 export function esLiquidado(estadoLiquidacion: string): boolean {
-  return (
-    estadoLiquidacion === EstadoLiquidacionViaje.LIQUIDADO ||
-    estadoLiquidacion === EstadoLiquidacionViaje.LIQUIDADO_AJUSTADO_PARCIAL
-  )
+  return estadoLiquidacion === EstadoLiquidacionViaje.LIQUIDADO
 }
 
 /**
  * esFacturado: string -> boolean
  *
- * Dado un estadoFactura, devuelve true si el viaje tiene facturación vigente
- * (completa o ajustada parcialmente).
+ * Dado un estadoFactura, devuelve true si el viaje tiene facturación vigente.
  */
 export function esFacturado(estadoFactura: string): boolean {
-  return (
-    estadoFactura === EstadoFacturaViaje.FACTURADO ||
-    estadoFactura === EstadoFacturaViaje.FACTURADO_AJUSTADO_PARCIAL
-  )
+  return estadoFactura === EstadoFacturaViaje.FACTURADO
 }
 
 /**
@@ -58,7 +36,6 @@ export function labelEstadoLiquidacion(estado: string): string {
   switch (estado) {
     case EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR: return "Pendiente"
     case EstadoLiquidacionViaje.LIQUIDADO: return "Liquidado"
-    case EstadoLiquidacionViaje.LIQUIDADO_AJUSTADO_PARCIAL: return "Liquidado (ajustado)"
     default: return estado
   }
 }
@@ -70,11 +47,21 @@ export function labelEstadoFactura(estado: string): string {
   switch (estado) {
     case EstadoFacturaViaje.PENDIENTE_FACTURAR: return "Pendiente"
     case EstadoFacturaViaje.FACTURADO: return "Facturado"
-    case EstadoFacturaViaje.FACTURADO_AJUSTADO_PARCIAL: return "Facturado (ajustado)"
     default: return estado
   }
 }
 
+/**
+ * describirCircuitoViaje: string string -> string
+ *
+ * Dados [el estado de liquidación y el estado de facturación del viaje],
+ * devuelve [una descripción corta del punto exacto del workflow operativo].
+ *
+ * Ejemplos:
+ * describirCircuitoViaje("PENDIENTE_LIQUIDAR", "PENDIENTE_FACTURAR") === "Pendiente de liquidar y de facturar"
+ * describirCircuitoViaje("LIQUIDADO", "PENDIENTE_FACTURAR") === "Liquidado al fletero, pendiente de facturar"
+ * describirCircuitoViaje("LIQUIDADO", "FACTURADO") === "Liquidado y facturado"
+ */
 export function describirCircuitoViaje(
   estadoLiquidacion: string,
   estadoFactura: string
@@ -83,21 +70,9 @@ export function describirCircuitoViaje(
   const fac = esFacturado(estadoFactura)
 
   if (!liq && !fac) return "Pendiente de liquidar y de facturar"
-  if (liq && !fac) {
-    const sufijo = estadoLiquidacion === EstadoLiquidacionViaje.LIQUIDADO_AJUSTADO_PARCIAL ? " (ajustado parcial)" : ""
-    return `Liquidado al fletero${sufijo}, pendiente de facturar`
-  }
-  if (!liq && fac) {
-    const sufijo = estadoFactura === EstadoFacturaViaje.FACTURADO_AJUSTADO_PARCIAL ? " (ajustado parcial)" : ""
-    return `Facturado a la empresa${sufijo}, pendiente de liquidar`
-  }
-
-  const parts: string[] = []
-  if (estadoLiquidacion === EstadoLiquidacionViaje.LIQUIDADO_AJUSTADO_PARCIAL) parts.push("liquidado (ajustado)")
-  else parts.push("liquidado")
-  if (estadoFactura === EstadoFacturaViaje.FACTURADO_AJUSTADO_PARCIAL) parts.push("facturado (ajustado)")
-  else parts.push("facturado")
-  return parts[0].charAt(0).toUpperCase() + parts[0].slice(1) + " y " + parts[1]
+  if (liq && !fac) return "Liquidado al fletero, pendiente de facturar"
+  if (!liq && fac) return "Facturado a la empresa, pendiente de liquidar"
+  return "Liquidado y facturado"
 }
 
 /**
@@ -105,13 +80,6 @@ export function describirCircuitoViaje(
  *
  * Dada [una lista de viajes con sus dos estados independientes], devuelve [un
  * resumen contable del workflow operativo del tablero].
- * Existe para construir tarjetas de resumen en la UI sin repetir filtros en
- * cada pantalla.
- *
- * Ejemplos:
- * resumirWorkflowViajes([{ estadoLiquidacion: "PENDIENTE_LIQUIDAR", estadoFactura: "PENDIENTE_FACTURAR" }]).pendientesAmbos === 1
- * resumirWorkflowViajes([{ estadoLiquidacion: "LIQUIDADO", estadoFactura: "PENDIENTE_FACTURAR" }]).pendientesFacturar === 1
- * resumirWorkflowViajes([{ estadoLiquidacion: "LIQUIDADO", estadoFactura: "FACTURADO" }]).cerradosAmbos === 1
  */
 export function resumirWorkflowViajes(
   viajes: Array<{ estadoLiquidacion: string; estadoFactura: string }>

@@ -26,15 +26,12 @@ export function CircuitBadge({
   estado: string
 }) {
   const esPendiente = estado.startsWith("PENDIENTE")
-  const esAjustado = estado.includes("AJUSTADO_PARCIAL")
 
   const color = esPendiente
     ? "bg-amber-100 text-amber-900"
-    : esAjustado
-      ? "bg-sky-100 text-sky-900"
-      : "bg-emerald-100 text-emerald-900"
+    : "bg-emerald-100 text-emerald-900"
 
-  const label = esPendiente ? "Pendiente" : esAjustado ? "Ajustado" : "Resuelto"
+  const label = esPendiente ? "Pendiente" : "Resuelto"
 
   return (
     <span

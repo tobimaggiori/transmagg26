@@ -41,7 +41,7 @@ export async function GET(
       ? { in: ["EMITIDA", "PARCIALMENTE_PAGADA"] }
       : estadoFiltro === "pagados"
       ? { equals: "PAGADA" }
-      : { not: "ANULADA" }
+      : undefined
 
   try {
     const liquidaciones = await prisma.liquidacion.findMany({

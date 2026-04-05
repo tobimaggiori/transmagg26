@@ -1,10 +1,12 @@
 /**
  * Propósito: Tests unitarios para las reglas de workflow del viaje de Transmagg.
  *
- * Regla documental:
- * - Los documentos (facturas/liquidaciones) son inmutables — no existe ANULADA
- * - La corrección económica se hace por NC/ND
- * - El estado del viaje depende de si tiene documentos vigentes, no de ANULADA
+ * Modelo cerrado de estados:
+ * - Viaje: PENDIENTE_LIQUIDAR | LIQUIDADO + PENDIENTE_FACTURAR | FACTURADO
+ * - Documento factura: EMITIDA | COBRADA (inmutable, sin ANULADA)
+ * - Documento liquidación: EMITIDA | PAGADA (inmutable, sin ANULADA)
+ * - Corrección económica por NC/ND, no por destruir documentos
+ * - NC parcial/total libera viajes a PENDIENTE. Corrección de importe no toca viaje.
  */
 
 import {
@@ -32,9 +34,21 @@ describe("tarifaEsEditable", () => {
   })
 })
 
-// ─── Documentos inmutables: ANULADA no existe ───────────────────────────────
+// ─── Modelo cerrado: solo estos estados existen ─────────────────────────────
 
-describe("CONGELADO: ANULADA no existe en estados de documento", () => {
+describe("CONGELADO: estados de viaje — modelo cerrado", () => {
+  it("EstadoLiquidacionViaje solo contiene PENDIENTE_LIQUIDAR y LIQUIDADO", () => {
+    expect(Object.values(EstadoLiquidacionViaje).sort()).toEqual(
+      ["LIQUIDADO", "PENDIENTE_LIQUIDAR"]
+    )
+  })
+
+  it("EstadoFacturaViaje solo contiene PENDIENTE_FACTURAR y FACTURADO", () => {
+    expect(Object.values(EstadoFacturaViaje).sort()).toEqual(
+      ["FACTURADO", "PENDIENTE_FACTURAR"]
+    )
+  })
+
   it("EstadoFacturaDocumento solo contiene EMITIDA y COBRADA", () => {
     expect(Object.values(EstadoFacturaDocumento).sort()).toEqual(["COBRADA", "EMITIDA"])
   })
@@ -43,16 +57,18 @@ describe("CONGELADO: ANULADA no existe en estados de documento", () => {
     expect(Object.values(EstadoLiquidacionDocumento).sort()).toEqual(["EMITIDA", "PAGADA"])
   })
 
-  it("EstadoFacturaDocumento no contiene ANULADA", () => {
+  it("no existe ANULADA en documentos", () => {
     expect(Object.values(EstadoFacturaDocumento)).not.toContain("ANULADA")
+    expect(Object.values(EstadoLiquidacionDocumento)).not.toContain("ANULADA")
   })
 
-  it("EstadoLiquidacionDocumento no contiene ANULADA", () => {
-    expect(Object.values(EstadoLiquidacionDocumento)).not.toContain("ANULADA")
+  it("no existe AJUSTADO_PARCIAL en viajes", () => {
+    expect(Object.values(EstadoLiquidacionViaje)).not.toContain("LIQUIDADO_AJUSTADO_PARCIAL")
+    expect(Object.values(EstadoFacturaViaje)).not.toContain("FACTURADO_AJUSTADO_PARCIAL")
   })
 })
 
-// ─── Resolver basado en presencia de documentos, no en ANULADA ──────────────
+// ─── Resolver basado en presencia de documentos ─────────────────────────────
 
 describe("resolverEstadoLiquidacionViaje", () => {
   it('["EMITIDA"] → LIQUIDADO', () => {
@@ -87,18 +103,6 @@ describe("resolverEstadoFacturaViaje", () => {
 
   it("[] → PENDIENTE_FACTURAR", () => {
     expect(resolverEstadoFacturaViaje([])).toBe(EstadoFacturaViaje.PENDIENTE_FACTURAR)
-  })
-})
-
-// ─── Estados de ajuste parcial ──────────────────────────────────────────────
-
-describe("estados de ajuste parcial", () => {
-  it("FACTURADO_AJUSTADO_PARCIAL existe en EstadoFacturaViaje", () => {
-    expect(EstadoFacturaViaje.FACTURADO_AJUSTADO_PARCIAL).toBe("FACTURADO_AJUSTADO_PARCIAL")
-  })
-
-  it("LIQUIDADO_AJUSTADO_PARCIAL existe en EstadoLiquidacionViaje", () => {
-    expect(EstadoLiquidacionViaje.LIQUIDADO_AJUSTADO_PARCIAL).toBe("LIQUIDADO_AJUSTADO_PARCIAL")
   })
 })
 

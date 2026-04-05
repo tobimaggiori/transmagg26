@@ -18,7 +18,6 @@
 export const EstadoLiquidacionViaje = {
   PENDIENTE_LIQUIDAR: "PENDIENTE_LIQUIDAR",
   LIQUIDADO: "LIQUIDADO",
-  LIQUIDADO_AJUSTADO_PARCIAL: "LIQUIDADO_AJUSTADO_PARCIAL",
 } as const
 
 /**
@@ -35,7 +34,6 @@ export const EstadoLiquidacionViaje = {
 export const EstadoFacturaViaje = {
   PENDIENTE_FACTURAR: "PENDIENTE_FACTURAR",
   FACTURADO: "FACTURADO",
-  FACTURADO_AJUSTADO_PARCIAL: "FACTURADO_AJUSTADO_PARCIAL",
 } as const
 
 /**

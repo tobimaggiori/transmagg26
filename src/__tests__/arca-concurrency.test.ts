@@ -274,13 +274,6 @@ describe("autorizarLiquidacionArca — casos de error", () => {
       .rejects.toThrow(DocumentoNoEncontradoError)
   })
 
-  it("lanza DocumentoNoEncontradoError si la liquidación está ANULADA", async () => {
-    mockPrisma.liquidacion.findUnique.mockResolvedValue({ ...LIQ_MOCK, estado: "ANULADA" })
-
-    await expect(autorizarLiquidacionArca("liq-001", "key-001"))
-      .rejects.toThrow(DocumentoNoEncontradoError)
-  })
-
   it("lanza DocumentoEnProcesoError si arcaEstado es EN_PROCESO antes del lock", async () => {
     mockPrisma.liquidacion.findUnique.mockResolvedValue({ ...LIQ_MOCK, arcaEstado: "EN_PROCESO" })
 

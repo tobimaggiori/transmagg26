@@ -123,14 +123,14 @@ export function ModalViaje({
           <button onClick={onCerrar} className="text-muted-foreground hover:text-foreground text-xl leading-none">&times;</button>
         </div>
 
-        {modo === "editar" && (viaje?.estadoLiquidacion === "LIQUIDADO" || viaje?.estadoLiquidacion === "LIQUIDADO_AJUSTADO_PARCIAL") && (
+        {modo === "editar" && viaje?.estadoLiquidacion === "LIQUIDADO" && (
           <div className="mb-3 p-3 bg-blue-50 text-blue-800 rounded-md text-sm">
-            Este viaje ya fue incluido en una liquidación{viaje.estadoLiquidacion === "LIQUIDADO_AJUSTADO_PARCIAL" ? " (con ajuste parcial)" : ""}. Los datos de la liquidación no se actualizarán.
+            Este viaje ya fue incluido en una liquidación. Los datos de la liquidación no se actualizarán.
           </div>
         )}
-        {modo === "editar" && (viaje?.estadoFactura === "FACTURADO" || viaje?.estadoFactura === "FACTURADO_AJUSTADO_PARCIAL") && (
+        {modo === "editar" && viaje?.estadoFactura === "FACTURADO" && (
           <div className="mb-3 p-3 bg-green-50 text-green-800 rounded-md text-sm">
-            Este viaje ya fue incluido en una factura{viaje.estadoFactura === "FACTURADO_AJUSTADO_PARCIAL" ? " (con ajuste parcial)" : ""}. Los datos de la factura no se actualizarán.
+            Este viaje ya fue incluido en una factura. Los datos de la factura no se actualizarán.
           </div>
         )}
 

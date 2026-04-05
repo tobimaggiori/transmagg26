@@ -45,7 +45,7 @@ export function viajeEsFacturable(viaje: ViajeParaFacturabilidad): boolean {
  * Ejemplos:
  * razonNoFacturable({ estadoFactura: "FACTURADO", enLiquidaciones: [] }) === "El viaje no está pendiente de facturar"
  * razonNoFacturable({ estadoFactura: "PENDIENTE_FACTURAR", enLiquidaciones: [] }) === "No tiene liquidación asignada"
- * razonNoFacturable({ estadoFactura: "PENDIENTE_FACTURAR", enLiquidaciones: [{ liquidacion: { estado: "ANULADA" } }] }) === "La LP no está en estado activo (emitida/pagada)"
+ * razonNoFacturable({ estadoFactura: "PENDIENTE_FACTURAR", enLiquidaciones: [{ liquidacion: { estado: "X" } }] }) === "La LP no está en estado activo (emitida/pagada)"
  */
 export function razonNoFacturable(viaje: ViajeParaFacturabilidad): string {
   if (viaje.estadoFactura !== "PENDIENTE_FACTURAR") {

@@ -80,7 +80,6 @@ export async function GET(
       prisma.facturaEmitida.findMany({
         where: {
           empresaId: params.id,
-          estado: { not: "ANULADA" },
           emitidaEn: { gte: desdeDate, lte: hastaDate },
         },
         select: {
@@ -106,7 +105,6 @@ export async function GET(
       }),
       prisma.notaCreditoDebito.findMany({
         where: {
-          estado: { not: "ANULADA" },
           factura: { empresaId: params.id },
           creadoEn: { gte: desdeDate, lte: hastaDate },
         },

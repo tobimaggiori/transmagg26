@@ -36,7 +36,7 @@ async function recalcularEstadoLiquidacion(liquidacionId: string, tx: Tx) {
     where: { id: liquidacionId },
     select: { total: true, estado: true, pagos: { where: { anulado: false }, select: { monto: true } } },
   })
-  if (!liq || liq.estado === "ANULADA") return
+  if (!liq) return
 
   const totalPagado = sumarImportes(liq.pagos.map((p) => p.monto))
   let nuevoEstado: string

@@ -236,7 +236,7 @@ export async function autorizarLiquidacionArca(
     },
   })
 
-  if (!liq || liq.estado === "ANULADA") {
+  if (!liq) {
     throw new DocumentoNoEncontradoError("Liquidación")
   }
 
@@ -330,7 +330,7 @@ export async function autorizarFacturaArca(
     },
   })
 
-  if (!factura || factura.estado === "ANULADA") {
+  if (!factura) {
     throw new DocumentoNoEncontradoError("Factura")
   }
 
@@ -420,7 +420,7 @@ export async function autorizarNotaCDArca(
     },
   })
 
-  if (!nota || nota.estado === "ANULADA") {
+  if (!nota) {
     throw new DocumentoNoEncontradoError("Nota de crédito/débito")
   }
 

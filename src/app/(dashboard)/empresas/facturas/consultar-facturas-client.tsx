@@ -94,8 +94,8 @@ function hoy(): string {
  * EstadoBadge: { estado: string } -> JSX.Element
  *
  * Dado un string de estado de factura, devuelve un badge de colores
- * correspondiente al estado. Cubre EMITIDA, PARCIALMENTE_COBRADA,
- * COBRADA y ANULADA.
+ * correspondiente al estado. Cubre EMITIDA, PARCIALMENTE_COBRADA
+ * y COBRADA.
  * Existe para mostrar estados de forma visual y uniforme en la tabla.
  *
  * Ejemplos:

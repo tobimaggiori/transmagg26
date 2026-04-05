@@ -20,7 +20,7 @@ import type { Rol } from "@/types"
  *   - NC_EMITIDA reduce la deuda (crédito a favor de la empresa)
  *   - ND_EMITIDA aumenta la deuda (cargo adicional a la empresa)
  *   - ND_RECIBIDA aumenta la deuda (revertir pago rechazado — cheque rechazado)
- * Solo se incluyen NC/ND activas (estado distinto de ANULADA).
+ * Se incluyen todas las NC/ND (los documentos son inmutables).
  * Ordenadas por saldo desc.
  * Existe para el módulo de cuentas corrientes donde el operador
  * monitorea qué empresas tienen deuda pendiente con Transmagg,
@@ -55,7 +55,6 @@ export async function GET() {
     }),
     prisma.notaCreditoDebito.findMany({
       where: {
-        estado: { not: "ANULADA" },
         tipo: { in: ["NC_EMITIDA", "ND_EMITIDA", "ND_RECIBIDA"] },
         facturaId: { not: null },
       },

@@ -153,8 +153,7 @@ async function crearNCEmitida(
         })
       }
 
-      // La factura original se preserva históricamente — NO se pone en ANULADA.
-      // El efecto económico vigente queda revertido por la NC, no por destruir la factura.
+      // La factura original es inmutable — el efecto económico se revierte por NC.
 
       return nuevaNota
     })
@@ -417,8 +416,7 @@ async function crearNCRecibida(
         },
       })
 
-      // La liquidación original se preserva históricamente — NO se pone en ANULADA.
-      // El efecto económico queda revertido por la NC, no por destruir el LP.
+      // La liquidación original es inmutable — el efecto económico se revierte por NC.
 
       const viajeIds = liquidacion.viajes.map((v) => v.viajeId)
       if (viajeIds.length > 0) {
