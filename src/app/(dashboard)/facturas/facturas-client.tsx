@@ -52,7 +52,7 @@ function EstadoBadge({ estado }: { estado: string }) {
  * // Con empresa seleccionada → tabla de viajes + lista de facturas
  * <FacturasClient rol="ADMIN_TRANSMAGG" empresas={[...]} empresaIdPropia={null} />
  */
-export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPropia, cuentasBancarias }: FacturasClientProps) {
+export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPropia, cuentasBancarias, comprobantesHabilitados = [] }: FacturasClientProps) {
   const esInterno = rol === "ADMIN_TRANSMAGG" || rol === "OPERADOR_TRANSMAGG"
 
   const [empresaId, setEmpresaId] = useState<string>(empresaIdPropia ?? "")
@@ -517,6 +517,7 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
       {facturaDetalle && (
         <ModalDetalleFactura
           factura={facturaDetalle}
+          comprobantesHabilitados={comprobantesHabilitados}
           onCambiarEstado={(estado, nroComprobante) => cambiarEstadoFactura(facturaDetalle.id, estado, nroComprobante)}
           onRegistrarCobro={async () => {
             // Fetch saldo CC for this empresa

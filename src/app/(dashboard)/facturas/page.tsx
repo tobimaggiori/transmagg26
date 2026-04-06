@@ -9,6 +9,7 @@ import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder, esRolInterno, esRolEmpresa } from "@/lib/permissions"
 import { resolverEmpresaIdPorEmail } from "@/lib/session-utils"
+import { leerComprobantesHabilitados } from "@/lib/arca/leer-config-habilitados"
 import { FacturasClient } from "./facturas-client"
 import type { Rol } from "@/types"
 
@@ -76,6 +77,8 @@ export default async function FacturasPage() {
     ;[empresas, camiones, choferes, cuentasBancarias] = data
   }
 
+  const comprobantesHabilitados = await leerComprobantesHabilitados()
+
   return (
     <FacturasClient
       rol={rol}
@@ -84,6 +87,7 @@ export default async function FacturasPage() {
       choferes={choferes}
       empresaIdPropia={empresaIdPropia}
       cuentasBancarias={cuentasBancarias}
+      comprobantesHabilitados={comprobantesHabilitados}
     />
   )
 }

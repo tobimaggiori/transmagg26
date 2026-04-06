@@ -6,9 +6,10 @@
  * Modelo: N viajes seleccionados = 1 Factura.
  */
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useMemo } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularTotalViaje, calcularFactura } from "@/lib/viajes"
+import { facturasEmpresaDisponibles } from "@/lib/arca/catalogo"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { CeldaEditable } from "@/components/ui/celda-editable"
 
@@ -39,6 +40,7 @@ type ViajeParaFacturar = {
 
 type FacturarEmpresaClientProps = {
   empresas: Array<{ id: string; razonSocial: string; cuit: string; condicionIva: string }>
+  comprobantesHabilitados: number[]
 }
 
 // ---- Helpers ----
@@ -72,7 +74,7 @@ export function TipoCbteBadge({ tipoCbte, modalidad }: { tipoCbte: number; modal
  * selector de empresa con SearchCombobox, tabla de viajes pendientes con checkboxes,
  * edición inline de kilos y tarifa empresa, preview con neto/IVA/total, y confirmación.
  */
-export function FacturarEmpresaClient({ empresas }: FacturarEmpresaClientProps) {
+export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: FacturarEmpresaClientProps) {
   const [empresaId, setEmpresaId] = useState("")
   const [viajes, setViajes] = useState<ViajeParaFacturar[]>([])
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
@@ -104,13 +106,31 @@ export function FacturarEmpresaClient({ empresas }: FacturarEmpresaClientProps) 
   }, [cargarDatos])
 
   const empresaSeleccionada = empresas.find((e) => e.id === empresaId)
-  const esRI = empresaSeleccionada?.condicionIva === "RESPONSABLE_INSCRIPTO"
-  const tipoCbteEfectivo = esRI ? tipoCbteNum : 6
 
+  // Códigos disponibles según condición fiscal + config ARCA
+  const codigosDisponibles = useMemo(
+    () => empresaSeleccionada
+      ? facturasEmpresaDisponibles(empresaSeleccionada.condicionIva, comprobantesHabilitados)
+      : [],
+    [empresaSeleccionada, comprobantesHabilitados]
+  )
+
+  // Auto-seleccionar si solo hay una opción, o resetear si la selección ya no es válida
+  useEffect(() => {
+    if (codigosDisponibles.length === 1 && tipoCbteNum !== codigosDisponibles[0]) {
+      setTipoCbteNum(codigosDisponibles[0])
+      if (codigosDisponibles[0] !== 201) setModalidadMiPymes(null)
+    } else if (tipoCbteNum !== null && !codigosDisponibles.includes(tipoCbteNum)) {
+      setTipoCbteNum(null)
+      setModalidadMiPymes(null)
+    }
+  }, [codigosDisponibles, tipoCbteNum])
+
+  const tipoCbteEfectivo = tipoCbteNum
   const tipoCbteValido =
     !empresaId ||
-    (!esRI && tipoCbteEfectivo === 6) ||
-    (esRI && tipoCbteNum !== null && (tipoCbteNum !== 201 || modalidadMiPymes !== null))
+    (tipoCbteNum !== null && codigosDisponibles.includes(tipoCbteNum) &&
+      (tipoCbteNum !== 201 || modalidadMiPymes !== null))
 
   // Toggle individual viaje
   function toggleViaje(id: string) {
@@ -228,35 +248,65 @@ export function FacturarEmpresaClient({ empresas }: FacturarEmpresaClientProps) 
           />
         </div>
 
-        {/* Tipo de comprobante */}
+        {/* Tipo de comprobante — gobernado por condición fiscal + config ARCA */}
         {empresaId && (
           <div className="flex flex-col gap-2">
             <label className="text-xs font-medium text-muted-foreground">Tipo de comprobante</label>
-            {esRI ? (
+            {codigosDisponibles.length === 0 ? (
+              <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                No hay comprobantes habilitados para {empresaSeleccionada?.condicionIva?.replace(/_/g, " ").toLowerCase()}.
+                Verifique la configuración ARCA.
+              </div>
+            ) : codigosDisponibles.length === 1 ? (
+              <div className="flex items-center gap-2">
+                <TipoCbteBadge tipoCbte={codigosDisponibles[0]} />
+                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">automático</span>
+                <span className="text-xs text-muted-foreground">
+                  ({empresaSeleccionada?.condicionIva?.replace(/_/g, " ").toLowerCase()})
+                </span>
+              </div>
+            ) : (
               <div className="space-y-2">
                 <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer text-sm">
-                    <input
-                      type="radio"
-                      name="tipoCbte"
-                      value="1"
-                      checked={tipoCbteNum === 1}
-                      onChange={() => { setTipoCbteNum(1); setModalidadMiPymes(null) }}
-                      className="accent-primary"
-                    />
-                    Factura A <span className="text-xs text-muted-foreground">(cód. 1)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer text-sm">
-                    <input
-                      type="radio"
-                      name="tipoCbte"
-                      value="201"
-                      checked={tipoCbteNum === 201}
-                      onChange={() => { setTipoCbteNum(201); setModalidadMiPymes("SCA") }}
-                      className="accent-primary"
-                    />
-                    Factura A MiPyme <span className="text-xs text-muted-foreground">(cód. 201)</span>
-                  </label>
+                  {codigosDisponibles.includes(1) && (
+                    <label className="flex items-center gap-2 cursor-pointer text-sm">
+                      <input
+                        type="radio"
+                        name="tipoCbte"
+                        value="1"
+                        checked={tipoCbteNum === 1}
+                        onChange={() => { setTipoCbteNum(1); setModalidadMiPymes(null) }}
+                        className="accent-primary"
+                      />
+                      Factura A <span className="text-xs text-muted-foreground">(cód. 1)</span>
+                    </label>
+                  )}
+                  {codigosDisponibles.includes(201) && (
+                    <label className="flex items-center gap-2 cursor-pointer text-sm">
+                      <input
+                        type="radio"
+                        name="tipoCbte"
+                        value="201"
+                        checked={tipoCbteNum === 201}
+                        onChange={() => { setTipoCbteNum(201); setModalidadMiPymes("SCA") }}
+                        className="accent-primary"
+                      />
+                      Factura A MiPyme <span className="text-xs text-muted-foreground">(cód. 201)</span>
+                    </label>
+                  )}
+                  {codigosDisponibles.includes(6) && (
+                    <label className="flex items-center gap-2 cursor-pointer text-sm">
+                      <input
+                        type="radio"
+                        name="tipoCbte"
+                        value="6"
+                        checked={tipoCbteNum === 6}
+                        onChange={() => { setTipoCbteNum(6); setModalidadMiPymes(null) }}
+                        className="accent-primary"
+                      />
+                      Factura B <span className="text-xs text-muted-foreground">(cód. 6)</span>
+                    </label>
+                  )}
                 </div>
                 {tipoCbteNum === 201 && (
                   <div className="flex gap-4 pl-1 border-l-2 border-primary/30">
@@ -289,17 +339,11 @@ export function FacturarEmpresaClient({ empresas }: FacturarEmpresaClientProps) 
                   <p className="text-xs text-amber-600">
                     {tipoCbteNum === null
                       ? "Selecciona el tipo de comprobante para continuar."
-                      : "Selecciona la modalidad MiPyme para continuar."}
+                      : tipoCbteNum === 201 && !modalidadMiPymes
+                      ? "Selecciona la modalidad MiPyme para continuar."
+                      : ""}
                   </p>
                 )}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">Factura B</span>
-                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">automático</span>
-                <span className="text-xs text-muted-foreground">
-                  ({empresaSeleccionada?.condicionIva?.replace(/_/g, " ").toLowerCase()})
-                </span>
               </div>
             )}
           </div>

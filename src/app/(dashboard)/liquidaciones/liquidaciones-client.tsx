@@ -6,11 +6,12 @@
  * También muestra liquidaciones emitidas con detalle y cambio de estado.
  */
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useMemo } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 import type { ProvinciaArgentina } from "@/lib/provincias"
 import { calcularToneladas, calcularTotalViaje } from "@/lib/viajes"
+import { liquidacionesDisponibles } from "@/lib/arca/catalogo"
 import { WorkflowNote } from "@/components/workflow/workflow-note"
 
 import type {
@@ -72,7 +73,7 @@ type LiquidacionesClientPropsExt = LiquidacionesClientProps & {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fleteroIdPropio, cuentasBancarias: _cb, titulo = "Liquidaciones" }: LiquidacionesClientPropsExt) {
+export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fleteroIdPropio, cuentasBancarias: _cb, comprobantesHabilitados = [], titulo = "Liquidaciones" }: LiquidacionesClientPropsExt) {
   const esInterno = rol === "ADMIN_TRANSMAGG" || rol === "OPERADOR_TRANSMAGG"
 
   const [fleteroId, setFleteroId] = useState<string>(fleteroIdPropio ?? "")
@@ -155,6 +156,14 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
   useEffect(() => {
     cargarDatos()
   }, [cargarDatos])
+
+  // Verificar si el LP para este fletero está habilitado en config ARCA
+  const lpHabilitado = useMemo(
+    () => fleteroInfo
+      ? liquidacionesDisponibles(fleteroInfo.condicionIva, comprobantesHabilitados).length > 0
+      : true, // no bloquear hasta tener info del fletero
+    [fleteroInfo, comprobantesHabilitados]
+  )
 
   function toggleSeleccion(id: string) {
     setSeleccionados((prev) => {
@@ -300,12 +309,18 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
                 </span>
               </div>
               {seleccionados.size > 0 && (
-                <button
-                  onClick={() => setEnPreview(true)}
-                  className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
-                >
-                  Liquidar seleccionados ({seleccionados.size})
-                </button>
+                lpHabilitado ? (
+                  <button
+                    onClick={() => setEnPreview(true)}
+                    className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
+                  >
+                    Liquidar seleccionados ({seleccionados.size})
+                  </button>
+                ) : (
+                  <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                    LP no habilitado en configuración ARCA para esta condición fiscal.
+                  </span>
+                )
               )}
             </div>
 

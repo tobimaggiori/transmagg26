@@ -1,10 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { sumarImportes } from "@/lib/money"
 import { calcularToneladas } from "@/lib/viajes"
 import { labelTipoNotaCD, labelSubtipoNotaCD } from "@/lib/nota-cd-utils"
+import { notasDisponibles } from "@/lib/arca/catalogo"
 import { ModalEmitirNC } from "./modal-emitir-nc"
 import { ModalEmitirND } from "./modal-emitir-nd"
 import type { Factura, NotaCDResumen } from "./types"
@@ -40,11 +41,13 @@ function EstadoBadge({ estado }: { estado: string }) {
  */
 export function ModalDetalleFactura({
   factura,
+  comprobantesHabilitados = [],
   onRegistrarCobro,
   onCerrar,
   cargando,
 }: {
   factura: Factura
+  comprobantesHabilitados?: number[]
   onCambiarEstado?: (estado: string, nroComprobante?: string) => void
   onRegistrarCobro: () => void
   onCerrar: () => void
@@ -54,6 +57,14 @@ export function ModalDetalleFactura({
   const [mostrarModalNC, setMostrarModalNC] = useState(false)
   const [mostrarModalND, setMostrarModalND] = useState(false)
   const pagado = sumarImportes(factura.pagos.map(p => p.monto))
+
+  // Notas disponibles según config ARCA
+  const notasDisp = useMemo(
+    () => notasDisponibles(factura.tipoCbte, comprobantesHabilitados),
+    [factura.tipoCbte, comprobantesHabilitados]
+  )
+  const puedeEmitirNC = notasDisp.some((n) => n.rol === "nota_credito")
+  const puedeEmitirND = notasDisp.some((n) => n.rol === "nota_debito")
 
   useEffect(() => {
     async function cargarNotasCD() {
@@ -138,18 +149,25 @@ export function ModalDetalleFactura({
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-semibold text-gray-700">Notas de Crédito / Débito</h3>
             <div className="flex gap-2">
-                <button
-                  onClick={() => setMostrarModalNC(true)}
-                  className="h-7 px-3 rounded-md bg-blue-100 text-blue-700 text-xs font-medium hover:bg-blue-200"
-                >
-                  Emitir NC
-                </button>
-                <button
-                  onClick={() => setMostrarModalND(true)}
-                  className="h-7 px-3 rounded-md bg-orange-100 text-orange-700 text-xs font-medium hover:bg-orange-200"
-                >
-                  Emitir ND
-                </button>
+                {puedeEmitirNC && (
+                  <button
+                    onClick={() => setMostrarModalNC(true)}
+                    className="h-7 px-3 rounded-md bg-blue-100 text-blue-700 text-xs font-medium hover:bg-blue-200"
+                  >
+                    Emitir NC
+                  </button>
+                )}
+                {puedeEmitirND && (
+                  <button
+                    onClick={() => setMostrarModalND(true)}
+                    className="h-7 px-3 rounded-md bg-orange-100 text-orange-700 text-xs font-medium hover:bg-orange-200"
+                  >
+                    Emitir ND
+                  </button>
+                )}
+                {!puedeEmitirNC && !puedeEmitirND && (
+                  <span className="text-xs text-muted-foreground">NC/ND no habilitadas en configuración ARCA</span>
+                )}
               </div>
           </div>
           {notasCD.length === 0 ? (

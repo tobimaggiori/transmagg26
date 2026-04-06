@@ -147,18 +147,18 @@
 
 ## Pendiente ARCA (integración real)
 
-- [ ] Implementar autenticación WSAA con certificado digital X.509 + clave privada RSA
-- [ ] Generar TRA (Ticket de Requerimiento de Acceso) y obtener Token + Sign (válidos 12 horas)
-- [ ] Implementar `FECompUltimoAutorizado` para sincronizar numeración con ARCA
-- [ ] Implementar `FECAESolicitar` para autorizar liquidaciones (tipoCbte 186 o 187)
-- [ ] Implementar `FECAESolicitar` para autorizar NC/ND (tipoCbte 2/3/7/8 con campo CmpAsoc)
-- [ ] Guardar CAE (14 dígitos) + CAEFchVto en BD al autorizar
-- [ ] Actualizar `arcaEstado` a AUTORIZADA/RECHAZADA según respuesta
-- [ ] Generar QR según RG 4291 (JSON base64) y guardar en `qrData`
-- [ ] Endpoint POST /api/liquidaciones/[id]/autorizar-arca
-- [ ] Endpoint POST /api/notas-credito-debito/[id]/autorizar-arca
+- [x] Implementar autenticación WSAA con certificado digital X.509 + clave privada RSA
+- [x] Generar TRA (Ticket de Requerimiento de Acceso) y obtener Token + Sign (válidos 12 horas)
+- [x] Implementar `FECompUltimoAutorizado` para sincronizar numeración con ARCA
+- [x] Implementar `FECAESolicitar` para autorizar facturas empresa (tipoCbte 1/6/201)
+- [x] Implementar `FECAESolicitar` para autorizar liquidaciones (tipoCbte 60/61)
+- [x] Implementar `FECAESolicitar` para autorizar NC/ND (tipoCbte 2/3/7/8/202/203 con CmpAsoc)
+- [x] Guardar CAE (14 dígitos) + CAEFchVto en BD al autorizar
+- [x] Actualizar estado ARCA según respuesta
+- [x] Generar QR según RG 4291 (JSON base64) y guardar en `qrData`
+- [x] Emisión directa (sin BORRADOR) con rollback atómico si ARCA falla
+- [x] Configuración ARCA por código: comprobantesHabilitados gobierna UI y backend
 - [ ] ARCA para viajes propios: ptoVenta diferente al de liquidaciones a fleteros
-- [ ] URLs: homologación `wswhomo.afip.gov.ar` / producción `servicios1.afip.gov.ar`
 
 ## Pendiente general
 

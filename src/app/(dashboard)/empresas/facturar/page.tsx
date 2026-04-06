@@ -8,6 +8,7 @@ import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
+import { leerComprobantesHabilitados } from "@/lib/arca/leer-config-habilitados"
 import { FacturarEmpresaClient } from "./facturar-client"
 import type { Rol } from "@/types"
 
@@ -35,11 +36,14 @@ export default async function EmpresasFacturarPage() {
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
   if (!esRolInterno(rol)) redirect("/dashboard")
 
-  const empresas = await prisma.empresa.findMany({
-    where: { activa: true },
-    select: { id: true, razonSocial: true, cuit: true, condicionIva: true },
-    orderBy: { razonSocial: "asc" },
-  })
+  const [empresas, comprobantesHabilitados] = await Promise.all([
+    prisma.empresa.findMany({
+      where: { activa: true },
+      select: { id: true, razonSocial: true, cuit: true, condicionIva: true },
+      orderBy: { razonSocial: "asc" },
+    }),
+    leerComprobantesHabilitados(),
+  ])
 
-  return <FacturarEmpresaClient empresas={empresas} />
+  return <FacturarEmpresaClient empresas={empresas} comprobantesHabilitados={comprobantesHabilitados} />
 }

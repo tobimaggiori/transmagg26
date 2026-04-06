@@ -310,6 +310,66 @@ export function validarNotaContraOrigen(
   return null
 }
 
+// ─── Helpers de disponibilidad (condición fiscal × config) ─────────────────
+
+/**
+ * Devuelve los códigos de factura empresa disponibles para emitir,
+ * filtrados por condición fiscal del receptor Y comprobantesHabilitados.
+ *
+ * Ej: facturasEmpresaDisponibles("RESPONSABLE_INSCRIPTO", [1, 6, 201]) → [1, 201]
+ *     facturasEmpresaDisponibles("MONOTRIBUTISTA", [1, 6])             → [6]
+ *     facturasEmpresaDisponibles("RESPONSABLE_INSCRIPTO", [6])         → []
+ */
+export function facturasEmpresaDisponibles(
+  condicionFiscal: string,
+  comprobantesHabilitados: number[]
+): number[] {
+  return facturasParaCondicionFiscal(condicionFiscal)
+    .filter((cod) => comprobantesHabilitados.includes(cod))
+}
+
+/**
+ * Devuelve los códigos de LP disponibles para emitir,
+ * filtrados por condición fiscal del fletero Y comprobantesHabilitados.
+ *
+ * Ej: liquidacionesDisponibles("RESPONSABLE_INSCRIPTO", [60, 61]) → [60]
+ *     liquidacionesDisponibles("CONSUMIDOR_FINAL", [60, 61])      → [61]
+ *     liquidacionesDisponibles("RESPONSABLE_INSCRIPTO", [61])     → []
+ */
+export function liquidacionesDisponibles(
+  condicionFiscal: string,
+  comprobantesHabilitados: number[]
+): number[] {
+  return CATALOGO_ARCA
+    .filter((c) =>
+      c.circuito === "fletero" &&
+      c.rol === "base" &&
+      c.operativo &&
+      c.condicionesFiscales.includes(condicionFiscal as CondicionFiscal) &&
+      comprobantesHabilitados.includes(c.codigo)
+    )
+    .map((c) => c.codigo)
+}
+
+/**
+ * Devuelve las notas NC/ND disponibles para un comprobante origen,
+ * filtradas por operatividad Y comprobantesHabilitados.
+ *
+ * Ej: notasDisponibles(1, [1, 2, 3])       → [{ codigo: 2, ... }, { codigo: 3, ... }]
+ *     notasDisponibles(1, [1, 7, 8])        → []
+ *     notasDisponibles(201, [202, 203])     → [{ codigo: 202, ... }, { codigo: 203, ... }]
+ */
+export function notasDisponibles(
+  origenTipoCbte: number,
+  comprobantesHabilitados: number[]
+): ComprobanteArca[] {
+  return CATALOGO_ARCA.filter((c) =>
+    c.operativo &&
+    c.origenCompatible.includes(origenTipoCbte) &&
+    comprobantesHabilitados.includes(c.codigo)
+  )
+}
+
 /**
  * Clave para buscar punto de venta en la configuración ARCA.
  * Mapea cada código a su clave semántica en puntosVenta JSON.

@@ -103,6 +103,7 @@ export type LiquidacionesClientProps = {
   camiones: Camion[]
   choferes: Chofer[]
   fleteroIdPropio: string | null
+  comprobantesHabilitados?: number[]
   titulo?: string
 }
 

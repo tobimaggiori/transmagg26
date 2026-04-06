@@ -65,13 +65,13 @@ describe("puntosVenta normalización", () => {
   it("ignora valores cero o negativos", async () => {
     mockPrisma.configuracionArca.findUnique.mockResolvedValue({
       ...BASE_CONFIG,
-      puntosVenta: JSON.stringify({ FACTURA_A: "0", FACTURA_B: "-1", FACTURA_C: "5" }),
+      puntosVenta: JSON.stringify({ FACTURA_A: "0", FACTURA_B: "-1", LP_A: "5" }),
     })
 
     const config = await cargarConfigArca()
     expect(config.puntosVenta.FACTURA_A).toBeUndefined()
     expect(config.puntosVenta.FACTURA_B).toBeUndefined()
-    expect(config.puntosVenta.FACTURA_C).toBe(5)
+    expect(config.puntosVenta.LP_A).toBe(5)
   })
 
   it("maneja JSON vacío sin error", async () => {

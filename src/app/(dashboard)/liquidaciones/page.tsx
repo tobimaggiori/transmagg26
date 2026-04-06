@@ -8,6 +8,7 @@ import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder, esRolInterno } from "@/lib/permissions"
 import { resolverFleteroIdPorEmail } from "@/lib/session-utils"
+import { leerComprobantesHabilitados } from "@/lib/arca/leer-config-habilitados"
 import type { Rol } from "@/types"
 import { LiquidacionesClient } from "./liquidaciones-client"
 
@@ -66,10 +67,10 @@ export default async function LiquidacionesPage() {
     : [[], [], [], []]
 
   // Para FLETERO: obtener su propio fleteroId
-  let fleteroIdPropio: string | null = null
-  if (rol === "FLETERO") {
-    fleteroIdPropio = await resolverFleteroIdPorEmail(session.user.email ?? "")
-  }
+  const [fleteroIdPropio, comprobantesHabilitados] = await Promise.all([
+    rol === "FLETERO" ? resolverFleteroIdPorEmail(session.user.email ?? "") : null,
+    leerComprobantesHabilitados(),
+  ])
 
   return (
     <LiquidacionesClient
@@ -79,6 +80,7 @@ export default async function LiquidacionesPage() {
       choferes={choferes}
       fleteroIdPropio={fleteroIdPropio}
       cuentasBancarias={cuentasBancarias}
+      comprobantesHabilitados={comprobantesHabilitados}
     />
   )
 }

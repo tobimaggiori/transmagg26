@@ -81,6 +81,7 @@ export type FacturasClientProps = {
   choferes: Chofer[]
   empresaIdPropia: string | null
   cuentasBancarias: CuentaBancaria[]
+  comprobantesHabilitados?: number[]
 }
 
 export type NotaCDResumen = {
