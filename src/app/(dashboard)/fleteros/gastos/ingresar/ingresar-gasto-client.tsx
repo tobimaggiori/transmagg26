@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { parsearImporte, multiplicarImporte, calcularIva, sumarImportes, formatearMoneda } from "@/lib/money"
+import { parsearImporte, sumarImportes, formatearMoneda } from "@/lib/money"
 import { Plus, Trash2 } from "lucide-react"
 
 type Proveedor = { id: string; razonSocial: string; cuit: string }
@@ -17,18 +17,13 @@ type IngresarGastoClientProps = {
   fleteros: Fletero[]
 }
 
-type AlicuotaValue = "0" | "10.5" | "21" | "27"
-
 type ItemForm = {
   id: string
   descripcion: string
-  cantidad: string
-  precioUnitario: string
-  alicuotaIva: AlicuotaValue
+  monto: string
 }
 
 const TIPOS_CBTE = ["A", "B", "C", "M", "X", "LIQ_PROD"] as const
-const TIPOS_CON_IVA = new Set(["A", "M", "LIQ_PROD"])
 
 const SELECT_CLS =
   "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -37,9 +32,7 @@ function nuevoItem(): ItemForm {
   return {
     id: Math.random().toString(36).slice(2),
     descripcion: "",
-    cantidad: "1",
-    precioUnitario: "",
-    alicuotaIva: "21",
+    monto: "",
   }
 }
 
@@ -66,8 +59,6 @@ export function IngresarGastoClient({ proveedores, fleteros }: IngresarGastoClie
   const [error, setError] = useState("")
   const [exito, setExito] = useState<{ nroComprobante?: string; total?: number; descripcion?: string; monto?: number } | null>(null)
 
-  const discriminaIVA = TIPOS_CON_IVA.has(tipoCbte)
-
   function agregarItem() {
     setItems((prev) => [...prev, nuevoItem()])
   }
@@ -80,18 +71,7 @@ export function IngresarGastoClient({ proveedores, fleteros }: IngresarGastoClie
     setItems((prev) => prev.filter((it) => it.id !== id))
   }
 
-  // Cálculo de totales en tiempo real
-  const itemsCalculados = items.map((it) => {
-    const cant = parsearImporte(it.cantidad)
-    const precio = parsearImporte(it.precioUnitario)
-    const neto = multiplicarImporte(cant, precio)
-    const alicuota = discriminaIVA ? parsearImporte(it.alicuotaIva) : 0
-    const iva = alicuota > 0 ? calcularIva(neto, alicuota) : 0
-    return { neto, iva, total: sumarImportes([neto, iva]) }
-  })
-  const totalNeto = sumarImportes(itemsCalculados.map(i => i.neto))
-  const totalIva = sumarImportes(itemsCalculados.map(i => i.iva))
-  const total = sumarImportes([totalNeto, totalIva])
+  const total = sumarImportes(items.map((it) => parsearImporte(it.monto)))
 
   const puedeGuardar = sinFactura
     ? fleteroId && descripcionSF.trim() && parsearImporte(montoSF) > 0
@@ -101,7 +81,7 @@ export function IngresarGastoClient({ proveedores, fleteros }: IngresarGastoClie
       nroComprobante &&
       fechaComprobante &&
       items.length > 0 &&
-      items.every((it) => it.descripcion && parsearImporte(it.precioUnitario) > 0)
+      items.every((it) => it.descripcion && parsearImporte(it.monto) > 0)
 
   function resetForm() {
     setSinFactura(false)
@@ -138,9 +118,7 @@ export function IngresarGastoClient({ proveedores, fleteros }: IngresarGastoClie
             tipo,
             items: items.map((it) => ({
               descripcion: it.descripcion,
-              cantidad: parseFloat(it.cantidad) || 1,
-              precioUnitario: parsearImporte(it.precioUnitario),
-              alicuotaIva: discriminaIVA ? parseFloat(it.alicuotaIva) : 0,
+              monto: parsearImporte(it.monto),
             })),
           }
 
@@ -227,7 +205,7 @@ export function IngresarGastoClient({ proveedores, fleteros }: IngresarGastoClie
               <Label htmlFor="sinFactura" className="cursor-pointer text-sm font-medium">
                 Gasto sin factura
               </Label>
-              <span className="text-xs text-muted-foreground">(la factura del proveedor ya está cargada en el módulo de proveedores)</span>
+              <span className="text-xs text-muted-foreground">(No impacta en ninguna Cta. Cte. de proveedores)</span>
             </div>
 
             {sinFactura ? (
@@ -326,9 +304,9 @@ export function IngresarGastoClient({ proveedores, fleteros }: IngresarGastoClie
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
-            {items.map((item, idx) => (
+            {items.map((item) => (
               <div key={item.id} className="grid grid-cols-12 gap-2 items-end border rounded-md p-3">
-                <div className="col-span-4 space-y-1">
+                <div className="col-span-7 space-y-1">
                   <Label className="text-xs">Descripción *</Label>
                   <Input
                     value={item.descripcion}
@@ -336,49 +314,18 @@ export function IngresarGastoClient({ proveedores, fleteros }: IngresarGastoClie
                     placeholder="Ej: Gasoil"
                   />
                 </div>
-                <div className="col-span-2 space-y-1">
-                  <Label className="text-xs">Cantidad</Label>
-                  <Input
-                    type="number"
-                    min="0.001"
-                    step="0.001"
-                    value={item.cantidad}
-                    onChange={(e) => actualizarItem(item.id, "cantidad", e.target.value)}
-                  />
-                </div>
-                <div className="col-span-2 space-y-1">
-                  <Label className="text-xs">Precio Unit.</Label>
+                <div className="col-span-3 space-y-1">
+                  <Label className="text-xs">Monto *</Label>
                   <Input
                     type="number"
                     min="0"
                     step="0.01"
-                    value={item.precioUnitario}
-                    onChange={(e) => actualizarItem(item.id, "precioUnitario", e.target.value)}
+                    value={item.monto}
+                    onChange={(e) => actualizarItem(item.id, "monto", e.target.value)}
                     placeholder="0.00"
                   />
                 </div>
-                {discriminaIVA && (
-                  <div className="col-span-2 space-y-1">
-                    <Label className="text-xs">Alíc. IVA</Label>
-                    <select
-                      value={item.alicuotaIva}
-                      onChange={(e) => actualizarItem(item.id, "alicuotaIva", e.target.value as AlicuotaValue)}
-                      className={SELECT_CLS}
-                    >
-                      <option value="0">0%</option>
-                      <option value="10.5">10.5%</option>
-                      <option value="21">21%</option>
-                      <option value="27">27%</option>
-                    </select>
-                  </div>
-                )}
-                <div className="col-span-1 space-y-1">
-                  <Label className="text-xs">Total</Label>
-                  <p className="text-sm font-medium pt-2">
-                    {formatearMoneda(itemsCalculados[idx]?.total ?? 0)}
-                  </p>
-                </div>
-                <div className="col-span-1">
+                <div className="col-span-2 flex justify-end">
                   <Button
                     type="button"
                     variant="ghost"
@@ -393,19 +340,9 @@ export function IngresarGastoClient({ proveedores, fleteros }: IngresarGastoClie
               </div>
             ))}
 
-            {/* Totales */}
+            {/* Total */}
             <div className="flex justify-end">
-              <div className="text-sm space-y-1 text-right min-w-[200px]">
-                <div className="flex justify-between gap-8">
-                  <span className="text-muted-foreground">Neto:</span>
-                  <span>{formatearMoneda(totalNeto)}</span>
-                </div>
-                {discriminaIVA && (
-                  <div className="flex justify-between gap-8">
-                    <span className="text-muted-foreground">IVA:</span>
-                    <span>{formatearMoneda(totalIva)}</span>
-                  </div>
-                )}
+              <div className="text-sm min-w-[200px]">
                 <div className="flex justify-between gap-8 font-semibold border-t pt-1">
                   <span>Total:</span>
                   <span>{formatearMoneda(total)}</span>

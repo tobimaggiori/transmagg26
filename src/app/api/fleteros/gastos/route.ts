@@ -19,9 +19,7 @@ import type { Rol } from "@/types"
 
 const itemSchema = z.object({
   descripcion: z.string().min(1, "Descripción requerida"),
-  cantidad: z.number().positive(),
-  precioUnitario: z.number().min(0),
-  alicuotaIva: z.number().min(0).default(0),
+  monto: z.number().min(0, "Monto requerido"),
 })
 
 const crearGastoConFacturaSchema = z.object({

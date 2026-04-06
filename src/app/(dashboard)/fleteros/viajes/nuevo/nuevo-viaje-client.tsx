@@ -61,6 +61,8 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const fleteroItems = fleteros.map((f) => ({ id: f.id, label: f.razonSocial, sublabel: f.cuit }))
   const empresaItems = empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: e.cuit }))
 
+  const fleteroSeleccionado = fleteros.find((f) => f.id === fleteroId)
+
   const kilosNum = parseFloat(kilos) || 0
   const tarifaNum = parsearImporte(tarifaInput)
   const toneladas = kilosNum > 0 ? calcularToneladas(kilosNum) : null
@@ -117,7 +119,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
       })
       const json = await res.json()
       if (!res.ok) {
-        // Show field-level errors if available
         if (json.detalles?.fieldErrors) {
           const fields = json.detalles.fieldErrors as Record<string, string[]>
           const msgs = Object.entries(fields)
@@ -137,274 +138,308 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
     }
   }
 
+  const labelCls = "text-xs font-medium text-muted-foreground block mb-1"
+  const inputCls = "w-full h-9 rounded-md border bg-background px-2 text-sm"
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Nuevo viaje</h2>
         <p className="text-muted-foreground">Cargá los datos del viaje</p>
       </div>
 
-      <div className="bg-background rounded-lg border shadow-sm w-full max-w-2xl p-6">
+      <div className="bg-background rounded-lg border shadow-sm w-full max-w-7xl p-6">
         {error && (
           <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md text-sm">{error}</div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-          {/* Toggle camión propio */}
-          <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Tipo de viaje</label>
-            <div className="flex rounded-md border overflow-hidden h-9 w-fit">
-              <button
-                type="button"
-                onClick={() => { setEsCamionPropio(false); setCamionId(""); setChoferId("") }}
-                className={`px-4 text-xs font-medium border-r ${!esCamionPropio ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-              >
-                Con fletero externo
-              </button>
-              <button
-                type="button"
-                onClick={() => { setEsCamionPropio(true); setFleteroId(""); setCamionId(""); setChoferId("") }}
-                className={`px-4 text-xs font-medium ${esCamionPropio ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-              >
-                Camión propio Transmagg
-              </button>
-            </div>
-          </div>
+        <form onSubmit={handleSubmit} noValidate>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-8 gap-y-4">
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {!esCamionPropio && (
+            {/* ────── Columna 1: Entidades ────── */}
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground border-b pb-1">Entidades</p>
+
+              {/* Toggle camión propio */}
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Fletero *</label>
-                <SearchCombobox
-                  items={fleteroItems}
-                  value={fleteroId}
-                  onChange={(id) => { setFleteroId(id); setCamionId("") }}
-                  placeholder="Buscar por nombre o CUIT..."
-                />
-                <FormError message={fieldErrors.fleteroId} className="text-xs mt-1" />
+                <label className={labelCls}>Tipo de viaje</label>
+                <div className="flex rounded-md border overflow-hidden h-9 w-fit">
+                  <button
+                    type="button"
+                    onClick={() => { setEsCamionPropio(false); setCamionId(""); setChoferId("") }}
+                    className={`px-4 text-xs font-medium border-r ${!esCamionPropio ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                  >
+                    Con fletero externo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setEsCamionPropio(true); setFleteroId(""); setCamionId(""); setChoferId("") }}
+                    className={`px-4 text-xs font-medium ${esCamionPropio ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                  >
+                    Camión propio Transmagg
+                  </button>
+                </div>
               </div>
-            )}
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Empresa *</label>
-              <SearchCombobox
-                items={empresaItems}
-                value={empresaId}
-                onChange={setEmpresaId}
-                placeholder="Buscar por nombre o CUIT..."
-              />
-              <FormError message={fieldErrors.empresaId} className="text-xs mt-1" />
-            </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Camión *</label>
-              <select
-                value={camionId}
-                onChange={(e) => {
-                  const id = e.target.value
-                  setCamionId(id)
-                  if (esCamionPropio && id) {
-                    const c = camiones.find((x) => x.id === id)
-                    if (c?.choferActualId) setChoferId(c.choferActualId)
-                  }
-                }}
-                className="w-full h-9 rounded-md border bg-background px-2 text-sm"
-              >
-                <option value="">Seleccionar...</option>
-                {(esCamionPropio || fleteroId ? camionesDelFletero : camiones).map((c) => (
-                  <option key={c.id} value={c.id}>{c.patenteChasis}</option>
-                ))}
-              </select>
-              <FormError message={fieldErrors.camionId} className="text-xs mt-1" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Chofer *</label>
-              <select
-                value={choferId}
-                onChange={(e) => setChoferId(e.target.value)}
-                className="w-full h-9 rounded-md border bg-background px-2 text-sm"
-              >
-                <option value="">Seleccionar...</option>
-                {choferesDelFletero.map((c) => <option key={c.id} value={c.id}>{c.apellido}, {c.nombre}</option>)}
-              </select>
-              <FormError message={fieldErrors.choferId} className="text-xs mt-1" />
-            </div>
-          </div>
-
-          {esCamionPropio && camionId && (() => {
-            const c = camiones.find((x) => x.id === camionId)
-            return c && c.polizaVigente === false ? (
-              <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800">
-                <ShieldAlert className="h-4 w-4 shrink-0" />
-                Este camión no tiene seguro vigente. Verificá la cobertura antes de registrar el viaje.
-              </div>
-            ) : null
-          })()}
-
-          <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Fecha de viaje *</label>
-            <input
-              type="date"
-              value={fechaViaje}
-              onChange={(e) => setFechaViaje(e.target.value)}
-              className="w-full h-9 rounded-md border bg-background px-2 text-sm"
-            />
-            <FormError message={fieldErrors.fechaViaje} className="text-xs mt-1" />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Remito</label>
-              <input type="text" value={remito} onChange={(e) => setRemito(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">¿Lleva cupo?</label>
-              <div className="flex rounded-md border overflow-hidden h-9">
-                <button
-                  type="button"
-                  onClick={() => { setTieneCupo(false); setCupo("") }}
-                  className={`flex-1 text-xs font-medium border-r ${!tieneCupo ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-                >
-                  No
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTieneCupo(true)}
-                  className={`flex-1 text-xs font-medium ${tieneCupo ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-                >
-                  Sí
-                </button>
-              </div>
-              {tieneCupo && (
-                <input
-                  type="text"
-                  value={cupo}
-                  onChange={(e) => setCupo(e.target.value.toUpperCase())}
-                  placeholder="Nro. de cupo"
-                  style={{ textTransform: "uppercase" }}
-                  className="w-full h-9 rounded-md border bg-background px-2 text-sm mt-2"
-                />
-              )}
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Mercadería</label>
-            <input type="text" value={mercaderia} onChange={(e) => setMercaderia(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <CiudadArgentinaInput
-                label="Ciudad de origen"
-                value={procedencia}
-                provincia={provinciaOrigen}
-                onSelect={(ciudad, prov) => { setProcedencia(ciudad); setProvinciaOrigen(prov) }}
-                required
-              />
-              <FormError message={fieldErrors.provinciaOrigen} className="text-xs mt-1" />
-            </div>
-            <div>
-              <CiudadArgentinaInput
-                label="Ciudad de destino"
-                value={destino}
-                provincia={provinciaDestino}
-                onSelect={(ciudad, prov) => { setDestino(ciudad); setProvinciaDestino(prov) }}
-                required
-              />
-              <FormError message={fieldErrors.provinciaDestino} className="text-xs mt-1" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Kilos</label>
-              <input
-                type="number"
-                value={kilos}
-                onChange={(e) => setKilos(e.target.value)}
-                min="0"
-                step="1"
-                className="w-full h-9 rounded-md border bg-background px-2 text-sm"
-              />
-              {toneladas != null && (
-                <p className="text-xs text-muted-foreground mt-1">{toneladas} toneladas</p>
-              )}
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Tarifa / ton *</label>
-              <input
-                type="number"
-                value={tarifaInput}
-                onChange={(e) => setTarifaBase(e.target.value)}
-                min="0"
-                step="0.01"
-                className="w-full h-9 rounded-md border bg-background px-2 text-sm"
-              />
-              <FormError message={fieldErrors.tarifa} className="text-xs mt-1" />
-              {totalCalc != null && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Referencia inicial del viaje: {formatearMoneda(totalCalc)}
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Carta de Porte */}
-          <div className="space-y-3 border-t pt-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Carta de Porte</p>
-              <div className="flex rounded-md border overflow-hidden h-8 w-fit">
-                <button
-                  type="button"
-                  onClick={() => setTieneCpe(true)}
-                  className={`px-3 text-xs font-medium border-r ${tieneCpe ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-                >
-                  Sí
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setTieneCpe(false); setNroCartaPorte(""); setCartaPorteS3Key("") }}
-                  className={`px-3 text-xs font-medium ${!tieneCpe ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-                >
-                  No
-                </button>
-              </div>
-            </div>
-            {tieneCpe ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Fletero */}
+              {!esCamionPropio && (
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Nro. de carta de porte *</label>
-                  <input
-                    type="text"
-                    value={nroCartaPorte}
-                    onChange={(e) => setNroCartaPorte(e.target.value)}
-                    placeholder="Ej: 12345678"
-                    className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+                  <label className={labelCls}>Fletero *</label>
+                  <SearchCombobox
+                    items={fleteroItems}
+                    value={fleteroId}
+                    onChange={(id) => { setFleteroId(id); setCamionId("") }}
+                    placeholder="Buscar por nombre o CUIT..."
                   />
-                  <FormError message={fieldErrors.nroCartaPorte} className="text-xs mt-1" />
-                  {!fieldErrors.nroCartaPorte && (
-                    <p className="text-[11px] text-muted-foreground mt-1">Debe ser único en el sistema.</p>
+                  <FormError message={fieldErrors.fleteroId} className="text-xs mt-1" />
+                  {fleteroSeleccionado && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Comisión: {fleteroSeleccionado.comisionDefault}%
+                    </p>
                   )}
                 </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">PDF de la carta de porte *</label>
-                  <UploadPDF
-                    prefijo="cartas-de-porte"
-                    onUpload={(key) => setCartaPorteS3Key(key)}
-                    label="Subir PDF"
-                    s3Key={cartaPorteS3Key || undefined}
-                  />
-                  <FormError message={fieldErrors.cartaPorteS3Key} className="text-xs mt-1" />
-                </div>
+              )}
+
+              {/* Empresa */}
+              <div>
+                <label className={labelCls}>Empresa *</label>
+                <SearchCombobox
+                  items={empresaItems}
+                  value={empresaId}
+                  onChange={setEmpresaId}
+                  placeholder="Buscar por nombre o CUIT..."
+                />
+                <FormError message={fieldErrors.empresaId} className="text-xs mt-1" />
               </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">El viaje se creará sin carta de porte.</p>
-            )}
+
+              {/* Camión */}
+              <div>
+                <label className={labelCls}>Camión *</label>
+                <select
+                  value={camionId}
+                  onChange={(e) => {
+                    const id = e.target.value
+                    setCamionId(id)
+                    if (esCamionPropio && id) {
+                      const c = camiones.find((x) => x.id === id)
+                      if (c?.choferActualId) setChoferId(c.choferActualId)
+                    }
+                  }}
+                  className={inputCls}
+                >
+                  <option value="">Seleccionar...</option>
+                  {(esCamionPropio || fleteroId ? camionesDelFletero : camiones).map((c) => (
+                    <option key={c.id} value={c.id}>{c.patenteChasis}</option>
+                  ))}
+                </select>
+                <FormError message={fieldErrors.camionId} className="text-xs mt-1" />
+              </div>
+
+              {/* Chofer */}
+              <div>
+                <label className={labelCls}>Chofer *</label>
+                <select
+                  value={choferId}
+                  onChange={(e) => setChoferId(e.target.value)}
+                  className={inputCls}
+                >
+                  <option value="">Seleccionar...</option>
+                  {choferesDelFletero.map((c) => <option key={c.id} value={c.id}>{c.apellido}, {c.nombre}</option>)}
+                </select>
+                <FormError message={fieldErrors.choferId} className="text-xs mt-1" />
+              </div>
+
+              {esCamionPropio && camionId && (() => {
+                const c = camiones.find((x) => x.id === camionId)
+                return c && c.polizaVigente === false ? (
+                  <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800">
+                    <ShieldAlert className="h-4 w-4 shrink-0" />
+                    Este camión no tiene seguro vigente. Verificá la cobertura antes de registrar el viaje.
+                  </div>
+                ) : null
+              })()}
+            </div>
+
+            {/* ────── Columna 2: Datos del viaje ────── */}
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground border-b pb-1">Datos del viaje</p>
+
+              {/* Fecha */}
+              <div>
+                <label className={labelCls}>Fecha de viaje *</label>
+                <input
+                  type="date"
+                  value={fechaViaje}
+                  onChange={(e) => setFechaViaje(e.target.value)}
+                  className={inputCls}
+                />
+                <FormError message={fieldErrors.fechaViaje} className="text-xs mt-1" />
+              </div>
+
+              {/* Remito */}
+              <div>
+                <label className={labelCls}>Remito</label>
+                <input type="text" value={remito} onChange={(e) => setRemito(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} />
+              </div>
+
+              {/* Cupo */}
+              <div>
+                <label className={labelCls}>¿Lleva cupo?</label>
+                <div className="flex rounded-md border overflow-hidden h-9">
+                  <button
+                    type="button"
+                    onClick={() => { setTieneCupo(false); setCupo("") }}
+                    className={`flex-1 text-xs font-medium border-r ${!tieneCupo ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                  >
+                    No
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTieneCupo(true)}
+                    className={`flex-1 text-xs font-medium ${tieneCupo ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                  >
+                    Sí
+                  </button>
+                </div>
+                {tieneCupo && (
+                  <input
+                    type="text"
+                    value={cupo}
+                    onChange={(e) => setCupo(e.target.value.toUpperCase())}
+                    placeholder="Nro. de cupo"
+                    style={{ textTransform: "uppercase" }}
+                    className={`${inputCls} mt-2`}
+                  />
+                )}
+              </div>
+
+              {/* Mercadería */}
+              <div>
+                <label className={labelCls}>Mercadería</label>
+                <input type="text" value={mercaderia} onChange={(e) => setMercaderia(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} />
+              </div>
+
+              {/* Origen */}
+              <div>
+                <CiudadArgentinaInput
+                  label="Ciudad de origen"
+                  value={procedencia}
+                  provincia={provinciaOrigen}
+                  onSelect={(ciudad, prov) => { setProcedencia(ciudad); setProvinciaOrigen(prov) }}
+                  required
+                />
+                <FormError message={fieldErrors.provinciaOrigen} className="text-xs mt-1" />
+              </div>
+
+              {/* Destino */}
+              <div>
+                <CiudadArgentinaInput
+                  label="Ciudad de destino"
+                  value={destino}
+                  provincia={provinciaDestino}
+                  onSelect={(ciudad, prov) => { setDestino(ciudad); setProvinciaDestino(prov) }}
+                  required
+                />
+                <FormError message={fieldErrors.provinciaDestino} className="text-xs mt-1" />
+              </div>
+            </div>
+
+            {/* ────── Columna 3: Económico y CPE ────── */}
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground border-b pb-1">Económico y CPE</p>
+
+              {/* Kilos */}
+              <div>
+                <label className={labelCls}>Kilos</label>
+                <input
+                  type="number"
+                  value={kilos}
+                  onChange={(e) => setKilos(e.target.value)}
+                  min="0"
+                  step="1"
+                  className={inputCls}
+                />
+                {toneladas != null && (
+                  <p className="text-xs text-muted-foreground mt-1">{toneladas} toneladas</p>
+                )}
+              </div>
+
+              {/* Tarifa */}
+              <div>
+                <label className={labelCls}>Tarifa / ton *</label>
+                <input
+                  type="number"
+                  value={tarifaInput}
+                  onChange={(e) => setTarifaBase(e.target.value)}
+                  min="0"
+                  step="0.01"
+                  className={inputCls}
+                />
+                <FormError message={fieldErrors.tarifa} className="text-xs mt-1" />
+                {totalCalc != null && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Referencia inicial del viaje: {formatearMoneda(totalCalc)}
+                  </p>
+                )}
+              </div>
+
+              {/* Carta de Porte */}
+              <div className="space-y-3 border-t pt-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Carta de Porte</p>
+                  <div className="flex rounded-md border overflow-hidden h-8 w-fit">
+                    <button
+                      type="button"
+                      onClick={() => setTieneCpe(true)}
+                      className={`px-3 text-xs font-medium border-r ${tieneCpe ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                    >
+                      Sí
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setTieneCpe(false); setNroCartaPorte(""); setCartaPorteS3Key("") }}
+                      className={`px-3 text-xs font-medium ${!tieneCpe ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                    >
+                      No
+                    </button>
+                  </div>
+                </div>
+                {tieneCpe ? (
+                  <div className="space-y-3">
+                    <div>
+                      <label className={labelCls}>Nro. de carta de porte *</label>
+                      <input
+                        type="text"
+                        value={nroCartaPorte}
+                        onChange={(e) => setNroCartaPorte(e.target.value)}
+                        placeholder="Ej: 12345678"
+                        className={inputCls}
+                      />
+                      <FormError message={fieldErrors.nroCartaPorte} className="text-xs mt-1" />
+                      {!fieldErrors.nroCartaPorte && (
+                        <p className="text-[11px] text-muted-foreground mt-1">Debe ser único en el sistema.</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className={labelCls}>PDF de la carta de porte *</label>
+                      <UploadPDF
+                        prefijo="cartas-de-porte"
+                        onUpload={(key) => setCartaPorteS3Key(key)}
+                        label="Subir PDF"
+                        s3Key={cartaPorteS3Key || undefined}
+                      />
+                      <FormError message={fieldErrors.cartaPorteS3Key} className="text-xs mt-1" />
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">El viaje se creará sin carta de porte.</p>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
+          {/* ── Botones ── */}
+          <div className="flex justify-end gap-2 pt-6 border-t mt-6">
             <button
               type="button"
               onClick={() => router.back()}

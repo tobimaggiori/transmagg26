@@ -7,18 +7,13 @@
  */
 
 import { prisma } from "@/lib/prisma"
-import { sumarImportes, multiplicarImporte, calcularIva } from "@/lib/money"
+import { sumarImportes } from "@/lib/money"
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
-/** Tipos de comprobante que discriminan IVA */
-const TIPOS_CON_IVA = new Set(["A", "M", "LIQ_PROD"])
-
 type ItemInput = {
   descripcion: string
-  cantidad: number
-  precioUnitario: number
-  alicuotaIva: number
+  monto: number
 }
 
 export type DatosCrearGastoFletero = {
@@ -119,8 +114,6 @@ export async function ejecutarCrearGastoSinFactura(
 export async function ejecutarCrearGastoFletero(
   data: DatosCrearGastoFletero
 ): Promise<ResultadoGastoFletero> {
-  const discriminaIVA = TIPOS_CON_IVA.has(data.tipoCbte)
-
   const [fletero, proveedor] = await Promise.all([
     prisma.fletero.findUnique({ where: { id: data.fleteroId, activo: true } }),
     prisma.proveedor.findUnique({ where: { id: data.proveedorId, activo: true } }),
@@ -129,25 +122,18 @@ export async function ejecutarCrearGastoFletero(
   if (!fletero) return { ok: false, status: 404, error: "Fletero no encontrado" }
   if (!proveedor) return { ok: false, status: 404, error: "Proveedor no encontrado" }
 
-  const itemsCalculados = data.items.map((item) => {
-    const subtotalNeto = multiplicarImporte(item.cantidad, item.precioUnitario)
-    const alicuota = discriminaIVA ? item.alicuotaIva : 0
-    const montoIva = alicuota > 0 ? calcularIva(subtotalNeto, alicuota) : 0
-    return {
-      descripcion: item.descripcion,
-      cantidad: item.cantidad,
-      precioUnitario: item.precioUnitario,
-      alicuotaIva: alicuota,
-      esExento: false,
-      subtotalNeto,
-      montoIva,
-      subtotalTotal: sumarImportes([subtotalNeto, montoIva]),
-    }
-  })
+  const itemsCalculados = data.items.map((item) => ({
+    descripcion: item.descripcion,
+    cantidad: 1,
+    precioUnitario: item.monto,
+    alicuotaIva: 0,
+    esExento: false,
+    subtotalNeto: item.monto,
+    montoIva: 0,
+    subtotalTotal: item.monto,
+  }))
 
-  const totalNeto = sumarImportes(itemsCalculados.map((i) => i.subtotalNeto))
-  const totalIvaMonto = sumarImportes(itemsCalculados.map((i) => i.montoIva))
-  const total = sumarImportes([totalNeto, totalIvaMonto])
+  const total = sumarImportes(itemsCalculados.map((i) => i.subtotalTotal))
 
   const nroComprobanteFormateado =
     data.ptoVenta.padStart(4, "0") + "-" + data.nroComprobante.padStart(8, "0")
@@ -159,8 +145,8 @@ export async function ejecutarCrearGastoFletero(
         nroComprobante: nroComprobanteFormateado,
         ptoVenta: data.ptoVenta.padStart(4, "0"),
         tipoCbte: data.tipoCbte,
-        neto: totalNeto,
-        ivaMonto: totalIvaMonto,
+        neto: total,
+        ivaMonto: 0,
         total,
         fechaCbte: new Date(data.fechaComprobante),
         esPorCuentaDeFletero: true,
