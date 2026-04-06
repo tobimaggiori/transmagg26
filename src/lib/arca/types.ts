@@ -72,6 +72,8 @@ export interface FECAEDetRequest {
   FchVtoPago?: string
   Iva?: { AlicIva: AlicuotaIva[] }
   CbtesAsoc?: { CbteAsoc: ComprobanteAsociado[] }
+  /** Condición frente al IVA del receptor (RG 5616, obligatorio desde 01/06/2026) */
+  CondicionIVAReceptorId?: number
   /** CBU para FCE MiPyME (tipoCbte 201) */
   Opcionales?: { Opcional: { Id: string; Valor: string }[] }
 }

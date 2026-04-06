@@ -278,6 +278,7 @@ export async function autorizarLiquidacionArca(
       tipoCbte,
       ptoVenta,
       cuitReceptor: liq.fletero.cuit.replace(/\D/g, ""),
+      condicionIvaReceptor: condIva,
       neto: liq.neto,
       ivaMonto: liq.ivaMonto,
       total: liq.total,
@@ -367,6 +368,7 @@ export async function autorizarFacturaArca(
       tipoCbte,
       ptoVenta,
       cuitReceptor: factura.empresa.cuit.replace(/\D/g, ""),
+      condicionIvaReceptor: factura.empresa.condicionIva,
       neto: factura.neto,
       ivaMonto: factura.ivaMonto,
       total: factura.total,
@@ -417,7 +419,7 @@ export async function autorizarNotaCDArca(
     where: { id: notaId },
     include: {
       factura: { select: { nroComprobante: true, ptoVenta: true, tipoCbte: true, emitidaEn: true, empresa: { select: { cuit: true, condicionIva: true } } } },
-      liquidacion: { select: { nroComprobante: true, ptoVenta: true, tipoCbte: true, grabadaEn: true, fletero: { select: { cuit: true } } } },
+      liquidacion: { select: { nroComprobante: true, ptoVenta: true, tipoCbte: true, grabadaEn: true, fletero: { select: { cuit: true, condicionIva: true } } } },
     },
   })
 
@@ -452,10 +454,12 @@ export async function autorizarNotaCDArca(
 
   // Determinar comprobante asociado
   let cuitReceptor = ""
+  let condicionIvaReceptor: string | undefined
   let comprobanteAsociado: DatosComprobanteBase["comprobanteAsociado"]
 
   if (nota.factura) {
     cuitReceptor = nota.factura.empresa.cuit.replace(/\D/g, "")
+    condicionIvaReceptor = nota.factura.empresa.condicionIva
     comprobanteAsociado = {
       tipo: nota.factura.tipoCbte,
       ptoVta: nota.factura.ptoVenta ?? 1,
@@ -465,6 +469,7 @@ export async function autorizarNotaCDArca(
     }
   } else if (nota.liquidacion) {
     cuitReceptor = nota.liquidacion.fletero.cuit.replace(/\D/g, "")
+    condicionIvaReceptor = (nota.liquidacion.fletero as { condicionIva?: string }).condicionIva ?? undefined
     comprobanteAsociado = {
       tipo: nota.liquidacion.tipoCbte ?? 60,
       ptoVta: nota.liquidacion.ptoVenta ?? 1,
@@ -487,6 +492,7 @@ export async function autorizarNotaCDArca(
       tipoCbte,
       ptoVenta,
       cuitReceptor,
+      condicionIvaReceptor,
       neto: nota.montoNeto,
       ivaMonto: nota.montoIva,
       total: nota.montoTotal,

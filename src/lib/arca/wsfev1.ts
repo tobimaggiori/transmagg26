@@ -142,6 +142,7 @@ export async function feCAESolicitar(
             <Concepto>${det.Concepto}</Concepto>
             <DocTipo>${det.DocTipo}</DocTipo>
             <DocNro>${det.DocNro}</DocNro>
+            ${det.CondicionIVAReceptorId != null ? `<CondicionIVAReceptorId>${det.CondicionIVAReceptorId}</CondicionIVAReceptorId>` : ""}
             <CbteDesde>${det.CbteDesde}</CbteDesde>
             <CbteHasta>${det.CbteHasta}</CbteHasta>
             <CbteFch>${det.CbteFch}</CbteFch>

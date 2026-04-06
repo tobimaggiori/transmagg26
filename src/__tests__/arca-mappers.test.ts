@@ -11,6 +11,7 @@ import {
   determinarTipoCbteLiquidacion,
   determinarTipoCbteFactura,
   mapearComprobanteArca,
+  condicionIvaArcaId,
   IVA_21_ID,
 } from "@/lib/arca/mappers"
 
@@ -195,5 +196,42 @@ describe("mapearComprobanteArca", () => {
     const req = mapearComprobanteArca(datos)
     const det = req.FeDetReq.FECAEDetRequest[0]
     expect(det.Iva).toBeUndefined()
+  })
+
+  it("incluye CondicionIVAReceptorId cuando se pasa condicionIvaReceptor", () => {
+    const datos = { ...datosBase, condicionIvaReceptor: "RESPONSABLE_INSCRIPTO" }
+    const req = mapearComprobanteArca(datos)
+    const det = req.FeDetReq.FECAEDetRequest[0]
+    expect(det.CondicionIVAReceptorId).toBe(1)
+  })
+
+  it("no incluye CondicionIVAReceptorId cuando no se pasa condicionIvaReceptor", () => {
+    const req = mapearComprobanteArca(datosBase)
+    const det = req.FeDetReq.FECAEDetRequest[0]
+    expect(det.CondicionIVAReceptorId).toBeUndefined()
+  })
+})
+
+// ─── condicionIvaArcaId (RG 5616) ──────────────────────────────────────────
+
+describe("condicionIvaArcaId", () => {
+  it("RESPONSABLE_INSCRIPTO → 1", () => {
+    expect(condicionIvaArcaId("RESPONSABLE_INSCRIPTO")).toBe(1)
+  })
+
+  it("EXENTO → 4", () => {
+    expect(condicionIvaArcaId("EXENTO")).toBe(4)
+  })
+
+  it("CONSUMIDOR_FINAL → 5", () => {
+    expect(condicionIvaArcaId("CONSUMIDOR_FINAL")).toBe(5)
+  })
+
+  it("MONOTRIBUTISTA → 6", () => {
+    expect(condicionIvaArcaId("MONOTRIBUTISTA")).toBe(6)
+  })
+
+  it("valor desconocido → lanza error", () => {
+    expect(() => condicionIvaArcaId("INVALIDO")).toThrow("no tiene mapeo ARCA")
   })
 })

@@ -97,6 +97,34 @@ export function determinarTipoCbteFactura(condicionIva: string, modalidadMiPymes
   return 6
 }
 
+// ─── Condición IVA receptor (RG 5616) ───────────────────────────────────────
+
+/**
+ * condicionIvaArcaId: string -> number
+ *
+ * Mapea la condición IVA interna de Transmagg al ID de ARCA para CondicionIVAReceptorId.
+ * Lanza error si la condición no tiene mapeo conocido.
+ *
+ * Ejemplos:
+ * condicionIvaArcaId("RESPONSABLE_INSCRIPTO") === 1
+ * condicionIvaArcaId("EXENTO") === 4
+ * condicionIvaArcaId("CONSUMIDOR_FINAL") === 5
+ * condicionIvaArcaId("MONOTRIBUTISTA") === 6
+ */
+export function condicionIvaArcaId(condicionIva: string): number {
+  const MAPA: Record<string, number> = {
+    RESPONSABLE_INSCRIPTO: 1,
+    EXENTO: 4,
+    CONSUMIDOR_FINAL: 5,
+    MONOTRIBUTISTA: 6,
+  }
+  const id = MAPA[condicionIva]
+  if (id == null) {
+    throw new Error(`Condición IVA "${condicionIva}" no tiene mapeo ARCA para CondicionIVAReceptorId`)
+  }
+  return id
+}
+
 // ─── Mappers de comprobantes ─────────────────────────────────────────────────
 
 /** Datos mínimos de un documento para mapear a ARCA. */
@@ -132,6 +160,8 @@ export interface DatosComprobanteBase {
   cbuMiPymes?: string | null
   /** Modalidad MiPyME: "SCA" o "ADC" (solo tipoCbte 201). */
   modalidadMiPymes?: string | null
+  /** Condición IVA del receptor (valor interno de Transmagg, ej: "RESPONSABLE_INSCRIPTO") */
+  condicionIvaReceptor?: string
 }
 
 /**
@@ -178,6 +208,9 @@ export function mapearComprobanteArca(datos: DatosComprobanteBase): FECAERequest
     ImpIVA: ivaMonto,
     MonId: "PES",
     MonCotiz: 1,
+    ...(datos.condicionIvaReceptor != null
+      ? { CondicionIVAReceptorId: condicionIvaArcaId(datos.condicionIvaReceptor) }
+      : {}),
   }
 
   // Campos de servicio (concepto 2 o 3)
