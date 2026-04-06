@@ -56,6 +56,11 @@ export default async function ReportesPage() {
           subtitle="C/D"
           href="/contabilidad/notas-credito-debito"
         />
+        <ActionCard
+          title="COMPROBANTES"
+          subtitle="R2"
+          href="/contabilidad/comprobantes"
+        />
       </div>
     </div>
   )

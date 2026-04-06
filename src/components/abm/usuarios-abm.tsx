@@ -296,6 +296,8 @@ const ARBOL_PERMISOS = [
     sub: [
       { label: "Reportes", seccion: "contabilidad.reportes" },
       { label: "Pólizas de Seguro", seccion: "contabilidad.polizas" },
+      { label: "Comprobantes R2", seccion: "contabilidad.comprobantes" },
+      { label: "Eliminar Comprobantes", seccion: "contabilidad.comprobantes_eliminar" },
     ]
   },
   {

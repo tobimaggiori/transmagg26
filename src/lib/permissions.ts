@@ -44,6 +44,8 @@ export const PERMISOS_SECCION: Record<string, Rol[]> = {
   contabilidad_iibb: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
   contabilidad_notas: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
   aseguradoras: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  contabilidad_comprobantes: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  contabilidad_comprobantes_eliminar: ["ADMIN_TRANSMAGG"],
 }
 
 /**

@@ -142,6 +142,12 @@
 
 ### Cloudflare R2 (almacenamiento)
 - `liquidaciones/`, `facturas-emitidas/`, `facturas-proveedor/`, `comprobantes-pago-proveedor/`, `comprobantes-pago-fletero/`, `resumenes-bancarios/`, `resumenes-tarjeta/`, `cartas-de-porte/`
+- Keys con fecha: `prefijo/YYYY/MM/uuid.pdf` para organización temporal
+- `listarArchivos(prefijo)`: listado con paginación (ListObjectsV2Command)
+- `eliminarArchivos(keys)`: eliminación masiva en lotes de 1000 (DeleteObjectsCommand)
+- `obtenerArchivo(key)`: descarga de archivo como Buffer (GetObjectCommand)
+- Página `/contabilidad/comprobantes`: consulta, exportación ZIP y eliminación de comprobantes PDF por tipo y rango de fecha (7 tipos: facturas emitidas, liquidaciones, órdenes de pago, recibos de cobranza, facturas proveedor, resúmenes bancarios, resúmenes tarjeta)
+- Permisos granulares: `contabilidad.comprobantes` (ver/exportar) y `contabilidad.comprobantes_eliminar` (eliminar)
 
 ---
 

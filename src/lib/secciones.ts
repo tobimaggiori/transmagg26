@@ -28,6 +28,8 @@ export const SECCIONES = {
   CONTABILIDAD_REPORTES: "contabilidad.reportes",
   CONTABILIDAD_POLIZAS: "contabilidad.polizas",
   CONTABILIDAD_IMPUESTOS: "contabilidad.impuestos",
+  CONTABILIDAD_COMPROBANTES: "contabilidad.comprobantes",
+  CONTABILIDAD_COMPROBANTES_ELIMINAR: "contabilidad.comprobantes_eliminar",
   CUENTAS: "cuentas",
   CUENTAS_BANCOS: "cuentas.bancos",
   CUENTAS_BROKERS: "cuentas.brokers",

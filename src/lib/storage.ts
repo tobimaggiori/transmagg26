@@ -18,6 +18,8 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
 } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { randomUUID } from "crypto"
@@ -86,7 +88,10 @@ export async function subirPDF(
   prefijo: StoragePrefijo,
   nombreArchivo?: string
 ): Promise<string> {
-  const key = `${prefijo}/${randomUUID()}.pdf`
+  const now = new Date()
+  const yyyy = now.getFullYear()
+  const mm = String(now.getMonth() + 1).padStart(2, "0")
+  const key = `${prefijo}/${yyyy}/${mm}/${randomUUID()}.pdf`
   await r2.send(
     new PutObjectCommand({
       Bucket: BUCKET,
@@ -146,6 +151,51 @@ export async function eliminarArchivo(key: string): Promise<void> {
  * storageConfigurado() === true  // variables presentes
  * storageConfigurado() === false // falta R2_ENDPOINT o credenciales
  */
+export async function listarArchivos(prefijo: string): Promise<string[]> {
+  const keys: string[] = []
+  let continuationToken: string | undefined
+  do {
+    const res = await r2.send(
+      new ListObjectsV2Command({
+        Bucket: BUCKET,
+        Prefix: prefijo,
+        ContinuationToken: continuationToken,
+      })
+    )
+    for (const obj of res.Contents ?? []) {
+      if (obj.Key) keys.push(obj.Key)
+    }
+    continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined
+  } while (continuationToken)
+  return keys
+}
+
+export async function eliminarArchivos(keys: string[]): Promise<number> {
+  if (keys.length === 0) return 0
+  let eliminados = 0
+  for (let i = 0; i < keys.length; i += 1000) {
+    const lote = keys.slice(i, i + 1000)
+    const res = await r2.send(
+      new DeleteObjectsCommand({
+        Bucket: BUCKET,
+        Delete: { Objects: lote.map((k) => ({ Key: k })) },
+      })
+    )
+    eliminados += res.Deleted?.length ?? 0
+  }
+  return eliminados
+}
+
+export async function obtenerArchivo(key: string): Promise<Buffer> {
+  const res = await r2.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }))
+  const stream = res.Body as NodeJS.ReadableStream
+  const chunks: Buffer[] = []
+  for await (const chunk of stream) {
+    chunks.push(Buffer.from(chunk))
+  }
+  return Buffer.concat(chunks)
+}
+
 export function storageConfigurado(): boolean {
   return !!(
     process.env.R2_ENDPOINT &&
