@@ -120,12 +120,17 @@ export async function GET(
       prisma.gastoFletero.findMany({
         where: {
           fleteroId: params.id,
-          facturaProveedor: { fechaCbte: { gte: desdeDate, lte: hastaDate } },
+          OR: [
+            { facturaProveedor: { fechaCbte: { gte: desdeDate, lte: hastaDate } } },
+            { sinFactura: true, creadoEn: { gte: desdeDate, lte: hastaDate } },
+          ],
         },
         select: {
           id: true,
           montoPagado: true,
           tipo: true,
+          descripcion: true,
+          creadoEn: true,
           facturaProveedor: {
             select: {
               fechaCbte: true,
@@ -217,11 +222,16 @@ export async function GET(
     }
 
     for (const g of gastosFletero) {
+      const fp = g.facturaProveedor
       movimientos.push({
-        fechaRaw: g.facturaProveedor.fechaCbte,
-        fecha: g.facturaProveedor.fechaCbte.toISOString(),
-        concepto: `Gasto ${g.tipo} — ${g.facturaProveedor.proveedor.razonSocial}`,
-        comprobante: `${g.facturaProveedor.tipoCbte} ${g.facturaProveedor.nroComprobante ?? "s/n"}`,
+        fechaRaw: fp?.fechaCbte ?? g.creadoEn,
+        fecha: (fp?.fechaCbte ?? g.creadoEn).toISOString(),
+        concepto: fp
+          ? `Gasto ${g.tipo} — ${fp.proveedor.razonSocial}`
+          : `Gasto ${g.tipo} — ${g.descripcion ?? "Sin factura"}`,
+        comprobante: fp
+          ? `${fp.tipoCbte} ${fp.nroComprobante ?? "s/n"}`
+          : "Sin factura",
         debe: g.montoPagado,
         haber: 0,
       })

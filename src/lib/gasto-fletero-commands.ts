@@ -44,6 +44,55 @@ type ResultadoGastoFletero =
     }
   | { ok: false; status: number; error: string }
 
+// ─── Gasto sin factura ──────────────────────────────────────────────────────
+
+export type DatosCrearGastoSinFactura = {
+  fleteroId: string
+  tipo: "COMBUSTIBLE" | "OTRO"
+  descripcion: string
+  monto: number
+}
+
+type ResultadoGastoSinFactura =
+  | { ok: true; result: { gastoId: string; monto: number; descripcion: string } }
+  | { ok: false; status: number; error: string }
+
+/**
+ * ejecutarCrearGastoSinFactura: DatosCrearGastoSinFactura -> Promise<ResultadoGastoSinFactura>
+ *
+ * Dado [los datos de un gasto sin factura],
+ * devuelve [el gasto creado o un error con status HTTP].
+ *
+ * Crea un GastoFletero con sinFactura=true, sin FacturaProveedor, sin impacto en CC.
+ * El gasto queda en estado PENDIENTE_DESCUENTO (listo para descontar en la OP).
+ */
+export async function ejecutarCrearGastoSinFactura(
+  data: DatosCrearGastoSinFactura
+): Promise<ResultadoGastoSinFactura> {
+  const fletero = await prisma.fletero.findUnique({
+    where: { id: data.fleteroId, activo: true },
+  })
+  if (!fletero) return { ok: false, status: 404, error: "Fletero no encontrado" }
+
+  const gasto = await prisma.gastoFletero.create({
+    data: {
+      fleteroId: data.fleteroId,
+      facturaProveedorId: null,
+      sinFactura: true,
+      tipo: data.tipo,
+      descripcion: data.descripcion,
+      montoPagado: data.monto,
+      montoDescontado: 0,
+      estado: "PENDIENTE_DESCUENTO",
+    },
+  })
+
+  return {
+    ok: true,
+    result: { gastoId: gasto.id, monto: data.monto, descripcion: data.descripcion },
+  }
+}
+
 // ─── Comando principal ───────────────────────────────────────────────────────
 
 /**

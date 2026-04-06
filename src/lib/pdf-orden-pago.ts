@@ -92,6 +92,7 @@ async function loadOP(ordenPagoId: string) {
                   gasto: {
                     select: {
                       montoPagado: true,
+                      descripcion: true,
                       facturaProveedor: {
                         select: {
                           tipoCbte: true,
@@ -222,8 +223,9 @@ async function loadOP(ordenPagoId: string) {
       const key = `${desc.gastoId}-${desc.liquidacionId}`
       if (!gastosMap.has(key)) {
         const fp = desc.gasto.facturaProveedor
-        const cbte = [fp.tipoCbte, fp.nroComprobante ?? "s/n"].filter(Boolean).join(" ")
-        gastosMap.set(key, { proveedor: fp.proveedor.razonSocial, cbte, montoDescontado: desc.montoDescontado })
+        const cbte = fp ? [fp.tipoCbte, fp.nroComprobante ?? "s/n"].filter(Boolean).join(" ") : "Sin factura"
+        const proveedor = fp ? fp.proveedor.razonSocial : (desc.gasto.descripcion ?? "Gasto sin factura")
+        gastosMap.set(key, { proveedor, cbte, montoDescontado: desc.montoDescontado })
       }
     }
   }

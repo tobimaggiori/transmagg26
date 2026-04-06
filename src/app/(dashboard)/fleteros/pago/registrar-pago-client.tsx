@@ -52,13 +52,15 @@ interface GastoPendiente {
   montoPagado: number
   montoDescontado: number
   estado: string
+  sinFactura: boolean
+  descripcion: string | null
   facturaProveedor: {
     id: string
     tipoCbte: string
     nroComprobante: string | null
     fechaCbte: string
     proveedor: { razonSocial: string }
-  }
+  } | null
 }
 
 interface RegistrarPagoClientProps {

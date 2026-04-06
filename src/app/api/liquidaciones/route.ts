@@ -148,10 +148,11 @@ export async function GET(request: NextRequest) {
         ? prisma.gastoFletero.findMany({
             where: {
               fleteroId: fleteroIdReal,
-              estado: { in: ["PENDIENTE_PAGO", "PAGADO", "DESCONTADO_PARCIAL"] },
+              estado: { in: ["PENDIENTE_PAGO", "PAGADO", "PENDIENTE_DESCUENTO", "DESCONTADO_PARCIAL"] },
             },
             select: {
-              id: true, tipo: true, montoPagado: true, montoDescontado: true, estado: true,
+              id: true, tipo: true, sinFactura: true, descripcion: true,
+              montoPagado: true, montoDescontado: true, estado: true,
               facturaProveedor: {
                 select: {
                   id: true, tipoCbte: true, nroComprobante: true, fechaCbte: true,

@@ -12,7 +12,7 @@ import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
-import { ejecutarCrearGastoFletero } from "@/lib/gasto-fletero-commands"
+import { ejecutarCrearGastoFletero, ejecutarCrearGastoSinFactura } from "@/lib/gasto-fletero-commands"
 import type { Rol } from "@/types"
 
 // ─── Schemas Zod ────────────────────────────────────────────────────────────
@@ -24,7 +24,8 @@ const itemSchema = z.object({
   alicuotaIva: z.number().min(0).default(0),
 })
 
-const crearGastoFleteroSchema = z.object({
+const crearGastoConFacturaSchema = z.object({
+  sinFactura: z.literal(false).optional().default(false),
   fleteroId: z.string().uuid("Fletero requerido"),
   proveedorId: z.string().uuid("Proveedor requerido"),
   tipoCbte: z.enum(["A", "B", "C", "M", "X", "LIQ_PROD"]),
@@ -34,6 +35,19 @@ const crearGastoFleteroSchema = z.object({
   tipo: z.enum(["COMBUSTIBLE", "OTRO"]),
   items: z.array(itemSchema).min(1, "Debe cargar al menos un ítem"),
 })
+
+const crearGastoSinFacturaSchema = z.object({
+  sinFactura: z.literal(true),
+  fleteroId: z.string().uuid("Fletero requerido"),
+  tipo: z.enum(["COMBUSTIBLE", "OTRO"]),
+  descripcion: z.string().min(1, "Descripción requerida"),
+  monto: z.number().positive("El monto debe ser positivo"),
+})
+
+const crearGastoFleteroSchema = z.discriminatedUnion("sinFactura", [
+  crearGastoSinFacturaSchema,
+  crearGastoConFacturaSchema,
+])
 
 /**
  * GET: NextRequest -> Promise<NextResponse>
@@ -76,7 +90,15 @@ export async function GET(request: NextRequest) {
 
     const gastos = await prisma.gastoFletero.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        tipo: true,
+        sinFactura: true,
+        descripcion: true,
+        montoPagado: true,
+        montoDescontado: true,
+        estado: true,
+        creadoEn: true,
         fletero: { select: { id: true, razonSocial: true, cuit: true } },
         facturaProveedor: {
           select: {
@@ -134,6 +156,14 @@ export async function POST(request: NextRequest) {
     const parsed = crearGastoFleteroSchema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
+    }
+
+    if (parsed.data.sinFactura === true) {
+      const resultado = await ejecutarCrearGastoSinFactura(parsed.data)
+      if (!resultado.ok) {
+        return NextResponse.json({ error: resultado.error }, { status: resultado.status })
+      }
+      return NextResponse.json(resultado.result, { status: 201 })
     }
 
     const resultado = await ejecutarCrearGastoFletero(parsed.data)

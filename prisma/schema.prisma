@@ -948,19 +948,22 @@ model AdelantoDescuento {
 model GastoFletero {
   id                 String   @id @default(uuid())
   fleteroId          String   @map("fletero_id")
-  facturaProveedorId String   @unique @map("factura_proveedor_id")
+  facturaProveedorId String?  @unique @map("factura_proveedor_id")
   tipo               String   // COMBUSTIBLE | OTRO
+  sinFactura         Boolean  @default(false) @map("sin_factura")
+  descripcion        String?  @map("descripcion")
   montoPagado        Decimal    @map("monto_pagado")
   montoDescontado    Decimal    @default(0) @map("monto_descontado")
   // PENDIENTE_PAGO: factura ingresada, proveedor no cobró aún
   // PAGADO: proveedor cobró; deuda del fletero confirmada
+  // PENDIENTE_DESCUENTO: gasto sin factura, listo para descontar inmediatamente
   // DESCONTADO_PARCIAL: algo fue descontado en LP pero queda saldo
   // DESCONTADO_TOTAL: completamente saldado en LPs
   estado             String   @default("PENDIENTE_PAGO")
   creadoEn           DateTime @default(now()) @map("creado_en")
 
-  fletero          Fletero          @relation(fields: [fleteroId], references: [id])
-  facturaProveedor FacturaProveedor @relation(fields: [facturaProveedorId], references: [id])
+  fletero          Fletero           @relation(fields: [fleteroId], references: [id])
+  facturaProveedor FacturaProveedor? @relation(fields: [facturaProveedorId], references: [id])
   descuentos       GastoDescuento[]
 
   @@map("gastos_fleteros")

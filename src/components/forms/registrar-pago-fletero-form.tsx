@@ -46,13 +46,15 @@ type GastoPendiente = {
   montoPagado: number
   montoDescontado: number
   estado: string
+  sinFactura: boolean
+  descripcion: string | null
   facturaProveedor: {
     id: string
     tipoCbte: string
     nroComprobante: string | null
     fechaCbte: string
     proveedor: { razonSocial: string }
-  }
+  } | null
 }
 
 type Props = {
@@ -350,8 +352,12 @@ export function RegistrarPagoFleteroModal({
         liquidaciones={liquidaciones}
         pagos={pagos}
         gastosDescontados={gastosPendientes.filter((g) => gastosSeleccionados[g.id]).map((g) => ({
-          razonSocial: g.facturaProveedor.proveedor.razonSocial,
-          comprobante: `${g.facturaProveedor.tipoCbte} ${g.facturaProveedor.nroComprobante ?? "s/n"}`,
+          razonSocial: g.sinFactura
+            ? (g.descripcion ?? "Gasto sin factura")
+            : g.facturaProveedor?.proveedor.razonSocial ?? "—",
+          comprobante: g.sinFactura
+            ? "Sin factura"
+            : `${g.facturaProveedor?.tipoCbte ?? ""} ${g.facturaProveedor?.nroComprobante ?? "s/n"}`,
           monto: parsearImporte(gastosMontos[g.id] ?? "0"),
         }))}
         totalMedios={totalMedios}
@@ -443,11 +449,19 @@ export function RegistrarPagoFleteroModal({
                           onChange={() => toggleGasto(g.id, saldoGasto)}
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{g.facturaProveedor.proveedor.razonSocial}</p>
-                          <p className="text-muted-foreground">
-                            {g.facturaProveedor.tipoCbte} {g.facturaProveedor.nroComprobante ?? "s/n"} ·{" "}
-                            {formatearFecha(new Date(g.facturaProveedor.fechaCbte))}
-                          </p>
+                          {g.sinFactura ? (
+                            <p className="font-medium truncate">{g.descripcion ?? "Gasto sin factura"}</p>
+                          ) : g.facturaProveedor ? (
+                            <>
+                              <p className="font-medium truncate">{g.facturaProveedor.proveedor.razonSocial}</p>
+                              <p className="text-muted-foreground">
+                                {g.facturaProveedor.tipoCbte} {g.facturaProveedor.nroComprobante ?? "s/n"} ·{" "}
+                                {formatearFecha(new Date(g.facturaProveedor.fechaCbte))}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="font-medium truncate">Gasto sin factura</p>
+                          )}
                           <p className="text-muted-foreground">Saldo: {formatearMoneda(saldoGasto)}</p>
                         </div>
                         <Input
