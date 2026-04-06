@@ -17,7 +17,7 @@ export default async function ConsultarViajesPage() {
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
   if (!puedeAcceder(rol, "viajes") || !esRolInterno(rol)) redirect("/dashboard")
 
-  const [fleteros, empresas, camiones] = await Promise.all([
+  const [fleteros, empresas, camiones, choferes] = await Promise.all([
     prisma.fletero.findMany({
       where: { activo: true },
       select: { id: true, razonSocial: true, cuit: true, comisionDefault: true },
@@ -33,6 +33,11 @@ export default async function ConsultarViajesPage() {
       select: { id: true, patenteChasis: true, fleteroId: true, esPropio: true },
       orderBy: { patenteChasis: "asc" },
     }),
+    prisma.usuario.findMany({
+      where: { rol: "CHOFER", activo: true },
+      select: { id: true, nombre: true, apellido: true, email: true },
+      orderBy: { apellido: "asc" },
+    }),
   ])
 
   return (
@@ -41,6 +46,7 @@ export default async function ConsultarViajesPage() {
       fleteros={fleteros}
       empresas={empresas}
       camiones={camiones}
+      choferes={choferes}
     />
   )
 }

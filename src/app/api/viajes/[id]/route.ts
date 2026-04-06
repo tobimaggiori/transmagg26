@@ -34,10 +34,13 @@ const actualizarViajeSchema = z.object({
   provinciaDestino: provinciaOptSchema,
   kilos: z.number().positive().nullable().optional(),
   tarifa: z.number().positive().optional(),
+  tarifaEmpresa: z.number().positive().optional(),
+  cartaPorteS3Key: z.string().nullable().optional(),
   empresaId: z.string().optional(),
   motivoCambioEmpresa: z.string().optional(),
   fleteroId: z.string().uuid().nullable().optional(),
   camionId: z.string().uuid().optional(),
+  choferId: z.string().uuid().optional(),
   motivoCambioFletero: z.string().optional(),
 })
 
@@ -85,7 +88,7 @@ export async function GET(
                 pagos: {
                   where: { anulado: false },
                   select: {
-                    ordenPago: { select: { nro: true, pdfS3Key: true } },
+                    ordenPago: { select: { id: true, nro: true, pdfS3Key: true } },
                   },
                 },
               },
@@ -98,7 +101,7 @@ export async function GET(
               select: {
                 id: true, estado: true, nroComprobante: true, ptoVenta: true,
                 ivaPct: true, pdfS3Key: true, tipoCbte: true,
-                recibo: { select: { nro: true, ptoVenta: true, pdfS3Key: true } },
+                recibo: { select: { id: true, nro: true, ptoVenta: true, pdfS3Key: true } },
               },
             },
           },
@@ -161,18 +164,29 @@ export async function PATCH(
     })
     if (!viaje) return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 })
 
-    // Validaciones por LP emitido: no permitir cambios en kilos
-    if (viaje.estadoLiquidacion === "LIQUIDADO" && parsed.data.kilos !== undefined) {
+    const tieneLP = viaje.estadoLiquidacion === "LIQUIDADO"
+    const tieneFactura = viaje.estadoFactura === "FACTURADO"
+
+    // Kilos: bloqueado cuando facturado
+    if (tieneFactura && parsed.data.kilos !== undefined) {
       return NextResponse.json(
-        { error: "No se pueden modificar los kilos porque el viaje tiene un LP emitido" },
+        { error: "No se pueden modificar los kilos porque el viaje tiene una factura emitida" },
         { status: 422 }
       )
     }
 
-    // Validaciones por factura emitida: no permitir cambios en tarifa
-    if (viaje.estadoFactura === "FACTURADO" && parsed.data.tarifa !== undefined) {
+    // Tarifa fletero: bloqueada cuando liquidado
+    if (tieneLP && parsed.data.tarifa !== undefined) {
       return NextResponse.json(
-        { error: "No se puede modificar la tarifa porque el viaje tiene una factura emitida" },
+        { error: "No se puede modificar la tarifa del fletero porque el viaje tiene un LP emitido" },
+        { status: 422 }
+      )
+    }
+
+    // Tarifa empresa: bloqueada cuando facturado
+    if (tieneFactura && parsed.data.tarifaEmpresa !== undefined) {
+      return NextResponse.json(
+        { error: "No se puede modificar la tarifa de empresa porque el viaje tiene una factura emitida" },
         { status: 422 }
       )
     }
@@ -195,7 +209,7 @@ export async function PATCH(
 
     // Validaciones de cambio de empresa
     if (parsed.data.empresaId) {
-      if (viaje.estadoFactura === "FACTURADA") {
+      if (viaje.estadoFactura === "FACTURADO") {
         return NextResponse.json(
           { error: "No se puede cambiar la empresa de un viaje ya facturado" },
           { status: 422 }
@@ -209,19 +223,12 @@ export async function PATCH(
       }
     }
 
-    const { fechaViaje, empresaId, motivoCambioEmpresa, fleteroId, camionId, motivoCambioFletero, tarifa, ...resto } = parsed.data
+    const { fechaViaje, empresaId, motivoCambioEmpresa, fleteroId, camionId, choferId, motivoCambioFletero, tarifa, tarifaEmpresa, cartaPorteS3Key, ...resto } = parsed.data
 
-    // Determinar qué campos de tarifa actualizar según estado del LP
-    const tieneLP = viaje.estadoLiquidacion === "LIQUIDADO"
+    // Actualizar tarifas de forma independiente
     const tarifaUpdate: Record<string, number> = {}
-    if (tarifa !== undefined) {
-      // tarifaEmpresa siempre actualizable
-      tarifaUpdate.tarifaEmpresa = tarifa
-      // tarifa (fletero) solo si no tiene LP emitido
-      if (!tieneLP) {
-        tarifaUpdate.tarifa = tarifa
-      }
-    }
+    if (tarifa !== undefined) tarifaUpdate.tarifa = tarifa
+    if (tarifaEmpresa !== undefined) tarifaUpdate.tarifaEmpresa = tarifaEmpresa
 
     const actualizado = await prisma.$transaction(async (tx) => {
       const historial: Array<Record<string, unknown>> = JSON.parse(viaje.historialCambios ?? "[]")
@@ -264,6 +271,8 @@ export async function PATCH(
           ...(empresaId ? { empresaId } : {}),
           ...(fleteroId !== undefined ? { fleteroId } : {}),
           ...(camionId ? { camionId } : {}),
+          ...(choferId ? { choferId } : {}),
+          ...(cartaPorteS3Key !== undefined ? { cartaPorteS3Key } : {}),
           ...(historial.length > 0 ? { historialCambios } : {}),
           ...(fechaViaje ? { fechaViaje: new Date(fechaViaje) } : {}),
         },

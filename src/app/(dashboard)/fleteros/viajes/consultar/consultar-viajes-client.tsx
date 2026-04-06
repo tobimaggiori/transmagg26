@@ -1,15 +1,15 @@
 "use client"
 
 /**
- * ConsultarViajesClient — Tabla de viajes con filtros, paginación y panel de detalle/edición.
+ * ConsultarViajesClient — Tabla de viajes con filtros, paginación y modal de detalle/edición.
  *
  * Reglas:
  * - No se muestran viajes hasta que se seleccione al menos un fletero o una empresa.
  * - Columnas FLETERO / EMPRESA se ocultan si ya están filtradas.
- * - Panel lateral con detalle, facturación, liquidación y edición condicional.
+ * - Modal centrado con detalle, facturación, liquidación y edición inline condicional.
  */
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { SearchCombobox, type SearchComboboxItem } from "@/components/ui/search-combobox"
 import { formatearMoneda } from "@/lib/utils"
 import { formatearFecha } from "@/lib/utils"
@@ -20,6 +20,7 @@ import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 type Fletero = { id: string; razonSocial: string; cuit: string; comisionDefault: number }
 type Empresa = { id: string; razonSocial: string; cuit: string }
 type Camion = { id: string; patenteChasis: string; fleteroId: string | null; esPropio?: boolean }
+type Chofer = { id: string; nombre: string; apellido: string; email: string }
 
 type ViajeAPI = {
   id: string
@@ -57,7 +58,7 @@ type ViajeAPI = {
     liquidacion: {
       id: string; estado: string; nroComprobante: number | null; ptoVenta: number | null
       comisionPct: number | null; ivaPct: number | null; pdfS3Key: string | null
-      pagos?: Array<{ ordenPago: { nro: number; pdfS3Key: string | null } | null }>
+      pagos?: Array<{ ordenPago: { id: string; nro: number; pdfS3Key: string | null } | null }>
     } | null
   }>
   enFacturas: Array<{
@@ -65,7 +66,7 @@ type ViajeAPI = {
     factura: {
       id: string; nroComprobante: string | null; ptoVenta?: number | null
       estado: string; tipoCbte: number | null; ivaPct: number | null; pdfS3Key: string | null
-      recibo?: { nro: number; ptoVenta: number; pdfS3Key: string | null } | null
+      recibo?: { id: string; nro: number; ptoVenta: number; pdfS3Key: string | null } | null
     } | null
   }>
 }
@@ -85,7 +86,7 @@ function formatKilos(kilos: number | null): string {
   return kilos.toLocaleString("es-AR")
 }
 
-// ─── Form types for edit panel ────────────────────────────────────────────────
+// ─── Form types ──────────────────────────────────────────────────────────────
 
 type FormViaje = {
   fechaViaje: string
@@ -103,6 +104,7 @@ type FormViaje = {
   empresaId: string
   fleteroId: string
   camionId: string
+  choferId: string
 }
 
 function formDesdeViaje(v: ViajeAPI): FormViaje {
@@ -122,6 +124,7 @@ function formDesdeViaje(v: ViajeAPI): FormViaje {
     empresaId: v.empresaId,
     fleteroId: v.fleteroId ?? "",
     camionId: v.camionId,
+    choferId: v.choferId ?? "",
   }
 }
 
@@ -138,13 +141,94 @@ type EntradaHistorial = {
   motivo: string
 }
 
-// ─── Detail Panel ─────────────────────────────────────────────────────────────
+// ─── Inline editable field helpers ───────────────────────────────────────────
 
-function PanelDetalle({
+function EditableField({
+  label,
+  value,
+  canEdit,
+  editing,
+  onToggleEdit,
+  children,
+  editLabel,
+}: {
+  label: string
+  value: React.ReactNode
+  canEdit: boolean
+  editing: boolean
+  onToggleEdit: () => void
+  children: React.ReactNode
+  editLabel?: string
+}) {
+  return (
+    <div className="space-y-1">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      {editing ? (
+        <div>{children}</div>
+      ) : (
+        <>
+          <div className="text-sm font-medium">{value}</div>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={onToggleEdit}
+              className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+            >
+              {editLabel ?? "Modificar"}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function InlineInput({
+  value,
+  onChange,
+  onConfirm,
+  onCancel,
+  type,
+  step,
+  placeholder,
+}: {
+  value: string
+  onChange: (v: string) => void
+  onConfirm: () => void
+  onCancel: () => void
+  type?: string
+  step?: string
+  placeholder?: string
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <input
+        type={type ?? "text"}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="flex-1 rounded-md border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        autoFocus
+      />
+      <button type="button" onClick={onConfirm} className="h-7 w-7 rounded-md bg-green-600 text-white text-sm hover:bg-green-700 flex items-center justify-center">
+        &#10003;
+      </button>
+      <button type="button" onClick={onCancel} className="h-7 w-7 rounded-md border text-gray-500 text-sm hover:bg-gray-100 flex items-center justify-center">
+        &#10005;
+      </button>
+    </div>
+  )
+}
+
+// ─── Modal Detalle ───────────────────────────────────────────────────────────
+
+function ModalDetalle({
   viaje,
   empresas,
   fleteros,
   camiones,
+  choferes,
   onGuardar,
   onCerrar,
   onEliminar,
@@ -153,22 +237,27 @@ function PanelDetalle({
   empresas: Empresa[]
   fleteros: Fletero[]
   camiones: Camion[]
+  choferes: Chofer[]
   onGuardar: () => void
   onCerrar: () => void
   onEliminar: () => void
 }) {
   const [form, setForm] = useState<FormViaje>(formDesdeViaje(viaje))
+  const [editingFields, setEditingFields] = useState<Set<string>>(new Set())
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [exito, setExito] = useState(false)
   const [motivo, setMotivo] = useState("")
   const [mostrarHistorial, setMostrarHistorial] = useState(false)
+  const [subiendoCPE, setSubiendoCPE] = useState(false)
+  const cpeInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setForm(formDesdeViaje(viaje))
     setError(null)
     setExito(false)
     setMotivo("")
+    setEditingFields(new Set())
     setMostrarHistorial(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viaje.id])
@@ -178,23 +267,41 @@ function PanelDetalle({
   const liquidadoYFacturado = tieneLP && tieneFactura
   const cambios = hayCambios(form, viaje)
 
-  // Did empresa or fletero change? Require motivo.
   const empresaCambio = form.empresaId !== viaje.empresaId
   const fleteroCambio = form.fleteroId !== (viaje.fleteroId ?? "")
   const requiereMotivo = empresaCambio || fleteroCambio
   const motivoValido = !requiereMotivo || motivo.trim().length >= 10
 
-  // Rule 1: not liquidated → all editable
-  // Rule 2: liquidated, not invoiced → only empresa, kilos, tarifaEmpresa editable
-  // Rule 3: liquidated + invoiced → nothing editable
-  const puedeEditarTodo = !tieneLP && !tieneFactura
+  // Edit rules:
+  // - Not liquidated → all editable
+  // - Liquidated + not invoiced → empresa, kilos, tarifaEmpresa
+  // - Liquidated + invoiced → nothing
+  const puedeEditarTodo = !tieneLP
   const puedeEditarParcial = tieneLP && !tieneFactura
+
+  const editable: Record<string, boolean> = {
+    fleteroId: puedeEditarTodo,
+    empresaId: puedeEditarTodo || puedeEditarParcial,
+    choferId: puedeEditarTodo,
+    camionId: puedeEditarTodo,
+    fechaViaje: puedeEditarTodo,
+    remito: puedeEditarTodo,
+    tieneCupo: puedeEditarTodo,
+    cupo: puedeEditarTodo,
+    mercaderia: puedeEditarTodo,
+    procedencia: puedeEditarTodo,
+    provinciaOrigen: puedeEditarTodo,
+    destino: puedeEditarTodo,
+    provinciaDestino: puedeEditarTodo,
+    kilos: puedeEditarTodo || puedeEditarParcial,
+    tarifa: puedeEditarTodo,
+    tarifaEmpresa: puedeEditarTodo || puedeEditarParcial,
+  }
 
   const historial: EntradaHistorial[] = (() => {
     try { return JSON.parse(viaje.historialCambios ?? "[]") } catch { return [] }
   })()
 
-  // Camiones available for selected fletero
   const camionesDisponibles = camiones.filter((c) =>
     form.fleteroId ? c.fleteroId === form.fleteroId : c.esPropio
   )
@@ -203,6 +310,44 @@ function PanelDetalle({
     setForm((prev) => ({ ...prev, [key]: value }))
     setExito(false)
   }
+
+  function isEditing(field: string) { return editingFields.has(field) }
+  function toggleEdit(field: string) {
+    setEditingFields((prev) => {
+      const next = new Set(prev)
+      if (next.has(field)) next.delete(field)
+      else next.add(field)
+      return next
+    })
+  }
+  function closeEdit(field: string) {
+    setEditingFields((prev) => { const next = new Set(prev); next.delete(field); return next })
+  }
+  function cancelEdit(field: string) {
+    // Revert field to original value
+    const original = formDesdeViaje(viaje)
+    setField(field as keyof FormViaje, original[field as keyof FormViaje])
+    closeEdit(field)
+  }
+
+  // SearchCombobox items
+  const fleteroItems: SearchComboboxItem[] = fleteros.map((f) => ({ id: f.id, label: f.razonSocial, sublabel: f.cuit }))
+  const empresaItems: SearchComboboxItem[] = empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: e.cuit }))
+  const choferItems: SearchComboboxItem[] = choferes.map((c) => ({ id: c.id, label: `${c.nombre} ${c.apellido}`, sublabel: c.email }))
+
+  // Display helpers
+  const fleteroDisplay = form.fleteroId
+    ? fleteros.find((f) => f.id === form.fleteroId)
+    : null
+  const empresaDisplay = form.empresaId
+    ? empresas.find((e) => e.id === form.empresaId)
+    : null
+  const choferDisplay = form.choferId
+    ? choferes.find((c) => c.id === form.choferId)
+    : null
+  const camionDisplay = form.camionId
+    ? camiones.find((c) => c.id === form.camionId)
+    : null
 
   async function handleGuardar() {
     if (!motivoValido) return
@@ -233,6 +378,7 @@ function PanelDetalle({
         body.motivoCambioFletero = motivo.trim()
       }
       if (form.camionId !== original.camionId) body.camionId = form.camionId
+      if (form.choferId !== original.choferId) body.choferId = form.choferId
 
       if (Object.keys(body).length === 0) return
 
@@ -245,6 +391,7 @@ function PanelDetalle({
       if (!res.ok) { setError(json.error ?? "Error al guardar"); return }
       setExito(true)
       setMotivo("")
+      setEditingFields(new Set())
       onGuardar()
     } catch {
       setError("Error de red")
@@ -253,517 +400,592 @@ function PanelDetalle({
     }
   }
 
-  const inputCls = "w-full rounded-md border bg-background px-3 py-1.5 text-sm"
-  const labelCls = "text-xs font-medium text-muted-foreground"
-  const disabledCls = "opacity-50 cursor-not-allowed"
+  async function handleCPEUpload(file: File) {
+    setSubiendoCPE(true)
+    setError(null)
+    try {
+      // 1. Upload to R2
+      const formData = new FormData()
+      formData.append("file", file)
+      formData.append("prefijo", "cartas-porte")
+      const uploadRes = await fetch("/api/storage/upload", { method: "POST", body: formData })
+      if (!uploadRes.ok) { setError("Error al subir el PDF"); return }
+      const { key } = await uploadRes.json()
 
-  // ── Sub-section: Facturación ──
-  function renderFacturacion() {
-    if (viaje.estadoFactura === "PENDIENTE_FACTURAR") {
-      return (
-        <div>
-          <h3 className="text-sm font-semibold mb-2">Facturación</h3>
-          <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
-            Pendiente
-          </span>
-        </div>
-      )
+      // 2. PATCH viaje with new key
+      const patchRes = await fetch(`/api/viajes/${viaje.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cartaPorteS3Key: key }),
+      })
+      if (!patchRes.ok) { setError("Error al actualizar el viaje"); return }
+      onGuardar()
+    } catch {
+      setError("Error de red al subir CPE")
+    } finally {
+      setSubiendoCPE(false)
     }
-
-    const vef = viaje.enFacturas?.[0]
-    const factura = vef?.factura
-    if (!factura) return null
-
-    const nroFact = formatNroComprobante(factura.ptoVenta ?? null, factura.nroComprobante)
-
-    return (
-      <div>
-        <h3 className="text-sm font-semibold mb-2">Facturación</h3>
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <span className="text-sm">Factura: <span className="font-mono font-medium">{nroFact}</span></span>
-            {factura.pdfS3Key && (
-              <button
-                type="button"
-                onClick={() => window.open(`/api/facturas/${factura.id}/pdf`, "_blank")}
-                className="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
-              >
-                VER FACTURA
-              </button>
-            )}
-          </div>
-          {factura.recibo ? (
-            <div className="flex items-center gap-3">
-              <span className="text-sm">
-                Recibo: <span className="font-mono font-medium">
-                  {formatNroComprobante(factura.recibo.ptoVenta, factura.recibo.nro)}
-                </span>
-              </span>
-              {factura.recibo.pdfS3Key && (
-                <button
-                  type="button"
-                  onClick={() => window.open(`/api/recibos/${factura.recibo!.nro}/pdf`, "_blank")}
-                  className="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
-                >
-                  VER RECIBO
-                </button>
-              )}
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground italic">Aún no cobrado</p>
-          )}
-        </div>
-      </div>
-    )
   }
 
-  // ── Sub-section: Liquidación ──
-  function renderLiquidacion() {
-    if (viaje.estadoLiquidacion === "PENDIENTE_LIQUIDAR") {
-      return (
-        <div>
-          <h3 className="text-sm font-semibold mb-2">Liquidación</h3>
-          <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
-            Pendiente
-          </span>
-        </div>
-      )
-    }
-
-    const vel = viaje.enLiquidaciones?.[0]
-    const liq = vel?.liquidacion
-    if (!liq) return null
-
-    const nroLP = formatNroComprobante(liq.ptoVenta, liq.nroComprobante)
-    const pagosConOP = (liq.pagos ?? []).filter((p) => p.ordenPago != null)
-
-    return (
-      <div>
-        <h3 className="text-sm font-semibold mb-2">Liquidación</h3>
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <span className="text-sm">LP: <span className="font-mono font-medium">{nroLP}</span></span>
-            {liq.pdfS3Key && (
-              <button
-                type="button"
-                onClick={() => window.open(`/api/liquidaciones/${liq.id}/pdf`, "_blank")}
-                className="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
-              >
-                VER LIQ. PROD.
-              </button>
-            )}
-          </div>
-          {pagosConOP.length > 0 ? (
-            pagosConOP.map((pago, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <span className="text-sm">
-                  Orden de Pago: <span className="font-mono font-medium">#{pago.ordenPago!.nro}</span>
-                </span>
-                {pago.ordenPago!.pdfS3Key && (
-                  <button
-                    type="button"
-                    onClick={() => window.open(`/api/ordenes-pago/${pago.ordenPago!.nro}/pdf`, "_blank")}
-                    className="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
-                  >
-                    VER ORDEN
-                  </button>
-                )}
-              </div>
-            ))
-          ) : (
-            <p className="text-xs text-muted-foreground italic">Aún no pagado</p>
-          )}
-        </div>
-      </div>
-    )
+  async function handleVerCPE() {
+    if (!viaje.cartaPorteS3Key) return
+    try {
+      const res = await fetch(`/api/storage/signed-url?key=${encodeURIComponent(viaje.cartaPorteS3Key)}`)
+      if (!res.ok) return
+      const { url } = await res.json()
+      window.open(url, "_blank")
+    } catch { /* ignore */ }
   }
 
-  // ── Sub-section: Edición ──
-  function renderEdicion() {
-    if (liquidadoYFacturado) {
-      return (
-        <div>
-          <h3 className="text-sm font-semibold mb-2">Edición</h3>
-          <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Este viaje está liquidado y facturado. No se puede editar.
-          </div>
-        </div>
-      )
-    }
-
+  // ── Badge helper ──
+  function Badge({ si, label }: { si: boolean; label: string }) {
     return (
-      <div>
-        <h3 className="text-sm font-semibold mb-3">Edición</h3>
-        <div className="grid grid-cols-2 gap-3">
-          {/* Fletero */}
-          <div className="col-span-2">
-            <label className={labelCls}>Fletero</label>
-            <select
-              value={form.fleteroId}
-              onChange={(e) => { setField("fleteroId", e.target.value); setField("camionId", "") }}
-              className={`${inputCls} ${!puedeEditarTodo ? disabledCls : ""}`}
-              disabled={!puedeEditarTodo}
-            >
-              <option value="">-- Camión propio --</option>
-              {fleteros.map((f) => (
-                <option key={f.id} value={f.id}>{f.razonSocial}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Empresa */}
-          <div className="col-span-2">
-            <label className={labelCls}>Empresa</label>
-            <select
-              value={form.empresaId}
-              onChange={(e) => setField("empresaId", e.target.value)}
-              className={inputCls}
-              disabled={liquidadoYFacturado}
-            >
-              {empresas.map((emp) => (
-                <option key={emp.id} value={emp.id}>{emp.razonSocial}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Camión */}
-          {puedeEditarTodo && (
-            <div className="col-span-2">
-              <label className={labelCls}>Camión</label>
-              <select
-                value={form.camionId}
-                onChange={(e) => setField("camionId", e.target.value)}
-                className={inputCls}
-              >
-                <option value="">-- Seleccionar --</option>
-                {camionesDisponibles.map((c) => (
-                  <option key={c.id} value={c.id}>{c.patenteChasis}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Fecha */}
-          <div>
-            <label className={labelCls}>Fecha</label>
-            <input
-              type="date"
-              value={form.fechaViaje}
-              onChange={(e) => setField("fechaViaje", e.target.value)}
-              className={`${inputCls} ${!puedeEditarTodo ? disabledCls : ""}`}
-              disabled={!puedeEditarTodo}
-            />
-          </div>
-
-          {/* Remito */}
-          <div>
-            <label className={labelCls}>Remito</label>
-            <input
-              type="text"
-              value={form.remito}
-              onChange={(e) => setField("remito", e.target.value)}
-              className={`${inputCls} ${!puedeEditarTodo ? disabledCls : ""}`}
-              disabled={!puedeEditarTodo}
-              placeholder="Nro remito"
-            />
-          </div>
-
-          {/* Cupo */}
-          <div>
-            <label className={labelCls}>Cupo</label>
-            <div className="flex items-center gap-2 mt-1">
-              <button
-                type="button"
-                onClick={() => puedeEditarTodo && setField("tieneCupo", !form.tieneCupo)}
-                disabled={!puedeEditarTodo}
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                  form.tieneCupo ? "bg-blue-600" : "bg-gray-300"
-                } ${!puedeEditarTodo ? disabledCls : ""}`}
-              >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  form.tieneCupo ? "translate-x-4" : "translate-x-0.5"
-                }`} />
-              </button>
-              <span className="text-sm">{form.tieneCupo ? "Sí" : "No"}</span>
-            </div>
-          </div>
-
-          {form.tieneCupo && (
-            <div>
-              <label className={labelCls}>Nro Cupo</label>
-              <input
-                type="text"
-                value={form.cupo}
-                onChange={(e) => setField("cupo", e.target.value)}
-                className={`${inputCls} ${!puedeEditarTodo ? disabledCls : ""}`}
-                disabled={!puedeEditarTodo}
-              />
-            </div>
-          )}
-
-          {/* Mercadería */}
-          <div className="col-span-2">
-            <label className={labelCls}>Mercadería</label>
-            <input
-              type="text"
-              value={form.mercaderia}
-              onChange={(e) => setField("mercaderia", e.target.value)}
-              className={`${inputCls} ${!puedeEditarTodo ? disabledCls : ""}`}
-              disabled={!puedeEditarTodo}
-            />
-          </div>
-
-          {/* Origen */}
-          <div>
-            <label className={labelCls}>Ciudad Origen</label>
-            <input
-              type="text"
-              value={form.procedencia}
-              onChange={(e) => setField("procedencia", e.target.value)}
-              className={`${inputCls} ${!puedeEditarTodo ? disabledCls : ""}`}
-              disabled={!puedeEditarTodo}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Provincia Origen</label>
-            <select
-              value={form.provinciaOrigen}
-              onChange={(e) => setField("provinciaOrigen", e.target.value)}
-              className={`${inputCls} ${!puedeEditarTodo ? disabledCls : ""}`}
-              disabled={!puedeEditarTodo}
-            >
-              <option value="">—</option>
-              {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </div>
-
-          {/* Destino */}
-          <div>
-            <label className={labelCls}>Ciudad Destino</label>
-            <input
-              type="text"
-              value={form.destino}
-              onChange={(e) => setField("destino", e.target.value)}
-              className={`${inputCls} ${!puedeEditarTodo ? disabledCls : ""}`}
-              disabled={!puedeEditarTodo}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Provincia Destino</label>
-            <select
-              value={form.provinciaDestino}
-              onChange={(e) => setField("provinciaDestino", e.target.value)}
-              className={`${inputCls} ${!puedeEditarTodo ? disabledCls : ""}`}
-              disabled={!puedeEditarTodo}
-            >
-              <option value="">—</option>
-              {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </div>
-
-          {/* Kilos */}
-          <div>
-            <label className={labelCls}>Kilos</label>
-            <input
-              type="number"
-              value={form.kilos}
-              onChange={(e) => setField("kilos", e.target.value)}
-              className={`${inputCls} ${liquidadoYFacturado ? disabledCls : ""}`}
-              disabled={liquidadoYFacturado}
-            />
-          </div>
-
-          {/* Tarifa Fletero */}
-          <div>
-            <label className={labelCls}>Tarifa Fletero ($)</label>
-            <input
-              type="number"
-              step="0.01"
-              value={form.tarifa}
-              onChange={(e) => setField("tarifa", e.target.value)}
-              className={`${inputCls} ${!puedeEditarTodo ? disabledCls : ""}`}
-              disabled={!puedeEditarTodo}
-            />
-          </div>
-
-          {/* Tarifa Empresa */}
-          <div>
-            <label className={labelCls}>Tarifa Empresa ($)</label>
-            <input
-              type="number"
-              step="0.01"
-              value={form.tarifaEmpresa}
-              onChange={(e) => setField("tarifaEmpresa", e.target.value)}
-              className={`${inputCls} ${tieneFactura ? disabledCls : ""}`}
-              disabled={tieneFactura}
-            />
-            {puedeEditarParcial && (
-              <p className="text-xs text-amber-600 mt-1">
-                LP emitido. Solo empresa, kilos y tarifa empresa son editables.
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Motivo (required when changing empresa/fletero) */}
-        {requiereMotivo && (
-          <div className="mt-3">
-            <label className={labelCls}>
-              Motivo del cambio <span className="text-muted-foreground">(mín. 10 caracteres)</span>
-            </label>
-            <textarea
-              value={motivo}
-              onChange={(e) => setMotivo(e.target.value)}
-              rows={3}
-              className={`${inputCls} resize-none mt-1`}
-              placeholder="Ej: Reasignación por acuerdo comercial..."
-            />
-            <p className="text-xs text-muted-foreground text-right mt-0.5">{motivo.trim().length}/10 mín.</p>
-          </div>
-        )}
-
-        {/* Errors / success */}
-        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
-        {exito && <p className="text-sm text-green-600 mt-2">Guardado correctamente.</p>}
-
-        {/* Action buttons */}
-        <div className="flex items-center gap-2 mt-4">
-          {cambios && motivoValido && (
-            <button
-              type="button"
-              onClick={handleGuardar}
-              disabled={guardando}
-              className="h-9 px-4 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-40"
-            >
-              {guardando ? "Guardando..." : "Guardar cambios"}
-            </button>
-          )}
-          {viaje.enLiquidaciones.length === 0 && viaje.enFacturas.length === 0 && (
-            <button
-              type="button"
-              onClick={onEliminar}
-              className="h-9 px-4 rounded-md border border-red-300 text-red-600 text-sm font-medium hover:bg-red-50"
-            >
-              Eliminar viaje
-            </button>
-          )}
-        </div>
-      </div>
+      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        si ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"
+      }`}>
+        {label}: {si ? "Sí" : "No"}
+      </span>
     )
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onCerrar}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onCerrar}>
       <div
-        className="h-full w-[600px] max-w-full bg-white border-l shadow-xl overflow-y-auto"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-white border-b px-6 py-4 flex items-center justify-between">
-          <div>
+        {/* ── Header ── */}
+        <div className="sticky top-0 z-10 bg-white border-b px-6 py-4 flex items-center justify-between rounded-t-2xl">
+          <div className="space-y-1">
             <h2 className="text-lg font-semibold">Detalle del viaje</h2>
-            <p className="text-xs text-gray-500">
-              {formatearFecha(new Date(viaje.fechaViaje))} — {viaje.fletero?.razonSocial ?? "Camión propio"} / {viaje.empresa?.razonSocial ?? "—"}
-            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm text-gray-500">{formatearFecha(new Date(viaje.fechaViaje))}</span>
+              <Badge si={tieneLP} label="Liquidado" />
+              <Badge si={tieneFactura} label="Facturado" />
+            </div>
           </div>
-          <button type="button" onClick={onCerrar} className="rounded-md p-1 hover:bg-gray-100 text-xl leading-none">
+          <button type="button" onClick={onCerrar} className="rounded-md p-1.5 hover:bg-gray-100 text-xl leading-none">
             &times;
           </button>
         </div>
 
-        <div className="px-6 py-4 space-y-6">
-          {/* Block 1 — Viaje data */}
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Datos del viaje</h3>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-              <div>
-                <span className={labelCls}>Fletero</span>
-                <p className="font-medium">{viaje.fletero?.razonSocial ?? "Camión propio"}</p>
-              </div>
-              <div>
-                <span className={labelCls}>Empresa</span>
-                <p className="font-medium">{viaje.empresa?.razonSocial ?? "—"}</p>
-              </div>
-              <div>
-                <span className={labelCls}>Camión</span>
-                <p>{viaje.camion?.patenteChasis ?? "—"}{viaje.camion?.tipoCamion ? ` (${viaje.camion.tipoCamion})` : ""}</p>
-              </div>
-              <div>
-                <span className={labelCls}>Chofer</span>
-                <p>{viaje.chofer ? `${viaje.chofer.nombre} ${viaje.chofer.apellido}` : "—"}</p>
-              </div>
-              <div>
-                <span className={labelCls}>Fecha</span>
-                <p>{formatearFecha(new Date(viaje.fechaViaje))}</p>
-              </div>
-              <div>
-                <span className={labelCls}>Remito</span>
-                <p>{viaje.remito || "—"}</p>
-              </div>
-              <div>
-                <span className={labelCls}>Mercadería</span>
-                <p>{viaje.mercaderia || "—"}</p>
-              </div>
-              <div>
-                <span className={labelCls}>Kilos</span>
-                <p>{formatKilos(viaje.kilos)}</p>
-              </div>
-              <div>
-                <span className={labelCls}>Origen</span>
-                <p>{viaje.procedencia || "—"}{viaje.provinciaOrigen ? `, ${viaje.provinciaOrigen}` : ""}</p>
-              </div>
-              <div>
-                <span className={labelCls}>Destino</span>
-                <p>{viaje.destino || "—"}{viaje.provinciaDestino ? `, ${viaje.provinciaDestino}` : ""}</p>
-              </div>
-              <div>
-                <span className={labelCls}>Tarifa Fletero</span>
-                <p>{formatearMoneda(viaje.tarifa)}</p>
-              </div>
-              <div>
-                <span className={labelCls}>Tarifa Empresa</span>
-                <p>{formatearMoneda(viaje.tarifaEmpresa)}</p>
-              </div>
-              <div>
-                <span className={labelCls}>CPE</span>
-                <div className="flex items-center gap-2">
-                  <p>{viaje.tieneCpe ? (viaje.nroCartaPorte ?? "Sí") : "No"}</p>
+        <div className="px-6 py-5">
+          {liquidadoYFacturado && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 mb-5">
+              Este viaje está liquidado y facturado. No se puede editar.
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-0">
+            {/* ────── Columna izquierda — Datos del viaje ────── */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Datos del viaje</h3>
+
+              {/* Fletero */}
+              <EditableField
+                label="Fletero"
+                value={
+                  <div>
+                    <p>{fleteroDisplay?.razonSocial ?? (form.fleteroId ? "—" : "Camión propio")}</p>
+                    {fleteroDisplay && <p className="text-xs text-gray-500">CUIT: {fleteroDisplay.cuit}</p>}
+                  </div>
+                }
+                canEdit={editable.fleteroId}
+                editing={isEditing("fleteroId")}
+                onToggleEdit={() => toggleEdit("fleteroId")}
+                editLabel="Cambiar fletero"
+              >
+                <SearchCombobox
+                  items={[{ id: "", label: "Camión propio" }, ...fleteroItems]}
+                  value={form.fleteroId}
+                  onChange={(id) => { setField("fleteroId", id); setField("camionId", ""); closeEdit("fleteroId") }}
+                  placeholder="Buscar fletero..."
+                />
+              </EditableField>
+
+              {/* Empresa */}
+              <EditableField
+                label="Empresa"
+                value={
+                  <div>
+                    <p>{empresaDisplay?.razonSocial ?? "—"}</p>
+                    {empresaDisplay && <p className="text-xs text-gray-500">CUIT: {empresaDisplay.cuit}</p>}
+                  </div>
+                }
+                canEdit={editable.empresaId}
+                editing={isEditing("empresaId")}
+                onToggleEdit={() => toggleEdit("empresaId")}
+                editLabel="Cambiar empresa"
+              >
+                <SearchCombobox
+                  items={empresaItems}
+                  value={form.empresaId}
+                  onChange={(id) => { setField("empresaId", id); closeEdit("empresaId") }}
+                  placeholder="Buscar empresa..."
+                />
+              </EditableField>
+
+              {/* Chofer */}
+              <EditableField
+                label="Chofer"
+                value={choferDisplay ? `${choferDisplay.nombre} ${choferDisplay.apellido}` : (viaje.chofer ? `${viaje.chofer.nombre} ${viaje.chofer.apellido}` : "—")}
+                canEdit={editable.choferId}
+                editing={isEditing("choferId")}
+                onToggleEdit={() => toggleEdit("choferId")}
+                editLabel="Cambiar chofer"
+              >
+                <SearchCombobox
+                  items={choferItems}
+                  value={form.choferId}
+                  onChange={(id) => { setField("choferId", id); closeEdit("choferId") }}
+                  placeholder="Buscar chofer..."
+                />
+              </EditableField>
+
+              {/* Camión */}
+              <EditableField
+                label="Camión"
+                value={camionDisplay?.patenteChasis ?? "—"}
+                canEdit={editable.camionId}
+                editing={isEditing("camionId")}
+                onToggleEdit={() => toggleEdit("camionId")}
+                editLabel="Cambiar camión"
+              >
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={form.camionId}
+                    onChange={(e) => setField("camionId", e.target.value)}
+                    className="flex-1 rounded-md border bg-background px-2 py-1 text-sm"
+                    autoFocus
+                  >
+                    <option value="">-- Seleccionar --</option>
+                    {camionesDisponibles.map((c) => (
+                      <option key={c.id} value={c.id}>{c.patenteChasis}</option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={() => closeEdit("camionId")} className="h-7 w-7 rounded-md bg-green-600 text-white text-sm hover:bg-green-700 flex items-center justify-center">
+                    &#10003;
+                  </button>
+                  <button type="button" onClick={() => cancelEdit("camionId")} className="h-7 w-7 rounded-md border text-gray-500 text-sm hover:bg-gray-100 flex items-center justify-center">
+                    &#10005;
+                  </button>
+                </div>
+              </EditableField>
+
+              {/* Fecha */}
+              <EditableField
+                label="Fecha"
+                value={formatearFecha(new Date(viaje.fechaViaje))}
+                canEdit={editable.fechaViaje}
+                editing={isEditing("fechaViaje")}
+                onToggleEdit={() => toggleEdit("fechaViaje")}
+              >
+                <InlineInput
+                  type="date"
+                  value={form.fechaViaje}
+                  onChange={(v) => setField("fechaViaje", v)}
+                  onConfirm={() => closeEdit("fechaViaje")}
+                  onCancel={() => cancelEdit("fechaViaje")}
+                />
+              </EditableField>
+
+              {/* Remito */}
+              <EditableField
+                label="Remito"
+                value={viaje.remito || "—"}
+                canEdit={editable.remito}
+                editing={isEditing("remito")}
+                onToggleEdit={() => toggleEdit("remito")}
+              >
+                <InlineInput
+                  value={form.remito}
+                  onChange={(v) => setField("remito", v)}
+                  onConfirm={() => closeEdit("remito")}
+                  onCancel={() => cancelEdit("remito")}
+                  placeholder="Nro remito"
+                />
+              </EditableField>
+
+              {/* Cupo */}
+              <EditableField
+                label="Cupo"
+                value={viaje.tieneCupo ? (viaje.cupo || "Sí") : "No"}
+                canEdit={editable.tieneCupo}
+                editing={isEditing("cupo")}
+                onToggleEdit={() => toggleEdit("cupo")}
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setField("tieneCupo", !form.tieneCupo)}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                        form.tieneCupo ? "bg-blue-600" : "bg-gray-300"
+                      }`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        form.tieneCupo ? "translate-x-4" : "translate-x-0.5"
+                      }`} />
+                    </button>
+                    <span className="text-sm">{form.tieneCupo ? "Sí" : "No"}</span>
+                  </div>
+                  {form.tieneCupo && (
+                    <input
+                      type="text"
+                      value={form.cupo}
+                      onChange={(e) => setField("cupo", e.target.value)}
+                      className="w-full rounded-md border bg-background px-2 py-1 text-sm"
+                      placeholder="Nro cupo"
+                    />
+                  )}
+                  <div className="flex gap-1.5">
+                    <button type="button" onClick={() => closeEdit("cupo")} className="h-7 w-7 rounded-md bg-green-600 text-white text-sm hover:bg-green-700 flex items-center justify-center">
+                      &#10003;
+                    </button>
+                    <button type="button" onClick={() => cancelEdit("cupo")} className="h-7 w-7 rounded-md border text-gray-500 text-sm hover:bg-gray-100 flex items-center justify-center">
+                      &#10005;
+                    </button>
+                  </div>
+                </div>
+              </EditableField>
+
+              {/* Mercadería */}
+              <EditableField
+                label="Mercadería"
+                value={viaje.mercaderia || "—"}
+                canEdit={editable.mercaderia}
+                editing={isEditing("mercaderia")}
+                onToggleEdit={() => toggleEdit("mercaderia")}
+              >
+                <InlineInput
+                  value={form.mercaderia}
+                  onChange={(v) => setField("mercaderia", v)}
+                  onConfirm={() => closeEdit("mercaderia")}
+                  onCancel={() => cancelEdit("mercaderia")}
+                />
+              </EditableField>
+
+              {/* Origen */}
+              <EditableField
+                label="Origen"
+                value={`${viaje.procedencia || "—"}${viaje.provinciaOrigen ? `, ${viaje.provinciaOrigen}` : ""}`}
+                canEdit={editable.procedencia}
+                editing={isEditing("origen")}
+                onToggleEdit={() => toggleEdit("origen")}
+              >
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={form.procedencia}
+                    onChange={(e) => setField("procedencia", e.target.value)}
+                    className="w-full rounded-md border bg-background px-2 py-1 text-sm"
+                    placeholder="Ciudad"
+                    autoFocus
+                  />
+                  <select
+                    value={form.provinciaOrigen}
+                    onChange={(e) => setField("provinciaOrigen", e.target.value)}
+                    className="w-full rounded-md border bg-background px-2 py-1 text-sm"
+                  >
+                    <option value="">— Provincia —</option>
+                    {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                  <div className="flex gap-1.5">
+                    <button type="button" onClick={() => closeEdit("origen")} className="h-7 w-7 rounded-md bg-green-600 text-white text-sm hover:bg-green-700 flex items-center justify-center">
+                      &#10003;
+                    </button>
+                    <button type="button" onClick={() => cancelEdit("origen")} className="h-7 w-7 rounded-md border text-gray-500 text-sm hover:bg-gray-100 flex items-center justify-center">
+                      &#10005;
+                    </button>
+                  </div>
+                </div>
+              </EditableField>
+
+              {/* Destino */}
+              <EditableField
+                label="Destino"
+                value={`${viaje.destino || "—"}${viaje.provinciaDestino ? `, ${viaje.provinciaDestino}` : ""}`}
+                canEdit={editable.destino}
+                editing={isEditing("destino")}
+                onToggleEdit={() => toggleEdit("destino")}
+              >
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={form.destino}
+                    onChange={(e) => setField("destino", e.target.value)}
+                    className="w-full rounded-md border bg-background px-2 py-1 text-sm"
+                    placeholder="Ciudad"
+                    autoFocus
+                  />
+                  <select
+                    value={form.provinciaDestino}
+                    onChange={(e) => setField("provinciaDestino", e.target.value)}
+                    className="w-full rounded-md border bg-background px-2 py-1 text-sm"
+                  >
+                    <option value="">— Provincia —</option>
+                    {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                  <div className="flex gap-1.5">
+                    <button type="button" onClick={() => closeEdit("destino")} className="h-7 w-7 rounded-md bg-green-600 text-white text-sm hover:bg-green-700 flex items-center justify-center">
+                      &#10003;
+                    </button>
+                    <button type="button" onClick={() => cancelEdit("destino")} className="h-7 w-7 rounded-md border text-gray-500 text-sm hover:bg-gray-100 flex items-center justify-center">
+                      &#10005;
+                    </button>
+                  </div>
+                </div>
+              </EditableField>
+
+              {/* Kilos */}
+              <EditableField
+                label="Kilos"
+                value={formatKilos(form.kilos ? Number(form.kilos) : viaje.kilos)}
+                canEdit={editable.kilos}
+                editing={isEditing("kilos")}
+                onToggleEdit={() => toggleEdit("kilos")}
+              >
+                <InlineInput
+                  type="number"
+                  value={form.kilos}
+                  onChange={(v) => setField("kilos", v)}
+                  onConfirm={() => closeEdit("kilos")}
+                  onCancel={() => cancelEdit("kilos")}
+                />
+              </EditableField>
+
+              {/* Tarifa Fletero */}
+              <EditableField
+                label="Tarifa Fletero"
+                value={formatearMoneda(form.tarifa ? Number(form.tarifa) : viaje.tarifa)}
+                canEdit={editable.tarifa}
+                editing={isEditing("tarifa")}
+                onToggleEdit={() => toggleEdit("tarifa")}
+              >
+                <InlineInput
+                  type="number"
+                  step="0.01"
+                  value={form.tarifa}
+                  onChange={(v) => setField("tarifa", v)}
+                  onConfirm={() => closeEdit("tarifa")}
+                  onCancel={() => cancelEdit("tarifa")}
+                />
+              </EditableField>
+
+              {/* Tarifa Empresa */}
+              <EditableField
+                label="Tarifa Empresa"
+                value={formatearMoneda(form.tarifaEmpresa ? Number(form.tarifaEmpresa) : viaje.tarifaEmpresa)}
+                canEdit={editable.tarifaEmpresa}
+                editing={isEditing("tarifaEmpresa")}
+                onToggleEdit={() => toggleEdit("tarifaEmpresa")}
+              >
+                <InlineInput
+                  type="number"
+                  step="0.01"
+                  value={form.tarifaEmpresa}
+                  onChange={(v) => setField("tarifaEmpresa", v)}
+                  onConfirm={() => closeEdit("tarifaEmpresa")}
+                  onCancel={() => cancelEdit("tarifaEmpresa")}
+                />
+              </EditableField>
+
+              {/* CPE */}
+              <div className="space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">CPE / Carta de Porte</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium">{viaje.tieneCpe ? (viaje.nroCartaPorte ?? "Sí") : "No"}</span>
                   {viaje.cartaPorteS3Key && (
                     <button
                       type="button"
-                      onClick={() => window.open(`/api/viajes/${viaje.id}/cpe`, "_blank")}
+                      onClick={handleVerCPE}
                       className="text-xs px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700"
                     >
                       VER CPE
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => cpeInputRef.current?.click()}
+                    disabled={subiendoCPE}
+                    className="text-xs text-blue-600 hover:text-blue-800 hover:underline disabled:opacity-50"
+                  >
+                    {subiendoCPE ? "Subiendo..." : "Cambiar PDF"}
+                  </button>
+                  <input
+                    ref={cpeInputRef}
+                    type="file"
+                    accept=".pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleCPEUpload(file)
+                      e.target.value = ""
+                    }}
+                  />
                 </div>
               </div>
-              <div>
-                <span className={labelCls}>Cupo</span>
-                <p>{viaje.tieneCupo ? (viaje.cupo || "Sí") : "No"}</p>
+            </div>
+
+            {/* ────── Columna derecha — Estado documental ────── */}
+            <div className="space-y-4 mt-4 md:mt-0">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Estado documental</h3>
+
+              {/* Bloque Facturación */}
+              <div className="rounded-lg border p-4 space-y-3">
+                <h4 className="text-sm font-semibold">Facturación</h4>
+                {viaje.estadoFactura === "PENDIENTE_FACTURAR" ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">Facturado:</span>
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">No</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground italic">Aún no facturado</p>
+                  </div>
+                ) : (() => {
+                  const vef = viaje.enFacturas?.[0]
+                  const factura = vef?.factura
+                  if (!factura) return null
+                  const nroFact = formatNroComprobante(factura.ptoVenta ?? null, factura.nroComprobante)
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">Facturado:</span>
+                        <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">Sí</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">Nro: <span className="font-mono font-medium">{nroFact}</span></span>
+                        <button
+                          type="button"
+                          onClick={() => window.open(`/api/facturas/${factura.id}/pdf`, "_blank")}
+                          className="text-xs px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700"
+                        >
+                          VER FACTURA
+                        </button>
+                      </div>
+                      <hr className="border-gray-100" />
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">Cobrado:</span>
+                        {factura.recibo ? (
+                          <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">Sí</span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">No</span>
+                        )}
+                      </div>
+                      {factura.recibo ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">
+                            Recibo: <span className="font-mono font-medium">
+                              {formatNroComprobante(factura.recibo.ptoVenta, factura.recibo.nro)}
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => window.open(`/api/recibos-cobranza/${factura.recibo!.id}/pdf`, "_blank")}
+                            className="text-xs px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700"
+                          >
+                            VER RECIBO
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground italic">Aún no cobrado</p>
+                      )}
+                    </div>
+                  )
+                })()}
+              </div>
+
+              {/* Bloque Liquidación */}
+              <div className="rounded-lg border p-4 space-y-3">
+                <h4 className="text-sm font-semibold">Liquidación</h4>
+                {viaje.estadoLiquidacion === "PENDIENTE_LIQUIDAR" ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">Liquidado:</span>
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">No</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground italic">Aún no liquidado</p>
+                  </div>
+                ) : (() => {
+                  const vel = viaje.enLiquidaciones?.[0]
+                  const liq = vel?.liquidacion
+                  if (!liq) return null
+                  const nroLP = formatNroComprobante(liq.ptoVenta, liq.nroComprobante)
+                  const pagosConOP = (liq.pagos ?? []).filter((p) => p.ordenPago != null)
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">Liquidado:</span>
+                        <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">Sí</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">LP: <span className="font-mono font-medium">{nroLP}</span></span>
+                        <button
+                          type="button"
+                          onClick={() => window.open(`/api/liquidaciones/${liq.id}/pdf`, "_blank")}
+                          className="text-xs px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700"
+                        >
+                          VER LIQ. PROD.
+                        </button>
+                      </div>
+                      <hr className="border-gray-100" />
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">Pagado:</span>
+                        {pagosConOP.length > 0 ? (
+                          <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">Sí</span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">No</span>
+                        )}
+                      </div>
+                      {pagosConOP.length > 0 ? (
+                        pagosConOP.map((pago, i) => (
+                          <div key={i} className="flex items-center gap-2">
+                            <span className="text-sm">
+                              OP: <span className="font-mono font-medium">#{pago.ordenPago!.nro}</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => window.open(`/api/ordenes-pago/${pago.ordenPago!.id}/pdf`, "_blank")}
+                              className="text-xs px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700"
+                            >
+                              VER ORDEN
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-xs text-muted-foreground italic">Aún no pagado</p>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             </div>
           </div>
 
-          <hr className="border-gray-200" />
+          {/* ── Motivo (required when changing empresa/fletero) ── */}
+          {requiereMotivo && (
+            <div className="mt-5 border-t pt-4">
+              <label className="text-xs font-medium text-muted-foreground">
+                Motivo del cambio <span className="text-muted-foreground">(mín. 10 caracteres)</span>
+              </label>
+              <textarea
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                rows={3}
+                className="w-full rounded-md border bg-background px-3 py-1.5 text-sm resize-none mt-1"
+                placeholder="Ej: Reasignación por acuerdo comercial..."
+              />
+              <p className="text-xs text-muted-foreground text-right mt-0.5">{motivo.trim().length}/10 mín.</p>
+            </div>
+          )}
 
-          {/* Block 2 — Facturación */}
-          {renderFacturacion()}
+          {/* ── Error / Success ── */}
+          {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
+          {exito && <p className="text-sm text-green-600 mt-3">Guardado correctamente.</p>}
 
-          <hr className="border-gray-200" />
-
-          {/* Block 3 — Liquidación */}
-          {renderLiquidacion()}
-
-          <hr className="border-gray-200" />
-
-          {/* Block 4 — Edición */}
-          {renderEdicion()}
-
-          {/* Historial de cambios */}
+          {/* ── Historial ── */}
           {historial.length > 0 && (
-            <div className="border-t pt-4">
+            <div className="border-t pt-4 mt-4">
               <button
                 type="button"
                 onClick={() => setMostrarHistorial((v) => !v)}
@@ -784,6 +1006,29 @@ function PanelDetalle({
               )}
             </div>
           )}
+
+          {/* ── Footer ── */}
+          <div className="flex items-center gap-2 mt-5 border-t pt-4">
+            {cambios && motivoValido && (
+              <button
+                type="button"
+                onClick={handleGuardar}
+                disabled={guardando}
+                className="h-9 px-4 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-40"
+              >
+                {guardando ? "Guardando..." : "Guardar cambios"}
+              </button>
+            )}
+            {viaje.enLiquidaciones.length === 0 && viaje.enFacturas.length === 0 && (
+              <button
+                type="button"
+                onClick={onEliminar}
+                className="h-9 px-4 rounded-md border border-red-300 text-red-600 text-sm font-medium hover:bg-red-50"
+              >
+                Eliminar viaje
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -810,8 +1055,11 @@ function ModalEliminar({
       <div className="bg-white rounded-xl border shadow-lg w-full max-w-md p-6 space-y-4">
         <h2 className="text-lg font-semibold text-red-600">Eliminar viaje</h2>
         <p className="text-sm">
-          ¿Eliminar el viaje del <span className="font-medium">{formatearFecha(new Date(viaje.fechaViaje))}</span>?
-          {viaje.fletero && <> Fletero: <span className="font-medium">{viaje.fletero.razonSocial}</span>.</>}
+          ¿Estás seguro de que querés eliminar este viaje? Esta acción no se puede deshacer.
+        </p>
+        <p className="text-sm text-gray-500">
+          Viaje del <span className="font-medium">{formatearFecha(new Date(viaje.fechaViaje))}</span>
+          {viaje.fletero && <> — Fletero: <span className="font-medium">{viaje.fletero.razonSocial}</span></>}
         </p>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex justify-end gap-2">
@@ -838,11 +1086,13 @@ export function ConsultarViajesClient({
   fleteros,
   empresas,
   camiones,
+  choferes,
 }: {
   rol: string
   fleteros: Fletero[]
   empresas: Empresa[]
   camiones: Camion[]
+  choferes: Chofer[]
 }) {
   // ── Filtros ──
   const [filtroFleteroId, setFiltroFleteroId] = useState("")
@@ -863,7 +1113,7 @@ export function ConsultarViajesClient({
   // ── Pagination ──
   const [pagina, setPagina] = useState(1)
 
-  // ── Detail panel ──
+  // ── Detail modal ──
   const [viajeDetalle, setViajeDetalle] = useState<ViajeAPI | null>(null)
   const [cargandoDetalle, setCargandoDetalle] = useState(false)
 
@@ -941,7 +1191,7 @@ export function ConsultarViajesClient({
   const totalPaginas = Math.max(1, Math.ceil(viajes.length / PER_PAGE))
   const viajesPagina = viajes.slice((pagina - 1) * PER_PAGE, pagina * PER_PAGE)
 
-  // ── Open detail panel (fetch full viaje) ──
+  // ── Open detail modal (fetch full viaje) ──
   async function abrirDetalle(viajeId: string) {
     setCargandoDetalle(true)
     try {
@@ -950,7 +1200,6 @@ export function ConsultarViajesClient({
       const data = await res.json()
       setViajeDetalle(data as ViajeAPI)
     } catch {
-      // fallback: use the list version
       const v = viajes.find((x) => x.id === viajeId)
       if (v) setViajeDetalle(v)
     } finally {
@@ -1143,23 +1392,22 @@ export function ConsultarViajesClient({
                 <th className={thCls}>Remito</th>
                 {showFleteroCol && <th className={thCls}>Fletero</th>}
                 {showEmpresaCol && <th className={thCls}>Empresa</th>}
-                <th className={thCls}>CPE</th>
                 <th className={thCls}>Mercadería</th>
                 <th className={thCls}>Origen</th>
                 <th className={thCls}>Destino</th>
                 <th className={`${thCls} text-right`}>Kilos</th>
-                <th className={thCls}>Tarifas</th>
+                <th className={`${thCls} text-right`}>Tarifa</th>
                 <th className={`${thCls} text-center`}>+</th>
               </tr>
             </thead>
             <tbody>
               {cargandoViajes ? (
                 <tr>
-                  <td colSpan={11} className="py-8 text-center text-sm text-gray-500">Cargando...</td>
+                  <td colSpan={10} className="py-8 text-center text-sm text-gray-500">Cargando...</td>
                 </tr>
               ) : viajesPagina.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-8 text-center text-sm text-gray-500">
+                  <td colSpan={10} className="py-8 text-center text-sm text-gray-500">
                     Sin viajes para los filtros seleccionados.
                   </td>
                 </tr>
@@ -1207,11 +1455,6 @@ export function ConsultarViajesClient({
                       </td>
                     )}
 
-                    {/* CPE */}
-                    <td className="px-4 py-2 whitespace-nowrap text-sm">
-                      {v.tieneCpe ? (v.nroCartaPorte ?? "Sí") : "No"}
-                    </td>
-
                     {/* MERCADERÍA */}
                     <td className="px-4 py-2 whitespace-nowrap text-sm max-w-[120px] truncate">
                       {v.mercaderia || "—"}
@@ -1238,12 +1481,9 @@ export function ConsultarViajesClient({
                       {formatKilos(v.kilos)}
                     </td>
 
-                    {/* TARIFAS */}
-                    <td className="px-4 py-2 whitespace-nowrap">
-                      <div className="text-xs space-y-0.5">
-                        <p>Empresa: <span className="font-medium">{formatearMoneda(v.tarifaEmpresa)}</span></p>
-                        <p>Fletero: <span className="font-medium">{formatearMoneda(v.tarifa)}</span></p>
-                      </div>
+                    {/* TARIFA (fletero) */}
+                    <td className="px-4 py-2 whitespace-nowrap text-right text-sm font-medium">
+                      {formatearMoneda(v.tarifa)}
                     </td>
 
                     {/* + BUTTON */}
@@ -1300,16 +1540,16 @@ export function ConsultarViajesClient({
         </div>
       )}
 
-      {/* ── Detail panel ── */}
+      {/* ── Detail modal ── */}
       {viajeDetalle && (
-        <PanelDetalle
+        <ModalDetalle
           viaje={viajeDetalle}
           empresas={empresas}
           fleteros={fleteros}
           camiones={camiones}
+          choferes={choferes}
           onGuardar={async () => {
             await cargar()
-            // Refresh detail with updated data
             try {
               const res = await fetch(`/api/viajes/${viajeDetalle.id}`)
               if (res.ok) {
