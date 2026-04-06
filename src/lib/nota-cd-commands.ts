@@ -13,6 +13,8 @@ import {
   calcularTotalesNotaCD,
   tipoCbteArcaParaNotaCD,
 } from "@/lib/nota-cd-utils"
+import { validarComprobanteHabilitado } from "@/lib/arca/catalogo"
+import { leerComprobantesHabilitados } from "@/lib/arca/leer-config-habilitados"
 import { EstadoFacturaViaje } from "@/lib/viaje-workflow"
 
 // ─── Próximo nro comprobante (server-only, usa prisma) ──────────────────────
@@ -119,6 +121,11 @@ async function crearNCEmitida(
 
   const tipoCbte = tipoCbteArcaParaNotaCD("NC_EMITIDA", factura.tipoCbte)
   if (!tipoCbte) return { ok: false, status: 400, error: "No se puede emitir NC para este tipo de comprobante" }
+
+  const habilitados = await leerComprobantesHabilitados()
+  const errorHab = validarComprobanteHabilitado(tipoCbte, habilitados)
+  if (errorHab) return { ok: false, status: 400, error: errorHab }
+
   const nroComprobante = await calcularProximoNroComprobanteNotaCD("NC_EMITIDA")
 
   const baseData = {
@@ -234,6 +241,11 @@ async function crearNDEmitida(
 
   const tipoCbte = tipoCbteArcaParaNotaCD("ND_EMITIDA", factura.tipoCbte)
   if (!tipoCbte) return { ok: false, status: 400, error: "No se puede emitir ND para este tipo de comprobante" }
+
+  const habilitados = await leerComprobantesHabilitados()
+  const errorHab = validarComprobanteHabilitado(tipoCbte, habilitados)
+  if (errorHab) return { ok: false, status: 400, error: errorHab }
+
   const nroComprobante = await calcularProximoNroComprobanteNotaCD("ND_EMITIDA")
 
   const nota = await prisma.$transaction(async (tx) => {

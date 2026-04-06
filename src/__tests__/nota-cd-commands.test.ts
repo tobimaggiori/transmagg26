@@ -27,8 +27,14 @@ jest.mock("@/lib/nota-cd-utils", () => ({
   }),
   tipoCbteArcaParaNotaCD: jest.fn().mockReturnValue(3),
 }))
+jest.mock("@/lib/arca/leer-config-habilitados", () => ({
+  leerComprobantesHabilitados: jest.fn().mockResolvedValue([1, 2, 3, 6, 7, 8, 60, 61, 201, 202, 203]),
+}))
 
 import { ejecutarCrearNotaCD } from "@/lib/nota-cd-commands"
+import { leerComprobantesHabilitados } from "@/lib/arca/leer-config-habilitados"
+
+const mockLeerHabilitados = leerComprobantesHabilitados as jest.MockedFunction<typeof leerComprobantesHabilitados>
 
 beforeEach(() => {
   jest.clearAllMocks()
@@ -409,5 +415,42 @@ describe("CONGELADO: preservación de historial documental", () => {
 
     expect(mockPrisma.facturaEmitida.update).not.toHaveBeenCalled()
   })
+})
 
+// ─── Validación comprobantesHabilitados antes de crear en DB ────────────────
+
+describe("validación comprobantesHabilitados pre-DB", () => {
+  it("NC_EMITIDA rechazada si tipoCbte no está en comprobantesHabilitados", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue(FACTURA_MOCK)
+    mockLeerHabilitados.mockResolvedValueOnce([1, 6])
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL", facturaId: "fact-1",
+      montoNeto: 2500, ivaPct: 21, descripcion: "Anulación total",
+    }, "op1")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.status).toBe(400)
+      expect(r.error).toContain("no está habilitado")
+    }
+    expect(mockTx.notaCreditoDebito.create).not.toHaveBeenCalled()
+  })
+
+  it("ND_EMITIDA rechazada si tipoCbte no está en comprobantesHabilitados", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue(FACTURA_MOCK)
+    mockLeerHabilitados.mockResolvedValueOnce([1, 6])
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "ND_EMITIDA", subtipo: "DIFERENCIA_TARIFA", facturaId: "fact-1",
+      montoNeto: 500, ivaPct: 21, descripcion: "Diferencia",
+    }, "op1")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.status).toBe(400)
+      expect(r.error).toContain("no está habilitado")
+    }
+    expect(mockTx.notaCreditoDebito.create).not.toHaveBeenCalled()
+  })
 })
