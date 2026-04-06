@@ -20,6 +20,9 @@ type FiltrosViaje = {
   estadoFactura?: string | null
   desde?: string | null
   hasta?: string | null
+  remito?: string | null
+  nroLP?: string | null
+  nroFactura?: string | null
 }
 
 type ResultadoWhere =
@@ -86,6 +89,19 @@ export async function construirWhereViajes(
       fechaWhere.lte = h
     }
     where.fechaViaje = fechaWhere
+  }
+
+  if (filtros.remito) {
+    where.remito = { contains: filtros.remito }
+  }
+  if (filtros.nroLP) {
+    const nro = parseInt(filtros.nroLP, 10)
+    if (!isNaN(nro)) {
+      where.enLiquidaciones = { some: { liquidacion: { nroComprobante: nro } } }
+    }
+  }
+  if (filtros.nroFactura) {
+    where.enFacturas = { some: { factura: { nroComprobante: { contains: filtros.nroFactura } } } }
   }
 
   return { ok: true, where }

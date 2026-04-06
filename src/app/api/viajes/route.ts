@@ -89,6 +89,9 @@ export async function GET(request: NextRequest) {
     estadoFactura: searchParams.get("estadoFactura"),
     desde: searchParams.get("desde"),
     hasta: searchParams.get("hasta"),
+    remito: searchParams.get("remito"),
+    nroLP: searchParams.get("nroLP"),
+    nroFactura: searchParams.get("nroFactura"),
   })
 
   if (!resultado.ok) {

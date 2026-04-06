@@ -82,6 +82,12 @@ export async function GET(
                 nroComprobante: true, ptoVenta: true,
                 comisionPct: true, ivaPct: true,
                 pdfS3Key: true,
+                pagos: {
+                  where: { anulado: false },
+                  select: {
+                    ordenPago: { select: { nro: true, pdfS3Key: true } },
+                  },
+                },
               },
             },
           },
@@ -90,8 +96,9 @@ export async function GET(
           include: {
             factura: {
               select: {
-                id: true, estado: true, nroComprobante: true,
+                id: true, estado: true, nroComprobante: true, ptoVenta: true,
                 ivaPct: true, pdfS3Key: true, tipoCbte: true,
+                recibo: { select: { nro: true, ptoVenta: true, pdfS3Key: true } },
               },
             },
           },
