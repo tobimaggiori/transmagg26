@@ -8,10 +8,8 @@
 
 import { Fragment, useState, useCallback, useEffect } from "react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
-import { sumarImportes } from "@/lib/money"
 import { calcularToneladas, calcularTotalViaje, calcularFactura } from "@/lib/viajes"
 import { WorkflowNote } from "@/components/workflow/workflow-note"
-import { RegistrarCobroModal } from "@/components/forms/registrar-cobro-form"
 import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 import { ModalDetalleFactura } from "./_components/modal-detalle-factura"
 import type { ViajeParaFacturar, Factura, FacturasClientProps } from "./_components/types"
@@ -52,7 +50,7 @@ function EstadoBadge({ estado }: { estado: string }) {
  * // Con empresa seleccionada → tabla de viajes + lista de facturas
  * <FacturasClient rol="ADMIN_TRANSMAGG" empresas={[...]} empresaIdPropia={null} />
  */
-export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPropia, cuentasBancarias, comprobantesHabilitados = [] }: FacturasClientProps) {
+export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPropia, comprobantesHabilitados = [] }: FacturasClientProps) {
   const esInterno = rol === "ADMIN_TRANSMAGG" || rol === "OPERADOR_TRANSMAGG"
 
   const [empresaId, setEmpresaId] = useState<string>(empresaIdPropia ?? "")
@@ -66,9 +64,8 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
   const [generando, setGenerando] = useState(false)
   const [errorGen, setErrorGen] = useState<string | null>(null)
   const [facturaDetalle, setFacturaDetalle] = useState<Factura | null>(null)
-  const [cambioEstadoCargando, setCambioEstadoCargando] = useState(false)
-  const [cobrandoFactura, setCobrandoFactura] = useState<Factura | null>(null)
-  const [saldoAFavorCC, setSaldoAFavorCC] = useState(0)
+  const [, setCambioEstadoCargando] = useState(false)
+  const empresaSeleccionada = empresas.find((e) => e.id === empresaId)
 
   const cargarDatos = useCallback(async () => {
     if (!empresaId) return
@@ -474,6 +471,9 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
                 {facturas.length}
               </span>
             </div>
+            {empresaSeleccionada && (
+              <p className="text-sm font-medium text-gray-700">Facturas emitidas a {empresaSeleccionada.razonSocial}</p>
+            )}
             {cargando && facturas.length === 0 ? (
               <div className="text-center py-4 text-muted-foreground">Cargando...</div>
             ) : facturas.length === 0 ? (
@@ -488,7 +488,7 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
                           <span className="font-medium">{formatearFecha(new Date(fact.emitidaEn))}</span>
                           <EstadoBadge estado={fact.estado} />
                           {fact.nroComprobante && (
-                            <span className="text-xs text-muted-foreground">#{fact.nroComprobante}</span>
+                            <span className="text-xs text-muted-foreground font-mono">Factura {fact.nroComprobante}</span>
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground">{fact.viajes.length} viaje(s) · Tipo {fact.tipoCbte}</p>
@@ -519,43 +519,10 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
           factura={facturaDetalle}
           comprobantesHabilitados={comprobantesHabilitados}
           onCambiarEstado={(estado, nroComprobante) => cambiarEstadoFactura(facturaDetalle.id, estado, nroComprobante)}
-          onRegistrarCobro={async () => {
-            // Fetch saldo CC for this empresa
-            try {
-              const res = await fetch(`/api/empresas/${facturaDetalle.empresaId}/saldo-cc`)
-              if (res.ok) {
-                const data = await res.json()
-                setSaldoAFavorCC(data.saldoAFavor ?? 0)
-              }
-            } catch { /* silencioso */ }
-            setCobrandoFactura(facturaDetalle)
-            setFacturaDetalle(null)
-          }}
           onCerrar={() => setFacturaDetalle(null)}
-          cargando={cambioEstadoCargando}
         />
       )}
 
-      {/* Modal cobro */}
-      {cobrandoFactura && (
-        <RegistrarCobroModal
-          factura={{
-            id: cobrandoFactura.id,
-            nroComprobante: cobrandoFactura.nroComprobante,
-            tipoCbte: cobrandoFactura.tipoCbte,
-            total: cobrandoFactura.total,
-            pagosExistentes: sumarImportes(cobrandoFactura.pagos.map(p => p.monto)),
-            empresa: { id: cobrandoFactura.empresaId, razonSocial: cobrandoFactura.empresa.razonSocial },
-          }}
-          cuentasBancarias={cuentasBancarias}
-          saldoAFavorCC={saldoAFavorCC}
-          onSuccess={() => {
-            setCobrandoFactura(null)
-            cargarDatos()
-          }}
-          onClose={() => setCobrandoFactura(null)}
-        />
-      )}
     </div>
   )
 }
