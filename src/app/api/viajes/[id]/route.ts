@@ -37,6 +37,8 @@ const actualizarViajeSchema = z.object({
   tarifaEmpresa: z.number().positive().optional(),
   comisionPct: z.number().min(0).max(100).nullable().optional(),
   cartaPorteS3Key: z.string().nullable().optional(),
+  tieneCpe: z.boolean().optional(),
+  nroCartaPorte: z.string().nullable().optional(),
   empresaId: z.string().optional(),
   motivoCambioEmpresa: z.string().optional(),
   fleteroId: z.string().uuid().nullable().optional(),
@@ -89,7 +91,7 @@ export async function GET(
                 pagos: {
                   where: { anulado: false },
                   select: {
-                    ordenPago: { select: { id: true, nro: true, pdfS3Key: true } },
+                    ordenPago: { select: { id: true, nro: true, pdfS3Key: true, fecha: true } },
                   },
                 },
               },
@@ -101,8 +103,8 @@ export async function GET(
             factura: {
               select: {
                 id: true, estado: true, nroComprobante: true, ptoVenta: true,
-                ivaPct: true, pdfS3Key: true, tipoCbte: true,
-                recibo: { select: { id: true, nro: true, ptoVenta: true, pdfS3Key: true } },
+                ivaPct: true, pdfS3Key: true, tipoCbte: true, emitidaEn: true,
+                recibo: { select: { id: true, nro: true, ptoVenta: true, pdfS3Key: true, fecha: true } },
               },
             },
           },

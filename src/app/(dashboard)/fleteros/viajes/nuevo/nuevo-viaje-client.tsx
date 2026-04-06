@@ -8,7 +8,7 @@ import { parsearImporte } from "@/lib/money"
 import { FormError } from "@/components/ui/form-error"
 import { calcularToneladas, calcularTotalViaje } from "@/lib/viajes"
 import { SearchCombobox } from "@/components/ui/search-combobox"
-import { CiudadArgentinaInput } from "@/components/ui/ciudad-argentina-input"
+import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 import { UploadPDF } from "@/components/upload-pdf"
 
 type Fletero = { id: string; razonSocial: string; cuit: string; comisionDefault: number }
@@ -21,6 +21,14 @@ interface NuevoViajeClientProps {
   empresas: Empresa[]
   camiones: Camion[]
   choferes: Chofer[]
+}
+
+function capitalizarPalabras(texto: string): string {
+  return texto.replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function capitalizarPrimera(texto: string): string {
+  return texto.charAt(0).toUpperCase() + texto.slice(1)
 }
 
 export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: NuevoViajeClientProps) {
@@ -104,10 +112,10 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
           remito: remito || undefined,
           tieneCupo,
           cupo: tieneCupo ? (cupo || undefined) : null,
-          mercaderia: mercaderia || undefined,
-          procedencia: procedencia || undefined,
+          mercaderia: mercaderia ? capitalizarPrimera(mercaderia) : undefined,
+          procedencia: procedencia ? capitalizarPalabras(procedencia) : undefined,
           provinciaOrigen: provinciaOrigen || undefined,
-          destino: destino || undefined,
+          destino: destino ? capitalizarPalabras(destino) : undefined,
           provinciaDestino: provinciaDestino || undefined,
           kilos: kilosNum > 0 ? kilosNum : undefined,
           tarifa: tarifaNum > 0 ? tarifaNum : undefined,
@@ -139,6 +147,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
 
   const labelCls = "text-xs font-medium text-muted-foreground block mb-1"
   const inputCls = "w-full h-9 rounded-md border bg-background px-2 text-sm"
+  const selectCls = "w-full h-9 rounded-md border bg-background px-2 text-sm"
 
   return (
     <div className="space-y-4">
@@ -159,7 +168,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
             <div className="space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground border-b pb-1">Entidades</p>
 
-              {/* Toggle camión propio */}
               <div>
                 <label className={labelCls}>Tipo de viaje</label>
                 <div className="flex rounded-md border overflow-hidden h-9 w-fit">
@@ -180,7 +188,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                 </div>
               </div>
 
-              {/* Fletero */}
               {!esCamionPropio && (
                 <div>
                   <label className={labelCls}>Fletero *</label>
@@ -188,11 +195,11 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                     items={fleteroItems}
                     value={fleteroId}
                     onChange={(id) => {
-                    setFleteroId(id)
-                    setCamionId("")
-                    const f = fleteros.find((x) => x.id === id)
-                    setComisionPct(f ? String(f.comisionDefault) : "")
-                  }}
+                      setFleteroId(id)
+                      setCamionId("")
+                      const f = fleteros.find((x) => x.id === id)
+                      setComisionPct(f ? String(f.comisionDefault) : "")
+                    }}
                     placeholder="Buscar por nombre o CUIT..."
                   />
                   <FormError message={fieldErrors.fleteroId} className="text-xs mt-1" />
@@ -213,7 +220,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                 </div>
               )}
 
-              {/* Empresa */}
               <div>
                 <label className={labelCls}>Empresa *</label>
                 <SearchCombobox
@@ -225,7 +231,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                 <FormError message={fieldErrors.empresaId} className="text-xs mt-1" />
               </div>
 
-              {/* Camión */}
               <div>
                 <label className={labelCls}>Camión *</label>
                 <select
@@ -248,7 +253,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                 <FormError message={fieldErrors.camionId} className="text-xs mt-1" />
               </div>
 
-              {/* Chofer */}
               <div>
                 <label className={labelCls}>Chofer *</label>
                 <select
@@ -277,83 +281,63 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
             <div className="space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground border-b pb-1">Datos del viaje</p>
 
-              {/* Fecha */}
               <div>
                 <label className={labelCls}>Fecha de viaje *</label>
-                <input
-                  type="date"
-                  value={fechaViaje}
-                  onChange={(e) => setFechaViaje(e.target.value)}
-                  className={inputCls}
-                />
+                <input type="date" value={fechaViaje} onChange={(e) => setFechaViaje(e.target.value)} className={inputCls} />
                 <FormError message={fieldErrors.fechaViaje} className="text-xs mt-1" />
               </div>
 
-              {/* Remito */}
               <div>
                 <label className={labelCls}>Remito</label>
                 <input type="text" value={remito} onChange={(e) => setRemito(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} />
               </div>
 
-              {/* Cupo */}
               <div>
                 <label className={labelCls}>¿Lleva cupo?</label>
                 <div className="flex rounded-md border overflow-hidden h-9">
-                  <button
-                    type="button"
-                    onClick={() => { setTieneCupo(false); setCupo("") }}
-                    className={`flex-1 text-xs font-medium border-r ${!tieneCupo ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-                  >
-                    No
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTieneCupo(true)}
-                    className={`flex-1 text-xs font-medium ${tieneCupo ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-                  >
-                    Sí
-                  </button>
+                  <button type="button" onClick={() => { setTieneCupo(false); setCupo("") }} className={`flex-1 text-xs font-medium border-r ${!tieneCupo ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>No</button>
+                  <button type="button" onClick={() => setTieneCupo(true)} className={`flex-1 text-xs font-medium ${tieneCupo ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>Sí</button>
                 </div>
                 {tieneCupo && (
-                  <input
-                    type="text"
-                    value={cupo}
-                    onChange={(e) => setCupo(e.target.value.toUpperCase())}
-                    placeholder="Nro. de cupo"
-                    style={{ textTransform: "uppercase" }}
-                    className={`${inputCls} mt-2`}
-                  />
+                  <input type="text" value={cupo} onChange={(e) => setCupo(e.target.value.toUpperCase())} placeholder="Nro. de cupo" style={{ textTransform: "uppercase" }} className={`${inputCls} mt-2`} />
                 )}
               </div>
 
-              {/* Mercadería */}
               <div>
                 <label className={labelCls}>Mercadería</label>
-                <input type="text" value={mercaderia} onChange={(e) => setMercaderia(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} />
+                <input type="text" value={mercaderia} onChange={(e) => setMercaderia(e.target.value)} onBlur={() => mercaderia && setMercaderia(capitalizarPrimera(mercaderia))} className={inputCls} />
               </div>
 
               {/* Origen */}
-              <div>
-                <CiudadArgentinaInput
-                  label="Ciudad de origen"
-                  value={procedencia}
-                  provincia={provinciaOrigen}
-                  onSelect={(ciudad, prov) => { setProcedencia(ciudad); setProvinciaOrigen(prov) }}
-                  required
-                />
-                <FormError message={fieldErrors.provinciaOrigen} className="text-xs mt-1" />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className={labelCls}>Ciudad de origen</label>
+                  <input type="text" value={procedencia} onChange={(e) => setProcedencia(e.target.value)} onBlur={() => procedencia && setProcedencia(capitalizarPalabras(procedencia))} className={inputCls} placeholder="Ciudad" />
+                </div>
+                <div>
+                  <label className={labelCls}>Provincia *</label>
+                  <select value={provinciaOrigen} onChange={(e) => setProvinciaOrigen(e.target.value)} className={selectCls}>
+                    <option value="">Seleccionar...</option>
+                    {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                  <FormError message={fieldErrors.provinciaOrigen} className="text-xs mt-1" />
+                </div>
               </div>
 
               {/* Destino */}
-              <div>
-                <CiudadArgentinaInput
-                  label="Ciudad de destino"
-                  value={destino}
-                  provincia={provinciaDestino}
-                  onSelect={(ciudad, prov) => { setDestino(ciudad); setProvinciaDestino(prov) }}
-                  required
-                />
-                <FormError message={fieldErrors.provinciaDestino} className="text-xs mt-1" />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className={labelCls}>Ciudad de destino</label>
+                  <input type="text" value={destino} onChange={(e) => setDestino(e.target.value)} onBlur={() => destino && setDestino(capitalizarPalabras(destino))} className={inputCls} placeholder="Ciudad" />
+                </div>
+                <div>
+                  <label className={labelCls}>Provincia *</label>
+                  <select value={provinciaDestino} onChange={(e) => setProvinciaDestino(e.target.value)} className={selectCls}>
+                    <option value="">Seleccionar...</option>
+                    {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                  <FormError message={fieldErrors.provinciaDestino} className="text-xs mt-1" />
+                </div>
               </div>
             </div>
 
@@ -361,86 +345,38 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
             <div className="space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground border-b pb-1">Económico y CPE</p>
 
-              {/* Kilos */}
               <div>
                 <label className={labelCls}>Kilos</label>
-                <input
-                  type="number"
-                  value={kilos}
-                  onChange={(e) => setKilos(e.target.value)}
-                  min="0"
-                  step="1"
-                  className={inputCls}
-                />
-                {toneladas != null && (
-                  <p className="text-xs text-muted-foreground mt-1">{toneladas} toneladas</p>
-                )}
+                <input type="number" value={kilos} onChange={(e) => setKilos(e.target.value)} min="0" step="1" className={inputCls} />
+                {toneladas != null && <p className="text-xs text-muted-foreground mt-1">{toneladas} toneladas</p>}
               </div>
 
-              {/* Tarifa */}
               <div>
                 <label className={labelCls}>Tarifa / ton *</label>
-                <input
-                  type="number"
-                  value={tarifaInput}
-                  onChange={(e) => setTarifaBase(e.target.value)}
-                  min="0"
-                  step="0.01"
-                  className={inputCls}
-                />
+                <input type="number" value={tarifaInput} onChange={(e) => setTarifaBase(e.target.value)} min="0" step="0.01" className={inputCls} />
                 <FormError message={fieldErrors.tarifa} className="text-xs mt-1" />
-                {totalCalc != null && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Referencia inicial del viaje: {formatearMoneda(totalCalc)}
-                  </p>
-                )}
+                {totalCalc != null && <p className="text-xs text-muted-foreground mt-1">Referencia inicial del viaje: {formatearMoneda(totalCalc)}</p>}
               </div>
 
-              {/* Carta de Porte */}
               <div className="space-y-3 border-t pt-3">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Carta de Porte</p>
                   <div className="flex rounded-md border overflow-hidden h-8 w-fit">
-                    <button
-                      type="button"
-                      onClick={() => setTieneCpe(true)}
-                      className={`px-3 text-xs font-medium border-r ${tieneCpe ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-                    >
-                      Sí
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setTieneCpe(false); setNroCartaPorte(""); setCartaPorteS3Key("") }}
-                      className={`px-3 text-xs font-medium ${!tieneCpe ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-                    >
-                      No
-                    </button>
+                    <button type="button" onClick={() => setTieneCpe(true)} className={`px-3 text-xs font-medium border-r ${tieneCpe ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>Sí</button>
+                    <button type="button" onClick={() => { setTieneCpe(false); setNroCartaPorte(""); setCartaPorteS3Key("") }} className={`px-3 text-xs font-medium ${!tieneCpe ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>No</button>
                   </div>
                 </div>
                 {tieneCpe ? (
                   <div className="space-y-3">
                     <div>
                       <label className={labelCls}>Nro. de carta de porte *</label>
-                      <input
-                        type="text"
-                        value={nroCartaPorte}
-                        onChange={(e) => setNroCartaPorte(e.target.value)}
-                        placeholder="Ej: 12345678"
-                        className={inputCls}
-                      />
+                      <input type="text" value={nroCartaPorte} onChange={(e) => setNroCartaPorte(e.target.value)} placeholder="Ej: 12345678" className={inputCls} />
                       <FormError message={fieldErrors.nroCartaPorte} className="text-xs mt-1" />
-                      {!fieldErrors.nroCartaPorte && (
-                        <p className="text-[11px] text-muted-foreground mt-1">Debe ser único en el sistema.</p>
-                      )}
+                      {!fieldErrors.nroCartaPorte && <p className="text-[11px] text-muted-foreground mt-1">Debe ser único en el sistema.</p>}
                     </div>
                     <div>
                       <label className={labelCls}>PDF de la carta de porte *</label>
-                      <UploadPDF
-                        prefijo="cartas-de-porte"
-                        onUpload={(key) => setCartaPorteS3Key(key)}
-                        label="Subir PDF"
-                        s3Key={cartaPorteS3Key || undefined}
-                      />
+                      <UploadPDF prefijo="cartas-de-porte" onUpload={(key) => setCartaPorteS3Key(key)} label="Subir PDF" s3Key={cartaPorteS3Key || undefined} />
                       <FormError message={fieldErrors.cartaPorteS3Key} className="text-xs mt-1" />
                     </div>
                   </div>
@@ -451,20 +387,9 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
             </div>
           </div>
 
-          {/* ── Botones ── */}
           <div className="flex justify-end gap-2 pt-6 border-t mt-6">
-            <button
-              type="button"
-              onClick={() => router.back()}
-              className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={cargando}
-              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
-            >
+            <button type="button" onClick={() => router.back()} className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent">Cancelar</button>
+            <button type="submit" disabled={cargando} className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
               {cargando ? "Guardando..." : "Crear viaje"}
             </button>
           </div>
