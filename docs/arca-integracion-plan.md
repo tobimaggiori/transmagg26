@@ -25,7 +25,6 @@
 - **ABM UI**: 5 cards (datos emisor, certificado, puntos de venta, MiPyMEs, ambiente). GET/PATCH API con verificador.
 - **Campos ARCA en modelos**: Liquidacion y NotaCreditoDebito tienen la mayoría. FacturaEmitida solo tiene estadoArca.
 - **Botones UI**: Existen "Marcar como emitida en ARCA" / "Autorizar en ARCA" (deshabilitados, sin backend).
-- **docs/ARCA_INTEGRATION.md**: Documentación parcial del flujo WSFEv1.
 
 ### Lo que NO existe
 - Capa WSAA (autenticación con certificado digital)
