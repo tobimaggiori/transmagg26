@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
  * NC_EMITIDA/ANULACION_PARCIAL: libera solo los viajes seleccionados vía viajesIds
  * NC_EMITIDA/CORRECCION_IMPORTE: crea la nota sin cambios de estado en viajes
  * ND_EMITIDA: crea la nota asociada a la factura sin cambios de estado
- * NC_RECIBIDA/ANULACION_LIQUIDACION: anula la liquidación y libera sus viajes
+ * NC_RECIBIDA: registra la nota recibida (NC/ND sobre LP bloqueadas en esta etapa)
  * ND_RECIBIDA/CHEQUE_RECHAZADO: marca el cheque como RECHAZADO
  *
  * Solo roles internos pueden crear NC/ND.

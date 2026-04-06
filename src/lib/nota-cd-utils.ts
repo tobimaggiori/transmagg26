@@ -50,7 +50,6 @@ export function labelTipoNotaCD(tipo: string): string {
  * labelSubtipoNotaCD("AJUSTE")                   === "Ajuste por inflación o contrato"
  * labelSubtipoNotaCD("PENALIDAD")                === "Penalidad al cliente"
  * labelSubtipoNotaCD("CORRECCION_ADMINISTRATIVA") === "Corrección administrativa"
- * labelSubtipoNotaCD("ANULACION_LIQUIDACION")    === "Anulación de liquidación"
  * labelSubtipoNotaCD("CHEQUE_RECHAZADO")         === "Cheque rechazado"
  * labelSubtipoNotaCD("DESCONOCIDO")              === "DESCONOCIDO"
  */
@@ -64,10 +63,6 @@ export function labelSubtipoNotaCD(subtipo: string): string {
     AJUSTE: "Ajuste por inflación o contrato",
     PENALIDAD: "Penalidad al cliente",
     CORRECCION_ADMINISTRATIVA: "Corrección administrativa",
-    ANULACION_LIQUIDACION: "Anulación de liquidación",
-    ANULACION_PARCIAL_LIQUIDACION: "Anulación parcial de liquidación",
-    CORRECCION_IMPORTE_LIQUIDACION: "Corrección de importe de liquidación",
-    AJUSTE_LIQUIDACION: "Ajuste sobre liquidación",
     CHEQUE_RECHAZADO: "Cheque rechazado",
   }
   return mapa[subtipo] ?? subtipo

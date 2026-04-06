@@ -1238,7 +1238,7 @@ model NotaCreditoDebito {
   subtipo             String?   @map("subtipo")
   // NC_EMITIDA subtipos: ANULACION_TOTAL | ANULACION_PARCIAL | CORRECCION_IMPORTE
   // ND_EMITIDA subtipos: DIFERENCIA_TARIFA | COSTO_ADICIONAL | AJUSTE | PENALIDAD | CORRECCION_ADMINISTRATIVA
-  // NC_RECIBIDA subtipos: ANULACION_LIQUIDACION
+  // NC_RECIBIDA subtipos: (NC/ND sobre LP bloqueadas en esta etapa)
   // ND_RECIBIDA subtipos: CHEQUE_RECHAZADO
 
   facturaId           String?   @map("factura_id")

@@ -13,7 +13,7 @@ import {
   calcularTotalesNotaCD,
   tipoCbteArcaParaNotaCD,
 } from "@/lib/nota-cd-utils"
-import { EstadoFacturaViaje, EstadoLiquidacionViaje } from "@/lib/viaje-workflow"
+import { EstadoFacturaViaje } from "@/lib/viaje-workflow"
 
 // ─── Próximo nro comprobante (server-only, usa prisma) ──────────────────────
 
@@ -78,7 +78,7 @@ export async function ejecutarCrearNotaCD(
     case "ND_EMITIDA":
       return crearNDEmitida(data, totales, operadorId)
     case "NC_RECIBIDA":
-      return crearNCRecibida(data, totales, operadorId)
+      return crearNCRecibida(data)
     case "ND_RECIBIDA":
       return crearNDRecibida(data, totales, operadorId)
     default:
@@ -211,8 +211,6 @@ async function crearNCEmitida(
   return { ok: false, status: 400, error: "Subtipo NC_EMITIDA no reconocido" }
 }
 
-// ─── NC_EMITIDA sobre Liquidación ───────────────────────────────────────────
-
 // ─── ND_EMITIDA ──────────────────────────────────────────────────────────────
 
 async function crearNDEmitida(
@@ -263,161 +261,10 @@ async function crearNDEmitida(
 
 async function crearNCRecibida(
   data: DatosNotaCD,
-  totales: TotalesNotaCD,
-  operadorId: string
 ): Promise<ResultadoNotaCD> {
   // NC/ND recibidas sobre LP bloqueadas en esta etapa (arca-matriz-comprobantes.md)
   if (data.liquidacionId) {
     return { ok: false, status: 400, error: "La emisión de NC/ND sobre liquidaciones no está habilitada en esta etapa" }
-  }
-
-  if (data.subtipo === "ANULACION_LIQUIDACION") {
-    if (!data.nroComprobanteExterno || !data.fechaComprobanteExterno) {
-      return { ok: false, status: 400, error: "Se requieren nroComprobanteExterno y fechaComprobanteExterno para NC_RECIBIDA" }
-    }
-    if (!data.liquidacionId) {
-      return { ok: false, status: 400, error: "Se requiere liquidacionId para NC_RECIBIDA/ANULACION_LIQUIDACION" }
-    }
-
-    const liquidacion = await prisma.liquidacion.findUnique({
-      where: { id: data.liquidacionId },
-      include: {
-        viajes: { select: { viajeId: true } },
-        notasCreditoDebito: {
-          where: { tipo: "NC_RECIBIDA", subtipo: "ANULACION_LIQUIDACION" },
-          select: { id: true },
-        },
-      },
-    })
-    if (!liquidacion) return { ok: false, status: 404, error: "Liquidación no encontrada" }
-    if (liquidacion.notasCreditoDebito.length > 0) {
-      return { ok: false, status: 400, error: "La liquidación ya tiene una NC de anulación total recibida" }
-    }
-
-    const nota = await prisma.$transaction(async (tx) => {
-      const nuevaNota = await tx.notaCreditoDebito.create({
-        data: {
-          tipo: data.tipo,
-          subtipo: data.subtipo ?? null,
-          liquidacionId: data.liquidacionId,
-          nroComprobanteExterno: data.nroComprobanteExterno ?? null,
-          fechaComprobanteExterno: data.fechaComprobanteExterno ? new Date(data.fechaComprobanteExterno) : null,
-          emisorExterno: data.emisorExterno ?? null,
-          ...totales,
-          descripcion: data.descripcion,
-          motivoDetalle: data.motivoDetalle ?? null,
-          estado: "REGISTRADA",
-          operadorId,
-        },
-      })
-
-      // La liquidación original es inmutable — el efecto económico se revierte por NC.
-
-      const viajeIds = liquidacion.viajes.map((v) => v.viajeId)
-      if (viajeIds.length > 0) {
-        // Viajes totalmente revertidos → habilitados para reliquidación
-        await tx.viaje.updateMany({
-          where: { id: { in: viajeIds } },
-          data: { estadoLiquidacion: EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR },
-        })
-      }
-
-      return nuevaNota
-    })
-    return { ok: true, nota }
-  }
-
-  if (data.subtipo === "ANULACION_PARCIAL_LIQUIDACION") {
-    if (!data.liquidacionId) {
-      return { ok: false, status: 400, error: "Se requiere liquidacionId para NC_RECIBIDA/ANULACION_PARCIAL_LIQUIDACION" }
-    }
-    if (!data.viajesIds || data.viajesIds.length === 0) {
-      return { ok: false, status: 400, error: "Se requieren viajesIds para ANULACION_PARCIAL_LIQUIDACION" }
-    }
-
-    const liquidacion = await prisma.liquidacion.findUnique({
-      where: { id: data.liquidacionId },
-      include: {
-        viajes: { select: { viajeId: true, tarifaFletero: true, kilos: true, subtotal: true } },
-      },
-    })
-    if (!liquidacion) return { ok: false, status: 404, error: "Liquidación no encontrada" }
-
-    const viajeIdsEnLiq = liquidacion.viajes.map((v) => v.viajeId)
-    const todosPertenecen = data.viajesIds.every((id) => viajeIdsEnLiq.includes(id))
-    if (!todosPertenecen) {
-      return { ok: false, status: 400, error: "Uno o más viajes no pertenecen a la liquidación" }
-    }
-
-    const nota = await prisma.$transaction(async (tx) => {
-      const nuevaNota = await tx.notaCreditoDebito.create({
-        data: {
-          tipo: data.tipo,
-          subtipo: data.subtipo ?? null,
-          liquidacionId: data.liquidacionId,
-          nroComprobanteExterno: data.nroComprobanteExterno ?? null,
-          fechaComprobanteExterno: data.fechaComprobanteExterno ? new Date(data.fechaComprobanteExterno) : null,
-          emisorExterno: data.emisorExterno ?? null,
-          ...totales,
-          descripcion: data.descripcion,
-          motivoDetalle: data.motivoDetalle ?? null,
-          estado: "REGISTRADA",
-          operadorId,
-        },
-      })
-
-      for (const viajeId of data.viajesIds!) {
-        const vel = liquidacion.viajes.find((v) => v.viajeId === viajeId)!
-        await tx.viajeEnNotaCD.create({
-          data: {
-            notaId: nuevaNota.id,
-            viajeId,
-            tarifaOriginal: vel.tarifaFletero,
-            kilosOriginal: vel.kilos ?? null,
-            subtotalOriginal: vel.subtotal,
-          },
-        })
-        // NC parcial por viaje: el viaje seleccionado queda totalmente revertido
-        // de esta liquidación → habilitado para reliquidación.
-        await tx.viaje.update({
-          where: { id: viajeId },
-          data: { estadoLiquidacion: EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR },
-        })
-      }
-
-      return nuevaNota
-    })
-    return { ok: true, nota }
-  }
-
-  if (data.subtipo === "CORRECCION_IMPORTE_LIQUIDACION") {
-    if (!data.liquidacionId) {
-      return { ok: false, status: 400, error: "Se requiere liquidacionId para NC_RECIBIDA/CORRECCION_IMPORTE_LIQUIDACION" }
-    }
-
-    const liquidacion = await prisma.liquidacion.findUnique({
-      where: { id: data.liquidacionId },
-    })
-    if (!liquidacion) return { ok: false, status: 404, error: "Liquidación no encontrada" }
-
-    const nota = await prisma.$transaction(async (tx) => {
-      return await tx.notaCreditoDebito.create({
-        data: {
-          tipo: data.tipo,
-          subtipo: data.subtipo ?? null,
-          liquidacionId: data.liquidacionId,
-          nroComprobanteExterno: data.nroComprobanteExterno ?? null,
-          fechaComprobanteExterno: data.fechaComprobanteExterno ? new Date(data.fechaComprobanteExterno) : null,
-          emisorExterno: data.emisorExterno ?? null,
-          ...totales,
-          descripcion: data.descripcion,
-          motivoDetalle: data.motivoDetalle ?? null,
-          estado: "REGISTRADA",
-          operadorId,
-        },
-      })
-    })
-    return { ok: true, nota }
   }
 
   return { ok: false, status: 400, error: "Subtipo NC_RECIBIDA no reconocido" }
@@ -456,36 +303,6 @@ async function crearNDRecibida(
           tipo: data.tipo,
           subtipo: data.subtipo ?? null,
           chequeRecibidoId: data.chequeRecibidoId,
-          nroComprobanteExterno: data.nroComprobanteExterno ?? null,
-          fechaComprobanteExterno: data.fechaComprobanteExterno ? new Date(data.fechaComprobanteExterno) : null,
-          emisorExterno: data.emisorExterno ?? null,
-          ...totales,
-          descripcion: data.descripcion,
-          motivoDetalle: data.motivoDetalle ?? null,
-          estado: "REGISTRADA",
-          operadorId,
-        },
-      })
-    })
-    return { ok: true, nota }
-  }
-
-  if (data.subtipo === "AJUSTE_LIQUIDACION") {
-    if (!data.liquidacionId) {
-      return { ok: false, status: 400, error: "Se requiere liquidacionId para ND_RECIBIDA/AJUSTE_LIQUIDACION" }
-    }
-
-    const liquidacion = await prisma.liquidacion.findUnique({
-      where: { id: data.liquidacionId },
-    })
-    if (!liquidacion) return { ok: false, status: 404, error: "Liquidación no encontrada" }
-
-    const nota = await prisma.$transaction(async (tx) => {
-      return await tx.notaCreditoDebito.create({
-        data: {
-          tipo: data.tipo,
-          subtipo: data.subtipo ?? null,
-          liquidacionId: data.liquidacionId,
           nroComprobanteExterno: data.nroComprobanteExterno ?? null,
           fechaComprobanteExterno: data.fechaComprobanteExterno ? new Date(data.fechaComprobanteExterno) : null,
           emisorExterno: data.emisorExterno ?? null,

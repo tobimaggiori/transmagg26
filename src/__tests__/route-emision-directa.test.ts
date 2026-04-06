@@ -252,8 +252,8 @@ describe("POST /api/notas-credito-debito — NC/ND emitidas por ARCA", () => {
 describe("POST /api/notas-credito-debito — NC/ND recibidas sin ARCA", () => {
   it("NC_RECIBIDA → flujo clásico, sin ARCA", async () => {
     const bodyRecibida = {
-      tipo: "NC_RECIBIDA", subtipo: "ANULACION_LIQUIDACION",
-      liquidacionId: "a0000000-0000-4000-8000-000000000040", montoNeto: 500, ivaPct: 21, descripcion: "Anulación LP",
+      tipo: "NC_RECIBIDA", subtipo: "CORRECCION_ADMINISTRATIVA",
+      montoNeto: 500, ivaPct: 21, descripcion: "Corrección administrativa",
       nroComprobanteExterno: "001", fechaComprobanteExterno: "2026-01-15",
     }
     mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-2" } })

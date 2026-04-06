@@ -50,13 +50,6 @@ const FACTURA_MOCK = {
   notasCreditoDebito: [],
 }
 
-const LIQ_MOCK = {
-  id: "liq-1",
-  estado: "EMITIDA",
-  viajes: [{ viajeId: "v1" }, { viajeId: "v2" }],
-  notasCreditoDebito: [],
-}
-
 // ─── NC_EMITIDA / ANULACION_TOTAL ───────────────────────────────────────────
 
 describe("NC_EMITIDA / ANULACION_TOTAL", () => {
@@ -417,14 +410,4 @@ describe("CONGELADO: preservación de historial documental", () => {
     expect(mockPrisma.facturaEmitida.update).not.toHaveBeenCalled()
   })
 
-  it("NC recibida total NO pone liquidación en ANULADA", async () => {
-    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQ_MOCK)
-    await ejecutarCrearNotaCD({
-      tipo: "NC_RECIBIDA", subtipo: "ANULACION_LIQUIDACION", liquidacionId: "liq-1",
-      montoNeto: 1200, ivaPct: 21, descripcion: "Anulación LP",
-      nroComprobanteExterno: "001", fechaComprobanteExterno: "2026-01-15",
-    }, "op1")
-
-    expect(mockPrisma.liquidacion.update).not.toHaveBeenCalled()
-  })
 })

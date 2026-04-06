@@ -275,11 +275,10 @@ describe("emitirNotaCDDirecta — NC_RECIBIDA no va a ARCA", () => {
   it("crea sin intentar ARCA", async () => {
     const ncRecibida = {
       tipo: "NC_RECIBIDA",
-      subtipo: "ANULACION_LIQUIDACION",
-      liquidacionId: "liq-1",
+      subtipo: "CORRECCION_ADMINISTRATIVA",
       montoNeto: 1000,
       ivaPct: 21,
-      descripcion: "Anulación LP",
+      descripcion: "Corrección administrativa",
       nroComprobanteExterno: "001",
       fechaComprobanteExterno: "2026-01-15",
     }

@@ -66,10 +66,6 @@ describe("labelSubtipoNotaCD", () => {
     expect(labelSubtipoNotaCD("CORRECCION_ADMINISTRATIVA")).toBe("Corrección administrativa")
   })
 
-  it('labelSubtipoNotaCD("ANULACION_LIQUIDACION") === "Anulación de liquidación"', () => {
-    expect(labelSubtipoNotaCD("ANULACION_LIQUIDACION")).toBe("Anulación de liquidación")
-  })
-
   it('labelSubtipoNotaCD("CHEQUE_RECHAZADO") === "Cheque rechazado"', () => {
     expect(labelSubtipoNotaCD("CHEQUE_RECHAZADO")).toBe("Cheque rechazado")
   })
