@@ -48,6 +48,7 @@ const crearViajeSchema = z.object({
   provinciaDestino: provinciaSchema,
   kilos: z.number().positive().optional(),
   tarifa: z.number().positive("La tarifa debe ser mayor a 0"),
+  comisionPct: z.number().min(0).max(100).optional(),
   estadoLiquidacion: z.string().default("PENDIENTE_LIQUIDAR"),
   estadoFactura: z.string().default("PENDIENTE_FACTURAR"),
   tieneCpe: z.boolean().default(true),

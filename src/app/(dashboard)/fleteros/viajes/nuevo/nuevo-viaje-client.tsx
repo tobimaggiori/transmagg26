@@ -28,6 +28,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
 
   const [esCamionPropio, setEsCamionPropio] = useState(false)
   const [fleteroId, setFleteroId] = useState("")
+  const [comisionPct, setComisionPct] = useState("")
   const [camionId, setCamionId] = useState("")
   const [choferId, setChoferId] = useState("")
   const [empresaId, setEmpresaId] = useState("")
@@ -60,8 +61,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
 
   const fleteroItems = fleteros.map((f) => ({ id: f.id, label: f.razonSocial, sublabel: f.cuit }))
   const empresaItems = empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: e.cuit }))
-
-  const fleteroSeleccionado = fleteros.find((f) => f.id === fleteroId)
 
   const kilosNum = parseFloat(kilos) || 0
   const tarifaNum = parsearImporte(tarifaInput)
@@ -97,7 +96,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...(esCamionPropio ? { esCamionPropio: true } : { fleteroId }),
+          ...(esCamionPropio ? { esCamionPropio: true } : { fleteroId, ...(comisionPct ? { comisionPct: parseFloat(comisionPct) } : {}) }),
           camionId,
           choferId,
           empresaId,
@@ -173,7 +172,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setEsCamionPropio(true); setFleteroId(""); setCamionId(""); setChoferId("") }}
+                    onClick={() => { setEsCamionPropio(true); setFleteroId(""); setCamionId(""); setChoferId(""); setComisionPct("") }}
                     className={`px-4 text-xs font-medium ${esCamionPropio ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
                   >
                     Camión propio Transmagg
@@ -188,14 +187,28 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                   <SearchCombobox
                     items={fleteroItems}
                     value={fleteroId}
-                    onChange={(id) => { setFleteroId(id); setCamionId("") }}
+                    onChange={(id) => {
+                    setFleteroId(id)
+                    setCamionId("")
+                    const f = fleteros.find((x) => x.id === id)
+                    setComisionPct(f ? String(f.comisionDefault) : "")
+                  }}
                     placeholder="Buscar por nombre o CUIT..."
                   />
                   <FormError message={fieldErrors.fleteroId} className="text-xs mt-1" />
-                  {fleteroSeleccionado && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Comisión: {fleteroSeleccionado.comisionDefault}%
-                    </p>
+                  {fleteroId && (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <label className="text-xs text-muted-foreground whitespace-nowrap">Comisión %</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={comisionPct}
+                        onChange={(e) => setComisionPct(e.target.value)}
+                        className="w-20 h-7 rounded-md border bg-background px-2 text-xs"
+                      />
+                    </div>
                   )}
                 </div>
               )}

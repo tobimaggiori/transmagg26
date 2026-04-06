@@ -347,6 +347,7 @@ model Viaje {
   kilos               Float?
   tarifa                 Decimal    @map("tarifa_fletero")
   tarifaEmpresa          Decimal    @map("tarifa_empresa")
+  comisionPct            Float?     @map("comision_pct")
   // Campo legacy — existe en Turso con NOT NULL. Se mantiene con default para no romper inserts.
   tarifaOperativaInicial Decimal    @default(0) @map("tarifa_operativa_inicial")
   estadoLiquidacion   String   @default("PENDIENTE_LIQUIDAR") @map("estado_liquidacion")

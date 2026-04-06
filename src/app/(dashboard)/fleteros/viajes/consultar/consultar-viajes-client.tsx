@@ -36,6 +36,7 @@ type ViajeAPI = {
   kilos: number | null
   tarifa: number
   tarifaEmpresa: number
+  comisionPct: number | null
   toneladas: number
   total: number
   tieneCpe: boolean
@@ -101,6 +102,7 @@ type FormViaje = {
   kilos: string
   tarifa: string
   tarifaEmpresa: string
+  comisionPct: string
   empresaId: string
   fleteroId: string
   camionId: string
@@ -121,6 +123,7 @@ function formDesdeViaje(v: ViajeAPI): FormViaje {
     kilos: v.kilos != null ? String(v.kilos) : "",
     tarifa: String(v.tarifa ?? ""),
     tarifaEmpresa: String(v.tarifaEmpresa ?? ""),
+    comisionPct: v.comisionPct != null ? String(v.comisionPct) : "",
     empresaId: v.empresaId,
     fleteroId: v.fleteroId ?? "",
     camionId: v.camionId,
@@ -296,6 +299,7 @@ function ModalDetalle({
     kilos: puedeEditarTodo || puedeEditarParcial,
     tarifa: puedeEditarTodo,
     tarifaEmpresa: puedeEditarTodo || puedeEditarParcial,
+    comisionPct: puedeEditarTodo,
   }
 
   const historial: EntradaHistorial[] = (() => {
@@ -369,6 +373,7 @@ function ModalDetalle({
       if (form.kilos !== original.kilos) body.kilos = form.kilos ? parseFloat(form.kilos) : null
       if (form.tarifa !== original.tarifa) body.tarifa = form.tarifa ? Number(form.tarifa) : undefined
       if (form.tarifaEmpresa !== original.tarifaEmpresa) body.tarifaEmpresa = form.tarifaEmpresa ? Number(form.tarifaEmpresa) : undefined
+      if (form.comisionPct !== original.comisionPct) body.comisionPct = form.comisionPct ? Number(form.comisionPct) : null
       if (empresaCambio) {
         body.empresaId = form.empresaId
         body.motivoCambioEmpresa = motivo.trim()
@@ -789,6 +794,26 @@ function ModalDetalle({
                   onCancel={() => cancelEdit("tarifaEmpresa")}
                 />
               </EditableField>
+
+              {/* Comisión */}
+              {!viaje.esCamionPropio && (
+                <EditableField
+                  label="Comisión %"
+                  value={form.comisionPct ? `${form.comisionPct}%` : (viaje.comisionPct != null ? `${viaje.comisionPct}%` : "—")}
+                  canEdit={editable.comisionPct}
+                  editing={isEditing("comisionPct")}
+                  onToggleEdit={() => toggleEdit("comisionPct")}
+                >
+                  <InlineInput
+                    type="number"
+                    step="0.01"
+                    value={form.comisionPct}
+                    onChange={(v) => setField("comisionPct", v)}
+                    onConfirm={() => closeEdit("comisionPct")}
+                    onCancel={() => cancelEdit("comisionPct")}
+                  />
+                </EditableField>
+              )}
 
               {/* CPE */}
               <div className="space-y-1">

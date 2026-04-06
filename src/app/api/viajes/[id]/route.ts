@@ -35,6 +35,7 @@ const actualizarViajeSchema = z.object({
   kilos: z.number().positive().nullable().optional(),
   tarifa: z.number().positive().optional(),
   tarifaEmpresa: z.number().positive().optional(),
+  comisionPct: z.number().min(0).max(100).nullable().optional(),
   cartaPorteS3Key: z.string().nullable().optional(),
   empresaId: z.string().optional(),
   motivoCambioEmpresa: z.string().optional(),
