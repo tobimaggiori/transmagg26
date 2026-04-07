@@ -180,14 +180,25 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
     setPreview: (v: string | null) => void,
     field: "logoComprobanteB64" | "logoArcaB64"
   ) {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result as string
-      const b64 = result.split(",")[1]
-      setPreview(result)
+    const img = document.createElement("img")
+    img.onload = () => {
+      const MAX = 200
+      let w = img.width, h = img.height
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX }
+        else { w = Math.round(w * MAX / h); h = MAX }
+      }
+      const canvas = document.createElement("canvas")
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext("2d")!
+      ctx.drawImage(img, 0, 0, w, h)
+      const dataUrl = canvas.toDataURL("image/png", 0.8)
+      const b64 = dataUrl.split(",")[1]
+      setPreview(dataUrl)
       patch({ [field]: b64 }, field)
     }
-    reader.readAsDataURL(file)
+    img.src = URL.createObjectURL(file)
   }
 
   // Confirmación producción
