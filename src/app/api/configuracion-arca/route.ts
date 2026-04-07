@@ -124,12 +124,18 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 
-  const body = await req.json()
+  let body
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: "Body JSON inválido" }, { status: 400 })
+  }
   const parsed = patchSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
 
+  try {
   const { puntosVenta, comprobantesHabilitados, certificadoB64, certificadoPass, logoComprobanteB64, logoArcaB64, ...rest } = parsed.data
 
   // Cifrar certificado y password si están presentes
@@ -204,6 +210,11 @@ export async function PATCH(req: NextRequest) {
   }
 
   return NextResponse.json(serializarConfig(updated))
+  } catch (err) {
+    console.error("[PATCH /api/configuracion-arca] Error:", err)
+    const mensaje = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ error: `Error al guardar configuración: ${mensaje}` }, { status: 500 })
+  }
 }
 
 /** Serializa ConfiguracionArca de Prisma a JSON seguro para el cliente */

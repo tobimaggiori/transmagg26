@@ -203,10 +203,14 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       })
-      if (!res.ok) { alert("Error al guardar"); return }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        alert(data.error ?? "Error al guardar")
+        return
+      }
       const updated = await res.json()
       setConfig(updated)
-    } catch { alert("Error de red") }
+    } catch (e) { alert(`Error de red: ${e instanceof Error ? e.message : "desconocido"}`) }
     finally { setSaving(null) }
   }
 
