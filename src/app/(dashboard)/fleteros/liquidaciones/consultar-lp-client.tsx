@@ -65,6 +65,19 @@ type ConsultarLPClientProps = {
   fleteroIdPropio: string | null
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatCuit(cuit: string): string {
+  const clean = cuit.replace(/\D/g, "")
+  if (clean.length !== 11) return cuit
+  return `${clean.slice(0, 2)}-${clean.slice(2, 10)}-${clean.slice(10)}`
+}
+
+function resolverEstadoLP(liq: Liquidacion): "EMITIDO" | "PAGADO" {
+  const tienePagoConfirmado = liq.pagos.some((p) => !p.anulado && p.ordenPago)
+  return tienePagoConfirmado ? "PAGADO" : "EMITIDO"
+}
+
 // ─── Combobox Fletero ────────────────────────────────────────────────────────
 
 function ComboboxFletero({ fleteros, value, onChange }: { fleteros: Fletero[]; value: string; onChange: (v: string) => void }) {
@@ -96,22 +109,16 @@ function ComboboxFletero({ fleteros, value, onChange }: { fleteros: Fletero[]; v
           <CommandList>
             <CommandEmpty>No se encontraron fleteros.</CommandEmpty>
             <CommandGroup>
-              <CommandItem
-                onSelect={() => { onChange(""); setOpen(false); setBusqueda("") }}
-              >
+              <CommandItem onSelect={() => { onChange(""); setOpen(false); setBusqueda("") }}>
                 <Check className={cn("mr-2 h-4 w-4", value === "" ? "opacity-100" : "opacity-0")} />
                 Todos los fleteros
               </CommandItem>
               {filtrados.map((f) => (
-                <CommandItem
-                  key={f.id}
-                  value={f.id}
-                  onSelect={() => { onChange(f.id); setOpen(false); setBusqueda("") }}
-                >
+                <CommandItem key={f.id} value={f.id} onSelect={() => { onChange(f.id); setOpen(false); setBusqueda("") }}>
                   <Check className={cn("mr-2 h-4 w-4", value === f.id ? "opacity-100" : "opacity-0")} />
                   <div>
                     <p className="font-medium">{f.razonSocial}</p>
-                    <p className="text-xs text-muted-foreground">CUIT: {f.cuit}</p>
+                    <p className="text-xs text-muted-foreground">CUIT: {formatCuit(f.cuit)}</p>
                   </div>
                 </CommandItem>
               ))}
@@ -123,26 +130,14 @@ function ComboboxFletero({ fleteros, value, onChange }: { fleteros: Fletero[]; v
   )
 }
 
-// ─── Helpers de estado ───────────────────────────────────────────────────────
-
-function resolverEstadoLP(liq: Liquidacion): "EMITIDO" | "PAGADO" | "NO_PAGADO" {
-  const tienePagoConfirmado = liq.pagos.some((p) => !p.anulado && p.ordenPago)
-  if (tienePagoConfirmado) return "PAGADO"
-  return liq.nroComprobante ? "EMITIDO" : "NO_PAGADO"
-}
-
 // ─── Modal detalle LP ────────────────────────────────────────────────────────
 
 function ModalDetalleLP({
-  liq,
-  onCerrar,
-  onAbrirPDF,
+  liq, onCerrar, onAbrirPDF,
 }: {
-  liq: Liquidacion
-  onCerrar: () => void
+  liq: Liquidacion; onCerrar: () => void
   onAbrirPDF: (params: { s3Key: string; titulo: string }) => void
 }) {
-
   const nroLP = liq.nroComprobante
     ? `${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${formatearNroComprobante(liq.nroComprobante)}`
     : "Sin nro"
@@ -150,17 +145,13 @@ function ModalDetalleLP({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-background rounded-xl shadow-xl w-[90vw] max-h-[90vh] overflow-y-auto">
-        {/* Cabecera */}
         <div className="sticky top-0 bg-background border-b px-6 py-4 flex items-center justify-between z-10">
-          <div>
-            <h2 className="text-lg font-semibold">
-              LP Nro: {nroLP} | Fletero: {liq.fletero.razonSocial.toUpperCase()} | Fecha: {formatearFecha(new Date(liq.grabadaEn))}
-            </h2>
-          </div>
+          <h2 className="text-lg font-semibold">
+            LP Nro: {nroLP} | Fletero: {liq.fletero.razonSocial.toUpperCase()} | Fecha: {formatearFecha(new Date(liq.grabadaEn))}
+          </h2>
           <button onClick={onCerrar} className="text-muted-foreground hover:text-foreground text-xl leading-none">&times;</button>
         </div>
 
-        {/* Tabla de viajes */}
         <div className="px-6 py-4">
           <div className="overflow-x-auto rounded border">
             <table className="min-w-full text-sm">
@@ -187,19 +178,10 @@ function ModalDetalleLP({
                     <td className="px-3 py-2">
                       {v.viaje?.nroCartaPorte ? (
                         v.viaje.cartaPorteS3Key ? (
-                          <button
-                            type="button"
-                            onClick={() => onAbrirPDF({
-                              s3Key: v.viaje!.cartaPorteS3Key!,
-                              titulo: `Carta de Porte — ${v.viaje!.nroCartaPorte}`,
-                            })}
-                            className="text-primary hover:underline font-medium"
-                          >
+                          <button type="button" onClick={() => onAbrirPDF({ s3Key: v.viaje!.cartaPorteS3Key!, titulo: `Carta de Porte — ${v.viaje!.nroCartaPorte}` })} className="text-primary hover:underline font-medium">
                             {v.viaje.nroCartaPorte}
                           </button>
-                        ) : (
-                          v.viaje.nroCartaPorte
-                        )
+                        ) : v.viaje.nroCartaPorte
                       ) : <span className="text-muted-foreground">N/A</span>}
                     </td>
                     <td className="px-3 py-2">{v.remito ?? "—"}</td>
@@ -218,7 +200,6 @@ function ModalDetalleLP({
             </table>
           </div>
 
-          {/* Totales */}
           <div className="mt-4 space-y-1 text-sm max-w-md ml-auto">
             <div className="flex justify-between"><span>Total Viajes:</span><span>{formatearMoneda(liq.subtotalBruto)}</span></div>
             <div className="flex justify-between"><span>Comisión ({liq.comisionPct}%):</span><span>-{formatearMoneda(liq.comisionMonto)}</span></div>
@@ -228,14 +209,8 @@ function ModalDetalleLP({
           </div>
         </div>
 
-        {/* Footer */}
         <div className="sticky bottom-0 bg-background border-t px-6 py-4 flex justify-end">
-          <button
-            onClick={onCerrar}
-            className="h-9 px-6 rounded-md border text-sm font-medium hover:bg-accent"
-          >
-            Cerrar
-          </button>
+          <button onClick={onCerrar} className="h-9 px-6 rounded-md border text-sm font-medium hover:bg-accent">Cerrar</button>
         </div>
       </div>
     </div>
@@ -245,13 +220,9 @@ function ModalDetalleLP({
 // ─── Tabla ────────────────────────────────────────────────────────────────────
 
 function TablaLiquidaciones({
-  liquidaciones,
-  fleteros,
-  onAbrirPDF,
-  onVerDetalle,
+  liquidaciones, fleteros, mostrarFletero, onAbrirPDF, onVerDetalle,
 }: {
-  liquidaciones: Liquidacion[]
-  fleteros: Fletero[]
+  liquidaciones: Liquidacion[]; fleteros: Fletero[]; mostrarFletero: boolean
   onAbrirPDF: (params: { url: string; titulo: string } | { fetchUrl: string; titulo: string }) => void
   onVerDetalle: (liq: Liquidacion) => void
 }) {
@@ -262,8 +233,7 @@ function TablaLiquidaciones({
           <tr className="uppercase text-xs font-semibold">
             <th className="px-3 py-2 text-left">Fecha</th>
             <th className="px-3 py-2 text-left">Nro</th>
-            <th className="px-3 py-2 text-left">Fletero</th>
-            <th className="px-3 py-2 text-left">CUIT</th>
+            {mostrarFletero && <th className="px-3 py-2 text-left">Fletero</th>}
             <th className="px-3 py-2 text-left">OP Nro</th>
             <th className="px-3 py-2 text-center">Detalle</th>
           </tr>
@@ -275,54 +245,34 @@ function TablaLiquidaciones({
               : null
             const op = liq.pagos.find((p) => !p.anulado && p.ordenPago)?.ordenPago
             const fletero = fleteros.find((f) => f.id === liq.fleteroId)
-            const cuit = liq.fletero.cuit ?? fletero?.cuit ?? "—"
+            const cuit = liq.fletero.cuit ?? fletero?.cuit ?? ""
             return (
               <tr key={liq.id} className="hover:bg-muted/30">
                 <td className="px-3 py-2 whitespace-nowrap">{formatearFecha(new Date(liq.grabadaEn))}</td>
                 <td className="px-3 py-2 font-mono text-xs">
                   {nroLP ? (
-                    <button
-                      type="button"
-                      onClick={() => onAbrirPDF({
-                        fetchUrl: `/api/liquidaciones/${liq.id}/pdf`,
-                        titulo: `LP ${nroLP} — ${liq.fletero.razonSocial}`,
-                      })}
-                      className="text-primary hover:underline font-medium"
-                    >
+                    <button type="button" onClick={() => onAbrirPDF({ fetchUrl: `/api/liquidaciones/${liq.id}/pdf`, titulo: `LP ${nroLP} — ${liq.fletero.razonSocial}` })} className="text-primary hover:underline font-medium">
                       {nroLP}
                     </button>
-                  ) : (
-                    <span className="text-muted-foreground">Sin nro</span>
-                  )}
+                  ) : <span className="text-muted-foreground">Sin nro</span>}
                 </td>
-                <td className="px-3 py-2 uppercase">{liq.fletero.razonSocial}</td>
-                <td className="px-3 py-2 font-mono text-xs">{cuit}</td>
+                {mostrarFletero && (
+                  <td className="px-3 py-2">
+                    <p className="font-medium">{liq.fletero.razonSocial}</p>
+                    {cuit && <p className="text-xs text-muted-foreground">{formatCuit(cuit)}</p>}
+                  </td>
+                )}
                 <td className="px-3 py-2 font-mono text-xs">
                   {op ? (
-                    <button
-                      type="button"
-                      onClick={() => onAbrirPDF({
-                        url: `/api/ordenes-pago/${op.id}/pdf`,
-                        titulo: `OP Nro ${String(op.nro).padStart(8, "0")}`,
-                      })}
-                      className="text-primary hover:underline font-medium"
-                    >
+                    <button type="button" onClick={() => onAbrirPDF({ url: `/api/ordenes-pago/${op.id}/pdf`, titulo: `OP Nro ${String(op.nro).padStart(8, "0")}` })} className="text-primary hover:underline font-medium">
                       {String(op.nro).padStart(8, "0")}
                     </button>
                   ) : (
-                    <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700">
-                      NO PAGADO
-                    </span>
+                    <span className="text-xs text-muted-foreground">—</span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-center">
-                  <button
-                    type="button"
-                    onClick={() => onVerDetalle(liq)}
-                    className="h-7 px-3 rounded border text-xs font-medium hover:bg-accent"
-                  >
-                    Ver
-                  </button>
+                  <button type="button" onClick={() => onVerDetalle(liq)} className="h-7 px-3 rounded border text-xs font-medium hover:bg-accent">Ver</button>
                 </td>
               </tr>
             )
@@ -335,6 +285,10 @@ function TablaLiquidaciones({
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
+const hoy = new Date()
+const hace30 = new Date(hoy)
+hace30.setDate(hace30.getDate() - 30)
+
 export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarLPClientProps) {
   const esInterno = rol === "ADMIN_TRANSMAGG" || rol === "OPERADOR_TRANSMAGG"
   const { estado: estadoPDF, abrirPDF, cerrarPDF } = usePDFViewer()
@@ -344,19 +298,22 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
   const [cargando, setCargando] = useState(false)
   const [liquidacionDetalle, setLiquidacionDetalle] = useState<Liquidacion | null>(null)
 
-  // Filtros
-  const [filtroEstado, setFiltroEstado] = useState<string>("")
-  const [filtroDesde, setFiltroDesde] = useState<string>("")
-  const [filtroHasta, setFiltroHasta] = useState<string>("")
+  // Filtros con defaults
+  const [filtroEstado, setFiltroEstado] = useState<string>("EMITIDO")
+  const [filtroDesde, setFiltroDesde] = useState<string>(hace30.toISOString().slice(0, 10))
+  const [filtroHasta, setFiltroHasta] = useState<string>(hoy.toISOString().slice(0, 10))
   const [filtroNroLP, setFiltroNroLP] = useState<string>("")
 
+  const fleteroSeleccionado = fleteros.find((f) => f.id === fleteroId)
+  const mostrarFletero = !fleteroId
+
   const cargarDatos = useCallback(async () => {
-    if (!fleteroId && esInterno) return
     const idAUsar = fleteroId || fleteroIdPropio
-    if (!idAUsar) return
     setCargando(true)
     try {
-      const res = await fetch(`/api/liquidaciones?fleteroId=${idAUsar}`)
+      const params = new URLSearchParams()
+      if (idAUsar) params.set("fleteroId", idAUsar)
+      const res = await fetch(`/api/liquidaciones?${params.toString()}`)
       if (res.ok) {
         const data = await res.json()
         setLiquidaciones(data.liquidaciones ?? [])
@@ -364,14 +321,13 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
     } finally {
       setCargando(false)
     }
-  }, [fleteroId, fleteroIdPropio, esInterno])
+  }, [fleteroId, fleteroIdPropio])
 
   useEffect(() => {
     cargarDatos()
   }, [cargarDatos])
 
   const liquidacionesFiltradas = liquidaciones.filter((liq) => {
-    // Filtro por estado semántico
     if (filtroEstado) {
       const estadoSem = resolverEstadoLP(liq)
       if (estadoSem !== filtroEstado) return false
@@ -395,6 +351,8 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
     return true
   })
 
+  const labelCls = "text-xs font-medium text-gray-800"
+
   return (
     <div className="space-y-6">
       <div>
@@ -408,54 +366,39 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
       <div className="flex flex-wrap gap-4 p-4 bg-muted/40 rounded-lg border">
         {esInterno && (
           <div className="flex flex-col gap-1 min-w-[220px]">
-            <label className="text-xs font-medium text-muted-foreground">Fletero</label>
-            <ComboboxFletero
-              fleteros={fleteros}
-              value={fleteroId}
-              onChange={setFleteroId}
-            />
+            <label className={labelCls}>Fletero</label>
+            <ComboboxFletero fleteros={fleteros} value={fleteroId} onChange={setFleteroId} />
           </div>
         )}
-        <div className="flex flex-col gap-1 min-w-[120px]">
-          <label className="text-xs font-medium text-muted-foreground">Nro LP</label>
+        <div className="flex flex-col gap-1 min-w-[160px]">
+          <label className={labelCls}>Nro LP</label>
           <input
             type="text"
             value={filtroNroLP}
             onChange={(e) => setFiltroNroLP(e.target.value)}
-            placeholder="Ej: 7138"
-            className="h-9 rounded-md border bg-background px-2 text-sm"
+            placeholder="Ej: 0001-00000010"
+            className="h-9 rounded-md border bg-background px-2 text-sm text-gray-900"
           />
         </div>
-        <div className="flex flex-col gap-1 min-w-[160px]">
-          <label className="text-xs font-medium text-muted-foreground">Estado</label>
+        <div className="flex flex-col gap-1 min-w-[140px]">
+          <label className={labelCls}>Estado</label>
           <select
             value={filtroEstado}
             onChange={(e) => setFiltroEstado(e.target.value)}
-            className="h-9 rounded-md border bg-background px-2 text-sm"
+            className="h-9 rounded-md border bg-background px-2 text-sm text-gray-900"
           >
             <option value="">Todos</option>
-            <option value="EMITIDO">EMITIDO</option>
-            <option value="PAGADO">PAGADO</option>
-            <option value="NO_PAGADO">NO PAGADO</option>
+            <option value="EMITIDO">Emitido</option>
+            <option value="PAGADO">Pagado</option>
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Desde</label>
-          <input
-            type="date"
-            value={filtroDesde}
-            onChange={(e) => setFiltroDesde(e.target.value)}
-            className="h-9 rounded-md border bg-background px-2 text-sm"
-          />
+          <label className={labelCls}>Desde</label>
+          <input type="date" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} className="h-9 rounded-md border bg-background px-2 text-sm text-gray-900" />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Hasta</label>
-          <input
-            type="date"
-            value={filtroHasta}
-            onChange={(e) => setFiltroHasta(e.target.value)}
-            className="h-9 rounded-md border bg-background px-2 text-sm"
-          />
+          <label className={labelCls}>Hasta</label>
+          <input type="date" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} className="h-9 rounded-md border bg-background px-2 text-sm text-gray-900" />
         </div>
         {(filtroEstado || filtroDesde || filtroHasta || filtroNroLP) && (
           <div className="flex items-end">
@@ -469,10 +412,15 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
         )}
       </div>
 
+      {/* Encabezado contextual */}
+      {fleteroSeleccionado && (
+        <p className="text-sm font-medium text-gray-700">
+          Historial de Líquidos Productos emitidos a {fleteroSeleccionado.razonSocial} (CUIT: {formatCuit(fleteroSeleccionado.cuit)})
+        </p>
+      )}
+
       {/* Tabla */}
-      {esInterno && !fleteroId ? (
-        <div className="text-center py-10 text-muted-foreground">Seleccioná un fletero para ver sus liquidaciones.</div>
-      ) : cargando ? (
+      {cargando ? (
         <div className="text-center py-10 text-muted-foreground">Cargando...</div>
       ) : liquidacionesFiltradas.length === 0 ? (
         <div className="text-center py-10 text-muted-foreground">Sin liquidaciones para los filtros seleccionados.</div>
@@ -480,6 +428,7 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
         <TablaLiquidaciones
           liquidaciones={liquidacionesFiltradas}
           fleteros={fleteros}
+          mostrarFletero={mostrarFletero}
           onAbrirPDF={(params) => abrirPDF(params)}
           onVerDetalle={(liq) => setLiquidacionDetalle(liq)}
         />
@@ -487,11 +436,7 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
 
       {/* Modal detalle */}
       {liquidacionDetalle && (
-        <ModalDetalleLP
-          liq={liquidacionDetalle}
-          onCerrar={() => setLiquidacionDetalle(null)}
-          onAbrirPDF={(params) => abrirPDF(params)}
-        />
+        <ModalDetalleLP liq={liquidacionDetalle} onCerrar={() => setLiquidacionDetalle(null)} onAbrirPDF={(params) => abrirPDF(params)} />
       )}
 
       <PDFViewer {...estadoPDF} onClose={cerrarPDF} />
