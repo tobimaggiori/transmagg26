@@ -182,11 +182,12 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
   ) {
     const img = document.createElement("img")
     img.onload = () => {
-      const MAX = 200
+      const MAX_W = 820, MAX_H = 354
       let w = img.width, h = img.height
-      if (w > MAX || h > MAX) {
-        if (w > h) { h = Math.round(h * MAX / w); w = MAX }
-        else { w = Math.round(w * MAX / h); h = MAX }
+      if (w > MAX_W || h > MAX_H) {
+        const ratio = Math.min(MAX_W / w, MAX_H / h)
+        w = Math.round(w * ratio)
+        h = Math.round(h * ratio)
       }
       const canvas = document.createElement("canvas")
       canvas.width = w
