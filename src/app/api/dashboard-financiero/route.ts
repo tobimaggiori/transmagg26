@@ -128,7 +128,11 @@ export async function GET() {
     let cuentasResultado: Array<Record<string, unknown>> = []
     try {
       const cuentas = await prisma.cuenta.findMany({
-        where: { activa: true },
+        where: {
+          activa: true,
+          // Excluir entidades padre (cuentas sin cuentaPadreId que tienen sub-cuentas)
+          NOT: { cuentaPadreId: null, subCuentas: { some: {} } },
+        },
         select: {
           id: true, nombre: true, tipo: true, moneda: true, activa: true, saldoInicial: true,
           movimientosSinFactura: { select: { monto: true, tipo: true, categoria: true } },

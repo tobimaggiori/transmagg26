@@ -640,8 +640,6 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [modalAbierto, setModalAbierto] = useState<ModalTipo>(null)
-  const [efectivoCaja, setEfectivoCaja] = useState<number | null>(null)
-
   useEffect(() => {
     fetch("/api/dashboard-financiero")
       .then((r) => r.json())
@@ -654,10 +652,6 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
         setLoading(false)
       })
       .catch(() => setLoading(false))
-    fetch("/api/dashboard-financiero/efectivo-caja")
-      .then((r) => r.json())
-      .then((d: { efectivoEnCaja: number }) => setEfectivoCaja(d.efectivoEnCaja ?? null))
-      .catch(() => null)
   }, [])
 
   if (loading) {
@@ -813,19 +807,6 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
           </Card>
         )}
 
-        {permisos.includes("dashboard.efectivo_caja") && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Efectivo en Caja</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className={`text-2xl font-bold ${efectivoCaja !== null && efectivoCaja < 0 ? "text-destructive" : ""}`}>
-                {efectivoCaja !== null ? formatearMoneda(efectivoCaja) : "—"}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">Cobros − Pagos en efectivo</p>
-            </CardContent>
-          </Card>
-        )}
       </div>
 
       {/* Sección cuentas */}
