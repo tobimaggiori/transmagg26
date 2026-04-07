@@ -1,8 +1,13 @@
 /**
- * Propósito: Generación del PDF de Factura Emitida a empresa.
- * Diseño oficial ARCA: encabezado 3 columnas, datos receptor, tabla de viajes,
- * totales y pie con QR fiscal + logo ARCA anclado al fondo de la página.
- * Tamaño A4 imprimible con márgenes de 15mm.
+ * generarPDFFactura: string -> Promise<Buffer>
+ *
+ * Propósito: Genera el PDF de una Factura Emitida a empresa con diseño moderno.
+ * Template con paleta navy/celeste, íconos vectoriales, tabla con header redondeado,
+ * pie navy con QR fiscal y paginación dinámica (bufferPages).
+ *
+ * Ejemplos:
+ * generarPDFFactura("abc-123") => Buffer de PDF A4 con los datos de la factura
+ * generarPDFFactura("inexistente") => throws Error("Factura inexistente no encontrada")
  */
 
 import { prisma } from "@/lib/prisma"
@@ -11,7 +16,15 @@ import PDFDocument from "pdfkit"
 import QRCode from "qrcode"
 import { obtenerUrlQRFiscal } from "@/lib/arca/qr"
 
-// ─── Helpers de formato ──────────────────────────────────────────────────────
+// ─── Paleta ─────────────────────────────────────────────────────────────────
+
+const NAVY = "#1e3a5f"
+const BG_LIGHT = "#edf1f7"
+const BORDER = "#c8d1dc"
+const TEXT = "#1a1a1a"
+const HEADER_BG = "#dce3ed"
+
+// ─── Helpers de formato ─────────────────────────────────────────────────────
 
 function fmtMoneda(n: number): string {
   const parts = Math.abs(n).toFixed(2).split(".")
@@ -49,7 +62,72 @@ function nombreTipoCbte(tipoCbte: number): string {
   return `Comprobante (${tipoCbte})`
 }
 
-// ─── Generador ───────────────────────────────────────────────────────────────
+/**
+ * codigoCbte: number -> string
+ *
+ * Propósito: Retorna el código de comprobante con padStart(2, "0").
+ *
+ * Ejemplos:
+ * codigoCbte(1) => "01"
+ * codigoCbte(201) => "201"
+ */
+function codigoCbte(tipoCbte: number): string {
+  return String(tipoCbte).padStart(2, "0")
+}
+
+// ─── Íconos vectoriales ─────────────────────────────────────────────────────
+
+/** Ícono persona (8x8): cabeza circular + hombros semicirculares */
+function drawIconPersona(doc: PDFKit.PDFDocument, x: number, y: number): void {
+  const cx = x + 4
+  doc.save()
+  doc.fillColor(NAVY)
+  // Cabeza
+  doc.circle(cx, y + 2, 2).fill()
+  // Hombros (arco)
+  doc.path(`M ${cx - 3.5} ${y + 8} Q ${cx - 3.5} ${y + 4.5} ${cx} ${y + 4.5} Q ${cx + 3.5} ${y + 4.5} ${cx + 3.5} ${y + 8} Z`).fill()
+  doc.restore()
+}
+
+/** Ícono documento (8x8): rectángulo con 2 líneas internas */
+function drawIconDocumento(doc: PDFKit.PDFDocument, x: number, y: number): void {
+  doc.save()
+  doc.strokeColor(NAVY).lineWidth(0.8)
+  doc.rect(x + 0.5, y, 7, 8).stroke()
+  doc.moveTo(x + 2, y + 2.5).lineTo(x + 6, y + 2.5).stroke()
+  doc.moveTo(x + 2, y + 5).lineTo(x + 6, y + 5).stroke()
+  doc.restore()
+}
+
+/** Ícono pin de ubicación (8x8): gota invertida con círculo vacío */
+function drawIconPin(doc: PDFKit.PDFDocument, x: number, y: number): void {
+  const cx = x + 4
+  doc.save()
+  doc.fillColor(NAVY)
+  doc.path(
+    `M ${cx} ${y + 8} ` +
+    `C ${cx - 1} ${y + 6} ${cx - 3.5} ${y + 3.5} ${cx - 3.5} ${y + 2.5} ` +
+    `C ${cx - 3.5} ${y + 0.5} ${cx - 2} ${y} ${cx} ${y} ` +
+    `C ${cx + 2} ${y} ${cx + 3.5} ${y + 0.5} ${cx + 3.5} ${y + 2.5} ` +
+    `C ${cx + 3.5} ${y + 3.5} ${cx + 1} ${y + 6} ${cx} ${y + 8} Z`
+  ).fill()
+  // Círculo vacío interior
+  doc.fillColor("white")
+  doc.circle(cx, y + 2.8, 1.2).fill()
+  doc.restore()
+}
+
+/** Ícono tarjeta de crédito (8x6): rectángulo redondeado con banda magnética */
+function drawIconTarjeta(doc: PDFKit.PDFDocument, x: number, y: number): void {
+  doc.save()
+  doc.strokeColor(NAVY).lineWidth(0.8)
+  doc.roundedRect(x, y + 1, 8, 6, 1).stroke()
+  doc.fillColor(NAVY)
+  doc.rect(x, y + 3, 8, 1.5).fill()
+  doc.restore()
+}
+
+// ─── Generador ──────────────────────────────────────────────────────────────
 
 export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
   const fac = await prisma.facturaEmitida.findUnique({
@@ -96,260 +174,372 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
 
   return new Promise((resolve, reject) => {
     const margin = 42.52 // ~15mm
-    const doc = new PDFDocument({ margin, size: "A4" })
+    const doc = new PDFDocument({ margin, size: "A4", bufferPages: true })
     const chunks: Buffer[] = []
     doc.on("data", (chunk: Buffer) => chunks.push(chunk))
     doc.on("end", () => resolve(Buffer.concat(chunks)))
     doc.on("error", reject)
 
-    const pageW = 595.28 // A4 width in points
-    const pageH = 841.89 // A4 height in points
+    const pageW = 595.28
+    const pageH = 841.89
     const left = margin
     const right = pageW - margin
     const contentW = right - left
+    const footerH = 72
+    const footerLineY = pageH - margin - footerH
 
-    // ─── ENCABEZADO (3 columnas con borde) ─────────────────────────────
+    // ─── 1. LÍNEA DECORATIVA SUPERIOR ──────────────────────────────────
 
-    const headerTop = margin
-    const headerH = 110
-    const headerBottom = headerTop + headerH
-    const colCenterX = left + contentW * 0.4
-    const colRightX = left + contentW * 0.6
+    doc.save()
+    doc.strokeColor(NAVY).lineWidth(2.5)
+    doc.moveTo(left, margin).lineTo(right, margin).stroke()
+    doc.restore()
 
-    // Borde exterior
-    doc.strokeColor("#000000").lineWidth(1)
-      .rect(left, headerTop, contentW, headerH).stroke()
+    let cursorY = margin + 10
 
-    // Líneas verticales separadoras
-    doc.moveTo(colCenterX, headerTop).lineTo(colCenterX, headerBottom).stroke()
-    doc.moveTo(colRightX, headerTop).lineTo(colRightX, headerBottom).stroke()
+    // ─── 2. ENCABEZADO ─────────────────────────────────────────────────
 
-    // ── Columna izquierda: logo + datos emisor
-    const colLeftPad = left + 8
-    let leftY = headerTop + 8
+    const headerLeftW = contentW * 0.48
+    const headerRightW = contentW * 0.48
+    const headerRightX = right - headerRightW
 
+    // Izquierda: logo + datos emisor
+    let leftY = cursorY
     if (emisor.logoComprobante) {
       try {
-        doc.image(emisor.logoComprobante, colLeftPad, leftY, { width: 60, height: 40, fit: [60, 40] })
-      } catch { /* skip invalid image */ }
-      leftY += 44
+        doc.image(emisor.logoComprobante, left, leftY, { fit: [180, 50] })
+        leftY += 54
+      } catch {
+        doc.font("Helvetica-Bold").fontSize(16).fillColor(TEXT)
+          .text(emisor.razonSocial, left, leftY, { width: headerLeftW })
+        leftY = doc.y + 4
+      }
+    } else {
+      doc.font("Helvetica-Bold").fontSize(16).fillColor(TEXT)
+        .text(emisor.razonSocial, left, leftY, { width: headerLeftW })
+      leftY = doc.y + 4
     }
 
-    doc.font("Helvetica-Bold").fontSize(9).fillColor("#000000")
-      .text(emisor.razonSocial, colLeftPad, leftY, { width: colCenterX - colLeftPad - 8 })
-    leftY = doc.y + 2
-    doc.font("Helvetica").fontSize(8)
-      .text(emisor.domicilio, colLeftPad, leftY, { width: colCenterX - colLeftPad - 8 })
-    leftY = doc.y + 2
-    doc.text(`Condición IVA: ${emisor.condicionIva}`, colLeftPad, leftY, { width: colCenterX - colLeftPad - 8 })
+    doc.font("Helvetica").fontSize(10).fillColor(TEXT)
+    doc.text(emisor.domicilio, left, leftY, { width: headerLeftW })
+    leftY = doc.y + 1
+    doc.text(`CUIT: ${emisor.cuit}`, left, leftY, { width: headerLeftW })
+    leftY = doc.y + 1
+    doc.text(`Condición IVA: ${emisor.condicionIva}`, left, leftY, { width: headerLeftW })
 
-    // ── Centro: letra + código
-    const centerW = colRightX - colCenterX
-    const letraBoxW = 40
-    const letraBoxH = 40
-    const letraBoxX = colCenterX + (centerW - letraBoxW) / 2
-    const letraBoxY = headerTop + 15
+    // Derecha: rectángulo redondeado con tipo comprobante + letra
+    const rightBoxH = 92
+    const rightBoxY = cursorY
 
-    doc.strokeColor("#000000").lineWidth(1.5)
-      .rect(letraBoxX, letraBoxY, letraBoxW, letraBoxH).stroke()
-    doc.font("Helvetica-Bold").fontSize(26).fillColor("#000000")
-      .text(letra, letraBoxX, letraBoxY + 5, { width: letraBoxW, align: "center" })
-    doc.font("Helvetica").fontSize(8).fillColor("#000000")
-      .text(`Código ${String(fac.tipoCbte).padStart(3, "0")}`, colCenterX, letraBoxY + letraBoxH + 4, { width: centerW, align: "center" })
+    doc.save()
+    doc.strokeColor(BORDER).lineWidth(1)
+    doc.roundedRect(headerRightX, rightBoxY, headerRightW, rightBoxH, 6).stroke()
+    doc.restore()
 
-    // ── Columna derecha: tipo comprobante + datos
-    const colRightPad = colRightX + 8
-    const colRightW = right - colRightPad - 4
-    let rightY = headerTop + 8
+    // Fila superior del box: "Factura A" a la izquierda + recuadro navy con letra
+    const letraBoxSize = 44
+    const letraBoxX = headerRightX + headerRightW - letraBoxSize - 10
+    const letraBoxY = rightBoxY + 6
 
-    doc.font("Helvetica-Bold").fontSize(9).fillColor("#000000")
-      .text(nombreTipoCbte(fac.tipoCbte), colRightPad, rightY, { width: colRightW })
-    rightY = doc.y + 4
+    // Nombre tipo comprobante
+    doc.font("Helvetica-Bold").fontSize(13).fillColor(TEXT)
+      .text(nombreTipoCbte(fac.tipoCbte), headerRightX + 10, rightBoxY + 14, { width: headerRightW - letraBoxSize - 30 })
 
+    // Recuadro navy con letra
+    doc.save()
+    doc.fillColor(NAVY)
+    doc.roundedRect(letraBoxX, letraBoxY, letraBoxSize, letraBoxSize, 6).fill()
+    doc.font("Helvetica-Bold").fontSize(24).fillColor("white")
+      .text(letra, letraBoxX, letraBoxY + 5, { width: letraBoxSize, align: "center" })
+    doc.font("Helvetica-Bold").fontSize(10).fillColor("white")
+      .text(codigoCbte(fac.tipoCbte), letraBoxX, letraBoxY + 30, { width: letraBoxSize, align: "center" })
+    doc.restore()
+
+    // Datos debajo en el box
     const ptoVentaStr = String(fac.ptoVenta ?? 1).padStart(4, "0")
     const nroStr = fac.nroComprobante ? String(parseInt(fac.nroComprobante) || 0).padStart(8, "0") : "Borrador"
-    doc.font("Helvetica").fontSize(8)
-      .text(`Punto de Venta: ${ptoVentaStr} Comp. Nro: ${nroStr}`, colRightPad, rightY, { width: colRightW })
-    rightY = doc.y + 2
-    doc.text(`Fecha de Emisión: ${fmtFecha(fac.emitidaEn)}`, colRightPad, rightY, { width: colRightW })
-    rightY = doc.y + 6
-    doc.text(`CUIT: ${emisor.cuit}`, colRightPad, rightY, { width: colRightW })
-    rightY = doc.y + 2
-    doc.text(`IIBB: ${emisor.iibb}`, colRightPad, rightY, { width: colRightW })
-    rightY = doc.y + 2
-    doc.text(`Fecha de Inicio de Actividades: ${emisor.fechaInicioActividades}`, colRightPad, rightY, { width: colRightW })
 
-    // ─── DATOS DEL RECEPTOR ────────────────────────────────────────────
+    let infoY = rightBoxY + 54
+    const infoX = headerRightX + 10
+    const infoW = headerRightW - 20
 
-    let cursorY = headerBottom + 4
+    doc.font("Helvetica").fontSize(8.5).fillColor(TEXT)
+    doc.text(`Punto de Venta: ${ptoVentaStr}  Comp. Nro: ${nroStr}`, infoX, infoY, { width: infoW })
+    infoY = doc.y + 1
+    doc.text(`Fecha de Emisión: ${fmtFecha(fac.emitidaEn)}`, infoX, infoY, { width: infoW })
+    infoY = doc.y + 1
+    doc.text(`Convenio Multilateral: ${emisor.iibb}`, infoX, infoY, { width: infoW })
+    infoY = doc.y + 1
+    doc.text(`Inicio de Actividades: ${emisor.fechaInicioActividades}`, infoX, infoY, { width: infoW })
 
-    // Línea superior
-    doc.strokeColor("#000000").lineWidth(1)
-    doc.moveTo(left, cursorY).lineTo(right, cursorY).stroke()
-    cursorY += 6
+    cursorY = Math.max(doc.y, rightBoxY + rightBoxH) + 12
 
-    doc.font("Helvetica-Bold").fontSize(9).fillColor("#000000")
-    doc.text("Sres: ", left + 4, cursorY, { continued: true })
-    doc.font("Helvetica").text(fac.empresa.razonSocial.toUpperCase())
-    cursorY = doc.y + 2
+    // ─── 3. SECCIÓN CLIENTE ────────────────────────────────────────────
 
-    // Domicilio y localidad en la misma línea
-    doc.font("Helvetica-Bold").text("Domicilio: ", left + 4, cursorY, { continued: true })
-    doc.font("Helvetica").text(fac.empresa.direccion ?? "—")
-    cursorY = doc.y + 2
-
-    doc.font("Helvetica-Bold").text("CUIT: ", left + 4, cursorY, { continued: true })
-    doc.font("Helvetica").text(fmtCuit(fac.empresa.cuit))
-    cursorY = doc.y + 2
-
-    // Fecha de pago + CBU (en la misma línea si hay CBU MiPymes)
-    if (fac.tipoCbte === 201 && cbuMiPymes) {
-      doc.font("Helvetica-Bold").text("Fecha de Pago: ", left + 4, cursorY, { continued: true })
-      doc.font("Helvetica").text(fmtFecha(fac.emitidaEn), { continued: true })
-      doc.font("Helvetica-Bold").text("     C.B.U: ", { continued: true })
-      doc.font("Helvetica").text(cbuMiPymes)
-    } else {
-      doc.font("Helvetica-Bold").text("Fecha de Pago: ", left + 4, cursorY, { continued: true })
-      doc.font("Helvetica").text(fmtFecha(fac.emitidaEn))
-    }
-    cursorY = doc.y + 4
-
-    // Línea inferior
-    doc.moveTo(left, cursorY).lineTo(right, cursorY).stroke()
-    cursorY += 6
-
-    // ─── TABLA DE VIAJES ───────────────────────────────────────────────
-
-    const colDefs = [
-      { header: "Fecha",       w: 52, align: "left" as const },
-      { header: "Remito",      w: 50, align: "left" as const },
-      { header: "Cupo",        w: 38, align: "left" as const },
-      { header: "Mercaderia",  w: 68, align: "left" as const },
-      { header: "Procedencia", w: 62, align: "left" as const },
-      { header: "Destino",     w: 55, align: "left" as const },
-      { header: "Kilos",       w: 45, align: "right" as const },
-      { header: "Tarifa",      w: 50, align: "right" as const },
-      { header: "STotal",      w: 55, align: "right" as const },
+    const clientLines: { icon: (doc: PDFKit.PDFDocument, x: number, y: number) => void; parts: { text: string; bold: boolean }[] }[] = [
+      {
+        icon: drawIconPersona,
+        parts: [
+          { text: "Cliente: ", bold: true },
+          { text: fac.empresa.razonSocial.toUpperCase(), bold: true },
+          { text: `  |  CUIT: ${fmtCuit(fac.empresa.cuit)}`, bold: false },
+        ],
+      },
+      {
+        icon: drawIconDocumento,
+        parts: [
+          { text: "Condición IVA: ", bold: true },
+          { text: fac.empresa.condicionIva ?? "—", bold: false },
+        ],
+      },
+      {
+        icon: drawIconPin,
+        parts: [
+          { text: "Dirección: ", bold: true },
+          { text: fac.empresa.direccion ?? "—", bold: false },
+        ],
+      },
+      {
+        icon: drawIconTarjeta,
+        parts: (() => {
+          const p: { text: string; bold: boolean }[] = [
+            { text: "Método de Pago: ", bold: true },
+            { text: "Transferencia Bancaria", bold: false },
+          ]
+          if (fac.tipoCbte === 201 && cbuMiPymes) {
+            p.push({ text: `  |  C.B.U: ${cbuMiPymes}`, bold: false })
+          }
+          return p
+        })(),
+      },
     ]
 
-    // Header línea superior
-    doc.strokeColor("#000000").lineWidth(1)
-    doc.moveTo(left, cursorY).lineTo(right, cursorY).stroke()
-    cursorY += 3
+    const clientBoxPadX = 12
+    const clientBoxPadY = 10
+    const clientLineH = 18
+    const clientBoxH = clientBoxPadY * 2 + clientLines.length * clientLineH
 
-    // Header text
-    doc.font("Helvetica-Bold").fontSize(7).fillColor("#000000")
-    let colX = left
-    for (const col of colDefs) {
-      doc.text(col.header, colX + 2, cursorY, { width: col.w - 4, align: col.align })
-      colX += col.w
+    doc.save()
+    doc.fillColor(BG_LIGHT)
+    doc.roundedRect(left, cursorY, contentW, clientBoxH, 8).fill()
+    doc.strokeColor(BORDER).lineWidth(0.5)
+    doc.roundedRect(left, cursorY, contentW, clientBoxH, 8).stroke()
+    doc.restore()
+
+    let clientY = cursorY + clientBoxPadY
+    for (const line of clientLines) {
+      line.icon(doc, left + clientBoxPadX, clientY + 1)
+      let textX = left + clientBoxPadX + 14
+      for (const part of line.parts) {
+        const fontSize = line === clientLines[0] ? 10 : 9
+        doc.font(part.bold ? "Helvetica-Bold" : "Helvetica").fontSize(fontSize).fillColor(TEXT)
+        const w = doc.widthOfString(part.text)
+        doc.text(part.text, textX, clientY + 1, { lineBreak: false })
+        textX += w
+      }
+      clientY += clientLineH
     }
-    cursorY += 11
 
-    // Header línea inferior
-    doc.moveTo(left, cursorY).lineTo(right, cursorY).stroke()
-    cursorY += 3
+    cursorY = cursorY + clientBoxH + 12
 
-    // Rows
-    doc.font("Helvetica").fontSize(7).fillColor("#000000")
+    // ─── 4. TABLA DE VIAJES ────────────────────────────────────────────
+
+    const colDefs = [
+      { header: "Fecha",      w: 62,  align: "left" as const },
+      { header: "Remito",     w: 56,  align: "left" as const },
+      { header: "Mercadería", w: 72,  align: "left" as const },
+      { header: "Origen",     w: 68,  align: "left" as const },
+      { header: "Destino",    w: 68,  align: "left" as const },
+      { header: "Kilos",      w: 50,  align: "right" as const },
+      { header: "Tarifa",     w: 58,  align: "right" as const },
+      { header: "Total",      w: 76,  align: "right" as const },
+    ]
+
+    const tableW = colDefs.reduce((s, c) => s + c.w, 0)
+    const tableLeft = left
+    const rowH = 14
+    const headerRowH = 16
+    const cupoH = 14
+
+    function drawTableHeader() {
+      doc.save()
+      doc.fillColor(HEADER_BG)
+      doc.roundedRect(tableLeft, cursorY, tableW, headerRowH, 4).fill()
+      doc.restore()
+
+      doc.font("Helvetica-Bold").fontSize(8.5).fillColor(TEXT)
+      let colX = tableLeft
+      for (const col of colDefs) {
+        doc.text(col.header, colX + 4, cursorY + 3, { width: col.w - 8, align: col.align })
+        colX += col.w
+      }
+      cursorY += headerRowH + 2
+    }
+
+    drawTableHeader()
+
     for (const v of fac.viajes) {
+      // Calcular espacio necesario para esta fila
+      const neededH = rowH + (v.cupo ? cupoH : 0)
+
+      // Salto de página si no cabe antes del footer
+      if (cursorY + neededH > footerLineY) {
+        doc.addPage()
+        // Línea decorativa superior en nueva página
+        doc.save()
+        doc.strokeColor(NAVY).lineWidth(2.5)
+        doc.moveTo(left, margin).lineTo(right, margin).stroke()
+        doc.restore()
+        cursorY = margin + 10
+        drawTableHeader()
+      }
+
       const cells = [
         fmtFecha(v.fechaViaje),
         v.remito ?? "—",
-        v.cupo ?? "—",
         v.mercaderia ?? "—",
         v.procedencia ?? "—",
         v.destino ?? "—",
         v.kilos != null ? fmtKilos(v.kilos) : "—",
-        fmtMoneda(Number(v.tarifaEmpresa)),
-        fmtMoneda(Number(v.subtotal)),
+        `$ ${fmtMoneda(Number(v.tarifaEmpresa))}`,
+        `$ ${fmtMoneda(Number(v.subtotal))}`,
       ]
-      colX = left
+
+      doc.font("Helvetica").fontSize(8).fillColor(TEXT)
+      let colX = tableLeft
       for (let i = 0; i < colDefs.length; i++) {
-        doc.text(cells[i], colX + 2, cursorY, { width: colDefs[i].w - 4, align: colDefs[i].align })
+        const fontToUse = i === colDefs.length - 1 ? "Helvetica-Bold" : "Helvetica"
+        doc.font(fontToUse)
+        doc.text(cells[i], colX + 4, cursorY + 2, { width: colDefs[i].w - 8, align: colDefs[i].align })
         colX += colDefs[i].w
       }
-      cursorY += 11
+      cursorY += rowH
+
+      // Badge de cupo
+      if (v.cupo) {
+        const cupoText = `Cupo: ${v.cupo}`
+        doc.font("Helvetica").fontSize(7)
+        const cupoTextW = doc.widthOfString(cupoText) + 10
+        doc.save()
+        doc.fillColor(BG_LIGHT)
+        doc.roundedRect(tableLeft + 8, cursorY, cupoTextW, 11, 4).fill()
+        doc.strokeColor(BORDER).lineWidth(0.5)
+        doc.roundedRect(tableLeft + 8, cursorY, cupoTextW, 11, 4).stroke()
+        doc.restore()
+        doc.font("Helvetica").fontSize(7).fillColor(TEXT)
+          .text(cupoText, tableLeft + 13, cursorY + 2)
+        cursorY += cupoH
+      }
+
+      // Separador de fila
+      doc.save()
+      doc.strokeColor(BORDER).lineWidth(0.3)
+      doc.moveTo(tableLeft, cursorY).lineTo(tableLeft + tableW, cursorY).stroke()
+      doc.restore()
     }
 
-    cursorY += 4
+    cursorY += 6
 
-    // ─── TOTALES ───────────────────────────────────────────────────────
+    // ─── 5. TOTALES ────────────────────────────────────────────────────
 
-    const totalsW = 180
-    const totalsLeft = right - totalsW
-    const labelW = 100
-    const valorX = totalsLeft + labelW + 4
-    const valorW = totalsW - labelW - 8
-
-    // Recuadro de totales
     const neto = Number(fac.neto)
     const ivaMonto = Number(fac.ivaMonto)
     const total = Number(fac.total)
     const ivaPctDisplay = fac.ivaPct % 1 === 0 ? String(fac.ivaPct) : fac.ivaPct.toFixed(1)
 
-    const totalsTop = cursorY
-    const rowH = 16
-    const totalsH = rowH * 3 + 8
+    const totalsW = 200
+    const totalsLeft = right - totalsW
+    const labelW = 100
+    const valX = totalsLeft + labelW + 4
+    const valW = totalsW - labelW - 8
 
-    doc.strokeColor("#000000").lineWidth(1)
-      .rect(totalsLeft, totalsTop, totalsW, totalsH).stroke()
-
-    let totY = totalsTop + 6
-
-    doc.font("Helvetica").fontSize(9).fillColor("#000000")
-    doc.text("Subtotal:", totalsLeft + 4, totY, { width: labelW - 4 })
-    doc.text(`$ ${fmtMoneda(neto)}`, valorX, totY, { width: valorW, align: "right" })
-    totY += rowH
-
-    doc.text(`IVA ${ivaPctDisplay}%:`, totalsLeft + 4, totY, { width: labelW - 4 })
-    doc.text(`$ ${fmtMoneda(ivaMonto)}`, valorX, totY, { width: valorW, align: "right" })
-    totY += rowH
-
-    doc.font("Helvetica-Bold").fontSize(10)
-    doc.text("Importe Total:", totalsLeft + 4, totY, { width: labelW - 4 })
-    doc.text(`$ ${fmtMoneda(total)}`, valorX, totY, { width: valorW, align: "right" })
-
-    // ─── PIE (anclado al fondo de la página) ───────────────────────────
-
-    const footerH = 80
-    const footerLineY = pageH - margin - footerH
-    const footerContentY = footerLineY + 6
-
-    // Línea horizontal separadora
-    doc.strokeColor("#000000").lineWidth(1)
-    doc.moveTo(left, footerLineY).lineTo(right, footerLineY).stroke()
-
-    // QR fiscal (izquierda)
-    const qrSize = 65
-    if (qrBuffer) {
-      doc.image(qrBuffer, left + 4, footerContentY, { width: qrSize, height: qrSize })
+    // Verificar espacio para totales (~50pt)
+    if (cursorY + 50 > footerLineY) {
+      doc.addPage()
+      doc.save()
+      doc.strokeColor(NAVY).lineWidth(2.5)
+      doc.moveTo(left, margin).lineTo(right, margin).stroke()
+      doc.restore()
+      cursorY = margin + 10
     }
 
-    // Logo ARCA + texto "Comprobante Autorizado" (al lado del QR)
-    const arcaX = left + qrSize + 16
-    if (emisor.logoArca) {
-      try {
-        doc.image(emisor.logoArca, arcaX, footerContentY, { width: 50, height: 30, fit: [50, 30] })
-      } catch { /* skip invalid image */ }
-      doc.font("Helvetica-Oblique").fontSize(7).fillColor("#000000")
-        .text("Comprobante Autorizado", arcaX, footerContentY + 34, { width: 80 })
-    } else {
-      doc.font("Helvetica-Oblique").fontSize(7).fillColor("#000000")
-        .text("Comprobante Autorizado", arcaX, footerContentY + 10, { width: 80 })
+    doc.font("Helvetica").fontSize(9.5).fillColor(TEXT)
+    doc.text("Subtotal:", totalsLeft, cursorY, { width: labelW, align: "right" })
+    doc.text(`$ ${fmtMoneda(neto)}`, valX, cursorY, { width: valW, align: "right" })
+    cursorY += 16
+
+    doc.text(`IVA ${ivaPctDisplay}%:`, totalsLeft, cursorY, { width: labelW, align: "right" })
+    doc.text(`$ ${fmtMoneda(ivaMonto)}`, valX, cursorY, { width: valW, align: "right" })
+    cursorY += 16
+
+    // Línea separadora
+    doc.save()
+    doc.strokeColor(BORDER).lineWidth(0.5)
+    doc.moveTo(totalsLeft, cursorY).lineTo(right, cursorY).stroke()
+    doc.restore()
+    cursorY += 6
+
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(NAVY)
+    doc.text("TOTAL:", totalsLeft, cursorY, { width: labelW, align: "right" })
+    doc.text(`$ ${fmtMoneda(total)}`, valX, cursorY, { width: valW, align: "right" })
+
+    // ─── 6. PIE (estampado en CADA página con paginación dinámica) ───
+
+    const range = doc.bufferedPageRange()
+    const totalPages = range.count
+
+    for (let i = 0; i < totalPages; i++) {
+      doc.switchToPage(range.start + i)
+
+      const fY = footerLineY
+
+      // Rectángulo navy de fondo
+      doc.save()
+      doc.fillColor(NAVY)
+      doc.roundedRect(left, fY, contentW, footerH, 8).fill()
+      doc.restore()
+
+      // QR fiscal (izquierda)
+      const qrSize = 52
+      const qrX = left + 10
+      const qrY = fY + (footerH - qrSize) / 2
+      if (qrBuffer) {
+        try { doc.image(qrBuffer, qrX, qrY, { width: qrSize, height: qrSize }) } catch { /* skip */ }
+      }
+
+      // "Comprobante Autorizado" + logo ARCA
+      const arcaTextX = qrX + qrSize + 8
+      doc.font("Helvetica").fontSize(9).fillColor("white")
+        .text("Comprobante Autorizado", arcaTextX, fY + 16, { width: 100, lineBreak: false })
+
+      if (emisor.logoArca) {
+        try {
+          doc.image(emisor.logoArca, arcaTextX, fY + 30, { fit: [45, 16] })
+        } catch { /* skip invalid image */ }
+      }
+
+      // Pág. X/N (centro)
+      doc.font("Helvetica").fontSize(8).fillColor("white")
+        .text(`Pág. ${i + 1}/${totalPages}`, left, fY + (footerH - 8) / 2, { width: contentW, align: "center" })
+
+      // Sub-caja blanca con CAE (derecha)
+      const caeBoxW = 170
+      const caeBoxH = 40
+      const caeBoxX = right - caeBoxW - 10
+      const caeBoxY = fY + (footerH - caeBoxH) / 2
+
+      doc.save()
+      doc.fillColor("white")
+      doc.roundedRect(caeBoxX, caeBoxY, caeBoxW, caeBoxH, 6).fill()
+      doc.restore()
+
+      doc.font("Helvetica-Bold").fontSize(10).fillColor(TEXT)
+        .text(`CAE N°: ${fac.cae ?? "Pendiente"}`, caeBoxX + 10, caeBoxY + 7, { width: caeBoxW - 20 })
+      doc.font("Helvetica").fontSize(9.5).fillColor(TEXT)
+      const vtoText = fac.caeVto ? fmtFecha(fac.caeVto) : "—"
+      doc.text("Fecha de Vto.: ", caeBoxX + 10, caeBoxY + 22, { width: caeBoxW - 20, continued: true })
+      doc.font("Helvetica-Bold").text(vtoText)
     }
-
-    // Pág 1/1 (centro)
-    doc.font("Helvetica").fontSize(8).fillColor("#000000")
-      .text("Pág. 1/1", left, footerContentY + 30, { width: contentW, align: "center" })
-
-    // CAE (derecha)
-    const caeX = right - 160
-    doc.font("Helvetica-Bold").fontSize(8).fillColor("#000000")
-      .text("CAE N°: ", caeX, footerContentY + 10, { continued: true })
-    doc.font("Helvetica").text(fac.cae ?? "Pendiente")
-    doc.font("Helvetica-Bold").text("Fecha de Vto. de CAE: ", caeX, doc.y + 2, { continued: true })
-    doc.font("Helvetica").text(fac.caeVto ? fmtFecha(fac.caeVto) : "—")
 
     doc.end()
   })
