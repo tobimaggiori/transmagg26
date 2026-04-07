@@ -18,7 +18,7 @@ export default async function ContabilidadPage() {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-2xl">
         <ActionCard title="EMPLEADOS" subtitle="ABM Empleados" href="/abm/empleados" icon={Users} />
-        <ActionCard title="CUENTAS"   subtitle="ABM Cuentas"   href="/abm/cuentas"   icon={CreditCard} />
+        <ActionCard title="BILLETERAS, BANCOS Y BROKERS" subtitle="ABM Billeteras, Bancos y Brokers" href="/abm/cuentas" icon={CreditCard} />
       </div>
       <div className="w-full max-w-xs">
         <ActionCard title="FCI" subtitle="ABM FCI" href="/abm/fci" icon={TrendingUp} />
