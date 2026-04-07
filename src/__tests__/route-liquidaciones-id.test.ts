@@ -14,6 +14,7 @@ const mockPrisma = {
 }
 const mockVerificarPropietarioFletero = jest.fn()
 const mockObtenerUrlFirmada = jest.fn()
+const mockObtenerArchivo = jest.fn()
 const mockStorageConfigurado = jest.fn()
 const mockSubirPDF = jest.fn()
 const mockGenerarPDFLiquidacion = jest.fn()
@@ -25,6 +26,7 @@ jest.mock("@/lib/session-utils", () => ({
 }))
 jest.mock("@/lib/storage", () => ({
   obtenerUrlFirmada: mockObtenerUrlFirmada,
+  obtenerArchivo: mockObtenerArchivo,
   storageConfigurado: mockStorageConfigurado,
   subirPDF: mockSubirPDF,
 }))
@@ -209,7 +211,7 @@ describe("GET /api/liquidaciones/[id]/pdf — acceso por rol", () => {
 })
 
 describe("GET /api/liquidaciones/[id]/pdf — ownership fletero", () => {
-  it("FLETERO dueño con PDF existente → 200 con URL firmada", async () => {
+  it("FLETERO dueño con PDF existente → 200 con application/pdf", async () => {
     mockAuth.mockResolvedValue(session("FLETERO", "fletero@test.com"))
     // Primera llamada: ownership check (select fleteroId)
     // Segunda llamada: obtener pdfS3Key
@@ -223,12 +225,11 @@ describe("GET /api/liquidaciones/[id]/pdf — ownership fletero", () => {
       })
     mockVerificarPropietarioFletero.mockResolvedValue(true)
     mockStorageConfigurado.mockReturnValue(true)
-    mockObtenerUrlFirmada.mockResolvedValue("https://r2.example.com/signed-liq")
+    mockObtenerArchivo.mockResolvedValue(Buffer.from("fake-pdf-content"))
 
     const res = await getLiquidacionPdf(req(), params)
     expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.url).toBe("https://r2.example.com/signed-liq")
+    expect(res.headers.get("Content-Type")).toBe("application/pdf")
   })
 
   it("FLETERO ajeno → 403 (no accede al PDF)", async () => {

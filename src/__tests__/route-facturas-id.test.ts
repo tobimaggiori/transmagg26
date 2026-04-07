@@ -14,6 +14,7 @@ const mockPrisma = {
 }
 const mockVerificarPropietarioEmpresa = jest.fn()
 const mockObtenerUrlFirmada = jest.fn()
+const mockObtenerArchivo = jest.fn()
 const mockStorageConfigurado = jest.fn()
 
 jest.mock("@/lib/auth", () => ({ auth: mockAuth }))
@@ -23,7 +24,11 @@ jest.mock("@/lib/session-utils", () => ({
 }))
 jest.mock("@/lib/storage", () => ({
   obtenerUrlFirmada: mockObtenerUrlFirmada,
+  obtenerArchivo: mockObtenerArchivo,
   storageConfigurado: mockStorageConfigurado,
+}))
+jest.mock("@/lib/pdf-factura", () => ({
+  generarPDFFactura: jest.fn().mockResolvedValue(Buffer.from("fake-pdf")),
 }))
 
 import { GET as getFactura, PATCH as patchFactura } from "@/app/api/facturas/[id]/route"
@@ -201,21 +206,23 @@ describe("GET /api/facturas/[id]/pdf — acceso por rol", () => {
 })
 
 describe("GET /api/facturas/[id]/pdf — ownership empresa", () => {
-  it("ADMIN_EMPRESA dueño con PDF en R2 → 200 con URL firmada", async () => {
+  it("ADMIN_EMPRESA dueño con PDF en R2 → 200 con application/pdf", async () => {
     mockAuth.mockResolvedValue(session("ADMIN_EMPRESA", "admin@empresa.com"))
     mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
       id: "fact-1",
       pdfS3Key: "facturas/0001-00000001.pdf",
       empresaId: "emp-1",
+      tipoCbte: 1,
+      ptoVenta: 1,
+      nroComprobante: "1",
     })
     mockVerificarPropietarioEmpresa.mockResolvedValue(true)
     mockStorageConfigurado.mockReturnValue(true)
-    mockObtenerUrlFirmada.mockResolvedValue("https://r2.example.com/signed-url")
+    mockObtenerArchivo.mockResolvedValue(Buffer.from("fake-pdf-content"))
 
     const res = await getFacturaPdf(req(), params)
     expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.url).toBe("https://r2.example.com/signed-url")
+    expect(res.headers.get("Content-Type")).toBe("application/pdf")
   })
 
   it("ADMIN_EMPRESA ajena → 403 (no filtra datos del PDF)", async () => {

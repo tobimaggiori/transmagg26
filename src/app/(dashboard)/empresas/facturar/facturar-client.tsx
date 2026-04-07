@@ -467,12 +467,12 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
               <span className="font-semibold">{Number(facturaEmitida.total).toLocaleString("es-AR", { style: "currency", currency: "ARS" })}</span>
             </div>
             <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => window.open(`/api/facturas/${facturaEmitida.id}/pdf`, "_blank")}
-                className="flex-1 h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
+              <a
+                href={`/comprobantes/visor?tipo=factura&id=${facturaEmitida.id}&titulo=${encodeURIComponent(`Factura ${facturaEmitida.tipoCbte === 1 ? "A" : facturaEmitida.tipoCbte === 6 ? "B" : "A MiPyme"} ${String(facturaEmitida.ptoVenta).padStart(4, "0")}-${String(parseInt(facturaEmitida.nroComprobante) || 0).padStart(8, "0")}`)}`}
+                className="flex-1 h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 inline-flex items-center justify-center"
               >
                 Ver PDF
-              </button>
+              </a>
               <button
                 onClick={resetearFormulario}
                 className="flex-1 h-9 rounded-md border border-input bg-background text-sm font-medium hover:bg-accent"

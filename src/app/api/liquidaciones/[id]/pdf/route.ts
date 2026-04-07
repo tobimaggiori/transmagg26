@@ -1,16 +1,17 @@
 /**
  * GET /api/liquidaciones/[id]/pdf
  *
- * Devuelve una URL firmada (15 min) para visualizar el PDF del LP en R2.
- * Si no existe el PDF, lo genera con Puppeteer, sube a R2, guarda la key y responde.
- * También soporta acceso con token HMAC para el QR del pie del LP.
+ * Sirve el PDF de la liquidación como application/pdf.
+ * Si tiene pdfS3Key y R2 está configurado, lo descarga de R2.
+ * Si no, lo genera al vuelo con pdfkit (generarPDFLiquidacion).
+ * Soporta acceso con token HMAC para el QR del pie del LP.
  */
 
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
-import { obtenerUrlFirmada, subirPDF, storageConfigurado } from "@/lib/storage"
+import { obtenerArchivo, storageConfigurado } from "@/lib/storage"
 import { generarPDFLiquidacion } from "@/lib/pdf-liquidacion"
 import { verificarPropietarioFletero } from "@/lib/session-utils"
 import crypto from "crypto"
@@ -28,13 +29,11 @@ export async function GET(
 ) {
   const token = request.nextUrl.searchParams.get("token")
 
-  // Si tiene token HMAC válido, acceso público (para QR)
   if (token) {
     if (!verificarToken(params.id, token)) {
       return NextResponse.json({ error: "Token inválido" }, { status: 403 })
     }
   } else {
-    // Sin token: requiere autenticación
     const session = await auth()
     if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
     const rol = session.user.rol as Rol
@@ -60,45 +59,39 @@ export async function GET(
     where: { id: params.id },
     select: { id: true, nroComprobante: true, ptoVenta: true, pdfS3Key: true },
   })
-
   if (!liq) return NextResponse.json({ error: "Liquidación no encontrada" }, { status: 404 })
 
-  // Si storage no está configurado, devolver error
-  if (!storageConfigurado()) {
-    return NextResponse.json({ error: "Almacenamiento no configurado" }, { status: 503 })
-  }
+  const nro = liq.nroComprobante
+    ? `LP-${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${String(liq.nroComprobante).padStart(8, "0")}`
+    : `LP-${liq.id.slice(0, 8)}`
+  const filename = `${nro}.pdf`
 
-  let key = liq.pdfS3Key
-
-  // Si no tiene PDF, generarlo
-  if (!key) {
+  // Intentar obtener de R2
+  if (liq.pdfS3Key && storageConfigurado()) {
     try {
-      const buf = await generarPDFLiquidacion(liq.id)
-      const nro = liq.nroComprobante
-        ? `LP-${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${String(liq.nroComprobante).padStart(8, "0")}`
-        : `LP-borrador-${liq.id.slice(0, 8)}`
-      key = await subirPDF(buf, "liquidaciones", `${nro}.pdf`)
-      await prisma.liquidacion.update({
-        where: { id: liq.id },
-        data: { pdfS3Key: key },
+      const buffer = await obtenerArchivo(liq.pdfS3Key)
+      return new NextResponse(new Uint8Array(buffer), {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `inline; filename="${filename}"`,
+        },
       })
-    } catch (pdfError) {
-      console.error("[GET /api/liquidaciones/[id]/pdf] Error generando PDF:", pdfError)
-      return NextResponse.json(
-        { error: "No se pudo generar el PDF. Intentá de nuevo desde Consultar LP." },
-        { status: 500 }
-      )
+    } catch {
+      // Fallthrough: regenerar con pdfkit
     }
   }
 
+  // Generar al vuelo con pdfkit
   try {
-    const url = await obtenerUrlFirmada(key, 900)
-    return NextResponse.json({ url })
-  } catch (signError) {
-    console.error("[GET /api/liquidaciones/[id]/pdf] Error obteniendo URL firmada:", signError)
-    return NextResponse.json(
-      { error: "No se pudo obtener la URL del PDF" },
-      { status: 500 }
-    )
+    const buffer = await generarPDFLiquidacion(liq.id)
+    return new NextResponse(new Uint8Array(buffer), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `inline; filename="${filename}"`,
+      },
+    })
+  } catch (err) {
+    console.error("[GET /api/liquidaciones/[id]/pdf] Error generando PDF:", err)
+    return NextResponse.json({ error: "No se pudo generar el PDF" }, { status: 500 })
   }
 }

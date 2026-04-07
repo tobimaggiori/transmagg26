@@ -319,7 +319,7 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
       setExitoLiquidacion({ nroLP, id: liqCreada.id })
       cargarDatos()
       abrirPDF({
-        fetchUrl: `/api/liquidaciones/${liqCreada.id}/pdf`,
+        url: `/api/liquidaciones/${liqCreada.id}/pdf`,
         titulo: `LP ${nroLP} — ${fleteroInfo?.razonSocial ?? ""}`,
         onEnviarMail: async (email: string) => {
           const r = await fetch(`/api/liquidaciones/${liqCreada.id}/enviar-email`, {
@@ -425,24 +425,12 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
               <span className="font-medium">LP {exitoLiquidacion.nroLP}</span>
             </div>
             <div className="flex flex-wrap gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => abrirPDF({
-                  fetchUrl: `/api/liquidaciones/${exitoLiquidacion.id}/pdf`,
-                  titulo: `LP ${exitoLiquidacion.nroLP}`,
-                  onEnviarMail: async (email: string) => {
-                    const r = await fetch(`/api/liquidaciones/${exitoLiquidacion.id}/enviar-email`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ emailDestino: email }),
-                    })
-                    if (!r.ok) { const err = await r.json(); throw new Error(err.error ?? "Error") }
-                  },
-                })}
-                className="flex-1 h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
+              <a
+                href={`/comprobantes/visor?tipo=liquidacion&id=${exitoLiquidacion.id}&titulo=${encodeURIComponent(`LP ${exitoLiquidacion.nroLP}`)}`}
+                className="flex-1 h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 inline-flex items-center justify-center"
               >
                 Ver PDF
-              </button>
+              </a>
               <button
                 type="button"
                 onClick={() => { setExitoLiquidacion(null); setEnPreview(false); setSeleccionados(new Set()) }}
