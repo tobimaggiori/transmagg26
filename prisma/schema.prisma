@@ -457,6 +457,7 @@ model Liquidacion {
   // UUID para prevenir doble emisión
   pdfS3Key           String?  @map("pdf_s3_key")
   grabadaEn          DateTime @default(now()) @map("grabada_en")
+  metodoPago         String   @default("Transferencia Bancaria") @map("metodo_pago")
 
   fletero              Fletero              @relation(fields: [fleteroId], references: [id])
   operador             Usuario              @relation("OperadorLiquidacion", fields: [operadorId], references: [id])

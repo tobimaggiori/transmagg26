@@ -32,6 +32,7 @@ export type DatosCrearLiquidacion = {
   fleteroId: string
   comisionPct: number
   ivaPct: number
+  metodoPago?: string
   viajes: ViajeEnLiqInput[]
 }
 
@@ -87,7 +88,7 @@ export async function ejecutarCrearLiquidacion(
   data: DatosCrearLiquidacion,
   operadorId: string
 ): Promise<ResultadoLiquidacion> {
-  const { fleteroId, comisionPct, ivaPct, viajes } = data
+  const { fleteroId, comisionPct, ivaPct, metodoPago, viajes } = data
 
   // Validar fletero
   const fletero = await prisma.fletero.findFirst({ where: { id: fleteroId, activo: true } })
@@ -125,6 +126,7 @@ export async function ejecutarCrearLiquidacion(
         ivaMonto,
         total: totalFinal,
         estado: EstadoLiquidacionDocumento.EMITIDA,
+        metodoPago: metodoPago ?? "Transferencia Bancaria",
         nroComprobante,
         ptoVenta: 1,
         tipoCbte: 60,

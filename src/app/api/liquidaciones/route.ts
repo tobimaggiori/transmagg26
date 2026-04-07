@@ -44,6 +44,7 @@ const crearLiquidacionSchema = z.object({
   comisionPct: z.number().min(0).max(100),
   ivaPct: z.number().min(0).max(100).default(21),
   viajes: z.array(viajeEnLiqSchema).min(1, "Debe incluir al menos un viaje"),
+  metodoPago: z.enum(["Transferencia Bancaria", "Cuenta Corriente", "Cheque", "Contado"]).default("Transferencia Bancaria"),
   emisionArca: z.boolean().optional(),
   idempotencyKey: z.string().uuid().optional(),
 })

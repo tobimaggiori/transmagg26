@@ -188,7 +188,7 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
 
   const viajesSeleccionados = viajesPendientes.filter((v) => seleccionados.has(v.id))
 
-  async function confirmarLiquidacion(viajesEditados: ViajeParaLiquidar[], comision: number, iva: number) {
+  async function confirmarLiquidacion(viajesEditados: ViajeParaLiquidar[], comision: number, iva: number, metodoPago: string = "Transferencia Bancaria") {
     if (!fleteroId || viajesEditados.length === 0) return
     setGenerando(true)
     setErrorGen(null)
@@ -212,6 +212,7 @@ export function LiquidacionesClient({ rol, fleteros, camiones, choferes, fletero
           kilos: v.kilosEdit ?? v.kilos ?? 0,
           tarifaFletero: v.tarifaEdit ?? v.tarifaFletero,
         })),
+        metodoPago,
         emisionArca: true,
         idempotencyKey: crypto.randomUUID(),
       }

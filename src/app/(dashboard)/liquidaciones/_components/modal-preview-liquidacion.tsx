@@ -25,11 +25,12 @@ export function ModalPreviewLiquidacion({
   generando: boolean
   error: string | null
   onCancelar: () => void
-  onConfirmar: (viajes: ViajeParaLiquidar[], comisionPct: number, ivaPct: number) => void
+  onConfirmar: (viajes: ViajeParaLiquidar[], comisionPct: number, ivaPct: number, metodoPago: string) => void
 }) {
   const [viajes, setViajes] = useState<ViajeParaLiquidar[]>(viajesIniciales)
   const [comisionPct, setComisionPct] = useState(comisionPctInicial)
   const [ivaPct, setIvaPct] = useState(ivaPctInicial)
+  const [metodoPago, setMetodoPago] = useState("Transferencia Bancaria")
 
   function actualizarCelda(id: string, campo: keyof ViajeParaLiquidar, valor: unknown) {
     setViajes((prev) => prev.map((v) => v.id === id ? { ...v, [campo]: valor } : v))
@@ -241,6 +242,19 @@ export function ModalPreviewLiquidacion({
                 className="h-8 w-24 rounded border bg-background px-2 text-sm"
               />
             </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Método de Pago</label>
+              <select
+                value={metodoPago}
+                onChange={(e) => setMetodoPago(e.target.value)}
+                className="h-8 rounded border bg-background px-2 text-sm"
+              >
+                <option value="Transferencia Bancaria">Transferencia Bancaria</option>
+                <option value="Cuenta Corriente">Cuenta Corriente</option>
+                <option value="Cheque">Cheque</option>
+                <option value="Contado">Contado</option>
+              </select>
+            </div>
           </div>
           <div className="flex-1 text-sm space-y-0.5">
             <div className="flex justify-end gap-8">
@@ -269,7 +283,7 @@ export function ModalPreviewLiquidacion({
               Cancelar
             </button>
             <button
-              onClick={() => onConfirmar(viajes, comisionPct, ivaPct)}
+              onClick={() => onConfirmar(viajes, comisionPct, ivaPct, metodoPago)}
               disabled={generando}
               className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
             >
