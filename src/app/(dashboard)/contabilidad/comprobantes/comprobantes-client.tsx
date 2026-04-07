@@ -5,6 +5,7 @@ import { useState } from "react"
 const OPCIONES_TIPO = [
   { value: "facturas-emitidas", label: "Facturas Emitidas" },
   { value: "liquidaciones", label: "Liquidaciones" },
+  { value: "notas-credito-debito", label: "Notas de Crédito/Débito" },
   { value: "ordenes-pago", label: "Órdenes de Pago" },
   { value: "recibos-cobranza", label: "Recibos de Cobranza" },
   { value: "facturas-proveedor", label: "Facturas Proveedor" },

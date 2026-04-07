@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma"
 export const TIPOS_COMPROBANTE = [
   "facturas-emitidas",
   "liquidaciones",
+  "notas-credito-debito",
   "ordenes-pago",
   "recibos-cobranza",
   "facturas-proveedor",
@@ -168,9 +169,29 @@ async function listarResumenesTarjeta(desde: Date, hasta: Date): Promise<Comprob
   }))
 }
 
+async function listarNotasCreditoDebito(desde: Date, hasta: Date): Promise<ComprobanteListado[]> {
+  const items = await prisma.notaCreditoDebito.findMany({
+    where: { pdfS3Key: { not: null }, creadoEn: { gte: desde, lte: hasta }, tipo: { in: ["NC_EMITIDA", "ND_EMITIDA"] } },
+    select: { id: true, tipo: true, tipoCbte: true, nroComprobante: true, creadoEn: true, pdfS3Key: true },
+    orderBy: { creadoEn: "desc" },
+  })
+  return items.map((n) => {
+    const prefijo = n.tipo === "NC_EMITIDA" ? "NC" : "ND"
+    return {
+      id: n.id,
+      tipo: "notas-credito-debito" as const,
+      nombreArchivo: `${prefijo}-${n.tipoCbte ?? 0}-${n.nroComprobante ?? "SN"}.pdf`,
+      fecha: n.creadoEn,
+      r2Key: n.pdfS3Key!,
+      r2KeysExtra: [],
+    }
+  })
+}
+
 const HANDLERS: Record<TipoComprobante, (desde: Date, hasta: Date) => Promise<ComprobanteListado[]>> = {
   "facturas-emitidas": listarFacturasEmitidas,
   "liquidaciones": listarLiquidaciones,
+  "notas-credito-debito": listarNotasCreditoDebito,
   "ordenes-pago": listarOrdenesPago,
   "recibos-cobranza": listarRecibosCobranza,
   "facturas-proveedor": listarFacturasProveedor,
@@ -195,6 +216,7 @@ export async function limpiarKeysEnBD(comprobantes: ComprobanteListado[]): Promi
   const modelMap: Record<string, string> = {
     "facturas-emitidas": "facturaEmitida",
     "liquidaciones": "liquidacion",
+    "notas-credito-debito": "notaCreditoDebito",
     "ordenes-pago": "ordenPago",
     "recibos-cobranza": "reciboCobranza",
     "facturas-proveedor": "facturaProveedor",
