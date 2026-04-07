@@ -49,7 +49,7 @@ import {
   emitirLiquidacionDirecta,
   emitirNotaCDDirecta,
 } from "@/lib/emision-directa"
-import { ArcaRechazoError } from "@/lib/arca/errors"
+import { ArcaRechazoError, WsaaError } from "@/lib/arca/errors"
 
 beforeEach(() => {
   jest.clearAllMocks()
@@ -106,8 +106,9 @@ describe("emitirFacturaDirecta", () => {
     expect(r.ok).toBe(false)
     if (r.ok) return
     expect(r.status).toBe(422)
-    expect(r.error).toContain("ARCA rechazó el comprobante")
+    expect(r.code).toBe("ARCA_RECHAZO")
     expect(r.error).toContain("CUIT inválido")
+    expect(r.reintentable).toBe(false)
   })
 
   it("ARCA FAIL permanente → revierte factura y viajes", async () => {
@@ -129,7 +130,7 @@ describe("emitirFacturaDirecta", () => {
 
   it("ARCA FAIL transitorio → conserva factura, retorna reintentable", async () => {
     mockEjecutarCrearFactura.mockResolvedValue({ ok: true, factura: { id: "fact-1" } })
-    mockAutorizarFacturaArca.mockRejectedValue(new Error("ECONNREFUSED"))
+    mockAutorizarFacturaArca.mockRejectedValue(new WsaaError("ECONNREFUSED"))
 
     const r = await emitirFacturaDirecta(data, "op1", "key-1")
 
@@ -188,7 +189,8 @@ describe("emitirLiquidacionDirecta", () => {
 
     expect(r.ok).toBe(false)
     if (r.ok) return
-    expect(r.error).toContain("ARCA rechazó")
+    expect(r.error).toContain("rechazado por ARCA")
+    expect(r.code).toBe("ARCA_RECHAZO")
     // Compensación ejecutada
     expect(mockTx.liquidacion.delete).toHaveBeenCalledWith({ where: { id: "liq-1" } })
     expect(mockTx.viaje.updateMany).toHaveBeenCalledWith({
@@ -199,7 +201,7 @@ describe("emitirLiquidacionDirecta", () => {
 
   it("ARCA FAIL transitorio → conserva liquidación, retorna reintentable", async () => {
     mockEjecutarCrearLiquidacion.mockResolvedValue({ ok: true, liquidacion: { id: "liq-1" } })
-    mockAutorizarLiquidacionArca.mockRejectedValue(new Error("ECONNREFUSED"))
+    mockAutorizarLiquidacionArca.mockRejectedValue(new WsaaError("ECONNREFUSED"))
 
     const r = await emitirLiquidacionDirecta(data, "op1", "key-1")
 
@@ -337,9 +339,9 @@ describe("invariantes de emisión directa", () => {
     expect(mockAutorizarFacturaArca).toHaveBeenCalledWith("f1", "uuid-idempotent-123")
   })
 
-  it("ARCA FAIL transitorio sin mensaje → conserva comprobante + reintentable", async () => {
+  it("Error genérico (no ARCA) → revierte comprobante, no reintentable", async () => {
     mockEjecutarCrearFactura.mockResolvedValue({ ok: true, factura: { id: "f1" } })
-    mockAutorizarFacturaArca.mockRejectedValue(new Error(""))
+    mockAutorizarFacturaArca.mockRejectedValue(new Error("DB connection lost"))
 
     const r = await emitirFacturaDirecta(
       { empresaId: "e1", viajeIds: ["v1"], tipoCbte: 1, ivaPct: 21 },
@@ -349,9 +351,9 @@ describe("invariantes de emisión directa", () => {
 
     expect(r.ok).toBe(false)
     if (r.ok) return
-    expect(r.reintentable).toBe(true)
-    expect(r.documentoId).toBe("f1")
-    expect(r.error).toContain("ARCA no está disponible")
+    expect(r.reintentable).toBe(false)
+    expect(r.code).toBe("ERROR_INTERNO")
+    expect(r.error).toContain("DB connection lost")
   })
 })
 

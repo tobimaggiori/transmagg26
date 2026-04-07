@@ -10,7 +10,8 @@
  *   estadoArca=PENDIENTE para reintentar. El operador no pierde su trabajo.
  * - Si ARCA falla por error permanente (rechazo, validación, config): se revierte TODO.
  *
- * Los mensajes de error son precisos según la etapa del fallo.
+ * Los mensajes de error son precisos según la etapa del fallo, usando las clases
+ * tipadas de src/lib/arca/errors.ts.
  */
 
 import { prisma } from "@/lib/prisma"
@@ -22,73 +23,39 @@ import {
   autorizarLiquidacionArca,
   autorizarNotaCDArca,
 } from "@/lib/arca/service"
-import {
-  ArcaRechazoError,
-  ArcaValidacionError,
-  ArcaNoConfiguradaError,
-  ArcaConfigIncompletaError,
-  WsaaError,
-  Wsfev1Error,
-  DocumentoYaAutorizadoError,
-  DocumentoEnProcesoError,
-  DocumentoNoEncontradoError,
-} from "@/lib/arca/errors"
+import { esArcaError } from "@/lib/arca/errors"
 import type { AutorizarComprobanteResult } from "@/lib/arca/types"
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
 type ResultadoEmisionDirecta =
   | { ok: true; documento: unknown; arca: AutorizarComprobanteResult }
-  | { ok: false; status: number; error: string; documentoId?: string; reintentable?: boolean }
+  | { ok: false; status: number; error: string; code: string; reintentable: boolean; documentoId?: string }
 
 // ─── Clasificación de errores ───────────────────────────────────────────────
 
-/** Errores permanentes: se borra el comprobante porque no tiene sentido conservarlo */
-function esErrorPermanente(err: unknown): boolean {
-  return (
-    err instanceof ArcaNoConfiguradaError ||
-    err instanceof ArcaConfigIncompletaError ||
-    err instanceof ArcaValidacionError ||
-    err instanceof ArcaRechazoError ||
-    err instanceof DocumentoNoEncontradoError
-  )
-}
-
-function mensajeErrorArca(err: unknown): { status: number; mensaje: string } {
-  if (err instanceof ArcaNoConfiguradaError || err instanceof ArcaConfigIncompletaError) {
-    return { status: 503, mensaje: err.message }
-  }
-  if (err instanceof DocumentoYaAutorizadoError || err instanceof DocumentoEnProcesoError) {
-    return { status: 409, mensaje: err.message }
-  }
-  if (err instanceof DocumentoNoEncontradoError) {
-    return { status: 404, mensaje: err.message }
-  }
-  if (err instanceof ArcaValidacionError) {
-    return { status: 400, mensaje: err.message }
-  }
-  if (err instanceof ArcaRechazoError) {
+function clasificarError(err: unknown): { status: number; error: string; code: string; reintentable: boolean } {
+  if (esArcaError(err)) {
     return {
-      status: 422,
-      mensaje: `ARCA rechazó el comprobante. Motivo: ${err.observaciones}.`,
+      status: err.statusCode,
+      error: err.message,
+      code: err.code,
+      reintentable: err.retryable,
     }
   }
-  if (err instanceof WsaaError) {
+  if (err instanceof Error) {
     return {
-      status: 502,
-      mensaje: `No se pudo conectar con ARCA (autenticación). Puede haber una caída del servicio. ${err.message}`,
+      status: 500,
+      error: `Error interno: ${err.message}`,
+      code: "ERROR_INTERNO",
+      reintentable: false,
     }
   }
-  if (err instanceof Wsfev1Error) {
-    return {
-      status: 502,
-      mensaje: `No se pudo conectar con ARCA (WSFEv1). Puede haber una caída del servicio. ${err.message}`,
-    }
-  }
-  const detalle = err instanceof Error ? err.message : String(err)
   return {
     status: 500,
-    mensaje: `Error interno al preparar el comprobante. ${detalle}`,
+    error: "Error desconocido",
+    code: "ERROR_DESCONOCIDO",
+    reintentable: false,
   }
 }
 
@@ -100,7 +67,7 @@ export async function emitirFacturaDirecta(
   idempotencyKey: string
 ): Promise<ResultadoEmisionDirecta> {
   const resultado = await ejecutarCrearFactura(data, operadorId)
-  if (!resultado.ok) return resultado
+  if (!resultado.ok) return { ...resultado, code: "ERROR_CREAR_COMPROBANTE", reintentable: false }
 
   const factura = resultado.factura as { id: string }
 
@@ -116,6 +83,8 @@ export async function emitirFacturaDirecta(
         ok: false,
         status: 500,
         error: `El comprobante fue autorizado por ARCA (CAE: ${arca.cae}) pero falló al releer los datos. Contacte soporte.`,
+        code: "POST_CAE_READ_ERROR",
+        reintentable: false,
         documentoId: factura.id,
       }
     }
@@ -134,27 +103,23 @@ export async function emitirFacturaDirecta(
         ok: false,
         status: 500,
         error: `El comprobante fue autorizado por ARCA (CAE: ${facturaActual.cae}) pero falló al generar el PDF. El comprobante quedó emitido. Contacte soporte.`,
+        code: "POST_CAE_PDF_ERROR",
+        reintentable: false,
         documentoId: factura.id,
       }
     }
 
-    // Error permanente → borrar comprobante
-    if (esErrorPermanente(err)) {
-      await _revertirFactura(factura.id, data.viajeIds)
-      const { status, mensaje } = mensajeErrorArca(err)
-      return { ok: false, status, error: mensaje }
+    const clasificado = clasificarError(err)
+
+    if (clasificado.reintentable) {
+      // ARCA caído / error transitorio → conservar comprobante para reintentar
+      console.error("[emision-directa] Error transitorio ARCA, comprobante conservado:", err)
+      return { ok: false, ...clasificado, documentoId: factura.id }
     }
 
-    // Error transitorio → conservar comprobante con estadoArca=PENDIENTE
-    console.error("[emision-directa] Error transitorio ARCA, comprobante conservado:", err)
-    const { status, mensaje } = mensajeErrorArca(err)
-    return {
-      ok: false,
-      status,
-      error: `${mensaje} El comprobante se creó correctamente pero ARCA no está disponible. Podés reintentar la autorización cuando ARCA vuelva a funcionar.`,
-      documentoId: factura.id,
-      reintentable: true,
-    }
+    // Error permanente → revertir todo
+    await _revertirFactura(factura.id, data.viajeIds)
+    return { ok: false, ...clasificado }
   }
 }
 
@@ -190,7 +155,7 @@ export async function emitirLiquidacionDirecta(
   idempotencyKey: string
 ): Promise<ResultadoEmisionDirecta> {
   const resultado = await ejecutarCrearLiquidacion(data, operadorId)
-  if (!resultado.ok) return resultado
+  if (!resultado.ok) return { ...resultado, code: "ERROR_CREAR_COMPROBANTE", reintentable: false }
 
   const liquidacion = resultado.liquidacion as { id: string }
 
@@ -206,6 +171,8 @@ export async function emitirLiquidacionDirecta(
         ok: false,
         status: 500,
         error: `El comprobante fue autorizado por ARCA (CAE: ${arca.cae}) pero falló al releer los datos. Contacte soporte.`,
+        code: "POST_CAE_READ_ERROR",
+        reintentable: false,
         documentoId: liquidacion.id,
       }
     }
@@ -223,25 +190,21 @@ export async function emitirLiquidacionDirecta(
         ok: false,
         status: 500,
         error: `El comprobante fue autorizado por ARCA (CAE: ${liqActual.cae}) pero falló al generar el PDF. El comprobante quedó emitido. Contacte soporte.`,
+        code: "POST_CAE_PDF_ERROR",
+        reintentable: false,
         documentoId: liquidacion.id,
       }
     }
 
-    if (esErrorPermanente(err)) {
-      await _revertirLiquidacion(liquidacion.id, data.viajes.map((v) => v.viajeId))
-      const { status, mensaje } = mensajeErrorArca(err)
-      return { ok: false, status, error: mensaje }
+    const clasificado = clasificarError(err)
+
+    if (clasificado.reintentable) {
+      console.error("[emision-directa] Error transitorio ARCA liquidación, conservada:", err)
+      return { ok: false, ...clasificado, documentoId: liquidacion.id }
     }
 
-    console.error("[emision-directa] Error transitorio ARCA liquidación, conservada:", err)
-    const { status, mensaje } = mensajeErrorArca(err)
-    return {
-      ok: false,
-      status,
-      error: `${mensaje} El comprobante se creó correctamente pero ARCA no está disponible. Podés reintentar la autorización cuando ARCA vuelva a funcionar.`,
-      documentoId: liquidacion.id,
-      reintentable: true,
-    }
+    await _revertirLiquidacion(liquidacion.id, data.viajes.map((v) => v.viajeId))
+    return { ok: false, ...clasificado }
   }
 }
 
@@ -280,7 +243,7 @@ export async function emitirNotaCDDirecta(
 
   if (!esEmitida) {
     const resultado = await ejecutarCrearNotaCD(data, operadorId)
-    if (!resultado.ok) return resultado
+    if (!resultado.ok) return { ...resultado, code: "ERROR_CREAR_COMPROBANTE", reintentable: false }
     return {
       ok: true,
       documento: resultado.nota,
@@ -289,7 +252,7 @@ export async function emitirNotaCDDirecta(
   }
 
   const resultado = await ejecutarCrearNotaCD(data, operadorId)
-  if (!resultado.ok) return resultado
+  if (!resultado.ok) return { ...resultado, code: "ERROR_CREAR_COMPROBANTE", reintentable: false }
 
   const nota = resultado.nota as { id: string }
 
@@ -308,25 +271,21 @@ export async function emitirNotaCDDirecta(
         ok: false,
         status: 500,
         error: `El comprobante fue autorizado por ARCA (CAE: ${notaActual.cae}) pero falló al generar el PDF. El comprobante quedó emitido. Contacte soporte.`,
+        code: "POST_CAE_PDF_ERROR",
+        reintentable: false,
         documentoId: nota.id,
       }
     }
 
-    if (esErrorPermanente(err)) {
-      await _revertirNotaCD(nota.id, data)
-      const { status, mensaje } = mensajeErrorArca(err)
-      return { ok: false, status, error: mensaje }
+    const clasificado = clasificarError(err)
+
+    if (clasificado.reintentable) {
+      console.error("[emision-directa] Error transitorio ARCA nota CD, conservada:", err)
+      return { ok: false, ...clasificado, documentoId: nota.id }
     }
 
-    console.error("[emision-directa] Error transitorio ARCA nota CD, conservada:", err)
-    const { status, mensaje } = mensajeErrorArca(err)
-    return {
-      ok: false,
-      status,
-      error: `${mensaje} El comprobante se creó correctamente pero ARCA no está disponible. Podés reintentar la autorización cuando ARCA vuelva a funcionar.`,
-      documentoId: nota.id,
-      reintentable: true,
-    }
+    await _revertirNotaCD(nota.id, data)
+    return { ok: false, ...clasificado }
   }
 }
 

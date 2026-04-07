@@ -473,7 +473,39 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
         </div>
       )}
 
-      {empresaId && !facturaEmitida && (
+      {/* Warning ARCA no disponible — comprobante conservado */}
+      {reintentableInfo && (
+        <div className="flex items-center justify-center py-12">
+          <div className="w-full max-w-md rounded-lg border border-amber-200 bg-amber-50 shadow-sm p-6 space-y-4">
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 15.75h.007v.008H12v-.008z" /></svg>
+              </div>
+              <h3 className="text-lg font-semibold text-amber-900">ARCA no disponible</h3>
+            </div>
+            <p className="text-sm text-amber-800 text-center">
+              El comprobante se creó correctamente pero ARCA no está disponible en este momento. Podés reintentar la autorización más tarde desde la lista de facturas.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={reintentarArca}
+                disabled={reintentando}
+                className="flex-1 h-9 rounded-md bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 disabled:opacity-50"
+              >
+                {reintentando ? "Reintentando..." : "Reintentar ahora"}
+              </button>
+              <a
+                href="/empresas/facturas"
+                className="flex-1 h-9 rounded-md border border-amber-300 bg-white text-amber-800 text-sm font-medium hover:bg-amber-50 inline-flex items-center justify-center"
+              >
+                Ir a Facturas
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {empresaId && !facturaEmitida && !reintentableInfo && (
         <>
           {/* Tabla de viajes pendientes con checkboxes */}
           <div className="space-y-3">
@@ -595,18 +627,6 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
           {preview && (
             <div className="p-4 bg-muted/40 rounded-lg border space-y-3">
               <h3 className="font-semibold">Preview de factura</h3>
-              {reintentableInfo && (
-                <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded text-sm space-y-2">
-                  <p>{reintentableInfo.mensaje}</p>
-                  <button
-                    onClick={reintentarArca}
-                    disabled={reintentando}
-                    className="px-3 py-1.5 bg-amber-600 text-white text-xs font-medium rounded hover:bg-amber-700 disabled:opacity-50"
-                  >
-                    {reintentando ? "Reintentando..." : "Reintentar autorización ARCA"}
-                  </button>
-                </div>
-              )}
               {errorGen && <div className="p-3 bg-red-50 text-red-700 rounded text-sm">{errorGen}</div>}
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>

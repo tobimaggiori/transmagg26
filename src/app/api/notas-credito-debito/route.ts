@@ -135,8 +135,9 @@ export async function POST(request: NextRequest) {
       if (!resultado.ok) {
         return NextResponse.json({
           error: resultado.error,
-          ...(resultado.documentoId ? { documentoId: resultado.documentoId } : {}),
-          ...(resultado.reintentable ? { reintentable: true } : {}),
+          code: resultado.code,
+          reintentable: resultado.reintentable,
+          documentoId: resultado.documentoId,
         }, { status: resultado.status })
       }
       return NextResponse.json(resultado, { status: 201 })
