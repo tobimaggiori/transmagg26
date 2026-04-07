@@ -79,6 +79,15 @@ function parsearComprobantesHabilitados(json: string): number[] {
   }
 }
 
+// Campos base que siempre existen en la tabla
+const CONFIG_SELECT = {
+  id: true, cuit: true, razonSocial: true,
+  certificadoB64: true, certificadoPass: true,
+  modo: true, puntosVenta: true, comprobantesHabilitados: true,
+  cbuMiPymes: true, activa: true,
+  actualizadoEn: true, actualizadoPor: true,
+} as const
+
 export async function GET() {
   const session = await auth()
   if (!session?.user) {
@@ -88,7 +97,17 @@ export async function GET() {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 
-  const config = await prisma.configuracionArca.findFirst()
+  // Intentar con logos primero, fallback sin logos si las columnas no existen
+  let config
+  try {
+    config = await prisma.configuracionArca.findFirst({
+      select: { ...CONFIG_SELECT, logoComprobanteB64: true, logoArcaB64: true },
+    })
+  } catch {
+    // Columnas de logo no existen en la DB (migración no aplicada)
+    config = await prisma.configuracionArca.findFirst({ select: CONFIG_SELECT })
+  }
+
   if (!config) {
     return NextResponse.json(null)
   }
@@ -125,45 +144,71 @@ export async function PATCH(req: NextRequest) {
     ? JSON.stringify(comprobantesHabilitados.filter((c) => CODIGOS_CATALOGO.has(c)))
     : undefined
 
+  // Logos: solo incluir si las columnas existen (migración aplicada)
   const logosData: Record<string, string | null> = {}
   if (logoComprobanteB64 !== undefined) logosData.logoComprobanteB64 = logoComprobanteB64
   if (logoArcaB64 !== undefined) logosData.logoArcaB64 = logoArcaB64
 
-  const updated = await prisma.configuracionArca.upsert({
-    where: { id: "unico" },
-    update: {
-      ...rest,
-      ...datosSensibles,
-      ...logosData,
-      ...(pvJson !== undefined ? { puntosVenta: pvJson } : {}),
-      ...(chJson !== undefined ? { comprobantesHabilitados: chJson } : {}),
-      actualizadoPor: session.user.email ?? undefined,
-    },
-    create: {
-      id: "unico",
-      cuit: "30709381683",
-      razonSocial: "",
-      ...rest,
-      ...datosSensibles,
-      ...logosData,
-      ...(pvJson !== undefined ? { puntosVenta: pvJson } : {}),
-      ...(chJson !== undefined ? { comprobantesHabilitados: chJson } : {}),
-      actualizadoPor: session.user.email ?? undefined,
-    },
-  })
+  // Intentar upsert con logos, fallback sin logos
+  let updated
+  try {
+    updated = await prisma.configuracionArca.upsert({
+      where: { id: "unico" },
+      update: {
+        ...rest,
+        ...datosSensibles,
+        ...logosData,
+        ...(pvJson !== undefined ? { puntosVenta: pvJson } : {}),
+        ...(chJson !== undefined ? { comprobantesHabilitados: chJson } : {}),
+        actualizadoPor: session.user.email ?? undefined,
+      },
+      create: {
+        id: "unico",
+        cuit: "30709381683",
+        razonSocial: "",
+        ...rest,
+        ...datosSensibles,
+        ...logosData,
+        ...(pvJson !== undefined ? { puntosVenta: pvJson } : {}),
+        ...(chJson !== undefined ? { comprobantesHabilitados: chJson } : {}),
+        actualizadoPor: session.user.email ?? undefined,
+      },
+    })
+  } catch (err) {
+    // Si falla por columnas de logo que no existen, reintentar sin logos
+    if (Object.keys(logosData).length > 0) {
+      console.warn("[configuracion-arca] Reintentando sin logos (migración no aplicada?):", err)
+      updated = await prisma.configuracionArca.upsert({
+        where: { id: "unico" },
+        update: {
+          ...rest,
+          ...datosSensibles,
+          ...(pvJson !== undefined ? { puntosVenta: pvJson } : {}),
+          ...(chJson !== undefined ? { comprobantesHabilitados: chJson } : {}),
+          actualizadoPor: session.user.email ?? undefined,
+        },
+        create: {
+          id: "unico",
+          cuit: "30709381683",
+          razonSocial: "",
+          ...rest,
+          ...datosSensibles,
+          ...(pvJson !== undefined ? { puntosVenta: pvJson } : {}),
+          ...(chJson !== undefined ? { comprobantesHabilitados: chJson } : {}),
+          actualizadoPor: session.user.email ?? undefined,
+        },
+      })
+    } else {
+      throw err
+    }
+  }
 
   return NextResponse.json(serializarConfig(updated))
 }
 
 /** Serializa ConfiguracionArca de Prisma a JSON seguro para el cliente */
-function serializarConfig(row: {
-  id: string; cuit: string; razonSocial: string;
-  certificadoB64: string | null; certificadoPass: string | null;
-  modo: string; puntosVenta: string; comprobantesHabilitados: string;
-  cbuMiPymes: string | null; activa: boolean;
-  logoComprobanteB64: string | null; logoArcaB64: string | null;
-  actualizadoEn: Date; actualizadoPor: string | null;
-}) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function serializarConfig(row: Record<string, any>) {
   return {
     id: row.id,
     cuit: row.cuit,
@@ -181,7 +226,7 @@ function serializarConfig(row: {
     activa: row.activa,
     tieneLogoComprobante: !!row.logoComprobanteB64,
     tieneLogoArca: !!row.logoArcaB64,
-    actualizadoEn: row.actualizadoEn.toISOString(),
+    actualizadoEn: row.actualizadoEn instanceof Date ? row.actualizadoEn.toISOString() : row.actualizadoEn,
     actualizadoPor: row.actualizadoPor,
   }
 }

@@ -34,7 +34,14 @@ const WSFEV1_URLS = {
  * // config.modo === "homologacion"
  */
 export async function cargarConfigArca(): Promise<ArcaConfig> {
-  const row = await prisma.configuracionArca.findUnique({ where: { id: "unico" } })
+  const row = await prisma.configuracionArca.findUnique({
+    where: { id: "unico" },
+    select: {
+      cuit: true, razonSocial: true, certificadoB64: true, certificadoPass: true,
+      modo: true, puntosVenta: true, comprobantesHabilitados: true,
+      cbuMiPymes: true, activa: true,
+    },
+  })
 
   if (!row) throw new ArcaNoConfiguradaError("No existe registro de configuración ARCA.")
   if (!row.activa) throw new ArcaNoConfiguradaError()
