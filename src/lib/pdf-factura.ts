@@ -190,7 +190,11 @@ function drawIconTarjeta(doc: PDFKit.PDFDocument, x: number, y: number): void {
 export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
   const fac = await prisma.facturaEmitida.findUnique({
     where: { id: facturaId },
-    include: {
+    select: {
+      id: true, empresaId: true, tipoCbte: true, modalidadMiPymes: true,
+      ivaPct: true, neto: true, ivaMonto: true, total: true,
+      ptoVenta: true, nroComprobante: true, cae: true, caeVto: true,
+      qrData: true, estadoArca: true, emitidaEn: true, metodoPago: true,
       empresa: { select: { razonSocial: true, cuit: true, condicionIva: true, direccion: true } },
       viajes: {
         orderBy: { fechaViaje: "asc" },
@@ -369,7 +373,7 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
         icon: drawIconTarjeta,
         parts: [
           { text: "Método de Pago: ", bold: true },
-          { text: "Transferencia Bancaria", bold: false },
+          { text: fac.metodoPago ?? "Transferencia Bancaria", bold: false },
         ],
       },
     ]

@@ -31,6 +31,7 @@ const crearFacturaSchema = z.object({
     kilos: z.number().positive().optional(),
     tarifaEmpresa: z.number().positive().optional(),
   })).optional(),
+  metodoPago: z.enum(["Transferencia Bancaria", "Cuenta Corriente", "Cheque", "Contado"]).default("Transferencia Bancaria"),
   emisionArca: z.boolean().optional(),
   idempotencyKey: z.string().uuid().optional(),
 })

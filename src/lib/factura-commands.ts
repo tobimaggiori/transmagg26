@@ -18,6 +18,7 @@ export type DatosCrearFactura = {
   tipoCbte: number
   modalidadMiPymes?: string
   ivaPct: number
+  metodoPago?: string
   ediciones?: Record<string, { kilos?: number; tarifaEmpresa?: number }>
 }
 
@@ -56,7 +57,7 @@ export async function ejecutarCrearFactura(
   data: DatosCrearFactura,
   operadorId: string
 ): Promise<ResultadoFactura> {
-  const { empresaId, viajeIds, tipoCbte, modalidadMiPymes, ivaPct, ediciones } = data
+  const { empresaId, viajeIds, tipoCbte, modalidadMiPymes, ivaPct, metodoPago, ediciones } = data
 
   // Validar empresa
   const empresa = await prisma.empresa.findFirst({ where: { id: empresaId, activa: true } })
@@ -131,6 +132,7 @@ export async function ejecutarCrearFactura(
         tipoCbte,
         modalidadMiPymes: modalidadMiPymes ?? null,
         ivaPct,
+        metodoPago: metodoPago ?? "Transferencia Bancaria",
         neto,
         ivaMonto,
         total,

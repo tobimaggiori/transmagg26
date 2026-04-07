@@ -512,6 +512,7 @@ model FacturaEmitida {
   emitidaEn        DateTime @default(now()) @map("emitida_en")
   reciboId         String?  @map("recibo_id")
   estadoCobro      String   @default("PENDIENTE") @map("estado_cobro")
+  metodoPago       String   @default("Transferencia Bancaria") @map("metodo_pago")
 
   empresa              Empresa             @relation(fields: [empresaId], references: [id])
   operador             Usuario             @relation("OperadorFactura", fields: [operadorId], references: [id])
