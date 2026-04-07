@@ -132,7 +132,7 @@ function fmtCondicionIva(valor: string): string {
 /**
  * fmtProvincia: string -> string
  *
- * Propósito: Abrevia nombres de provincia largos para que entren en la columna.
+ * Propósito: Abrevia el nombre de "Santiago del Estero" a "S. Estero"
  *
  * Ejemplos:
  * fmtProvincia("Santiago del Estero") => "S. Estero"
@@ -290,7 +290,7 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
     // Derecha: rectángulo redondeado con tipo comprobante + letra
     const pad = 18
     const innerW = headerRightW - pad * 2
-    const rightBoxH = 170
+    const rightBoxH = 130
     const rightBoxY = cursorY
 
     doc.save()
@@ -425,7 +425,7 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
       { header: "Destino",  w: 68,  align: "left" as const },
       { header: "Kilos",    w: 48,  align: "right" as const },
       { header: "Tarifa",   w: 72,  align: "right" as const },
-      { header: "Total",    w: 90,  align: "right" as const },
+      { header: "SubTotal",    w: 90,  align: "right" as const },
     ]
 
     const tableW = colDefs.reduce((s, c) => s + c.w, 0)
