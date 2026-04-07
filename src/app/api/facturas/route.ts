@@ -31,7 +31,7 @@ const crearFacturaSchema = z.object({
     kilos: z.number().positive().optional(),
     tarifaEmpresa: z.number().positive().optional(),
   })).optional(),
-  metodoPago: z.enum(["Transferencia Bancaria", "Cuenta Corriente", "Cheque", "Contado"]).default("Transferencia Bancaria"),
+  metodoPago: z.enum(["Transferencia Bancaria", "Cuenta Corriente", "Cheque", "Contado"]).default("Cuenta Corriente"),
   emisionArca: z.boolean().optional(),
   idempotencyKey: z.string().uuid().optional(),
 })
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
     const [viajesPendientes, facturas] = await Promise.all([
       empresaIdReal
         ? prisma.viaje.findMany({
-            where: { empresaId: empresaIdReal, estadoFactura: "PENDIENTE_FACTURAR" },
+            where: { empresaId: empresaIdReal, estadoFactura: "PENDIENTE_FACTURAR", estadoLiquidacion: "LIQUIDADO" },
             include: {
               empresa: { select: { razonSocial: true } },
               fletero: { select: { razonSocial: true } },
