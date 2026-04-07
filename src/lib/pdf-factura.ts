@@ -3,7 +3,7 @@
  *
  * Propósito: Genera el PDF de una Factura Emitida a empresa con diseño moderno.
  * Template con paleta navy/celeste, íconos vectoriales, tabla con header redondeado,
- * pie navy con QR fiscal y paginación dinámica (bufferPages).
+ * pie celeste claro con QR fiscal y paginación dinámica (bufferPages).
  *
  * Ejemplos:
  * generarPDFFactura("abc-123") => Buffer de PDF A4 con los datos de la factura
@@ -73,6 +73,24 @@ function nombreTipoCbte(tipoCbte: number): string {
  */
 function codigoCbte(tipoCbte: number): string {
   return String(tipoCbte).padStart(2, "0")
+}
+
+/**
+ * fmtCondicionIva: string -> string
+ *
+ * Propósito: Formatea el enum de condición IVA reemplazando guiones bajos
+ * por espacios y aplicando Title Case.
+ *
+ * Ejemplos:
+ * fmtCondicionIva("RESPONSABLE_INSCRIPTO") => "Responsable Inscripto"
+ * fmtCondicionIva("MONOTRIBUTISTA") => "Monotributista"
+ * fmtCondicionIva("EXENTO") => "Exento"
+ */
+function fmtCondicionIva(valor: string): string {
+  return valor
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 // ─── Íconos vectoriales ─────────────────────────────────────────────────────
@@ -228,7 +246,9 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
     doc.text(`Condición IVA: ${emisor.condicionIva}`, left, leftY, { width: headerLeftW })
 
     // Derecha: rectángulo redondeado con tipo comprobante + letra
-    const rightBoxH = 92
+    const pad = 18
+    const innerW = headerRightW - pad * 2
+    const rightBoxH = 110
     const rightBoxY = cursorY
 
     doc.save()
@@ -238,12 +258,12 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
 
     // Fila superior del box: "Factura A" a la izquierda + recuadro navy con letra
     const letraBoxSize = 44
-    const letraBoxX = headerRightX + headerRightW - letraBoxSize - 10
-    const letraBoxY = rightBoxY + 6
+    const letraBoxX = headerRightX + headerRightW - pad - letraBoxSize
+    const letraBoxY = rightBoxY + pad
 
     // Nombre tipo comprobante
     doc.font("Helvetica-Bold").fontSize(13).fillColor(TEXT)
-      .text(nombreTipoCbte(fac.tipoCbte), headerRightX + 10, rightBoxY + 14, { width: headerRightW - letraBoxSize - 30 })
+      .text(nombreTipoCbte(fac.tipoCbte), headerRightX + pad, rightBoxY + pad + 4, { width: innerW - letraBoxSize - 10 })
 
     // Recuadro navy con letra
     doc.save()
@@ -259,16 +279,18 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
     const ptoVentaStr = String(fac.ptoVenta ?? 1).padStart(4, "0")
     const nroStr = fac.nroComprobante ? String(parseInt(fac.nroComprobante) || 0).padStart(8, "0") : "Borrador"
 
-    let infoY = rightBoxY + 54
-    const infoX = headerRightX + 10
-    const infoW = headerRightW - 20
+    let infoY = rightBoxY + pad + letraBoxSize + 6
+    const infoX = headerRightX + pad
+    const infoW = innerW
 
     doc.font("Helvetica").fontSize(8.5).fillColor(TEXT)
     doc.text(`Punto de Venta: ${ptoVentaStr}  Comp. Nro: ${nroStr}`, infoX, infoY, { width: infoW })
     infoY = doc.y + 1
     doc.text(`Fecha de Emisión: ${fmtFecha(fac.emitidaEn)}`, infoX, infoY, { width: infoW })
     infoY = doc.y + 1
-    doc.text(`Convenio Multilateral: ${emisor.iibb}`, infoX, infoY, { width: infoW })
+    doc.text(`CUIT: ${emisor.cuit}`, infoX, infoY, { width: infoW })
+    infoY = doc.y + 1
+    doc.text(`IIBB: ${emisor.iibb}`, infoX, infoY, { width: infoW })
     infoY = doc.y + 1
     doc.text(`Inicio de Actividades: ${emisor.fechaInicioActividades}`, infoX, infoY, { width: infoW })
 
@@ -276,7 +298,7 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
 
     // ─── 3. SECCIÓN CLIENTE ────────────────────────────────────────────
 
-    const clientLines: { icon: (doc: PDFKit.PDFDocument, x: number, y: number) => void; parts: { text: string; bold: boolean }[] }[] = [
+    const clientLines: { icon: (d: PDFKit.PDFDocument, x: number, y: number) => void; parts: { text: string; bold: boolean }[] }[] = [
       {
         icon: drawIconPersona,
         parts: [
@@ -289,7 +311,7 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
         icon: drawIconDocumento,
         parts: [
           { text: "Condición IVA: ", bold: true },
-          { text: fac.empresa.condicionIva ?? "—", bold: false },
+          { text: fmtCondicionIva(fac.empresa.condicionIva ?? "—"), bold: false },
         ],
       },
       {
@@ -357,9 +379,9 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
 
     const tableW = colDefs.reduce((s, c) => s + c.w, 0)
     const tableLeft = left
-    const rowH = 14
-    const headerRowH = 16
-    const cupoH = 14
+    const rowH = 18
+    const headerRowH = 28
+    const cupoH = 16
 
     function drawTableHeader() {
       doc.save()
@@ -367,10 +389,10 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
       doc.roundedRect(tableLeft, cursorY, tableW, headerRowH, 4).fill()
       doc.restore()
 
-      doc.font("Helvetica-Bold").fontSize(8.5).fillColor(TEXT)
+      doc.font("Helvetica-Bold").fontSize(11).fillColor(TEXT)
       let colX = tableLeft
       for (const col of colDefs) {
-        doc.text(col.header, colX + 4, cursorY + 3, { width: col.w - 8, align: col.align })
+        doc.text(col.header, colX + 4, cursorY + (headerRowH - 11) / 2, { width: col.w - 8, align: col.align })
         colX += col.w
       }
       cursorY += headerRowH + 2
@@ -405,12 +427,12 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
         `$ ${fmtMoneda(Number(v.subtotal))}`,
       ]
 
-      doc.font("Helvetica").fontSize(8).fillColor(TEXT)
+      doc.font("Helvetica").fontSize(10).fillColor(TEXT)
       let colX = tableLeft
       for (let i = 0; i < colDefs.length; i++) {
         const fontToUse = i === colDefs.length - 1 ? "Helvetica-Bold" : "Helvetica"
         doc.font(fontToUse)
-        doc.text(cells[i], colX + 4, cursorY + 2, { width: colDefs[i].w - 8, align: colDefs[i].align })
+        doc.text(cells[i], colX + 4, cursorY + (rowH - 10) / 2, { width: colDefs[i].w - 8, align: colDefs[i].align })
         colX += colDefs[i].w
       }
       cursorY += rowH
@@ -418,16 +440,16 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
       // Badge de cupo
       if (v.cupo) {
         const cupoText = `Cupo: ${v.cupo}`
-        doc.font("Helvetica").fontSize(7)
-        const cupoTextW = doc.widthOfString(cupoText) + 10
+        doc.font("Helvetica").fontSize(8.5)
+        const cupoTextW = doc.widthOfString(cupoText) + 12
         doc.save()
         doc.fillColor(BG_LIGHT)
-        doc.roundedRect(tableLeft + 8, cursorY, cupoTextW, 11, 4).fill()
+        doc.roundedRect(tableLeft + 8, cursorY, cupoTextW, 13, 4).fill()
         doc.strokeColor(BORDER).lineWidth(0.5)
-        doc.roundedRect(tableLeft + 8, cursorY, cupoTextW, 11, 4).stroke()
+        doc.roundedRect(tableLeft + 8, cursorY, cupoTextW, 13, 4).stroke()
         doc.restore()
-        doc.font("Helvetica").fontSize(7).fillColor(TEXT)
-          .text(cupoText, tableLeft + 13, cursorY + 2)
+        doc.font("Helvetica").fontSize(8.5).fillColor(TEXT)
+          .text(cupoText, tableLeft + 14, cursorY + 2)
         cursorY += cupoH
       }
 
@@ -493,10 +515,12 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
 
       const fY = footerLineY
 
-      // Rectángulo navy de fondo
+      // Rectángulo celeste claro de fondo
       doc.save()
-      doc.fillColor(NAVY)
+      doc.fillColor(BG_LIGHT)
       doc.roundedRect(left, fY, contentW, footerH, 8).fill()
+      doc.strokeColor(BORDER).lineWidth(0.5)
+      doc.roundedRect(left, fY, contentW, footerH, 8).stroke()
       doc.restore()
 
       // QR fiscal (izquierda)
@@ -509,8 +533,8 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
 
       // "Comprobante Autorizado" + logo ARCA
       const arcaTextX = qrX + qrSize + 8
-      doc.font("Helvetica").fontSize(9).fillColor("white")
-        .text("Comprobante Autorizado", arcaTextX, fY + 16, { width: 100, lineBreak: false })
+      doc.font("Helvetica").fontSize(9).fillColor(TEXT)
+        .text("Comprobante Autorizado", arcaTextX, fY + 16, { width: 120, lineBreak: false })
 
       if (emisor.logoArca) {
         try {
@@ -519,28 +543,23 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
       }
 
       // Pág. X/N (centro)
-      doc.font("Helvetica").fontSize(8).fillColor("white")
+      doc.font("Helvetica").fontSize(8).fillColor(TEXT)
         .text(`Pág. ${i + 1}/${totalPages}`, left, fY + (footerH - 8) / 2, { width: contentW, align: "center" })
 
-      // Sub-caja blanca con CAE (derecha)
-      const caeBoxW = 170
-      const caeBoxH = 40
-      const caeBoxX = right - caeBoxW - 10
-      const caeBoxY = fY + (footerH - caeBoxH) / 2
-
-      doc.save()
-      doc.fillColor("white")
-      doc.roundedRect(caeBoxX, caeBoxY, caeBoxW, caeBoxH, 6).fill()
-      doc.restore()
+      // CAE (derecha, directo sobre fondo celeste — SIN sub-caja)
+      const caeRightMargin = right - 10
+      const caeW = 170
+      const caeX = caeRightMargin - caeW
 
       doc.font("Helvetica-Bold").fontSize(10).fillColor(TEXT)
-        .text(`CAE N°: ${fac.cae ?? "Pendiente"}`, caeBoxX + 10, caeBoxY + 7, { width: caeBoxW - 20 })
+        .text(`CAE N°: ${fac.cae ?? "Pendiente"}`, caeX, fY + 18, { width: caeW, align: "right" })
+
       doc.font("Helvetica").fontSize(9.5).fillColor(TEXT)
-      const vtoText = fac.caeVto ? fmtFecha(fac.caeVto) : "—"
-      doc.text("Fecha de Vto.: ", caeBoxX + 10, caeBoxY + 22, { width: caeBoxW - 20, continued: true })
-      doc.font("Helvetica-Bold").text(vtoText)
+        .text("Fecha de Vto.: ", caeX, fY + 34, { width: caeW, align: "right", continued: true })
+      doc.font("Helvetica-Bold").text(fac.caeVto ? fmtFecha(fac.caeVto) : "—")
     }
 
+    doc.flushPages()
     doc.end()
   })
 }
