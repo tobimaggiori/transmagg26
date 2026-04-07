@@ -329,8 +329,6 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
     infoY = doc.y + 1
     doc.text(`Fecha de Emisión: ${fmtFecha(fac.emitidaEn)}`, infoX, infoY, { width: infoW })
     infoY = doc.y + 1
-    doc.text(`CUIT: ${emisor.cuit}`, infoX, infoY, { width: infoW })
-    infoY = doc.y + 1
     doc.text(`IIBB: ${emisor.iibb}`, infoX, infoY, { width: infoW })
     infoY = doc.y + 1
     doc.text(`Inicio de Actividades: ${emisor.fechaInicioActividades}`, infoX, infoY, { width: infoW })
