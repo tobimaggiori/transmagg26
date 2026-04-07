@@ -97,14 +97,12 @@ export async function GET() {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 
-  // Intentar con logos primero, fallback sin logos si las columnas no existen
   let config
   try {
     config = await prisma.configuracionArca.findFirst({
-      select: { ...CONFIG_SELECT, logoComprobanteB64: true, logoArcaB64: true },
+      select: { ...CONFIG_SELECT, logoComprobanteR2Key: true, logoArcaR2Key: true, logoComprobanteB64: true, logoArcaB64: true },
     })
   } catch {
-    // Columnas de logo no existen en la DB (migración no aplicada)
     config = await prisma.configuracionArca.findFirst({ select: CONFIG_SELECT })
   }
 
@@ -235,8 +233,8 @@ function serializarConfig(row: Record<string, any>) {
     comprobantesHabilitados: parsearComprobantesHabilitados(row.comprobantesHabilitados),
     cbuMiPymes: row.cbuMiPymes,
     activa: row.activa,
-    tieneLogoComprobante: !!row.logoComprobanteB64,
-    tieneLogoArca: !!row.logoArcaB64,
+    tieneLogoComprobante: !!(row.logoComprobanteR2Key || row.logoComprobanteB64),
+    tieneLogoArca: !!(row.logoArcaR2Key || row.logoArcaB64),
     actualizadoEn: row.actualizadoEn instanceof Date ? row.actualizadoEn.toISOString() : row.actualizadoEn,
     actualizadoPor: row.actualizadoPor,
   }

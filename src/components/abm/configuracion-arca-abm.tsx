@@ -175,31 +175,43 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
   const logoComprobanteRef = useRef<HTMLInputElement>(null)
   const logoArcaRef = useRef<HTMLInputElement>(null)
 
-  function handleLogoFile(
+  async function handleLogoFile(
     file: File,
     setPreview: (v: string | null) => void,
-    field: "logoComprobanteB64" | "logoArcaB64"
+    tipo: "comprobante" | "arca"
   ) {
-    const img = document.createElement("img")
-    img.onload = () => {
-      const MAX_W = 820, MAX_H = 354
-      let w = img.width, h = img.height
-      if (w > MAX_W || h > MAX_H) {
-        const ratio = Math.min(MAX_W / w, MAX_H / h)
-        w = Math.round(w * ratio)
-        h = Math.round(h * ratio)
+    setPreview(URL.createObjectURL(file))
+    const section = tipo === "comprobante" ? "logoComprobante" : "logoArca"
+    setSaving(section)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      formData.append("tipo", tipo)
+      const res = await fetch("/api/configuracion-arca/logos", { method: "POST", body: formData })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        alert(data.error ?? "Error al subir logo")
+        setPreview(null)
+        return
       }
-      const canvas = document.createElement("canvas")
-      canvas.width = w
-      canvas.height = h
-      const ctx = canvas.getContext("2d")!
-      ctx.drawImage(img, 0, 0, w, h)
-      const dataUrl = canvas.toDataURL("image/png", 0.8)
-      const b64 = dataUrl.split(",")[1]
-      setPreview(dataUrl)
-      patch({ [field]: b64 }, field)
-    }
-    img.src = URL.createObjectURL(file)
+      // Recargar config para actualizar badges
+      const configRes = await fetch("/api/configuracion-arca")
+      if (configRes.ok) setConfig(await configRes.json())
+    } catch { alert("Error de red al subir logo"); setPreview(null) }
+    finally { setSaving(null) }
+  }
+
+  async function eliminarLogo(tipo: "comprobante" | "arca", setPreview: (v: string | null) => void) {
+    const section = tipo === "comprobante" ? "logoComprobante" : "logoArca"
+    setSaving(section)
+    try {
+      const res = await fetch(`/api/configuracion-arca/logos?tipo=${tipo}`, { method: "DELETE" })
+      if (!res.ok) { alert("Error al eliminar logo"); return }
+      setPreview(null)
+      const configRes = await fetch("/api/configuracion-arca")
+      if (configRes.ok) setConfig(await configRes.json())
+    } catch { alert("Error de red") }
+    finally { setSaving(null) }
   }
 
   // Confirmación producción
@@ -493,15 +505,15 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
                   className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0]
-                    if (file) handleLogoFile(file, setLogoComprobantePreview, "logoComprobanteB64")
+                    if (file) handleLogoFile(file, setLogoComprobantePreview, "comprobante")
                   }}
                 />
-                <Button size="sm" variant="outline" onClick={() => logoComprobanteRef.current?.click()} disabled={saving === "logoComprobanteB64"}>
-                  {saving === "logoComprobanteB64" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Upload className="h-3 w-3 mr-1" />}
+                <Button size="sm" variant="outline" onClick={() => logoComprobanteRef.current?.click()} disabled={saving === "logoComprobante"}>
+                  {saving === "logoComprobante" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Upload className="h-3 w-3 mr-1" />}
                   Subir imagen
                 </Button>
                 {config?.tieneLogoComprobante && (
-                  <Button size="sm" variant="ghost" onClick={() => { setLogoComprobantePreview(null); patch({ logoComprobanteB64: null }, "logoComprobanteB64") }}>
+                  <Button size="sm" variant="ghost" onClick={() => eliminarLogo("comprobante", setLogoComprobantePreview)}>
                     <Trash2 className="h-3 w-3 mr-1" /> Eliminar
                   </Button>
                 )}
@@ -528,15 +540,15 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
                   className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0]
-                    if (file) handleLogoFile(file, setLogoArcaPreview, "logoArcaB64")
+                    if (file) handleLogoFile(file, setLogoArcaPreview, "arca")
                   }}
                 />
-                <Button size="sm" variant="outline" onClick={() => logoArcaRef.current?.click()} disabled={saving === "logoArcaB64"}>
-                  {saving === "logoArcaB64" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Upload className="h-3 w-3 mr-1" />}
+                <Button size="sm" variant="outline" onClick={() => logoArcaRef.current?.click()} disabled={saving === "logoArca"}>
+                  {saving === "logoArca" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Upload className="h-3 w-3 mr-1" />}
                   Subir imagen
                 </Button>
                 {config?.tieneLogoArca && (
-                  <Button size="sm" variant="ghost" onClick={() => { setLogoArcaPreview(null); patch({ logoArcaB64: null }, "logoArcaB64") }}>
+                  <Button size="sm" variant="ghost" onClick={() => eliminarLogo("arca", setLogoArcaPreview)}>
                     <Trash2 className="h-3 w-3 mr-1" /> Eliminar
                   </Button>
                 )}

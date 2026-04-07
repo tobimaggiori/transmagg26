@@ -1498,6 +1498,8 @@ model ConfiguracionArca {
   activa                   Boolean  @default(false)
   logoComprobanteB64       String?  @map("logo_comprobante_b64")
   logoArcaB64              String?  @map("logo_arca_b64")
+  logoComprobanteR2Key     String?  @map("logo_comprobante_r2_key")
+  logoArcaR2Key            String?  @map("logo_arca_r2_key")
   actualizadoEn            DateTime @updatedAt @map("actualizado_en")
   actualizadoPor           String?  @map("actualizado_por")
 
