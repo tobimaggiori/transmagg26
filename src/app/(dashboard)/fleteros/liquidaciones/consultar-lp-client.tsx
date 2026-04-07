@@ -347,10 +347,13 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
 
   async function reintentarArcaLP(liqId: string) {
     setAutorizandoArcaId(liqId)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 45000)
     try {
-      const res = await fetch(`/api/liquidaciones/${liqId}/autorizar-arca`, { method: "POST" })
+      const res = await fetch(`/api/liquidaciones/${liqId}/autorizar-arca`, { method: "POST", signal: controller.signal })
+      clearTimeout(timeoutId)
       if (res.ok) cargarDatos()
-    } catch { /* ignore */ }
+    } catch { clearTimeout(timeoutId) }
     finally { setAutorizandoArcaId(null) }
   }
 

@@ -179,10 +179,13 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
 
   async function reintentarArca(facturaId: string) {
     setAutorizandoArcaId(facturaId)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 45000)
     try {
-      const res = await fetch(`/api/facturas/${facturaId}/autorizar-arca`, { method: "POST" })
+      const res = await fetch(`/api/facturas/${facturaId}/autorizar-arca`, { method: "POST", signal: controller.signal })
+      clearTimeout(timeoutId)
       if (res.ok) handleBuscar()
-    } catch { /* ignore */ }
+    } catch { clearTimeout(timeoutId) }
     finally { setAutorizandoArcaId(null) }
   }
 

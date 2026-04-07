@@ -262,8 +262,14 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
   async function reintentarArca() {
     if (!reintentableInfo) return
     setReintentando(true)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 45000)
     try {
-      const res = await fetch(`/api/facturas/${reintentableInfo.documentoId}/reintentar-arca`, { method: "PATCH" })
+      const res = await fetch(`/api/facturas/${reintentableInfo.documentoId}/autorizar-arca`, {
+        method: "POST",
+        signal: controller.signal,
+      })
+      clearTimeout(timeoutId)
       if (!res.ok) {
         const err = await res.json()
         setReintentableInfo({ ...reintentableInfo, mensaje: err.error ?? "Error al reintentar" })
@@ -287,8 +293,13 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
         emitidaEn: doc.emitidaEn,
       })
       cargarDatos()
-    } catch {
-      setReintentableInfo({ ...reintentableInfo, mensaje: "Error de red al reintentar. Intentá de nuevo." })
+    } catch (err) {
+      clearTimeout(timeoutId)
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setReintentableInfo({ ...reintentableInfo, mensaje: "ARCA no respondió a tiempo. Podés reintentar en unos minutos." })
+      } else {
+        setReintentableInfo({ ...reintentableInfo, mensaje: "Error de red al reintentar. Intentá de nuevo." })
+      }
     } finally {
       setReintentando(false)
     }
