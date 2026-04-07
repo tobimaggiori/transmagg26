@@ -86,6 +86,8 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
   const [generando, setGenerando] = useState(false)
   const [errorGen, setErrorGen] = useState<string | null>(null)
   const [exitoMsg, setExitoMsg] = useState<string | null>(null)
+  const [reintentableInfo, setReintentableInfo] = useState<{ documentoId: string; mensaje: string } | null>(null)
+  const [reintentando, setReintentando] = useState(false)
 
   const cargarDatos = useCallback(async () => {
     if (!empresaId) return
@@ -189,18 +191,40 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
         emisionArca: true,
         idempotencyKey: crypto.randomUUID(),
       }
-      const res = await fetch("/api/facturas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 45000)
+      let res: Response
+      try {
+        res = await fetch("/api/facturas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        })
+      } catch (fetchErr) {
+        clearTimeout(timeout)
+        if (fetchErr instanceof DOMException && fetchErr.name === "AbortError") {
+          setErrorGen("La solicitud tardó demasiado. El comprobante puede haberse creado — recargá la página para verificar.")
+        } else {
+          setErrorGen("Error de red al generar factura. Verificá tu conexión.")
+        }
+        return
+      }
+      clearTimeout(timeout)
       if (!res.ok) {
         const err = await res.json()
+        if (err.reintentable && err.documentoId) {
+          setReintentableInfo({ documentoId: err.documentoId, mensaje: err.error })
+          setErrorGen(null)
+          cargarDatos()
+          return
+        }
         setErrorGen(err.error ?? "Error al generar factura")
         return
       }
       setSeleccionados(new Set())
       setEdiciones({})
+      setReintentableInfo(null)
       setExitoMsg("Factura emitida y autorizada en ARCA exitosamente.")
       cargarDatos()
     } finally {
@@ -216,6 +240,29 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
     setModalidadMiPymes(null)
     setIvaPct(21)
     setErrorGen(null)
+    setReintentableInfo(null)
+  }
+
+  async function reintentarArca() {
+    if (!reintentableInfo) return
+    setReintentando(true)
+    try {
+      const res = await fetch(`/api/facturas/${reintentableInfo.documentoId}/reintentar-arca`, { method: "PATCH" })
+      if (!res.ok) {
+        const err = await res.json()
+        setReintentableInfo({ ...reintentableInfo, mensaje: err.error ?? "Error al reintentar" })
+        return
+      }
+      setReintentableInfo(null)
+      setSeleccionados(new Set())
+      setEdiciones({})
+      setExitoMsg("Factura autorizada en ARCA exitosamente.")
+      cargarDatos()
+    } catch {
+      setReintentableInfo({ ...reintentableInfo, mensaje: "Error de red al reintentar. Intentá de nuevo." })
+    } finally {
+      setReintentando(false)
+    }
   }
 
   const empresasItems = empresas.map((e) => ({ id: e.id, label: e.razonSocial }))
@@ -491,6 +538,18 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
           {preview && (
             <div className="p-4 bg-muted/40 rounded-lg border space-y-3">
               <h3 className="font-semibold">Preview de factura</h3>
+              {reintentableInfo && (
+                <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded text-sm space-y-2">
+                  <p>{reintentableInfo.mensaje}</p>
+                  <button
+                    onClick={reintentarArca}
+                    disabled={reintentando}
+                    className="px-3 py-1.5 bg-amber-600 text-white text-xs font-medium rounded hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    {reintentando ? "Reintentando..." : "Reintentar autorización ARCA"}
+                  </button>
+                </div>
+              )}
               {errorGen && <div className="p-3 bg-red-50 text-red-700 rounded text-sm">{errorGen}</div>}
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>

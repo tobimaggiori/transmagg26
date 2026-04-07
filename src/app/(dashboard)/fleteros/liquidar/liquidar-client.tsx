@@ -199,6 +199,8 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
   const [ivaPct] = useState<number>(21)
   const [generando, setGenerando] = useState(false)
   const [errorGen, setErrorGen] = useState<string | null>(null)
+  const [reintentableInfo, setReintentableInfo] = useState<{ documentoId: string; mensaje: string } | null>(null)
+  const [reintentando, setReintentando] = useState(false)
   const [fleteroInfo, setFleteroInfo] = useState<FleteroInfo | null>(null)
   const [exitoLiquidacion, setExitoLiquidacion] = useState<{ nroLP: string; id: string } | null>(null)
   const { estado: estadoPDF, abrirPDF, cerrarPDF } = usePDFViewer()
@@ -277,13 +279,34 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
         emisionArca: true,
         idempotencyKey: crypto.randomUUID(),
       }
-      const res = await fetch("/api/liquidaciones", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 45000)
+      let res: Response
+      try {
+        res = await fetch("/api/liquidaciones", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        })
+      } catch (fetchErr) {
+        clearTimeout(timeout)
+        if (fetchErr instanceof DOMException && fetchErr.name === "AbortError") {
+          setErrorGen("La solicitud tardó demasiado. El comprobante puede haberse creado — recargá la página para verificar.")
+        } else {
+          throw fetchErr
+        }
+        return
+      }
+      clearTimeout(timeout)
       if (!res.ok) {
-        const err = await res.json() as { error?: string }
+        const err = await res.json() as { error?: string; reintentable?: boolean; documentoId?: string }
+        if (err.reintentable && err.documentoId) {
+          setReintentableInfo({ documentoId: err.documentoId, mensaje: err.error ?? "ARCA no disponible" })
+          setErrorGen(null)
+          cargarDatos()
+          return
+        }
         setErrorGen(err.error ?? "Error al generar liquidación")
         return
       }
@@ -318,12 +341,47 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
     }
   }
 
+  async function reintentarArca() {
+    if (!reintentableInfo) return
+    setReintentando(true)
+    try {
+      const res = await fetch(`/api/liquidaciones/${reintentableInfo.documentoId}/reintentar-arca`, { method: "PATCH" })
+      if (!res.ok) {
+        const err = await res.json()
+        setReintentableInfo({ ...reintentableInfo, mensaje: err.error ?? "Error al reintentar" })
+        return
+      }
+      setReintentableInfo(null)
+      setEnPreview(false)
+      setSeleccionados(new Set())
+      setExitoLiquidacion({ nroLP: "LP", id: reintentableInfo.documentoId })
+      cargarDatos()
+    } catch {
+      setReintentableInfo({ ...reintentableInfo, mensaje: "Error de red al reintentar. Intentá de nuevo." })
+    } finally {
+      setReintentando(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Líquido Producto</h2>
         <p className="text-muted-foreground">Creación de liquidación al fletero</p>
       </div>
+
+      {reintentableInfo && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 space-y-2">
+          <p>{reintentableInfo.mensaje}</p>
+          <button
+            onClick={reintentarArca}
+            disabled={reintentando}
+            className="px-3 py-1.5 bg-amber-600 text-white text-xs font-medium rounded hover:bg-amber-700 disabled:opacity-50"
+          >
+            {reintentando ? "Reintentando..." : "Reintentar autorización ARCA"}
+          </button>
+        </div>
+      )}
 
       {exitoLiquidacion && (
         <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 space-y-2">

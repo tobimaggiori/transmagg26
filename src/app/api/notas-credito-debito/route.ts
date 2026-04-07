@@ -133,7 +133,11 @@ export async function POST(request: NextRequest) {
       const idempotencyKey = parsed.data.idempotencyKey ?? randomUUID()
       const resultado = await emitirNotaCDDirecta(parsed.data, operadorId, idempotencyKey)
       if (!resultado.ok) {
-        return NextResponse.json({ error: resultado.error }, { status: resultado.status })
+        return NextResponse.json({
+          error: resultado.error,
+          ...(resultado.documentoId ? { documentoId: resultado.documentoId } : {}),
+          ...(resultado.reintentable ? { reintentable: true } : {}),
+        }, { status: resultado.status })
       }
       return NextResponse.json(resultado, { status: 201 })
     }

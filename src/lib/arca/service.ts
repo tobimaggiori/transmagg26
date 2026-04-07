@@ -28,8 +28,41 @@ import {
   DocumentoYaAutorizadoError,
   DocumentoEnProcesoError,
   DocumentoNoEncontradoError,
+  WsaaError,
+  Wsfev1Error,
 } from "./errors"
 import type { ArcaConfig, AutorizarComprobanteResult, TipoDocumentoArca } from "./types"
+
+// ─── Retry con backoff ──────────────────────────────────────────────────────
+
+function esErrorTransitorio(err: unknown): boolean {
+  if (err instanceof WsaaError) return err.retryable
+  if (err instanceof Wsfev1Error) return err.retryable
+  // Errores de red genéricos
+  if (err instanceof Error && (err.message.includes("ECONNREFUSED") || err.message.includes("ETIMEDOUT") || err.message.includes("fetch failed"))) return true
+  return false
+}
+
+async function conReintentos<T>(fn: () => Promise<T>, maxIntentos = 3, backoffMs = 2000): Promise<T> {
+  let ultimoError: unknown
+  for (let intento = 1; intento <= maxIntentos; intento++) {
+    try {
+      return await fn()
+    } catch (err) {
+      ultimoError = err
+      if (intento < maxIntentos && esErrorTransitorio(err)) {
+        const espera = backoffMs * intento
+        logArca("warn", "error", `Intento ${intento}/${maxIntentos} falló, reintentando en ${espera}ms`, {
+          error: err instanceof Error ? err.message : String(err),
+        })
+        await new Promise((r) => setTimeout(r, espera))
+        continue
+      }
+      throw err
+    }
+  }
+  throw ultimoError
+}
 
 // ─── Logging seguro ──────────────────────────────────────────────────────────
 
@@ -615,13 +648,13 @@ async function _autorizarComprobante(
     return _autorizarSimulado(config, input)
   }
 
-  // 1. Obtener ticket WSAA
-  const ticket = await obtenerTicketWsaa(config)
+  // 1. Obtener ticket WSAA (con reintentos para errores transitorios)
+  const ticket = await conReintentos(() => obtenerTicketWsaa(config))
   const auth = { Token: ticket.token, Sign: ticket.sign, Cuit: config.cuit }
   const urls = resolverUrls(config)
 
-  // 2. Sincronizar numeración con ARCA
-  const ultimo = await feCompUltimoAutorizado(urls.wsfev1Url, auth, input.ptoVenta, input.tipoCbte)
+  // 2. Sincronizar numeración con ARCA (con reintentos)
+  const ultimo = await conReintentos(() => feCompUltimoAutorizado(urls.wsfev1Url, auth, input.ptoVenta, input.tipoCbte))
   const nroDefinitivo = ultimo.CbteNro + 1
 
   logArca("info", "numeracion", "Numeración sincronizada", {
@@ -645,8 +678,8 @@ async function _autorizarComprobante(
   const request = mapearComprobanteArca(datosComprobante)
   const requestJson = JSON.stringify(request)
 
-  // 6. Llamar FECAESolicitar
-  const response = await feCAESolicitar(urls.wsfev1Url, auth, request)
+  // 6. Llamar FECAESolicitar (con reintentos para errores de red)
+  const response = await conReintentos(() => feCAESolicitar(urls.wsfev1Url, auth, request))
   const responseJson = JSON.stringify(response)
 
   // 7. Procesar resultado

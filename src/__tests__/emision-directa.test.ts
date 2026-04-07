@@ -20,7 +20,7 @@ const mockTx = {
   asientoIva: { deleteMany: jest.fn() },
   facturaEmitida: { delete: jest.fn(), update: jest.fn(), findUnique: jest.fn() },
   liquidacion: { delete: jest.fn(), findUnique: jest.fn() },
-  notaCreditoDebito: { delete: jest.fn(), update: jest.fn() },
+  notaCreditoDebito: { delete: jest.fn(), update: jest.fn(), findUnique: jest.fn() },
   viaje: { updateMany: jest.fn() },
 }
 const mockPrisma = {
@@ -49,6 +49,7 @@ import {
   emitirLiquidacionDirecta,
   emitirNotaCDDirecta,
 } from "@/lib/emision-directa"
+import { ArcaRechazoError } from "@/lib/arca/errors"
 
 beforeEach(() => {
   jest.clearAllMocks()
@@ -63,6 +64,7 @@ beforeEach(() => {
   mockTx.liquidacion.findUnique.mockResolvedValue({ id: "liq-1" })
   mockTx.notaCreditoDebito.delete.mockResolvedValue({})
   mockTx.notaCreditoDebito.update.mockResolvedValue({ id: "nota-1", estado: "EMITIDA" })
+  mockTx.notaCreditoDebito.findUnique.mockResolvedValue(null)
   mockTx.viaje.updateMany.mockResolvedValue({ count: 1 })
 })
 
@@ -97,21 +99,20 @@ describe("emitirFacturaDirecta", () => {
 
   it("ARCA FAIL → ok=false, sin documento, con mensaje claro", async () => {
     mockEjecutarCrearFactura.mockResolvedValue({ ok: true, factura: { id: "fact-1" } })
-    mockAutorizarFacturaArca.mockRejectedValue(new Error("10016: CUIT inválido"))
+    mockAutorizarFacturaArca.mockRejectedValue(new ArcaRechazoError("10016: CUIT inválido"))
 
     const r = await emitirFacturaDirecta(data, "op1", "key-1")
 
     expect(r.ok).toBe(false)
     if (r.ok) return
-    expect(r.status).toBe(502)
-    expect(r.error).toContain("No se pudo emitir el comprobante")
+    expect(r.status).toBe(422)
+    expect(r.error).toContain("ARCA rechazó el comprobante")
     expect(r.error).toContain("CUIT inválido")
-    expect(r.error).toContain("no quedó emitido")
   })
 
-  it("ARCA FAIL → revierte factura y viajes", async () => {
+  it("ARCA FAIL permanente → revierte factura y viajes", async () => {
     mockEjecutarCrearFactura.mockResolvedValue({ ok: true, factura: { id: "fact-1" } })
-    mockAutorizarFacturaArca.mockRejectedValue(new Error("ARCA rechazó"))
+    mockAutorizarFacturaArca.mockRejectedValue(new ArcaRechazoError("Datos inválidos"))
 
     await emitirFacturaDirecta(data, "op1", "key-1")
 
@@ -124,6 +125,20 @@ describe("emitirFacturaDirecta", () => {
     })
     // Factura eliminada
     expect(mockTx.facturaEmitida.delete).toHaveBeenCalledWith({ where: { id: "fact-1" } })
+  })
+
+  it("ARCA FAIL transitorio → conserva factura, retorna reintentable", async () => {
+    mockEjecutarCrearFactura.mockResolvedValue({ ok: true, factura: { id: "fact-1" } })
+    mockAutorizarFacturaArca.mockRejectedValue(new Error("ECONNREFUSED"))
+
+    const r = await emitirFacturaDirecta(data, "op1", "key-1")
+
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reintentable).toBe(true)
+    expect(r.documentoId).toBe("fact-1")
+    // NO debe haber ejecutado compensación
+    expect(mockTx.facturaEmitida.delete).not.toHaveBeenCalled()
   })
 
   it("creación falla → error sin intentar ARCA ni compensar", async () => {
@@ -165,21 +180,34 @@ describe("emitirLiquidacionDirecta", () => {
     expect(r.arca.cae).toBe("74120000000001")
   })
 
-  it("ARCA FAIL → sin efectos, viajes revertidos", async () => {
+  it("ARCA FAIL permanente → sin efectos, viajes revertidos", async () => {
     mockEjecutarCrearLiquidacion.mockResolvedValue({ ok: true, liquidacion: { id: "liq-1" } })
-    mockAutorizarLiquidacionArca.mockRejectedValue(new Error("Timeout WSAA"))
+    mockAutorizarLiquidacionArca.mockRejectedValue(new ArcaRechazoError("Datos inválidos"))
 
     const r = await emitirLiquidacionDirecta(data, "op1", "key-1")
 
     expect(r.ok).toBe(false)
     if (r.ok) return
-    expect(r.error).toContain("Timeout WSAA")
+    expect(r.error).toContain("ARCA rechazó")
     // Compensación ejecutada
     expect(mockTx.liquidacion.delete).toHaveBeenCalledWith({ where: { id: "liq-1" } })
     expect(mockTx.viaje.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ["v1", "v2"] } },
       data: { estadoLiquidacion: "PENDIENTE_LIQUIDAR" },
     })
+  })
+
+  it("ARCA FAIL transitorio → conserva liquidación, retorna reintentable", async () => {
+    mockEjecutarCrearLiquidacion.mockResolvedValue({ ok: true, liquidacion: { id: "liq-1" } })
+    mockAutorizarLiquidacionArca.mockRejectedValue(new Error("ECONNREFUSED"))
+
+    const r = await emitirLiquidacionDirecta(data, "op1", "key-1")
+
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reintentable).toBe(true)
+    expect(r.documentoId).toBe("liq-1")
+    expect(mockTx.liquidacion.delete).not.toHaveBeenCalled()
   })
 })
 
@@ -210,7 +238,7 @@ describe("emitirNotaCDDirecta — NC_EMITIDA", () => {
 
   it("ARCA FAIL → nota eliminada, viajes revertidos a FACTURADO", async () => {
     mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-1" } })
-    mockAutorizarNotaCDArca.mockRejectedValue(new Error("Error ARCA"))
+    mockAutorizarNotaCDArca.mockRejectedValue(new ArcaRechazoError("Error ARCA"))
     // La compensación busca viajes de la factura
     mockTx.viajeEnFactura.findMany.mockResolvedValue([{ viajeId: "v1" }, { viajeId: "v2" }])
 
@@ -239,7 +267,7 @@ describe("emitirNotaCDDirecta — NC parcial ARCA FAIL", () => {
       viajesIds: ["v1"],
     }
     mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-2" } })
-    mockAutorizarNotaCDArca.mockRejectedValue(new Error("Error"))
+    mockAutorizarNotaCDArca.mockRejectedValue(new ArcaRechazoError("Error"))
 
     await emitirNotaCDDirecta(ncParcial, "op1", "key-1")
 
@@ -261,7 +289,7 @@ describe("emitirNotaCDDirecta — ND_EMITIDA ARCA FAIL", () => {
       descripcion: "Diferencia",
     }
     mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-3" } })
-    mockAutorizarNotaCDArca.mockRejectedValue(new Error("Error"))
+    mockAutorizarNotaCDArca.mockRejectedValue(new ArcaRechazoError("Error"))
 
     await emitirNotaCDDirecta(nd, "op1", "key-1")
 
@@ -309,7 +337,7 @@ describe("invariantes de emisión directa", () => {
     expect(mockAutorizarFacturaArca).toHaveBeenCalledWith("f1", "uuid-idempotent-123")
   })
 
-  it("ARCA FAIL sin mensaje → error genérico claro", async () => {
+  it("ARCA FAIL transitorio sin mensaje → conserva comprobante + reintentable", async () => {
     mockEjecutarCrearFactura.mockResolvedValue({ ok: true, factura: { id: "f1" } })
     mockAutorizarFacturaArca.mockRejectedValue(new Error(""))
 
@@ -321,7 +349,9 @@ describe("invariantes de emisión directa", () => {
 
     expect(r.ok).toBe(false)
     if (r.ok) return
-    expect(r.error).toContain("No se pudo emitir el comprobante")
+    expect(r.reintentable).toBe(true)
+    expect(r.documentoId).toBe("f1")
+    expect(r.error).toContain("ARCA no está disponible")
   })
 })
 
@@ -332,7 +362,7 @@ describe("invariantes de emisión directa", () => {
 describe("rollback ARCA FAIL — limpieza completa de efectos", () => {
   it("factura: borra asientos IIBB antes de borrar ViajeEnFactura", async () => {
     mockEjecutarCrearFactura.mockResolvedValue({ ok: true, factura: { id: "fact-1" } })
-    mockAutorizarFacturaArca.mockRejectedValue(new Error("ARCA error"))
+    mockAutorizarFacturaArca.mockRejectedValue(new ArcaRechazoError("ARCA error"))
     mockTx.viajeEnFactura.findMany.mockResolvedValue([{ id: "vef-1" }, { id: "vef-2" }])
 
     await emitirFacturaDirecta(
@@ -361,7 +391,7 @@ describe("rollback ARCA FAIL — limpieza completa de efectos", () => {
 
   it("liquidación: borra asientos IIBB y IVA antes de borrar LP", async () => {
     mockEjecutarCrearLiquidacion.mockResolvedValue({ ok: true, liquidacion: { id: "liq-1" } })
-    mockAutorizarLiquidacionArca.mockRejectedValue(new Error("ARCA error"))
+    mockAutorizarLiquidacionArca.mockRejectedValue(new ArcaRechazoError("ARCA error"))
     mockTx.viajeEnLiquidacion.findMany.mockResolvedValue([{ id: "vel-1" }])
 
     await emitirLiquidacionDirecta(
@@ -386,7 +416,7 @@ describe("rollback ARCA FAIL — limpieza completa de efectos", () => {
 
   it("NC total: borra nota y revierte viajes a FACTURADO", async () => {
     mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-1" } })
-    mockAutorizarNotaCDArca.mockRejectedValue(new Error("ARCA error"))
+    mockAutorizarNotaCDArca.mockRejectedValue(new ArcaRechazoError("ARCA error"))
     mockTx.viajeEnFactura.findMany.mockResolvedValue([{ viajeId: "v1" }, { viajeId: "v2" }])
 
     await emitirNotaCDDirecta({
@@ -403,7 +433,7 @@ describe("rollback ARCA FAIL — limpieza completa de efectos", () => {
 
   it("NC total sobre LP: borra nota y revierte viajes a LIQUIDADO", async () => {
     mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-lp" } })
-    mockAutorizarNotaCDArca.mockRejectedValue(new Error("ARCA error"))
+    mockAutorizarNotaCDArca.mockRejectedValue(new ArcaRechazoError("ARCA error"))
     mockTx.viajeEnLiquidacion.findMany.mockResolvedValue([{ viajeId: "v1" }, { viajeId: "v2" }])
 
     await emitirNotaCDDirecta({
@@ -420,7 +450,7 @@ describe("rollback ARCA FAIL — limpieza completa de efectos", () => {
 
   it("NC parcial sobre LP: revierte viajes seleccionados a LIQUIDADO", async () => {
     mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-lp2" } })
-    mockAutorizarNotaCDArca.mockRejectedValue(new Error("ARCA error"))
+    mockAutorizarNotaCDArca.mockRejectedValue(new ArcaRechazoError("ARCA error"))
 
     await emitirNotaCDDirecta({
       tipo: "NC_EMITIDA", subtipo: "ANULACION_PARCIAL",
@@ -436,7 +466,7 @@ describe("rollback ARCA FAIL — limpieza completa de efectos", () => {
 
   it("ND emitida: borra nota sin tocar viajes", async () => {
     mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-2" } })
-    mockAutorizarNotaCDArca.mockRejectedValue(new Error("ARCA error"))
+    mockAutorizarNotaCDArca.mockRejectedValue(new ArcaRechazoError("ARCA error"))
 
     await emitirNotaCDDirecta({
       tipo: "ND_EMITIDA", subtipo: "DIFERENCIA_TARIFA",
@@ -449,7 +479,7 @@ describe("rollback ARCA FAIL — limpieza completa de efectos", () => {
 
   it("compensación ejecuta todo dentro de una transacción", async () => {
     mockEjecutarCrearFactura.mockResolvedValue({ ok: true, factura: { id: "fact-1" } })
-    mockAutorizarFacturaArca.mockRejectedValue(new Error("error"))
+    mockAutorizarFacturaArca.mockRejectedValue(new ArcaRechazoError("error"))
 
     await emitirFacturaDirecta(
       { empresaId: "e1", viajeIds: ["v1"], tipoCbte: 1, ivaPct: 21 },

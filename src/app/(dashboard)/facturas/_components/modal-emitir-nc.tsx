@@ -77,11 +77,24 @@ export function ModalEmitirNC({
         emisionArca: true,
         idempotencyKey: crypto.randomUUID(),
       }
-      const res = await fetch("/api/notas-credito-debito", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 45000)
+      let res: Response
+      try {
+        res = await fetch("/api/notas-credito-debito", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        })
+      } catch (fetchErr) {
+        clearTimeout(timeout)
+        setError(fetchErr instanceof DOMException && fetchErr.name === "AbortError"
+          ? "La solicitud tardó demasiado. Recargá la página para verificar."
+          : "Error de red al emitir NC")
+        return
+      }
+      clearTimeout(timeout)
       if (!res.ok) {
         const err = await res.json()
         setError(err.error ?? "Error al emitir NC")
