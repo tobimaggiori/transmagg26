@@ -129,6 +129,20 @@ function fmtCondicionIva(valor: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+/**
+ * fmtProvincia: string -> string
+ *
+ * Propósito: Abrevia nombres de provincia largos para que entren en la columna.
+ *
+ * Ejemplos:
+ * fmtProvincia("Santiago del Estero") => "S. Estero"
+ * fmtProvincia("Buenos Aires") => "Buenos Aires"
+ */
+function fmtProvincia(prov: string): string {
+  if (prov.toLowerCase().includes("santiago del estero")) return "S. Estero"
+  return prov
+}
+
 // ─── Íconos vectoriales ─────────────────────────────────────────────────────
 
 /** Ícono persona (8x8): cabeza circular + hombros semicirculares */
@@ -276,7 +290,7 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
     // Derecha: rectángulo redondeado con tipo comprobante + letra
     const pad = 18
     const innerW = headerRightW - pad * 2
-    const rightBoxH = 118
+    const rightBoxH = 170
     const rightBoxY = cursorY
 
     doc.save()
@@ -478,14 +492,8 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
       doc.font("Helvetica").fontSize(10).fillColor(TEXT)
       doc.text(origenCiudad, colXs[3] + 4, textY, { lineBreak: false })
       if (v.provinciaOrigen) {
-        const provColW = colDefs[3].w - 8
-        let provFS = 10
-        doc.font("Helvetica").fontSize(provFS)
-        while (doc.widthOfString(v.provinciaOrigen) > provColW && provFS > 7) {
-          provFS -= 0.5
-          doc.fontSize(provFS)
-        }
-        doc.text(v.provinciaOrigen, colXs[3] + 4, textY + 13, { lineBreak: false })
+        doc.font("Helvetica").fontSize(10).fillColor(TEXT)
+        doc.text(fmtProvincia(v.provinciaOrigen), colXs[3] + 4, textY + 13, { lineBreak: false })
       }
 
       // Destino: ciudad + provincia debajo
@@ -493,14 +501,8 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
       doc.font("Helvetica").fontSize(10).fillColor(TEXT)
       doc.text(destinoCiudad, colXs[4] + 4, textY, { lineBreak: false })
       if (v.provinciaDestino) {
-        const provColW = colDefs[4].w - 8
-        let provFS = 10
-        doc.font("Helvetica").fontSize(provFS)
-        while (doc.widthOfString(v.provinciaDestino) > provColW && provFS > 7) {
-          provFS -= 0.5
-          doc.fontSize(provFS)
-        }
-        doc.text(v.provinciaDestino, colXs[4] + 4, textY + 13, { lineBreak: false })
+        doc.font("Helvetica").fontSize(10).fillColor(TEXT)
+        doc.text(fmtProvincia(v.provinciaDestino), colXs[4] + 4, textY + 13, { lineBreak: false })
       }
 
       // Kilos (sin width constraint)
@@ -629,16 +631,16 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
         .text(`Pág. ${i + 1}/${totalPages}`, left, fY + (footerH - 8) / 2, { width: contentW, align: "center" })
 
       // CAE (derecha, directo sobre fondo celeste — SIN sub-caja)
-      const caeW = 170
-      const caeX = right - 10 - caeW
+      const caeW = 200
+      const caeX = right - caeW
+      const caeTextW = 190
+      const footerContentY = fY
 
       doc.font("Helvetica-Bold").fontSize(10).fillColor(TEXT)
-        .text(`CAE N°: `, caeX, fY + 18, { width: caeW, align: "right", continued: true })
-      doc.font("Helvetica").text(fac.cae ?? "Pendiente")
+        .text(`CAE N°: ${fac.cae ?? "Pendiente"}`, caeX, footerContentY + 12, { width: caeTextW, align: "right" })
 
       doc.font("Helvetica").fontSize(9.5).fillColor(TEXT)
-        .text("Fecha de Vto.: ", caeX, fY + 34, { width: caeW, align: "right", continued: true })
-      doc.font("Helvetica-Bold").text(fac.caeVto ? fmtFecha(fac.caeVto) : "—")
+        .text(`Fecha de Vto.: ${fac.caeVto ? fmtFecha(fac.caeVto) : "—"}`, caeX, footerContentY + 30, { width: caeTextW, align: "right" })
     }
 
     doc.flushPages()
