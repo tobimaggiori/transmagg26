@@ -8,7 +8,6 @@
 
 import { useState, useCallback, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
-import Link from "next/link"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
 import { labelCondicionIva, formatearNroComprobante } from "@/lib/liquidacion-utils"
@@ -384,41 +383,45 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
       )}
 
       {exitoLiquidacion && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 space-y-2">
-          <p className="font-medium">✓ Líquido Producto {exitoLiquidacion.nroLP} emitido exitosamente.</p>
-          <p className="text-xs text-green-700">(Cuando se conecte ARCA, aquí aparecerá el CAE asignado)</p>
-          <div className="flex flex-wrap gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => abrirPDF({
-                fetchUrl: `/api/liquidaciones/${exitoLiquidacion.id}/pdf`,
-                titulo: `LP ${exitoLiquidacion.nroLP}`,
-                onEnviarMail: async (email: string) => {
-                  const r = await fetch(`/api/liquidaciones/${exitoLiquidacion.id}/enviar-email`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ emailDestino: email }),
-                  })
-                  if (!r.ok) { const err = await r.json(); throw new Error(err.error ?? "Error") }
-                },
-              })}
-              className="h-8 px-3 rounded-md bg-green-700 text-white text-xs font-medium hover:bg-green-800"
-            >
-              Ver PDF
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                abrirPDF({ fetchUrl: `/api/liquidaciones/${exitoLiquidacion.id}/pdf`, titulo: `LP ${exitoLiquidacion.nroLP}` })
-                setTimeout(() => window.print(), 1000)
-              }}
-              className="h-8 px-3 rounded-md border border-green-300 text-green-800 text-xs font-medium hover:bg-green-100"
-            >
-              Imprimir PDF
-            </button>
-            <Link href="/fleteros/liquidaciones" className="h-8 px-3 rounded-md border border-green-300 text-green-800 text-xs font-medium hover:bg-green-100 inline-flex items-center">
-              Ver en Consultar LP →
-            </Link>
+        <div className="flex items-center justify-center py-12">
+          <div className="w-full max-w-md rounded-lg border bg-white shadow-sm p-6 space-y-5">
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-green-600">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+              </div>
+              <h3 className="text-lg font-semibold">Liquidación emitida exitosamente</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <span className="text-muted-foreground">Comprobante</span>
+              <span className="font-medium">LP {exitoLiquidacion.nroLP}</span>
+            </div>
+            <div className="flex flex-wrap gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => abrirPDF({
+                  fetchUrl: `/api/liquidaciones/${exitoLiquidacion.id}/pdf`,
+                  titulo: `LP ${exitoLiquidacion.nroLP}`,
+                  onEnviarMail: async (email: string) => {
+                    const r = await fetch(`/api/liquidaciones/${exitoLiquidacion.id}/enviar-email`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ emailDestino: email }),
+                    })
+                    if (!r.ok) { const err = await r.json(); throw new Error(err.error ?? "Error") }
+                  },
+                })}
+                className="flex-1 h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
+              >
+                Ver PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => { setExitoLiquidacion(null); setEnPreview(false); setSeleccionados(new Set()) }}
+                className="flex-1 h-9 rounded-md border border-input bg-background text-sm font-medium hover:bg-accent"
+              >
+                Crear otra liquidación
+              </button>
+            </div>
           </div>
         </div>
       )}

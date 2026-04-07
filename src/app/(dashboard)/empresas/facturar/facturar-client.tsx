@@ -85,7 +85,10 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
   const [cargando, setCargando] = useState(false)
   const [generando, setGenerando] = useState(false)
   const [errorGen, setErrorGen] = useState<string | null>(null)
-  const [exitoMsg, setExitoMsg] = useState<string | null>(null)
+  const [facturaEmitida, setFacturaEmitida] = useState<{
+    id: string; tipoCbte: number; ptoVenta: number; nroComprobante: string;
+    cae: string; caeVto: string; neto: number; ivaMonto: number; total: number; emitidaEn: string;
+  } | null>(null)
   const [reintentableInfo, setReintentableInfo] = useState<{ documentoId: string; mensaje: string } | null>(null)
   const [reintentando, setReintentando] = useState(false)
 
@@ -222,10 +225,23 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
         setErrorGen(err.error ?? "Error al generar factura")
         return
       }
+      const data = await res.json()
+      const doc = data.documento
       setSeleccionados(new Set())
       setEdiciones({})
       setReintentableInfo(null)
-      setExitoMsg("Factura emitida y autorizada en ARCA exitosamente.")
+      setFacturaEmitida({
+        id: doc.id,
+        tipoCbte: doc.tipoCbte,
+        ptoVenta: doc.ptoVenta ?? 1,
+        nroComprobante: doc.nroComprobante ?? "",
+        cae: doc.cae ?? data.arca?.cae ?? "",
+        caeVto: doc.caeVto ?? data.arca?.caeVto ?? "",
+        neto: Number(doc.neto),
+        ivaMonto: Number(doc.ivaMonto),
+        total: Number(doc.total),
+        emitidaEn: doc.emitidaEn,
+      })
       cargarDatos()
     } finally {
       setGenerando(false)
@@ -233,7 +249,7 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
   }
 
   function resetearFormulario() {
-    setExitoMsg(null)
+    setFacturaEmitida(null)
     setSeleccionados(new Set())
     setEdiciones({})
     setTipoCbteNum(null)
@@ -253,10 +269,23 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
         setReintentableInfo({ ...reintentableInfo, mensaje: err.error ?? "Error al reintentar" })
         return
       }
+      const data = await res.json()
+      const doc = data.documento
       setReintentableInfo(null)
       setSeleccionados(new Set())
       setEdiciones({})
-      setExitoMsg("Factura autorizada en ARCA exitosamente.")
+      setFacturaEmitida({
+        id: doc.id,
+        tipoCbte: doc.tipoCbte,
+        ptoVenta: doc.ptoVenta ?? 1,
+        nroComprobante: doc.nroComprobante ?? "",
+        cae: doc.cae ?? data.arca?.cae ?? "",
+        caeVto: doc.caeVto ?? "",
+        neto: Number(doc.neto),
+        ivaMonto: Number(doc.ivaMonto),
+        total: Number(doc.total),
+        emitidaEn: doc.emitidaEn,
+      })
       cargarDatos()
     } catch {
       setReintentableInfo({ ...reintentableInfo, mensaje: "Error de red al reintentar. Intentá de nuevo." })
@@ -287,7 +316,7 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
               setEmpresaId(id)
               setSeleccionados(new Set())
               setEdiciones({})
-              setExitoMsg(null)
+              setFacturaEmitida(null)
               setTipoCbteNum(null)
               setModalidadMiPymes(null)
             }}
@@ -403,20 +432,48 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
         </div>
       )}
 
-      {/* Mensaje de éxito */}
-      {exitoMsg && (
-        <div className="p-4 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
-          <p className="text-green-800 font-medium">{exitoMsg}</p>
-          <button
-            onClick={resetearFormulario}
-            className="h-9 px-4 rounded-md bg-green-700 text-white text-sm font-medium hover:bg-green-800"
-          >
-            Crear otra?
-          </button>
+      {/* Card de éxito */}
+      {facturaEmitida && (
+        <div className="flex items-center justify-center py-12">
+          <div className="w-full max-w-md rounded-lg border bg-white shadow-sm p-6 space-y-5">
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-green-600">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+              </div>
+              <h3 className="text-lg font-semibold">Factura emitida exitosamente</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <span className="text-muted-foreground">Comprobante</span>
+              <span className="font-medium">
+                Factura {facturaEmitida.tipoCbte === 1 ? "A" : facturaEmitida.tipoCbte === 6 ? "B" : "A MiPyme"}{" "}
+                {String(facturaEmitida.ptoVenta).padStart(4, "0")}-{String(parseInt(facturaEmitida.nroComprobante) || 0).padStart(8, "0")}
+              </span>
+              <span className="text-muted-foreground">CAE</span>
+              <span className="font-mono text-xs">{facturaEmitida.cae || "—"}</span>
+              <span className="text-muted-foreground">Fecha</span>
+              <span>{new Date(facturaEmitida.emitidaEn).toLocaleDateString("es-AR")}</span>
+              <span className="text-muted-foreground">Total</span>
+              <span className="font-semibold">{Number(facturaEmitida.total).toLocaleString("es-AR", { style: "currency", currency: "ARS" })}</span>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => window.open(`/api/facturas/${facturaEmitida.id}/pdf`, "_blank")}
+                className="flex-1 h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
+              >
+                Ver PDF
+              </button>
+              <button
+                onClick={resetearFormulario}
+                className="flex-1 h-9 rounded-md border border-input bg-background text-sm font-medium hover:bg-accent"
+              >
+                Crear otra factura
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
-      {empresaId && !exitoMsg && (
+      {empresaId && !facturaEmitida && (
         <>
           {/* Tabla de viajes pendientes con checkboxes */}
           <div className="space-y-3">
