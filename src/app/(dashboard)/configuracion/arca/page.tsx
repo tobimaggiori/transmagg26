@@ -15,14 +15,15 @@ export default async function ArcaPage() {
   let arcaConfig: {
     id: string; cuit: string; razonSocial: string; tieneCertificado: boolean;
     modo: string; puntosVenta: Record<string, string>; comprobantesHabilitados: number[];
-    cbuMiPymes: string | null; activa: boolean; actualizadoEn: string; actualizadoPor: string | null;
+    cbuMiPymes: string | null; activa: boolean; tieneLogoComprobante: boolean; tieneLogoArca: boolean;
+    actualizadoEn: string; actualizadoPor: string | null;
   } | null = null
 
   try {
     const arcaConfigRaw = await prisma.configuracionArca.findFirst()
     if (arcaConfigRaw) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { certificadoB64, certificadoPass, ...safe } = arcaConfigRaw
+      const { certificadoB64, certificadoPass, logoComprobanteB64, logoArcaB64, ...safe } = arcaConfigRaw
       const puntosVenta: Record<string, string> = {}
       try {
         const raw = JSON.parse(safe.puntosVenta) as Record<string, unknown>
@@ -44,6 +45,8 @@ export default async function ArcaPage() {
         comprobantesHabilitados,
         cbuMiPymes: safe.cbuMiPymes,
         activa: safe.activa,
+        tieneLogoComprobante: !!logoComprobanteB64,
+        tieneLogoArca: !!logoArcaB64,
         actualizadoEn: safe.actualizadoEn.toISOString(),
         actualizadoPor: safe.actualizadoPor,
       }

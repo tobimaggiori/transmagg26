@@ -30,6 +30,8 @@ import {
   Settings,
   TestTube,
   History,
+  Image,
+  Trash2,
 } from "lucide-react"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -44,6 +46,8 @@ interface ConfigProp {
   comprobantesHabilitados: number[]
   cbuMiPymes: string | null
   activa: boolean
+  tieneLogoComprobante: boolean
+  tieneLogoArca: boolean
   actualizadoEn: string
   actualizadoPor: string | null
 }
@@ -81,6 +85,7 @@ interface CertInfo {
 
 const TABS = [
   { id: "general", label: "General", icon: Settings },
+  { id: "logos", label: "Logos", icon: Image },
   { id: "certificado", label: "Certificado", icon: Key },
   { id: "puntos-venta", label: "Puntos de venta", icon: FileText },
   { id: "mipyme", label: "MiPyME", icon: FileText },
@@ -163,6 +168,27 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
   // Verificación
   const [verificando, setVerificando] = useState(false)
   const [verificResult, setVerificResult] = useState<{ ok: boolean; errores?: string[]; mensaje?: string } | null>(null)
+
+  // Logos
+  const [logoComprobantePreview, setLogoComprobantePreview] = useState<string | null>(null)
+  const [logoArcaPreview, setLogoArcaPreview] = useState<string | null>(null)
+  const logoComprobanteRef = useRef<HTMLInputElement>(null)
+  const logoArcaRef = useRef<HTMLInputElement>(null)
+
+  function handleLogoFile(
+    file: File,
+    setPreview: (v: string | null) => void,
+    field: "logoComprobanteB64" | "logoArcaB64"
+  ) {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      const b64 = result.split(",")[1]
+      setPreview(result)
+      patch({ [field]: b64 }, field)
+    }
+    reader.readAsDataURL(file)
+  }
 
   // Confirmación producción
   const [confirmProduccion, setConfirmProduccion] = useState(false)
@@ -425,6 +451,80 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
                 {saving === "ambiente" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
                 Guardar ambiente
               </Button>
+            </div>
+          </div>
+        )}
+
+        {tab === "logos" && (
+          <div className="grid md:grid-cols-2 gap-4">
+            {/* Logo Comprobantes */}
+            <div className="rounded-lg border p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">Logo Comprobantes</p>
+                <Badge variant={config?.tieneLogoComprobante ? "default" : "secondary"} className="text-[10px]">
+                  {config?.tieneLogoComprobante ? "Cargado" : "Sin logo"}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">Se muestra arriba a la izquierda en todos los comprobantes PDF.</p>
+              {logoComprobantePreview && (
+                <img src={logoComprobantePreview} alt="Preview logo comprobante" className="max-h-20 rounded border" />
+              )}
+              <div className="flex gap-2">
+                <input
+                  ref={logoComprobanteRef}
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) handleLogoFile(file, setLogoComprobantePreview, "logoComprobanteB64")
+                  }}
+                />
+                <Button size="sm" variant="outline" onClick={() => logoComprobanteRef.current?.click()} disabled={saving === "logoComprobanteB64"}>
+                  {saving === "logoComprobanteB64" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Upload className="h-3 w-3 mr-1" />}
+                  Subir imagen
+                </Button>
+                {config?.tieneLogoComprobante && (
+                  <Button size="sm" variant="ghost" onClick={() => { setLogoComprobantePreview(null); patch({ logoComprobanteB64: null }, "logoComprobanteB64") }}>
+                    <Trash2 className="h-3 w-3 mr-1" /> Eliminar
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Logo ARCA */}
+            <div className="rounded-lg border p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">Logo ARCA</p>
+                <Badge variant={config?.tieneLogoArca ? "default" : "secondary"} className="text-[10px]">
+                  {config?.tieneLogoArca ? "Cargado" : "Sin logo"}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">Se muestra junto al QR fiscal en el pie de los comprobantes PDF.</p>
+              {logoArcaPreview && (
+                <img src={logoArcaPreview} alt="Preview logo ARCA" className="max-h-20 rounded border" />
+              )}
+              <div className="flex gap-2">
+                <input
+                  ref={logoArcaRef}
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) handleLogoFile(file, setLogoArcaPreview, "logoArcaB64")
+                  }}
+                />
+                <Button size="sm" variant="outline" onClick={() => logoArcaRef.current?.click()} disabled={saving === "logoArcaB64"}>
+                  {saving === "logoArcaB64" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Upload className="h-3 w-3 mr-1" />}
+                  Subir imagen
+                </Button>
+                {config?.tieneLogoArca && (
+                  <Button size="sm" variant="ghost" onClick={() => { setLogoArcaPreview(null); patch({ logoArcaB64: null }, "logoArcaB64") }}>
+                    <Trash2 className="h-3 w-3 mr-1" /> Eliminar
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}

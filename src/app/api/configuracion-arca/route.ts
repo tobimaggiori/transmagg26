@@ -23,6 +23,8 @@ const patchSchema = z.object({
   comprobantesHabilitados: z.array(z.number().int()).optional(),
   cbuMiPymes: z.string().nullable().optional(),
   activa: z.boolean().optional(),
+  logoComprobanteB64: z.string().nullable().optional(),
+  logoArcaB64: z.string().nullable().optional(),
 })
 
 /**
@@ -109,7 +111,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
 
-  const { puntosVenta, comprobantesHabilitados, certificadoB64, certificadoPass, ...rest } = parsed.data
+  const { puntosVenta, comprobantesHabilitados, certificadoB64, certificadoPass, logoComprobanteB64, logoArcaB64, ...rest } = parsed.data
 
   // Cifrar certificado y password si están presentes
   const datosSensibles: Record<string, string> = {}
@@ -123,11 +125,16 @@ export async function PATCH(req: NextRequest) {
     ? JSON.stringify(comprobantesHabilitados.filter((c) => CODIGOS_CATALOGO.has(c)))
     : undefined
 
+  const logosData: Record<string, string | null> = {}
+  if (logoComprobanteB64 !== undefined) logosData.logoComprobanteB64 = logoComprobanteB64
+  if (logoArcaB64 !== undefined) logosData.logoArcaB64 = logoArcaB64
+
   const updated = await prisma.configuracionArca.upsert({
     where: { id: "unico" },
     update: {
       ...rest,
       ...datosSensibles,
+      ...logosData,
       ...(pvJson !== undefined ? { puntosVenta: pvJson } : {}),
       ...(chJson !== undefined ? { comprobantesHabilitados: chJson } : {}),
       actualizadoPor: session.user.email ?? undefined,
@@ -138,6 +145,7 @@ export async function PATCH(req: NextRequest) {
       razonSocial: "",
       ...rest,
       ...datosSensibles,
+      ...logosData,
       ...(pvJson !== undefined ? { puntosVenta: pvJson } : {}),
       ...(chJson !== undefined ? { comprobantesHabilitados: chJson } : {}),
       actualizadoPor: session.user.email ?? undefined,
@@ -153,6 +161,7 @@ function serializarConfig(row: {
   certificadoB64: string | null; certificadoPass: string | null;
   modo: string; puntosVenta: string; comprobantesHabilitados: string;
   cbuMiPymes: string | null; activa: boolean;
+  logoComprobanteB64: string | null; logoArcaB64: string | null;
   actualizadoEn: Date; actualizadoPor: string | null;
 }) {
   return {
@@ -170,6 +179,8 @@ function serializarConfig(row: {
     comprobantesHabilitados: parsearComprobantesHabilitados(row.comprobantesHabilitados),
     cbuMiPymes: row.cbuMiPymes,
     activa: row.activa,
+    tieneLogoComprobante: !!row.logoComprobanteB64,
+    tieneLogoArca: !!row.logoArcaB64,
     actualizadoEn: row.actualizadoEn.toISOString(),
     actualizadoPor: row.actualizadoPor,
   }

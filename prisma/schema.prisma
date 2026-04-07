@@ -1495,9 +1495,11 @@ model ConfiguracionArca {
   puntosVenta              String   @default("{}") @map("puntos_venta")
   comprobantesHabilitados  String   @default("[]") @map("comprobantes_habilitados")
   cbuMiPymes               String?  @map("cbu_mi_pymes")
-  activa           Boolean  @default(false)
-  actualizadoEn    DateTime @updatedAt @map("actualizado_en")
-  actualizadoPor   String?  @map("actualizado_por")
+  activa                   Boolean  @default(false)
+  logoComprobanteB64       String?  @map("logo_comprobante_b64")
+  logoArcaB64              String?  @map("logo_arca_b64")
+  actualizadoEn            DateTime @updatedAt @map("actualizado_en")
+  actualizadoPor           String?  @map("actualizado_por")
 
   @@map("configuracion_arca")
 }

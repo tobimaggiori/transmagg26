@@ -197,10 +197,12 @@ export default async function AbmPage({
   const arcaConfig = arcaConfigRaw
     ? (() => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { certificadoB64, certificadoPass, ...safe } = arcaConfigRaw
+        const { certificadoB64, certificadoPass, logoComprobanteB64, logoArcaB64, ...safe } = arcaConfigRaw
         return {
           ...safe,
           tieneCertificado: !!certificadoB64,
+          tieneLogoComprobante: !!logoComprobanteB64,
+          tieneLogoArca: !!logoArcaB64,
           actualizadoEn: safe.actualizadoEn.toISOString(),
           puntosVenta: (() => {
             try {
