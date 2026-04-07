@@ -148,6 +148,7 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
   const [loading, setLoading] = useState(false)
   const [facturaDetalle, setFacturaDetalle] = useState<FacturaRow | null>(null)
   const [cobrandoFactura, setCobrandoFactura] = useState<FacturaRow | null>(null)
+  const [autorizandoArcaId, setAutorizandoArcaId] = useState<string | null>(null)
   const [saldoAFavorCC, setSaldoAFavorCC] = useState(0)
 
   const handleBuscar = useCallback(async () => {
@@ -175,6 +176,15 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+
+  async function reintentarArca(facturaId: string) {
+    setAutorizandoArcaId(facturaId)
+    try {
+      const res = await fetch(`/api/facturas/${facturaId}/autorizar-arca`, { method: "POST" })
+      if (res.ok) handleBuscar()
+    } catch { /* ignore */ }
+    finally { setAutorizandoArcaId(null) }
+  }
 
   async function abrirCobro(factura: FacturaRow) {
     try {
@@ -291,7 +301,24 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
                         <td className="px-3 py-2 text-right">{formatearMoneda(fact.neto)}</td>
                         <td className="px-3 py-2 text-right">{formatearMoneda(fact.ivaMonto)}</td>
                         <td className="px-3 py-2 text-right font-semibold">{formatearMoneda(fact.total)}</td>
-                        <td className="px-3 py-2 text-center"><EstadoBadge estado={fact.estado} /></td>
+                        <td className="px-3 py-2 text-center">
+                          <EstadoBadge estado={fact.estado} />
+                          {(fact.estadoArca === "PENDIENTE" || fact.estadoArca === "RECHAZADA") && (
+                            <span className="inline-flex items-center gap-1 ml-1">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${fact.estadoArca === "PENDIENTE" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+                                {fact.estadoArca === "PENDIENTE" ? "Pendiente ARCA" : "Rechazada ARCA"}
+                              </span>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); reintentarArca(fact.id) }}
+                                disabled={autorizandoArcaId === fact.id}
+                                className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
+                                title="Reintentar autorización ARCA"
+                              >
+                                {autorizandoArcaId === fact.id ? "..." : "↻"}
+                              </button>
+                            </span>
+                          )}
+                        </td>
                         <td className="px-3 py-2 text-right text-sm">
                           {fact.totalPagado > 0
                             ? <span className={cobradoPct >= 100 ? "text-green-700 font-medium" : ""}>{formatearMoneda(fact.totalPagado)}</span>

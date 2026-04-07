@@ -220,11 +220,13 @@ function ModalDetalleLP({
 // ─── Tabla ────────────────────────────────────────────────────────────────────
 
 function TablaLiquidaciones({
-  liquidaciones, fleteros, mostrarFletero, onAbrirPDF, onVerDetalle,
+  liquidaciones, fleteros, mostrarFletero, onAbrirPDF, onVerDetalle, onReintentarArca, autorizandoArcaId,
 }: {
   liquidaciones: Liquidacion[]; fleteros: Fletero[]; mostrarFletero: boolean
   onAbrirPDF: (params: { url: string; titulo: string } | { fetchUrl: string; titulo: string }) => void
   onVerDetalle: (liq: Liquidacion) => void
+  onReintentarArca?: (id: string) => void
+  autorizandoArcaId?: string | null
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border">
@@ -273,6 +275,21 @@ function TablaLiquidaciones({
                 </td>
                 <td className="px-3 py-2 text-center">
                   <button type="button" onClick={() => onVerDetalle(liq)} className="h-7 px-3 rounded border text-xs font-medium hover:bg-accent">Ver</button>
+                  {onReintentarArca && (liq.arcaEstado === "PENDIENTE" || liq.arcaEstado === "RECHAZADA") && (
+                    <span className="inline-flex items-center gap-1 ml-1">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${liq.arcaEstado === "PENDIENTE" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+                        {liq.arcaEstado === "PENDIENTE" ? "Pendiente ARCA" : "Rechazada"}
+                      </span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onReintentarArca(liq.id) }}
+                        disabled={autorizandoArcaId === liq.id}
+                        className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
+                        title="Reintentar autorización ARCA"
+                      >
+                        {autorizandoArcaId === liq.id ? "..." : "↻"}
+                      </button>
+                    </span>
+                  )}
                 </td>
               </tr>
             )
@@ -297,6 +314,7 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
   const [liquidaciones, setLiquidaciones] = useState<Liquidacion[]>([])
   const [cargando, setCargando] = useState(false)
   const [liquidacionDetalle, setLiquidacionDetalle] = useState<Liquidacion | null>(null)
+  const [autorizandoArcaId, setAutorizandoArcaId] = useState<string | null>(null)
 
   // Filtros con defaults
   const [filtroEstado, setFiltroEstado] = useState<string>("EMITIDO")
@@ -326,6 +344,15 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
   useEffect(() => {
     cargarDatos()
   }, [cargarDatos])
+
+  async function reintentarArcaLP(liqId: string) {
+    setAutorizandoArcaId(liqId)
+    try {
+      const res = await fetch(`/api/liquidaciones/${liqId}/autorizar-arca`, { method: "POST" })
+      if (res.ok) cargarDatos()
+    } catch { /* ignore */ }
+    finally { setAutorizandoArcaId(null) }
+  }
 
   const liquidacionesFiltradas = liquidaciones.filter((liq) => {
     if (filtroEstado) {
@@ -431,6 +458,8 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
           mostrarFletero={mostrarFletero}
           onAbrirPDF={(params) => abrirPDF(params)}
           onVerDetalle={(liq) => setLiquidacionDetalle(liq)}
+          onReintentarArca={reintentarArcaLP}
+          autorizandoArcaId={autorizandoArcaId}
         />
       )}
 

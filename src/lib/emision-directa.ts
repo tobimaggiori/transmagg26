@@ -34,7 +34,7 @@ type ResultadoEmisionDirecta =
 
 // ─── Clasificación de errores ───────────────────────────────────────────────
 
-function clasificarError(err: unknown): { status: number; error: string; code: string; reintentable: boolean } {
+export function clasificarError(err: unknown): { status: number; error: string; code: string; reintentable: boolean } {
   if (esArcaError(err)) {
     return {
       status: err.statusCode,
