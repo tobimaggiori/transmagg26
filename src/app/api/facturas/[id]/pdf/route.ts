@@ -1,16 +1,15 @@
 /**
  * GET /api/facturas/[id]/pdf
  *
- * Sirve el PDF de la factura como application/pdf.
- * Si tiene pdfS3Key y R2 está configurado, lo descarga de R2.
- * Si no, lo genera al vuelo con pdfkit (generarPDFFactura).
+ * Si la factura tiene pdfS3Key, devuelve URL firmada de R2.
+ * Si no, genera el PDF con pdfkit, sube a R2, guarda la key y devuelve URL firmada.
  */
 
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno, esRolEmpresa } from "@/lib/permissions"
-import { obtenerArchivo, storageConfigurado } from "@/lib/storage"
+import { obtenerUrlFirmada, subirPDF, storageConfigurado } from "@/lib/storage"
 import { verificarPropietarioEmpresa } from "@/lib/session-utils"
 import { generarPDFFactura } from "@/lib/pdf-factura"
 import type { Rol } from "@/types"
@@ -38,38 +37,39 @@ export async function GET(
     if (!esPropietario) return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
   }
 
-  const letra = fac.tipoCbte === 1 || fac.tipoCbte === 201 ? "A" : fac.tipoCbte === 6 ? "B" : "X"
-  const nro = fac.nroComprobante
-    ? `FAC-${letra}-${String(fac.ptoVenta ?? 1).padStart(4, "0")}-${String(parseInt(fac.nroComprobante) || 0).padStart(8, "0")}`
-    : `FAC-${fac.id.slice(0, 8)}`
-  const filename = `${nro}.pdf`
+  if (!storageConfigurado()) {
+    return NextResponse.json({ error: "Almacenamiento no configurado" }, { status: 503 })
+  }
 
-  // Intentar obtener de R2
-  if (fac.pdfS3Key && storageConfigurado()) {
+  let key = fac.pdfS3Key
+
+  // Si no tiene PDF en R2, generarlo y subirlo
+  if (!key) {
     try {
-      const buffer = await obtenerArchivo(fac.pdfS3Key)
-      return new NextResponse(new Uint8Array(buffer), {
-        headers: {
-          "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename="${filename}"`,
-        },
+      const buf = await generarPDFFactura(fac.id)
+      const letra = fac.tipoCbte === 1 || fac.tipoCbte === 201 ? "A" : fac.tipoCbte === 6 ? "B" : "X"
+      const nro = fac.nroComprobante
+        ? `FAC-${letra}-${String(fac.ptoVenta ?? 1).padStart(4, "0")}-${String(parseInt(fac.nroComprobante) || 0).padStart(8, "0")}`
+        : `FAC-${fac.id.slice(0, 8)}`
+      key = await subirPDF(buf, "facturas-emitidas", `${nro}.pdf`)
+      await prisma.facturaEmitida.update({
+        where: { id: fac.id },
+        data: { pdfS3Key: key },
       })
-    } catch {
-      // Fallthrough: regenerar con pdfkit
+    } catch (pdfError) {
+      console.error("[GET /api/facturas/[id]/pdf] Error generando PDF:", pdfError)
+      return NextResponse.json(
+        { error: "No se pudo generar el PDF. Intentá de nuevo." },
+        { status: 500 }
+      )
     }
   }
 
-  // Generar al vuelo con pdfkit
   try {
-    const buffer = await generarPDFFactura(fac.id)
-    return new NextResponse(new Uint8Array(buffer), {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="${filename}"`,
-      },
-    })
-  } catch (err) {
-    console.error("[GET /api/facturas/[id]/pdf] Error generando PDF:", err)
-    return NextResponse.json({ error: "No se pudo generar el PDF" }, { status: 500 })
+    const url = await obtenerUrlFirmada(key, 900)
+    return NextResponse.json({ url })
+  } catch (signError) {
+    console.error("[GET /api/facturas/[id]/pdf] Error obteniendo URL firmada:", signError)
+    return NextResponse.json({ error: "No se pudo obtener la URL del PDF" }, { status: 500 })
   }
 }

@@ -319,7 +319,7 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
       setExitoLiquidacion({ nroLP, id: liqCreada.id })
       cargarDatos()
       abrirPDF({
-        url: `/api/liquidaciones/${liqCreada.id}/pdf`,
+        fetchUrl: `/api/liquidaciones/${liqCreada.id}/pdf`,
         titulo: `LP ${nroLP} — ${fleteroInfo?.razonSocial ?? ""}`,
         onEnviarMail: async (email: string) => {
           const r = await fetch(`/api/liquidaciones/${liqCreada.id}/enviar-email`, {

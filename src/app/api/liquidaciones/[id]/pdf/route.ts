@@ -1,9 +1,8 @@
 /**
  * GET /api/liquidaciones/[id]/pdf
  *
- * Sirve el PDF de la liquidación como application/pdf.
- * Si tiene pdfS3Key y R2 está configurado, lo descarga de R2.
- * Si no, lo genera al vuelo con pdfkit (generarPDFLiquidacion).
+ * Si la liquidación tiene pdfS3Key, devuelve URL firmada de R2.
+ * Si no, genera el PDF con pdfkit, sube a R2, guarda la key y devuelve URL firmada.
  * Soporta acceso con token HMAC para el QR del pie del LP.
  */
 
@@ -11,7 +10,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
-import { obtenerArchivo, storageConfigurado } from "@/lib/storage"
+import { obtenerUrlFirmada, subirPDF, storageConfigurado } from "@/lib/storage"
 import { generarPDFLiquidacion } from "@/lib/pdf-liquidacion"
 import { verificarPropietarioFletero } from "@/lib/session-utils"
 import crypto from "crypto"
@@ -61,37 +60,37 @@ export async function GET(
   })
   if (!liq) return NextResponse.json({ error: "Liquidación no encontrada" }, { status: 404 })
 
-  const nro = liq.nroComprobante
-    ? `LP-${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${String(liq.nroComprobante).padStart(8, "0")}`
-    : `LP-${liq.id.slice(0, 8)}`
-  const filename = `${nro}.pdf`
+  if (!storageConfigurado()) {
+    return NextResponse.json({ error: "Almacenamiento no configurado" }, { status: 503 })
+  }
 
-  // Intentar obtener de R2
-  if (liq.pdfS3Key && storageConfigurado()) {
+  let key = liq.pdfS3Key
+
+  if (!key) {
     try {
-      const buffer = await obtenerArchivo(liq.pdfS3Key)
-      return new NextResponse(new Uint8Array(buffer), {
-        headers: {
-          "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename="${filename}"`,
-        },
+      const buf = await generarPDFLiquidacion(liq.id)
+      const nro = liq.nroComprobante
+        ? `LP-${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${String(liq.nroComprobante).padStart(8, "0")}`
+        : `LP-borrador-${liq.id.slice(0, 8)}`
+      key = await subirPDF(buf, "liquidaciones", `${nro}.pdf`)
+      await prisma.liquidacion.update({
+        where: { id: liq.id },
+        data: { pdfS3Key: key },
       })
-    } catch {
-      // Fallthrough: regenerar con pdfkit
+    } catch (pdfError) {
+      console.error("[GET /api/liquidaciones/[id]/pdf] Error generando PDF:", pdfError)
+      return NextResponse.json(
+        { error: "No se pudo generar el PDF. Intentá de nuevo." },
+        { status: 500 }
+      )
     }
   }
 
-  // Generar al vuelo con pdfkit
   try {
-    const buffer = await generarPDFLiquidacion(liq.id)
-    return new NextResponse(new Uint8Array(buffer), {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="${filename}"`,
-      },
-    })
-  } catch (err) {
-    console.error("[GET /api/liquidaciones/[id]/pdf] Error generando PDF:", err)
-    return NextResponse.json({ error: "No se pudo generar el PDF" }, { status: 500 })
+    const url = await obtenerUrlFirmada(key, 900)
+    return NextResponse.json({ url })
+  } catch (signError) {
+    console.error("[GET /api/liquidaciones/[id]/pdf] Error obteniendo URL firmada:", signError)
+    return NextResponse.json({ error: "No se pudo obtener la URL del PDF" }, { status: 500 })
   }
 }

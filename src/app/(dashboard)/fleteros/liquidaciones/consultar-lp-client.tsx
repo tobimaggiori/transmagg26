@@ -253,7 +253,7 @@ function TablaLiquidaciones({
                 <td className="px-3 py-2 whitespace-nowrap">{formatearFecha(new Date(liq.grabadaEn))}</td>
                 <td className="px-3 py-2 font-mono text-xs">
                   {nroLP ? (
-                    <button type="button" onClick={() => onAbrirPDF({ url: `/api/liquidaciones/${liq.id}/pdf`, titulo: `LP ${nroLP} — ${liq.fletero.razonSocial}` })} className="text-primary hover:underline font-medium">
+                    <button type="button" onClick={() => onAbrirPDF({ fetchUrl: `/api/liquidaciones/${liq.id}/pdf`, titulo: `LP ${nroLP} — ${liq.fletero.razonSocial}` })} className="text-primary hover:underline font-medium">
                       {nroLP}
                     </button>
                   ) : <span className="text-muted-foreground">Sin nro</span>}

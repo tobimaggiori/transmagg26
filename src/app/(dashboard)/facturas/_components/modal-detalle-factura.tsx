@@ -208,7 +208,13 @@ export function ModalDetalleFactura({
 
         {/* Footer */}
         <div className="flex justify-between items-center border-t pt-4">
-          <button onClick={() => window.open(`/api/facturas/${factura.id}/pdf`, "_blank")} className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent">
+          <button onClick={async () => {
+            try {
+              const res = await fetch(`/api/facturas/${factura.id}/pdf`)
+              const data = await res.json()
+              if (data.url) window.open(data.url, "_blank")
+            } catch { /* ignore */ }
+          }} className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent">
             Descargar PDF
           </button>
           <button onClick={onCerrar} className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent">

@@ -577,7 +577,7 @@ function PendienteFacturarModal() {
                             <button
                               type="button"
                               onClick={() => abrirPDF({
-                                url: `/api/liquidaciones/${v.liquidacion!.id}/pdf`,
+                                fetchUrl: `/api/liquidaciones/${v.liquidacion!.id}/pdf`,
                                 titulo: `LP ${nroLP}`,
                               })}
                               className="text-primary hover:underline font-medium text-xs font-mono"

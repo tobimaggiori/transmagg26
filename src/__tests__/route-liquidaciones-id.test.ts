@@ -211,7 +211,7 @@ describe("GET /api/liquidaciones/[id]/pdf — acceso por rol", () => {
 })
 
 describe("GET /api/liquidaciones/[id]/pdf — ownership fletero", () => {
-  it("FLETERO dueño con PDF existente → 200 con application/pdf", async () => {
+  it("FLETERO dueño con PDF existente → 200 con URL firmada", async () => {
     mockAuth.mockResolvedValue(session("FLETERO", "fletero@test.com"))
     // Primera llamada: ownership check (select fleteroId)
     // Segunda llamada: obtener pdfS3Key
@@ -225,11 +225,12 @@ describe("GET /api/liquidaciones/[id]/pdf — ownership fletero", () => {
       })
     mockVerificarPropietarioFletero.mockResolvedValue(true)
     mockStorageConfigurado.mockReturnValue(true)
-    mockObtenerArchivo.mockResolvedValue(Buffer.from("fake-pdf-content"))
+    mockObtenerUrlFirmada.mockResolvedValue("https://r2.example.com/signed-liq")
 
     const res = await getLiquidacionPdf(req(), params)
     expect(res.status).toBe(200)
-    expect(res.headers.get("Content-Type")).toBe("application/pdf")
+    const body = await res.json()
+    expect(body.url).toBe("https://r2.example.com/signed-liq")
   })
 
   it("FLETERO ajeno → 403 (no accede al PDF)", async () => {

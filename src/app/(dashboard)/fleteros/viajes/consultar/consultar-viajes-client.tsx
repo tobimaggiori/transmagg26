@@ -574,7 +574,7 @@ function ModalDetalle({
                       <div className="space-y-1.5 text-sm">
                         <div className="flex items-center gap-2">
                           <span>Nro: <span className="font-mono font-medium">{nroFact}</span></span>
-                          <button type="button" onClick={() => window.open(`/api/facturas/${factura.id}/pdf`, "_blank")} className="text-[11px] px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700">VER FACTURA</button>
+                          <button type="button" onClick={() => abrirPDFUrl(`/api/facturas/${factura.id}/pdf`)} className="text-[11px] px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700">VER FACTURA</button>
                         </div>
                         <p className="text-xs text-muted-foreground">Fecha: {formatearFecha(new Date(factura.emitidaEn))}</p>
                         <hr className="border-gray-100" />
@@ -582,7 +582,7 @@ function ModalDetalle({
                           <div>
                             <div className="flex items-center gap-2">
                               <span>Recibo: <span className="font-mono font-medium">{formatNroComprobante(factura.recibo.ptoVenta, factura.recibo.nro)}</span></span>
-                              <button type="button" onClick={() => window.open(`/api/recibos-cobranza/${factura.recibo!.id}/pdf`, "_blank")} className="text-[11px] px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700">VER RECIBO</button>
+                              <button type="button" onClick={() => abrirPDFUrl(`/api/recibos-cobranza/${factura.recibo!.id}/pdf`)} className="text-[11px] px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700">VER RECIBO</button>
                             </div>
                             <p className="text-xs text-muted-foreground">Fecha: {formatearFecha(new Date(factura.recibo.fecha))}</p>
                           </div>
@@ -606,7 +606,7 @@ function ModalDetalle({
                       <div className="space-y-1.5 text-sm">
                         <div className="flex items-center gap-2">
                           <span>LP: <span className="font-mono font-medium">{nroLP}</span></span>
-                          <button type="button" onClick={() => window.open(`/api/liquidaciones/${liq.id}/pdf`, "_blank")} className="text-[11px] px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700">VER LIQ. PROD.</button>
+                          <button type="button" onClick={() => abrirPDFUrl(`/api/liquidaciones/${liq.id}/pdf`)} className="text-[11px] px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700">VER LIQ. PROD.</button>
                         </div>
                         <p className="text-xs text-muted-foreground">Fecha: {formatearFecha(new Date(liq.grabadaEn))}</p>
                         <hr className="border-gray-100" />
@@ -703,6 +703,14 @@ function ModalEliminar({ viaje, onEliminar, onCerrar, cargando, error }: {
       </div>
     </div>
   )
+}
+
+async function abrirPDFUrl(endpoint: string) {
+  try {
+    const res = await fetch(endpoint)
+    const data = await res.json()
+    if (data.url) window.open(data.url, "_blank")
+  } catch { /* ignore */ }
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────

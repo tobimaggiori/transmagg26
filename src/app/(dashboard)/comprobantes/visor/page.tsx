@@ -1,7 +1,7 @@
 "use client"
 
 import { useSearchParams, useRouter } from "next/navigation"
-import { useState, Suspense } from "react"
+import { useState, useEffect, Suspense } from "react"
 
 const TIPO_CONFIG: Record<string, { label: string; pdfUrl: (id: string) => string; emailUrl: (id: string) => string }> = {
   factura: {
@@ -10,7 +10,7 @@ const TIPO_CONFIG: Record<string, { label: string; pdfUrl: (id: string) => strin
     emailUrl: (id) => `/api/facturas/${id}/enviar-email`,
   },
   liquidacion: {
-    label: "Liquidación",
+    label: "Liquidacion",
     pdfUrl: (id) => `/api/liquidaciones/${id}/pdf`,
     emailUrl: (id) => `/api/liquidaciones/${id}/enviar-email`,
   },
@@ -29,20 +29,35 @@ function VisorContent() {
   const titulo = searchParams.get("titulo") ?? ""
 
   const config = TIPO_CONFIG[tipo]
+  const [pdfSignedUrl, setPdfSignedUrl] = useState<string | null>(null)
+  const [pdfError, setPdfError] = useState<string | null>(null)
   const [emailModalOpen, setEmailModalOpen] = useState(false)
   const [email, setEmail] = useState("")
   const [enviando, setEnviando] = useState(false)
   const [emailMsg, setEmailMsg] = useState<{ ok: boolean; texto: string } | null>(null)
 
+  // Fetch signed URL on mount
+  useEffect(() => {
+    if (!config || !id) return
+    fetch(config.pdfUrl(id))
+      .then(async (res) => {
+        const data = await res.json()
+        if (res.ok && data.url) {
+          setPdfSignedUrl(data.url)
+        } else {
+          setPdfError(data.error ?? "No se pudo obtener el PDF")
+        }
+      })
+      .catch(() => setPdfError("Error de red al obtener el PDF"))
+  }, [config, id])
+
   if (!config || !id) {
     return (
       <div className="flex items-center justify-center h-[60vh] text-muted-foreground">
-        Parámetros inválidos. Se requiere ?tipo=factura&id=xxx
+        Parametros invalidos. Se requiere ?tipo=factura&id=xxx
       </div>
     )
   }
-
-  const pdfUrl = config.pdfUrl(id)
 
   async function enviarPorEmail() {
     if (!email.trim()) return
@@ -82,28 +97,32 @@ function VisorContent() {
           {titulo || `${config.label} — ${id.slice(0, 8)}`}
         </h1>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              const w = window.open(pdfUrl, "_blank")
-              if (w) setTimeout(() => w.print(), 1000)
-            }}
-            className="h-8 px-3 rounded-md border text-sm font-medium hover:bg-accent"
-          >
-            Imprimir
-          </button>
-          <button
-            onClick={() => setEmailModalOpen(!emailModalOpen)}
-            className="h-8 px-3 rounded-md border text-sm font-medium hover:bg-accent"
-          >
-            Enviar por email
-          </button>
-          <a
-            href={pdfUrl}
-            download
-            className="h-8 px-3 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 inline-flex items-center"
-          >
-            Descargar
-          </a>
+          {pdfSignedUrl && (
+            <>
+              <button
+                onClick={() => {
+                  const w = window.open(pdfSignedUrl, "_blank")
+                  if (w) setTimeout(() => w.print(), 1000)
+                }}
+                className="h-8 px-3 rounded-md border text-sm font-medium hover:bg-accent"
+              >
+                Imprimir
+              </button>
+              <button
+                onClick={() => setEmailModalOpen(!emailModalOpen)}
+                className="h-8 px-3 rounded-md border text-sm font-medium hover:bg-accent"
+              >
+                Enviar por email
+              </button>
+              <a
+                href={pdfSignedUrl}
+                download
+                className="h-8 px-3 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 inline-flex items-center"
+              >
+                Descargar
+              </a>
+            </>
+          )}
         </div>
       </div>
 
@@ -143,11 +162,23 @@ function VisorContent() {
 
       {/* PDF inline */}
       <div className="flex-1 min-h-0">
-        <iframe
-          src={pdfUrl}
-          className="w-full h-full border-0"
-          title={`PDF ${config.label}`}
-        />
+        {pdfError && (
+          <div className="flex items-center justify-center h-full text-destructive text-sm">
+            {pdfError}
+          </div>
+        )}
+        {!pdfSignedUrl && !pdfError && (
+          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+            Cargando PDF...
+          </div>
+        )}
+        {pdfSignedUrl && (
+          <iframe
+            src={pdfSignedUrl}
+            className="w-full h-full border-0"
+            title={`PDF ${config.label}`}
+          />
+        )}
       </div>
     </div>
   )
