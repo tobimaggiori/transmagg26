@@ -559,7 +559,7 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
 
       if (emisor.logoArca) {
         try {
-          doc.image(emisor.logoArca, arcaTextX, fY + 40, { fit: [60, 28] })
+          doc.image(emisor.logoArca, arcaTextX, fY + 42, { fit: [80, 38] })
         } catch { /* skip */ }
       }
 
