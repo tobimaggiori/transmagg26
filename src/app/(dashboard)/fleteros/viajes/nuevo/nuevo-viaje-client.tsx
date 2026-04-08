@@ -201,8 +201,30 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
 
   return (
     <div className="space-y-4">
-      <div>
+      {/* ────── Header: Título + Tipo de viaje + Fecha ────── */}
+      <div className="flex flex-wrap items-center gap-4">
         <h2 className="text-2xl font-bold tracking-tight">Nuevo viaje</h2>
+        <div className="flex rounded-md border overflow-hidden h-9 w-fit">
+          <button
+            type="button"
+            onClick={() => { setEsCamionPropio(false); setCamionId(""); setChoferId("") }}
+            className={`px-4 text-xs font-medium border-r ${!esCamionPropio ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+          >
+            Con fletero externo
+          </button>
+          <button
+            type="button"
+            onClick={() => { setEsCamionPropio(true); setFleteroId(""); setCamionId(""); setChoferId(""); setComisionPct("") }}
+            className={`px-4 text-xs font-medium ${esCamionPropio ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+          >
+            Camión propio Transmagg
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium text-foreground whitespace-nowrap">Fecha</label>
+          <input type="date" value={fechaViaje} onChange={(e) => setFechaViaje(e.target.value)} className="h-9 rounded-md border bg-background px-2 text-sm" />
+          <FormError message={fieldErrors.fechaViaje} className="text-xs" />
+        </div>
       </div>
 
       <div className="bg-background rounded-lg border shadow-sm w-full max-w-7xl p-6">
@@ -215,26 +237,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
 
             {/* ────── Columna 1: Entidades + Origen/Destino ────── */}
             <div className="space-y-3">
-              <div>
-                <label className={labelCls}>Tipo de viaje</label>
-                <div className="flex rounded-md border overflow-hidden h-9 w-fit">
-                  <button
-                    type="button"
-                    onClick={() => { setEsCamionPropio(false); setCamionId(""); setChoferId("") }}
-                    className={`px-4 text-xs font-medium border-r ${!esCamionPropio ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-                  >
-                    Con fletero externo
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setEsCamionPropio(true); setFleteroId(""); setCamionId(""); setChoferId(""); setComisionPct("") }}
-                    className={`px-4 text-xs font-medium ${esCamionPropio ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-                  >
-                    Camión propio Transmagg
-                  </button>
-                </div>
-              </div>
-
               {!esCamionPropio && (
                 <div>
                   <label className={labelCls}>Fletero *</label>
@@ -337,12 +339,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
 
             {/* ────── Columna 2: Datos del viaje ────── */}
             <div className="space-y-3">
-              <div>
-                <label className={labelCls}>Fecha de viaje *</label>
-                <input type="date" value={fechaViaje} onChange={(e) => setFechaViaje(e.target.value)} className={inputCls} />
-                <FormError message={fieldErrors.fechaViaje} className="text-xs mt-1" />
-              </div>
-
               <div>
                 <label className={labelCls}>Remito</label>
                 <input type="text" value={remito} onChange={(e) => setRemito(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} />
