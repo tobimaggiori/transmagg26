@@ -169,7 +169,7 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
   if (liq.qrData) {
     try {
       const qrUrl = obtenerUrlQRFiscal(liq.qrData)
-      qrBuffer = await QRCode.toBuffer(qrUrl, { width: 140, margin: 1 })
+      qrBuffer = await QRCode.toBuffer(qrUrl, { width: 200, margin: 1 })
     } catch { /* skip */ }
   }
 
@@ -186,7 +186,7 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
     const left = margin
     const right = pageW - margin
     const contentW = right - left
-    const footerH = 72
+    const footerH = 100
     const footerLineY = pageH - margin - footerH
 
     // ─── 1. LÍNEA DECORATIVA SUPERIOR ──────────────────────────────────
@@ -544,22 +544,22 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
       doc.roundedRect(left, fY, contentW, footerH, 8).stroke()
       doc.restore()
 
-      // QR fiscal
-      const qrSize = 52
-      const qrX = left + 10
+      // QR fiscal — 3×3 cm = 85pt
+      const qrSize = 85
+      const qrX = left + 8
       const qrY = fY + (footerH - qrSize) / 2
       if (qrBuffer) {
         try { doc.image(qrBuffer, qrX, qrY, { width: qrSize, height: qrSize }) } catch { /* skip */ }
       }
 
       // "Comprobante Autorizado" + logo ARCA
-      const arcaTextX = qrX + qrSize + 14
+      const arcaTextX = qrX + qrSize + 12
       doc.font("Helvetica").fontSize(9).fillColor(TEXT)
-        .text("Comprobante Autorizado", arcaTextX, fY + 16, { width: 120, lineBreak: false })
+        .text("Comprobante Autorizado", arcaTextX, fY + 22, { width: 120, lineBreak: false })
 
       if (emisor.logoArca) {
         try {
-          doc.image(emisor.logoArca, arcaTextX, fY + 30, { fit: [45, 16] })
+          doc.image(emisor.logoArca, arcaTextX, fY + 38, { fit: [45, 16] })
         } catch { /* skip */ }
       }
 
@@ -571,13 +571,12 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
       const caeW = 200
       const caeX = right - caeW
       const caeTextW = 190
-      const footerContentY = fY
 
       doc.font("Helvetica-Bold").fontSize(10).fillColor(TEXT)
-        .text(`CAE N°: ${liq.cae ?? "Pendiente"}`, caeX, footerContentY + 12, { width: caeTextW, align: "right" })
+        .text(`CAE N°: ${liq.cae ?? "Pendiente"}`, caeX, fY + 24, { width: caeTextW, align: "right" })
 
       doc.font("Helvetica").fontSize(9.5).fillColor(TEXT)
-        .text(`Fecha de Vto.: ${liq.caeVto ? fmtFecha(liq.caeVto) : "—"}`, caeX, footerContentY + 30, { width: caeTextW, align: "right" })
+        .text(`Fecha de Vto.: ${liq.caeVto ? fmtFecha(liq.caeVto) : "—"}`, caeX, fY + 42, { width: caeTextW, align: "right" })
     }
 
     doc.flushPages()

@@ -128,7 +128,7 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-      orderBy: { fechaViaje: "desc" },
+      orderBy: [{ fechaViaje: "desc" }, { creadoEn: "desc" }],
       take: 200,
     })
 
