@@ -256,24 +256,22 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   return (
     <div className="space-y-5 max-w-6xl">
       {/* ════════ Header ════════ */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <h2 className="text-[34px] font-bold tracking-tight text-foreground leading-tight">Nuevo viaje</h2>
-          <SegmentedToggle
-            options={[
-              { value: "externo", label: "Fletero externo" },
-              { value: "propio", label: "Camión propio" },
-            ]}
-            value={esCamionPropio ? "propio" : "externo"}
-            onChange={(v) => {
-              const propio = v === "propio"
-              setEsCamionPropio(propio)
-              if (propio) { setFleteroId(""); setComisionPct("") }
-              setCamionId("")
-              setChoferId("")
-            }}
-          />
-        </div>
+      <div className="flex flex-wrap items-center gap-4">
+        <h2 className="text-[34px] font-bold tracking-tight text-foreground leading-tight">Nuevo viaje</h2>
+        <SegmentedToggle
+          options={[
+            { value: "externo", label: "Fletero externo" },
+            { value: "propio", label: "Camión propio" },
+          ]}
+          value={esCamionPropio ? "propio" : "externo"}
+          onChange={(v) => {
+            const propio = v === "propio"
+            setEsCamionPropio(propio)
+            if (propio) { setFleteroId(""); setComisionPct("") }
+            setCamionId("")
+            setChoferId("")
+          }}
+        />
         <div className="flex items-center gap-2">
           <label className="text-[15px] font-medium text-muted-foreground">Fecha</label>
           <input
