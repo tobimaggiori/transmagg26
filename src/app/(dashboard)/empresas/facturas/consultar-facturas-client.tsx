@@ -1,9 +1,9 @@
 "use client"
 
 /**
- * Propósito: Componente cliente para consultar el historial de facturas a empresas.
+ * Propósito: Componente cliente para consultar el historial de facturas emitidas a empresas.
  * Filtros por empresa, nro comprobante, fechas y estado. Tabla con totales.
- * Modal de detalle con viajes, pagos y acciones (cobro, cambio de estado).
+ * Acción principal: abrir PDF de cada factura desde R2.
  */
 
 import { useState, useEffect, useCallback } from "react"
@@ -14,49 +14,15 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
-import { RegistrarCobroModal } from "@/components/forms/registrar-cobro-form"
-import { TipoCbteBadge } from "@/app/(dashboard)/empresas/facturar/facturar-client"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
-
-type PagoRow = {
-  monto: number
-  tipoPago: string
-  fechaPago: string
-  referencia: string | null
-}
-
-type ViajeEnFacturaRow = {
-  id: string
-  fechaViaje: string
-  remito: string | null
-  mercaderia: string | null
-  procedencia: string | null
-  provinciaOrigen: string | null
-  destino: string | null
-  provinciaDestino: string | null
-  kilos: number | null
-  tarifaEmpresa: number
-  subtotal: number
-  viaje: {
-    fletero: { razonSocial: string }
-    camion: { patenteChasis: string }
-    chofer: { nombre: string; apellido: string }
-  }
-}
 
 type FacturaRow = {
   id: string
   emitidaEn: string
   tipoCbte: number
   modalidadMiPymes?: string | null
+  ptoVenta: number | null
   nroComprobante: string | null
   ivaPct: number
   neto: number
@@ -64,10 +30,8 @@ type FacturaRow = {
   total: number
   estado: string
   estadoArca: string
+  pdfS3Key: string | null
   empresa: { id: string; razonSocial: string; cuit: string }
-  viajes: ViajeEnFacturaRow[]
-  pagos: PagoRow[]
-  totalPagado: number
   _count: { notasCreditoDebito: number }
 }
 
@@ -75,7 +39,6 @@ type FacturaRow = {
 
 type ConsultarFacturasClientProps = {
   empresas: Array<{ id: string; razonSocial: string; cuit: string }>
-  cuentasBancarias: Array<{ id: string; nombre: string; bancoOEntidad: string }>
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -85,34 +48,40 @@ function primerDiaMesActual(): string {
   return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-01`
 }
 
-function hoy(): string {
+function hoyStr(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
-/**
- * EstadoBadge: { estado: string } -> JSX.Element
- *
- * Dado un string de estado de factura, devuelve un badge de colores
- * correspondiente al estado. Cubre EMITIDA, PARCIALMENTE_COBRADA
- * y COBRADA.
- * Existe para mostrar estados de forma visual y uniforme en la tabla.
- *
- * Ejemplos:
- * <EstadoBadge estado="EMITIDA" /> // => badge azul "EMITIDA"
- * <EstadoBadge estado="COBRADA" /> // => badge verde "COBRADA"
- */
+function formatNroComprobante(ptoVenta: number | null, nroComprobante: string | number | null): string {
+  if (!nroComprobante) return "—"
+  const pv = String(ptoVenta ?? 1).padStart(4, "0")
+  const nro = String(nroComprobante).padStart(8, "0")
+  return `${pv}-${nro}`
+}
+
+function labelTipoCbte(tipoCbte: number, modalidad?: string | null): string {
+  if (tipoCbte === 1) return "Fact. A"
+  if (tipoCbte === 6) return "Fact. B"
+  if (tipoCbte === 201) return modalidad ? `MiPyme ${modalidad}` : "MiPyme"
+  if (tipoCbte === 3) return "NC A"
+  if (tipoCbte === 8) return "NC B"
+  if (tipoCbte === 2) return "ND A"
+  if (tipoCbte === 7) return "ND B"
+  return `Cbte ${tipoCbte}`
+}
+
 function EstadoBadge({ estado }: { estado: string }) {
   const estilos: Record<string, string> = {
-    EMITIDA: "bg-blue-100 text-blue-800",
-    PARCIALMENTE_COBRADA: "bg-amber-100 text-amber-800",
-    COBRADA: "bg-green-100 text-green-800",
+    EMITIDA: "bg-info-soft text-info",
+    PARCIALMENTE_COBRADA: "bg-warning-soft text-warning",
+    COBRADA: "bg-success-soft text-success",
   }
   const labels: Record<string, string> = {
     PARCIALMENTE_COBRADA: "Parcial",
   }
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilos[estado] ?? "bg-gray-100 text-gray-800"}`}>
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilos[estado] ?? "bg-secondary text-muted-foreground"}`}>
       {labels[estado] ?? estado}
     </span>
   )
@@ -120,36 +89,18 @@ function EstadoBadge({ estado }: { estado: string }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-/**
- * ConsultarFacturasClient: ConsultarFacturasClientProps -> JSX.Element
- *
- * Dado el listado de empresas y cuentas bancarias, renderiza un panel de consulta
- * de facturas con filtros por empresa, nro comprobante, rango de fechas y estado.
- * Al buscar consulta GET /api/empresas/facturas con los filtros activos.
- * Muestra tabla con totales y permite ver el detalle de cada factura en un modal.
- * El modal de detalle muestra viajes, pagos recibidos y botones de acción:
- * registrar cobro (EMITIDA/PARCIALMENTE_COBRADA), anular (EMITIDA).
- * Existe para que los operadores internos puedan gestionar el historial de facturas
- * sin mezclar con el flujo de creación.
- *
- * Ejemplos:
- * // Carga inicial con filtros del mes actual
- * <ConsultarFacturasClient empresas={[...]} cuentasBancarias={[...]} />
- * // Con empresa seleccionada → tabla de sus facturas
- * <ConsultarFacturasClient empresas={[{id:"e1",razonSocial:"ACME",cuit:"20123456789"}]} cuentasBancarias={[...]} />
- */
-export function ConsultarFacturasClient({ empresas, cuentasBancarias }: ConsultarFacturasClientProps) {
+export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientProps) {
   const [filtroEmpresaId, setFiltroEmpresaId] = useState<string>("")
   const [filtroNroComprobante, setFiltroNroComprobante] = useState<string>("")
   const [filtroDesde, setFiltroDesde] = useState<string>(primerDiaMesActual())
-  const [filtroHasta, setFiltroHasta] = useState<string>(hoy())
+  const [filtroHasta, setFiltroHasta] = useState<string>(hoyStr())
   const [filtroEstado, setFiltroEstado] = useState<string>("")
   const [facturas, setFacturas] = useState<FacturaRow[]>([])
   const [loading, setLoading] = useState(false)
-  const [facturaDetalle, setFacturaDetalle] = useState<FacturaRow | null>(null)
-  const [cobrandoFactura, setCobrandoFactura] = useState<FacturaRow | null>(null)
   const [autorizandoArcaId, setAutorizandoArcaId] = useState<string | null>(null)
-  const [saldoAFavorCC, setSaldoAFavorCC] = useState(0)
+
+  const empresaSeleccionada = empresas.find((e) => e.id === filtroEmpresaId)
+  const mostrarColumnaEmpresa = !filtroEmpresaId
 
   const handleBuscar = useCallback(async () => {
     setLoading(true)
@@ -172,10 +123,8 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
 
   useEffect(() => {
     void handleBuscar()
-    // Only on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
 
   async function reintentarArca(facturaId: string) {
     setAutorizandoArcaId(facturaId)
@@ -189,18 +138,8 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
     finally { setAutorizandoArcaId(null) }
   }
 
-  async function abrirCobro(factura: FacturaRow) {
-    try {
-      const res = await fetch(`/api/empresas/${factura.empresa.id}/saldo-cc`)
-      if (res.ok) {
-        const data = await res.json()
-        setSaldoAFavorCC((data as { saldoAFavor?: number }).saldoAFavor ?? 0)
-      }
-    } catch {
-      // silencioso
-    }
-    setCobrandoFactura(factura)
-    setFacturaDetalle(null)
+  function abrirPDF(facturaId: string) {
+    window.open(`/api/facturas/${facturaId}/pdf`, "_blank")
   }
 
   const empresasItems = [
@@ -208,9 +147,11 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
     ...empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: formatearCuit(e.cuit) })),
   ]
 
+  const colCount = mostrarColumnaEmpresa ? 9 : 8
+
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Consultar Facturas</h1>
+    <div className="space-y-5">
+      <h1 className="text-[34px] font-bold tracking-tight text-foreground leading-tight">Consultar Facturas</h1>
 
       {/* Filtros */}
       <Card>
@@ -246,7 +187,7 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
               <select
                 value={filtroEstado}
                 onChange={(e) => setFiltroEstado(e.target.value)}
-                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                className="h-9 w-full rounded-lg border border-input bg-background px-3 text-base"
               >
                 <option value="">Todos</option>
                 <option value="EMITIDA">Emitida</option>
@@ -263,6 +204,13 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
         </CardContent>
       </Card>
 
+      {/* Encabezado contextual */}
+      {empresaSeleccionada && (
+        <p className="text-[15px] font-medium text-foreground">
+          Historial de facturas emitidas a {empresaSeleccionada.razonSocial} — {formatearCuit(empresaSeleccionada.cuit)}
+        </p>
+      )}
+
       {/* Tabla */}
       <Card>
         <CardContent className="p-0">
@@ -271,81 +219,72 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="px-3 py-3 text-left">Fecha</th>
-                  <th className="px-3 py-3 text-left">Nº Comprobante</th>
                   <th className="px-3 py-3 text-left">Tipo</th>
-                  <th className="px-3 py-3 text-left">Empresa</th>
+                  <th className="px-3 py-3 text-left">Nº Comprobante</th>
+                  {mostrarColumnaEmpresa && <th className="px-3 py-3 text-left">Empresa</th>}
                   <th className="px-3 py-3 text-right">Neto</th>
                   <th className="px-3 py-3 text-right">IVA</th>
                   <th className="px-3 py-3 text-right font-semibold">Total</th>
                   <th className="px-3 py-3 text-center">Estado</th>
-                  <th className="px-3 py-3 text-right">Cobrado</th>
-                  <th className="px-3 py-3 text-center">NC/ND</th>
                   <th className="px-3 py-3"></th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={11} className="px-3 py-8 text-center text-muted-foreground">Buscando...</td>
+                    <td colSpan={colCount} className="px-3 py-8 text-center text-muted-foreground">Buscando...</td>
                   </tr>
                 ) : facturas.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-3 py-8 text-center text-muted-foreground">Sin resultados</td>
+                    <td colSpan={colCount} className="px-3 py-8 text-center text-muted-foreground">Sin resultados</td>
                   </tr>
                 ) : (
-                  facturas.map((fact) => {
-                    const cobradoPct = fact.total > 0 ? (fact.totalPagado / fact.total * 100) : 0
-                    return (
-                      <tr key={fact.id} className="border-b hover:bg-muted/30">
-                        <td className="px-3 py-2">{formatearFecha(fact.emitidaEn)}</td>
-                        <td className="px-3 py-2 font-mono text-xs">{fact.nroComprobante ?? "—"}</td>
-                        <td className="px-3 py-2"><TipoCbteBadge tipoCbte={fact.tipoCbte} modalidad={fact.modalidadMiPymes ?? undefined} /></td>
-                        <td className="px-3 py-2 max-w-[160px] truncate">{fact.empresa.razonSocial}</td>
-                        <td className="px-3 py-2 text-right">{formatearMoneda(fact.neto)}</td>
-                        <td className="px-3 py-2 text-right">{formatearMoneda(fact.ivaMonto)}</td>
-                        <td className="px-3 py-2 text-right font-semibold">{formatearMoneda(fact.total)}</td>
-                        <td className="px-3 py-2 text-center">
-                          <EstadoBadge estado={fact.estado} />
-                          {(fact.estadoArca === "PENDIENTE" || fact.estadoArca === "RECHAZADA") && (
-                            <span className="inline-flex items-center gap-1 ml-1">
-                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${fact.estadoArca === "PENDIENTE" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
-                                {fact.estadoArca === "PENDIENTE" ? "Pendiente ARCA" : "Rechazada ARCA"}
-                              </span>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); reintentarArca(fact.id) }}
-                                disabled={autorizandoArcaId === fact.id}
-                                className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
-                                title="Reintentar autorización ARCA"
-                              >
-                                {autorizandoArcaId === fact.id ? "..." : "↻"}
-                              </button>
+                  facturas.map((fact) => (
+                    <tr key={fact.id} className="border-b hover:bg-muted/30">
+                      <td className="px-3 py-2">{formatearFecha(fact.emitidaEn)}</td>
+                      <td className="px-3 py-2 text-sm">{labelTipoCbte(fact.tipoCbte, fact.modalidadMiPymes)}</td>
+                      <td className="px-3 py-2 font-mono text-xs">{formatNroComprobante(fact.ptoVenta, fact.nroComprobante)}</td>
+                      {mostrarColumnaEmpresa && <td className="px-3 py-2 max-w-[160px] truncate">{fact.empresa.razonSocial}</td>}
+                      <td className="px-3 py-2 text-right">{formatearMoneda(fact.neto)}</td>
+                      <td className="px-3 py-2 text-right">{formatearMoneda(fact.ivaMonto)}</td>
+                      <td className="px-3 py-2 text-right font-semibold">{formatearMoneda(fact.total)}</td>
+                      <td className="px-3 py-2 text-center">
+                        <EstadoBadge estado={fact.estado} />
+                        {(fact.estadoArca === "PENDIENTE" || fact.estadoArca === "RECHAZADA") && (
+                          <span className="inline-flex items-center gap-1 ml-1">
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${fact.estadoArca === "PENDIENTE" ? "bg-warning-soft text-warning" : "bg-error-soft text-error"}`}>
+                              {fact.estadoArca === "PENDIENTE" ? "Pendiente ARCA" : "Rechazada ARCA"}
                             </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right text-sm">
-                          {fact.totalPagado > 0
-                            ? <span className={cobradoPct >= 100 ? "text-green-700 font-medium" : ""}>{formatearMoneda(fact.totalPagado)}</span>
-                            : <span className="text-muted-foreground">—</span>}
-                        </td>
-                        <td className="px-3 py-2 text-center text-xs text-muted-foreground">
-                          {fact._count.notasCreditoDebito > 0 ? fact._count.notasCreditoDebito : "—"}
-                        </td>
-                        <td className="px-3 py-2">
-                          <Button size="sm" variant="outline" onClick={() => setFacturaDetalle(fact)}>Ver</Button>
-                        </td>
-                      </tr>
-                    )
-                  })
+                            <button
+                              onClick={(e) => { e.stopPropagation(); reintentarArca(fact.id) }}
+                              disabled={autorizandoArcaId === fact.id}
+                              className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-warning text-warning-foreground hover:bg-warning/80 disabled:opacity-50"
+                              title="Reintentar autorización ARCA"
+                            >
+                              {autorizandoArcaId === fact.id ? "..." : "↻"}
+                            </button>
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        {fact.pdfS3Key ? (
+                          <Button size="sm" variant="outline" onClick={() => abrirPDF(fact.id)}>Ver PDF</Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Sin PDF</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
               {facturas.length > 0 && (
                 <tfoot>
                   <tr className="bg-muted font-semibold border-t-2">
-                    <td colSpan={4} className="px-3 py-3 text-right text-sm">Totales ({facturas.length})</td>
+                    <td colSpan={mostrarColumnaEmpresa ? 4 : 3} className="px-3 py-3 text-right text-sm">Totales ({facturas.length})</td>
                     <td className="px-3 py-3 text-right">{formatearMoneda(sumarImportes(facturas.map(f => f.neto)))}</td>
                     <td className="px-3 py-3 text-right">{formatearMoneda(sumarImportes(facturas.map(f => f.ivaMonto)))}</td>
                     <td className="px-3 py-3 text-right">{formatearMoneda(sumarImportes(facturas.map(f => f.total)))}</td>
-                    <td colSpan={4}></td>
+                    <td colSpan={2}></td>
                   </tr>
                 </tfoot>
               )}
@@ -353,153 +292,6 @@ export function ConsultarFacturasClient({ empresas, cuentasBancarias }: Consulta
           </div>
         </CardContent>
       </Card>
-
-      {/* Modal detalle */}
-      {facturaDetalle && (
-        <Dialog open onOpenChange={(open) => { if (!open) setFacturaDetalle(null) }}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 flex-wrap">
-                <span>{facturaDetalle.empresa.razonSocial}</span>
-                <span className="text-muted-foreground text-sm">{formatearFecha(facturaDetalle.emitidaEn)}</span>
-                <span className="text-muted-foreground text-sm">Tipo {facturaDetalle.tipoCbte}</span>
-                {facturaDetalle.nroComprobante && (
-                  <span className="font-mono text-xs text-muted-foreground">#{facturaDetalle.nroComprobante}</span>
-                )}
-                <EstadoBadge estado={facturaDetalle.estado} />
-              </DialogTitle>
-            </DialogHeader>
-
-            {/* Viajes */}
-            <div className="space-y-3">
-              <h3 className="font-semibold text-sm">Viajes incluidos ({facturaDetalle.viajes.length})</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="px-2 py-2 text-left">Remito</th>
-                      <th className="px-2 py-2 text-left">Mercadería</th>
-                      <th className="px-2 py-2 text-left">Origen</th>
-                      <th className="px-2 py-2 text-left">Destino</th>
-                      <th className="px-2 py-2 text-right">Kilos</th>
-                      <th className="px-2 py-2 text-right">Ton</th>
-                      <th className="px-2 py-2 text-right">Tarifa</th>
-                      <th className="px-2 py-2 text-right">Importe</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {facturaDetalle.viajes.map((vef) => {
-                      const kilos = vef.kilos ?? 0
-                      const ton = kilos > 0 ? (kilos / 1000).toLocaleString("es-AR", { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : "—"
-                      return (
-                        <tr key={vef.id} className="hover:bg-muted/20">
-                          <td className="px-2 py-1">{vef.remito ?? "—"}</td>
-                          <td className="px-2 py-1">{vef.mercaderia ?? "—"}</td>
-                          <td className="px-2 py-1">{vef.provinciaOrigen ?? vef.procedencia ?? "—"}</td>
-                          <td className="px-2 py-1">{vef.provinciaDestino ?? vef.destino ?? "—"}</td>
-                          <td className="px-2 py-1 text-right">{kilos > 0 ? kilos.toLocaleString("es-AR") : "—"}</td>
-                          <td className="px-2 py-1 text-right">{ton}</td>
-                          <td className="px-2 py-1 text-right">{formatearMoneda(vef.tarifaEmpresa)}</td>
-                          <td className="px-2 py-1 text-right font-medium">{formatearMoneda(vef.subtotal)}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Totales */}
-              <div className="space-y-1 text-sm border-t pt-3">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Neto:</span>
-                  <span>{formatearMoneda(facturaDetalle.neto)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">IVA ({facturaDetalle.ivaPct}%):</span>
-                  <span>{formatearMoneda(facturaDetalle.ivaMonto)}</span>
-                </div>
-                <div className="flex justify-between font-bold text-base border-t pt-1">
-                  <span>Total:</span>
-                  <span>{formatearMoneda(facturaDetalle.total)}</span>
-                </div>
-              </div>
-
-              {/* Pagos */}
-              {facturaDetalle.pagos.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="font-semibold text-sm">Pagos recibidos</h3>
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b bg-muted/50">
-                        <th className="px-2 py-2 text-left">Tipo</th>
-                        <th className="px-2 py-2 text-left">Fecha</th>
-                        <th className="px-2 py-2 text-left">Referencia</th>
-                        <th className="px-2 py-2 text-right">Monto</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {facturaDetalle.pagos.map((p, i) => (
-                        <tr key={i} className="hover:bg-muted/20">
-                          <td className="px-2 py-1">{p.tipoPago}</td>
-                          <td className="px-2 py-1">{formatearFecha(p.fechaPago)}</td>
-                          <td className="px-2 py-1">{p.referencia ?? "—"}</td>
-                          <td className="px-2 py-1 text-right font-medium">{formatearMoneda(p.monto)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div className="flex justify-end text-sm font-semibold">
-                    <span>Total cobrado: {formatearMoneda(facturaDetalle.totalPagado)}</span>
-                  </div>
-                </div>
-              )}
-
-              {/* NC/ND */}
-              {facturaDetalle._count.notasCreditoDebito > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  Esta factura tiene {facturaDetalle._count.notasCreditoDebito} nota(s) de crédito/débito asociada(s).
-                </p>
-              )}
-            </div>
-
-            <DialogFooter className="flex-wrap gap-2">
-              {(facturaDetalle.estado === "EMITIDA" || facturaDetalle.estado === "PARCIALMENTE_COBRADA") && (
-                <Button
-                  onClick={() => void abrirCobro(facturaDetalle)}
-                  variant="default"
-                >
-                  Registrar cobro
-                </Button>
-              )}
-              <Button variant="outline" onClick={() => setFacturaDetalle(null)}>
-                Cerrar
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Modal cobro */}
-      {cobrandoFactura && (
-        <RegistrarCobroModal
-          factura={{
-            id: cobrandoFactura.id,
-            nroComprobante: cobrandoFactura.nroComprobante,
-            tipoCbte: cobrandoFactura.tipoCbte,
-            total: cobrandoFactura.total,
-            pagosExistentes: cobrandoFactura.totalPagado,
-            empresa: cobrandoFactura.empresa,
-          }}
-          cuentasBancarias={cuentasBancarias}
-          saldoAFavorCC={saldoAFavorCC}
-          onSuccess={() => {
-            setFacturaDetalle(null)
-            setCobrandoFactura(null)
-            void handleBuscar()
-          }}
-          onClose={() => setCobrandoFactura(null)}
-        />
-      )}
     </div>
   )
 }
