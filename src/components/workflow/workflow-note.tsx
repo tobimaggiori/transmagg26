@@ -27,8 +27,8 @@ export function WorkflowNote({
 }) {
   return (
     <div className="rounded-xl border border-border bg-accent/50 p-4">
-      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{titulo}</p>
-      <p className="mt-1.5 text-sm text-foreground/80">{descripcion}</p>
+      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{titulo}</p>
+      <p className="mt-1.5 text-[15px] text-foreground/80">{descripcion}</p>
     </div>
   )
 }

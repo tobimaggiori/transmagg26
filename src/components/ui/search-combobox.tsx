@@ -106,13 +106,13 @@ export function SearchCombobox({
         required={required && !value}
         disabled={disabled}
         autoComplete="off"
-        className="h-9 w-full rounded-md border bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="h-9 w-full rounded-lg border bg-background px-3 text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
       />
 
       {open && (
         <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-md border bg-background shadow-md">
           {filtered.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground">Sin resultados</div>
+            <div className="px-3 py-2 text-[15px] text-muted-foreground">Sin resultados</div>
           ) : (
             filtered.map((item) => (
               <button
@@ -126,9 +126,9 @@ export function SearchCombobox({
                   esSeleccionado(item) ? "bg-muted/40" : ""
                 }`}
               >
-                <div className="text-sm">{item.label}</div>
+                <div className="text-[15px]">{item.label}</div>
                 {item.sublabel && (
-                  <div className="text-xs text-muted-foreground">{item.sublabel}</div>
+                  <div className="text-sm text-muted-foreground">{item.sublabel}</div>
                 )}
               </button>
             ))

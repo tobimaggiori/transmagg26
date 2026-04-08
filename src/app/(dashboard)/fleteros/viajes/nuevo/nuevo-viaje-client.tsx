@@ -40,9 +40,9 @@ function FormSection({ icon: Icon, title, children }: {
 }) {
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm">
-      <div className="flex items-center gap-2 px-5 py-3 border-b border-border">
-        <Icon className="h-4 w-4 text-primary" />
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      <div className="flex items-center gap-2.5 px-5 py-3 border-b border-border">
+        <Icon className="h-[18px] w-[18px] text-primary" />
+        <h3 className="text-[18px] font-semibold text-foreground">{title}</h3>
       </div>
       <div className="px-5 py-4">
         {children}
@@ -59,13 +59,13 @@ function SegmentedToggle({ options, value, onChange }: {
   onChange: (v: string) => void
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-border overflow-hidden h-8">
+    <div className="inline-flex rounded-lg border border-border overflow-hidden h-9">
       {options.map((opt, i) => (
         <button
           key={opt.value}
           type="button"
           onClick={() => onChange(opt.value)}
-          className={`px-3.5 text-xs font-medium transition-colors ${
+          className={`px-4 text-sm font-medium transition-colors ${
             i < options.length - 1 ? "border-r border-border" : ""
           } ${
             value === opt.value
@@ -206,15 +206,15 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
     }
   }
 
-  const labelCls = "text-[13px] font-medium text-foreground block mb-1"
-  const inputCls = "w-full h-9 rounded-lg border border-input bg-background px-3 text-sm focus:border-ring focus:ring-2 focus:ring-ring/20 transition-colors outline-none"
+  const labelCls = "text-[15px] font-medium text-foreground block mb-1"
+  const inputCls = "w-full h-10 rounded-lg border border-input bg-background px-3 text-base focus:border-ring focus:ring-2 focus:ring-ring/20 transition-colors outline-none"
 
   const hoy = new Date().toISOString().slice(0, 10)
 
   if (viajeCreado) {
     return (
       <div className="space-y-4">
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">Nuevo viaje</h2>
+        <h2 className="text-[34px] font-bold tracking-tight text-foreground leading-tight">Nuevo viaje</h2>
         <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
           <div className="rounded-full bg-success-soft p-3">
             <Check className="h-8 w-8 text-success" />
@@ -244,7 +244,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
               setError(null)
               setIntentoEnviar(false)
             }}
-            className="h-9 px-5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+            className="h-10 px-5 rounded-lg bg-primary text-primary-foreground text-[15px] font-medium hover:bg-primary/90 transition-colors"
           >
             Cargar otro viaje
           </button>
@@ -258,7 +258,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
       {/* ════════ Header ════════ */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">Nuevo viaje</h2>
+          <h2 className="text-[34px] font-bold tracking-tight text-foreground leading-tight">Nuevo viaje</h2>
           <SegmentedToggle
             options={[
               { value: "externo", label: "Fletero externo" },
@@ -275,19 +275,19 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
           />
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-[13px] font-medium text-muted-foreground">Fecha</label>
+          <label className="text-[15px] font-medium text-muted-foreground">Fecha</label>
           <input
             type="date"
             value={fechaViaje}
             onChange={(e) => setFechaViaje(e.target.value)}
-            className="h-9 rounded-lg border border-input bg-card px-3 text-sm font-medium focus:border-ring focus:ring-2 focus:ring-ring/20 transition-colors outline-none"
+            className="h-10 rounded-lg border border-input bg-card px-3 text-base font-medium focus:border-ring focus:ring-2 focus:ring-ring/20 transition-colors outline-none"
           />
           <FormError message={fieldErrors.fechaViaje} className="text-xs" />
         </div>
       </div>
 
       {error && (
-        <div className="p-3 bg-error-soft text-error rounded-lg text-sm border border-error/20">{error}</div>
+        <div className="p-3 bg-error-soft text-error rounded-lg text-[15px] border border-error/20">{error}</div>
       )}
 
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
@@ -312,13 +312,13 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                   />
                   <FormError message={fieldErrors.fleteroId} className="text-xs mt-1" />
                   {fleteroId && (
-                    <div className="flex items-center gap-2 mt-2 px-3 py-1.5 rounded-md bg-accent/50 text-xs">
+                    <div className="flex items-center gap-2 mt-2 px-3 py-1.5 rounded-md bg-accent/50 text-sm">
                       <span className="text-muted-foreground">Comisión %</span>
                       <input
                         type="number" min="0" max="100" step="0.01"
                         value={comisionPct}
                         onChange={(e) => setComisionPct(e.target.value)}
-                        className="w-16 h-6 rounded border border-input bg-background px-1.5 text-xs text-right"
+                        className="w-20 h-7 rounded border border-input bg-background px-2 text-sm text-right"
                       />
                     </div>
                   )}
@@ -356,7 +356,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
               {esCamionPropio && camionId && (() => {
                 const c = camiones.find((x) => x.id === camionId)
                 return c && c.polizaVigente === false ? (
-                  <div className="flex items-center gap-2 p-2.5 bg-warning-soft border border-warning/20 rounded-lg text-xs text-warning-foreground">
+                  <div className="flex items-center gap-2 p-2.5 bg-warning-soft border border-warning/20 rounded-lg text-sm text-warning-foreground">
                     <ShieldAlert className="h-4 w-4 text-warning shrink-0" />
                     Este camión no tiene seguro vigente.
                   </div>
@@ -369,7 +369,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
           <FormSection icon={MapPin} title="Recorrido">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Origen</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-primary">Origen</p>
                 <div>
                   <label className={labelCls}>Ciudad</label>
                   <input type="text" value={procedencia} onChange={(e) => setProcedencia(e.target.value)} onBlur={() => procedencia && setProcedencia(capitalizarPalabras(procedencia))} className={inputCls} placeholder="Ej: Rosario" />
@@ -381,7 +381,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                 </div>
               </div>
               <div className="space-y-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Destino</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-primary">Destino</p>
                 <div>
                   <label className={labelCls}>Ciudad</label>
                   <input type="text" value={destino} onChange={(e) => setDestino(e.target.value)} onBlur={() => destino && setDestino(capitalizarPalabras(destino))} className={inputCls} placeholder="Ej: Buenos Aires" />
@@ -409,7 +409,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                   <label className={labelCls}>Kilos <span className="text-error">*</span></label>
                   <input type="number" value={kilos} onChange={(e) => setKilos(e.target.value)} min="0" step="1" className={inputCls} placeholder="0" />
                   <FormError message={fieldErrors.kilos} className="text-xs mt-1" />
-                  {toneladas != null && <p className="text-[11px] text-muted-foreground mt-1">{toneladas} ton</p>}
+                  {toneladas != null && <p className="text-sm text-muted-foreground mt-1">{toneladas} ton</p>}
                 </div>
                 <div>
                   <label className={labelCls}>Tarifa / ton <span className="text-error">*</span></label>
@@ -419,7 +419,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
               </div>
 
               {totalCalc != null && (
-                <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-accent/50 text-sm">
+                <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-accent/50 text-[15px]">
                   <span className="text-muted-foreground">Referencia</span>
                   <span className="font-semibold text-foreground">{formatearMoneda(totalCalc)}</span>
                 </div>
@@ -465,14 +465,14 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
           <button
             type="button"
             onClick={() => router.back()}
-            className="h-9 px-5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            className="h-10 px-5 rounded-lg border border-border text-[15px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
           >
             Cancelar
           </button>
           <button
             type="submit"
             disabled={cargando}
-            className="h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            className="h-10 px-6 rounded-lg bg-primary text-primary-foreground text-[15px] font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
             {cargando ? "Guardando..." : "Cargar Viaje"}
           </button>

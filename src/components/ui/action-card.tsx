@@ -30,15 +30,15 @@ export function ActionCard({ title, subtitle, href, icon: Icon, description }: A
           </div>
         )}
         <div>
-          <p className="text-[11px] font-semibold tracking-widest uppercase text-muted-foreground group-hover:text-primary/70 transition-colors">
+          <p className="text-xs font-semibold tracking-widest uppercase text-muted-foreground group-hover:text-primary/70 transition-colors">
             {title}
           </p>
-          <p className="text-lg font-bold tracking-tight mt-0.5 text-foreground group-hover:text-primary transition-colors">
+          <p className="text-xl font-bold tracking-tight mt-0.5 text-foreground group-hover:text-primary transition-colors">
             {subtitle}
           </p>
         </div>
         {description && (
-          <p className="text-xs text-muted-foreground mt-1">{description}</p>
+          <p className="text-sm text-muted-foreground mt-1">{description}</p>
         )}
       </div>
     </Link>
