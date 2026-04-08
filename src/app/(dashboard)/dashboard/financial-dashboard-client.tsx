@@ -729,36 +729,6 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
           </Card>
         )}
 
-        {permisos.includes("dashboard.pendiente_facturar") && (
-          <Card
-            className="cursor-pointer hover:border-primary transition-colors"
-            onClick={() => setModalAbierto("pendiente-facturar")}
-          >
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Pendiente de Facturar</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{formatearMoneda(data.pendienteFacturar)}</p>
-              <p className="text-xs text-muted-foreground mt-1">Viajes sin factura — click para ver detalle</p>
-            </CardContent>
-          </Card>
-        )}
-
-        {permisos.includes("dashboard.pendiente_liquidar") && (
-          <Card
-            className="cursor-pointer hover:border-primary transition-colors"
-            onClick={() => setModalAbierto("pendiente-liquidar")}
-          >
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Pendiente de Liquidar</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{formatearMoneda(data.pendienteLiquidar)}</p>
-              <p className="text-xs text-muted-foreground mt-1">Viajes sin liquidación — click para ver detalle</p>
-            </CardContent>
-          </Card>
-        )}
-
         {permisos.includes("dashboard.cheques_cartera") && (
           <Card>
             <CardHeader className="pb-2">
@@ -788,6 +758,36 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
                   ECheq: {formatearMoneda(data.chequesEnCartera?.electronico ?? 0)}
                 </span>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {permisos.includes("dashboard.pendiente_facturar") && (
+          <Card
+            className="cursor-pointer hover:border-primary transition-colors"
+            onClick={() => setModalAbierto("pendiente-facturar")}
+          >
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Pendiente de Facturar</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{formatearMoneda(data.pendienteFacturar)}</p>
+              <p className="text-xs text-muted-foreground mt-1">Viajes sin factura — click para ver detalle</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {permisos.includes("dashboard.pendiente_liquidar") && (
+          <Card
+            className="cursor-pointer hover:border-primary transition-colors"
+            onClick={() => setModalAbierto("pendiente-liquidar")}
+          >
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Pendiente de Liquidar</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{formatearMoneda(data.pendienteLiquidar)}</p>
+              <p className="text-xs text-muted-foreground mt-1">Viajes sin liquidación — click para ver detalle</p>
             </CardContent>
           </Card>
         )}
