@@ -1,185 +1,34 @@
 "use client"
 
 /**
- * Propósito: Componente de creación de Líquido Producto.
+ * Propósito: Componente de creación de Líquido Producto (flujo canónico).
  * Selector de fletero → viajes pendientes con checkboxes → preview fullscreen → confirmar.
- * Los datos de viaje son solo de visualización — se editan desde Consultar Viajes.
+ * Usa el ModalPreviewLiquidacion compartido que incluye fechaEmision, metodoPago y edición inline.
  */
 
 import { useState, useCallback, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
-import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
-import { labelCondicionIva, formatearNroComprobante } from "@/lib/liquidacion-utils"
+import { calcularToneladas, calcularTotalViaje } from "@/lib/viajes"
+import { formatearNroComprobante } from "@/lib/liquidacion-utils"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { PDFViewer } from "@/components/ui/pdf-viewer"
 import { usePDFViewer } from "@/hooks/use-pdf-viewer"
+import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
+import type { ProvinciaArgentina } from "@/lib/provincias"
 import type { Rol } from "@/types"
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
+import { ModalPreviewLiquidacion } from "@/app/(dashboard)/liquidaciones/_components/modal-preview-liquidacion"
+import type { FleteroInfo, ViajeParaLiquidar } from "@/app/(dashboard)/liquidaciones/_components/types"
+
+// ─── Tipos locales ───────────────────────────────────────────────────────────
 
 type Fletero = { id: string; razonSocial: string; cuit: string; comisionDefault?: number }
-
-type FleteroInfo = {
-  razonSocial: string
-  cuit: string
-  condicionIva: string
-  direccion?: string | null
-  nroProximoComprobante: number
-}
-
-type ViajeParaLiquidar = {
-  id: string
-  fechaViaje: string
-  empresaId: string
-  empresa: { razonSocial: string }
-  camionId: string
-  camion: { patenteChasis: string }
-  choferId: string
-  chofer: { nombre: string; apellido: string }
-  remito: string | null
-  cupo: string | null
-  mercaderia: string | null
-  procedencia: string | null
-  provinciaOrigen: string | null
-  destino: string | null
-  provinciaDestino: string | null
-  kilos: number | null
-  tarifa: number
-  estadoFactura: string
-  nroCartaPorte: string | null
-}
 
 type LiquidarClientProps = {
   rol: Rol
   fleteros: Fletero[]
   fleteroIdPropio: string | null
-}
-
-// ─── Modal preview liquidación (fullscreen) ───────────────────────────────────
-
-function ModalPreviewLiquidacion({
-  fletero,
-  viajes,
-  comisionPctInicial,
-  ivaPctInicial,
-  generando,
-  error,
-  onCancelar,
-  onConfirmar,
-}: {
-  fletero: FleteroInfo
-  viajes: ViajeParaLiquidar[]
-  comisionPctInicial: number
-  ivaPctInicial: number
-  generando: boolean
-  error: string | null
-  onCancelar: () => void
-  onConfirmar: (viajes: ViajeParaLiquidar[], comisionPct: number, ivaPct: number) => void
-}) {
-  const [comisionPct, setComisionPct] = useState(comisionPctInicial)
-  const [ivaPct, setIvaPct] = useState(ivaPctInicial)
-
-  const viajesParaCalc = viajes.map((v) => ({
-    kilos: v.kilos ?? 0,
-    tarifaFletero: v.tarifa,
-  }))
-  const preview = calcularLiquidacion(viajesParaCalc, comisionPct, ivaPct)
-
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
-      <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
-        <h2 className="text-lg font-semibold">Liquidar {viajes.length} viaje(s) seleccionado(s)</h2>
-        <button onClick={onCancelar} className="text-muted-foreground hover:text-foreground text-xl leading-none">&times;</button>
-      </div>
-
-      <div className="flex-1 overflow-auto px-6 py-4">
-        <div className="mb-4 rounded-md border bg-muted/40 px-5 py-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Liquidación a</p>
-          <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-            <div><span className="text-muted-foreground">Razón Social: </span><span className="font-medium">{fletero.razonSocial}</span></div>
-            <div><span className="text-muted-foreground">CUIT: </span><span className="font-medium">{fletero.cuit}</span></div>
-            <div><span className="text-muted-foreground">Condición IVA: </span><span className="font-medium">{labelCondicionIva(fletero.condicionIva)}</span></div>
-            <div><span className="text-muted-foreground">Dirección: </span><span className="font-medium">{fletero.direccion ?? "—"}</span></div>
-            <div><span className="text-muted-foreground">Nº Líquido Producto: </span><span className="font-mono font-bold text-base">{formatearNroComprobante(fletero.nroProximoComprobante)}</span></div>
-          </div>
-        </div>
-
-        {error && <div className="mb-3 p-3 bg-red-50 text-red-700 rounded text-sm">{error}</div>}
-        <div className="overflow-x-auto rounded border">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 sticky top-0">
-              <tr className="uppercase text-xs">
-                <th className="px-2 py-2 text-left whitespace-nowrap">Fecha</th>
-                <th className="px-2 py-2 text-left whitespace-nowrap">Carta de Porte</th>
-                <th className="px-2 py-2 text-left whitespace-nowrap">Remito</th>
-                <th className="px-2 py-2 text-left whitespace-nowrap">Cupo</th>
-                <th className="px-2 py-2 text-left whitespace-nowrap">Mercadería</th>
-                <th className="px-2 py-2 text-left whitespace-nowrap">Ciudad Origen</th>
-                <th className="px-2 py-2 text-left whitespace-nowrap">Prov. Origen</th>
-                <th className="px-2 py-2 text-left whitespace-nowrap">Ciudad Destino</th>
-                <th className="px-2 py-2 text-left whitespace-nowrap">Prov. Destino</th>
-                <th className="px-2 py-2 text-right whitespace-nowrap">Kilos</th>
-                <th className="px-2 py-2 text-right whitespace-nowrap">Tarifa</th>
-                <th className="px-2 py-2 text-right whitespace-nowrap">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {viajes.map((v, i) => {
-                const kilos = v.kilos ?? 0
-                const tarifa = v.tarifa
-                const importe = kilos > 0 ? calcularTotalViaje(kilos, tarifa) : null
-                return (
-                  <tr key={v.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                    <td className="px-2 py-1.5 text-xs whitespace-nowrap">{formatearFecha(new Date(v.fechaViaje))}</td>
-                    <td className="px-2 py-1.5 text-xs">{v.nroCartaPorte ?? "N/A"}</td>
-                    <td className="px-2 py-1.5 text-xs">{v.remito ?? "—"}</td>
-                    <td className="px-2 py-1.5 text-xs">{v.cupo ?? "—"}</td>
-                    <td className="px-2 py-1.5 text-xs">{v.mercaderia ?? "—"}</td>
-                    <td className="px-2 py-1.5 text-xs">{v.procedencia ?? "—"}</td>
-                    <td className="px-2 py-1.5 text-xs">{v.provinciaOrigen ?? "—"}</td>
-                    <td className="px-2 py-1.5 text-xs">{v.destino ?? "—"}</td>
-                    <td className="px-2 py-1.5 text-xs">{v.provinciaDestino ?? "—"}</td>
-                    <td className="px-2 py-1.5 text-xs text-right">{kilos > 0 ? kilos.toLocaleString("es-AR") : "—"}</td>
-                    <td className="px-2 py-1.5 text-xs text-right">{formatearMoneda(tarifa)}</td>
-                    <td className="px-2 py-1.5 text-xs text-right font-medium">{importe != null ? formatearMoneda(importe) : "—"}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="border-t px-6 py-4 shrink-0 bg-background">
-        <div className="flex flex-wrap items-end gap-6">
-          <div className="flex gap-4">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Comisión %</label>
-              <input type="number" value={comisionPct} onChange={(e) => setComisionPct(parseFloat(e.target.value) || 0)} min="0" max="100" step="0.01" className="h-8 w-24 rounded border bg-background px-2 text-sm" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">IVA %</label>
-              <input type="number" value={ivaPct} onChange={(e) => setIvaPct(parseFloat(e.target.value) || 0)} min="0" max="100" step="0.01" className="h-8 w-24 rounded border bg-background px-2 text-sm" />
-            </div>
-          </div>
-          <div className="flex-1 text-sm space-y-0.5">
-            <div className="flex justify-end gap-8"><span className="text-muted-foreground">Bruto ({viajes.length} viajes):</span><span className="w-36 text-right">{formatearMoneda(preview.subtotalBruto)}</span></div>
-            <div className="flex justify-end gap-8"><span className="text-muted-foreground">Comisión ({comisionPct}%):</span><span className="w-36 text-right">- {formatearMoneda(preview.comisionMonto)}</span></div>
-            <div className="flex justify-end gap-8 font-medium"><span>Neto:</span><span className="w-36 text-right">{formatearMoneda(preview.neto)}</span></div>
-            <div className="flex justify-end gap-8"><span className="text-muted-foreground">IVA ({ivaPct}%):</span><span className="w-36 text-right">+ {formatearMoneda(preview.ivaMonto)}</span></div>
-            <div className="flex justify-end gap-8 font-bold text-base border-t pt-1"><span>TOTAL FINAL:</span><span className="w-36 text-right">{formatearMoneda(preview.totalFinal)}</span></div>
-          </div>
-          <div className="flex gap-2 items-end">
-            <button onClick={onCancelar} className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent">Cancelar</button>
-            <button onClick={() => onConfirmar(viajes, comisionPct, ivaPct)} disabled={generando} className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
-              {generando ? "Generando..." : "Confirmar y generar liquidación"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -211,11 +60,60 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
       const res = await fetch(url)
       if (res.ok) {
         const data = await res.json() as {
-          viajesPendientes: ViajeParaLiquidar[]
+          viajesPendientes: Array<{
+            id: string; fechaViaje: string; empresaId: string;
+            empresa: { razonSocial: string }; camionId: string; camion: { patenteChasis: string };
+            choferId: string; chofer: { nombre: string; apellido: string };
+            remito: string | null; cupo: string | null; tieneCupo?: boolean | null;
+            mercaderia: string | null; procedencia: string | null;
+            provinciaOrigen: string | null; destino: string | null; provinciaDestino: string | null;
+            kilos: number | null; tarifa: number; estadoFactura: string;
+            nroCartaPorte: string | null;
+          }>
           fletero: { cuit: string; condicionIva: string; direccion?: string | null } | null
           nroProximoComprobante: number
         }
-        setViajesPendientes(data.viajesPendientes ?? [])
+        // Mapear al tipo compartido ViajeParaLiquidar con campos de edición
+        const viajesConEdit: ViajeParaLiquidar[] = (data.viajesPendientes ?? []).map((v) => ({
+          id: v.id,
+          fechaViaje: v.fechaViaje,
+          empresaId: v.empresaId,
+          empresa: v.empresa,
+          camionId: v.camionId,
+          camion: v.camion,
+          choferId: v.choferId,
+          chofer: v.chofer,
+          remito: v.remito,
+          tieneCupo: v.tieneCupo ?? (v.cupo ? true : null),
+          cupo: v.cupo,
+          mercaderia: v.mercaderia,
+          procedencia: v.procedencia,
+          provinciaOrigen: v.provinciaOrigen,
+          destino: v.destino,
+          provinciaDestino: v.provinciaDestino,
+          kilos: v.kilos,
+          tarifaFletero: v.tarifa,
+          estadoFactura: v.estadoFactura,
+          // Campos de edición inicializados
+          kilosEdit: v.kilos ?? undefined,
+          tarifaEdit: v.tarifa,
+          fechaEdit: v.fechaViaje.slice(0, 10),
+          remitoEdit: v.remito ?? "",
+          tieneCupoEdit: v.tieneCupo ?? (v.cupo ? true : false),
+          cupoEdit: v.cupo ?? "",
+          mercaderiaEdit: v.mercaderia ?? "",
+          procedenciaEdit: v.procedencia ?? "",
+          origenEdit: (PROVINCIAS_ARGENTINA as readonly string[]).includes(v.provinciaOrigen ?? "")
+            ? v.provinciaOrigen as ProvinciaArgentina
+            : undefined,
+          destinoEdit: v.destino ?? "",
+          provinciaDestinoEdit: (PROVINCIAS_ARGENTINA as readonly string[]).includes(v.provinciaDestino ?? "")
+            ? v.provinciaDestino as ProvinciaArgentina
+            : undefined,
+          camionIdEdit: v.camionId,
+          choferIdEdit: v.choferId,
+        }))
+        setViajesPendientes(viajesConEdit)
         const fleteroEncontrado = fleteros.find((f) => f.id === fleteroId)
         if (fleteroEncontrado) {
           if (esInterno && fleteroEncontrado.comisionDefault != null) setComisionPct(fleteroEncontrado.comisionDefault)
@@ -251,7 +149,7 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
 
   const viajesSeleccionados = viajesPendientes.filter((v) => seleccionados.has(v.id))
 
-  async function confirmarLiquidacion(viajesConfirmados: ViajeParaLiquidar[], comision: number, iva: number) {
+  async function confirmarLiquidacion(viajesConfirmados: ViajeParaLiquidar[], comision: number, iva: number, metodoPago: string, fechaEmision: string) {
     if (!fleteroId || viajesConfirmados.length === 0) return
     setGenerando(true)
     setErrorGen(null)
@@ -262,19 +160,21 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
         ivaPct: iva,
         viajes: viajesConfirmados.map((v) => ({
           viajeId: v.id,
-          camionId: v.camionId,
-          choferId: v.choferId,
-          fechaViaje: v.fechaViaje.slice(0, 10),
-          remito: v.remito,
-          cupo: v.cupo,
-          mercaderia: v.mercaderia,
-          procedencia: v.procedencia,
-          provinciaOrigen: v.provinciaOrigen,
-          destino: v.destino,
-          provinciaDestino: v.provinciaDestino,
-          kilos: v.kilos ?? 0,
-          tarifaFletero: v.tarifa,
+          camionId: v.camionIdEdit ?? v.camionId,
+          choferId: v.choferIdEdit ?? v.choferId,
+          fechaViaje: v.fechaEdit ?? v.fechaViaje.slice(0, 10),
+          remito: v.remitoEdit || null,
+          cupo: (v.tieneCupoEdit ?? v.tieneCupo) ? (v.cupoEdit || null) : null,
+          mercaderia: v.mercaderiaEdit || null,
+          procedencia: v.procedenciaEdit || null,
+          provinciaOrigen: v.origenEdit || null,
+          destino: v.destinoEdit || null,
+          provinciaDestino: v.provinciaDestinoEdit || null,
+          kilos: v.kilosEdit ?? v.kilos ?? 0,
+          tarifaFletero: v.tarifaEdit ?? v.tarifaFletero,
         })),
+        metodoPago,
+        fechaEmision,
         emisionArca: true,
         idempotencyKey: crypto.randomUUID(),
       }
@@ -489,7 +389,6 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
                       <input type="checkbox" checked={seleccionados.size === viajesPendientes.length} onChange={toggleTodos} />
                     </th>
                     <th className="px-3 py-2 text-left">Fecha</th>
-                    <th className="px-3 py-2 text-left">Carta de Porte</th>
                     <th className="px-3 py-2 text-left">Remito</th>
                     <th className="px-3 py-2 text-left">Cupo</th>
                     <th className="px-3 py-2 text-left">Mercadería</th>
@@ -503,8 +402,8 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
                 </thead>
                 <tbody className="divide-y">
                   {viajesPendientes.map((v) => {
-                    const kilos = v.kilos ?? 0
-                    const tarifa = v.tarifa
+                    const kilos = v.kilosEdit ?? v.kilos ?? 0
+                    const tarifa = v.tarifaEdit ?? v.tarifaFletero
                     const ton = kilos > 0 ? calcularToneladas(kilos) : null
                     const total = kilos > 0 ? calcularTotalViaje(kilos, tarifa) : null
                     return (
@@ -513,7 +412,6 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
                           <input type="checkbox" checked={seleccionados.has(v.id)} onChange={() => toggleSeleccion(v.id)} />
                         </td>
                         <td className="px-3 py-2">{formatearFecha(new Date(v.fechaViaje))}</td>
-                        <td className="px-3 py-2">{v.nroCartaPorte ?? "N/A"}</td>
                         <td className="px-3 py-2">{v.remito ?? "—"}</td>
                         <td className="px-3 py-2">{v.cupo ?? "—"}</td>
                         <td className="px-3 py-2">{v.mercaderia ?? "—"}</td>
@@ -536,7 +434,7 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
       {enPreview && (
         <ModalPreviewLiquidacion
           fletero={fleteroInfo ?? { razonSocial: "", cuit: "", condicionIva: "", nroProximoComprobante: 1 }}
-          viajes={viajesSeleccionados}
+          viajesIniciales={viajesSeleccionados}
           comisionPctInicial={comisionPct}
           ivaPctInicial={ivaPct}
           generando={generando}

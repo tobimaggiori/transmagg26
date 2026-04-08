@@ -82,6 +82,8 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
   const [tipoCbteNum, setTipoCbteNum] = useState<number | null>(null)
   const [modalidadMiPymes, setModalidadMiPymes] = useState<"SCA" | "ADC" | null>(null)
   const [ivaPct, setIvaPct] = useState<number>(21)
+  const [metodoPago, setMetodoPago] = useState<string>("Transferencia Bancaria")
+  const [fechaEmision, setFechaEmision] = useState(() => new Date().toISOString().slice(0, 10))
   const [cargando, setCargando] = useState(false)
   const [generando, setGenerando] = useState(false)
   const [errorGen, setErrorGen] = useState<string | null>(null)
@@ -190,6 +192,8 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
         tipoCbte: tipoCbteEfectivo,
         modalidadMiPymes: modalidadMiPymes ?? undefined,
         ivaPct,
+        metodoPago,
+        fechaEmision,
         ediciones: Object.keys(edicionesAEnviar).length > 0 ? edicionesAEnviar : undefined,
         emisionArca: true,
         idempotencyKey: crypto.randomUUID(),
@@ -255,6 +259,8 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
     setTipoCbteNum(null)
     setModalidadMiPymes(null)
     setIvaPct(21)
+    setMetodoPago("Transferencia Bancaria")
+    setFechaEmision(new Date().toISOString().slice(0, 10))
     setErrorGen(null)
     setReintentableInfo(null)
   }
@@ -639,7 +645,7 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
             <div className="p-4 bg-muted/40 rounded-lg border space-y-3">
               <h3 className="font-semibold">Preview de factura</h3>
               {errorGen && <div className="p-3 bg-red-50 text-red-700 rounded text-sm">{errorGen}</div>}
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <div>
                   <label className="text-xs font-medium text-muted-foreground block mb-1">Tipo de comprobante</label>
                   <div className="flex items-center gap-2 h-8">
@@ -658,6 +664,31 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
                     step="0.01"
                     className="h-8 w-28 rounded border bg-background px-2 text-sm"
                   />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Método de Pago</label>
+                  <select
+                    value={metodoPago}
+                    onChange={(e) => setMetodoPago(e.target.value)}
+                    className="h-8 rounded border bg-background px-2 text-sm"
+                  >
+                    <option value="Transferencia Bancaria">Transferencia Bancaria</option>
+                    <option value="Cuenta Corriente">Cuenta Corriente</option>
+                    <option value="Cheque">Cheque</option>
+                    <option value="Contado">Contado</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Fecha de emisión</label>
+                  <input
+                    type="date"
+                    value={fechaEmision}
+                    onChange={(e) => setFechaEmision(e.target.value)}
+                    max={new Date().toISOString().slice(0, 10)}
+                    min={(() => { const d = new Date(); d.setDate(d.getDate() - 10); return d.toISOString().slice(0, 10) })()}
+                    className="h-8 rounded border bg-background px-2 text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">ARCA permite hasta 10 días atrás</p>
                 </div>
               </div>
               <div className="space-y-1 text-sm">

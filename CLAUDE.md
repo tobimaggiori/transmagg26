@@ -104,6 +104,23 @@ src/
 └── __tests__/          # 20 archivos de test
 ```
 
+### Flujos canónicos de emisión (NO DUPLICAR)
+
+**Facturas a empresa** — un solo flujo:
+- Sidebar → `/empresas/facturas` (hub) → "NUEVA" → `/empresas/facturar` (creación)
+- Componente: `src/app/(dashboard)/empresas/facturar/facturar-client.tsx`
+- Consulta: `/empresas/facturas/consultar`
+- `fechaEmision` viaja desde UI → payload → backend → ARCA
+- NO reintroducir pantallas paralelas de facturación (e.g. `/facturas` fue eliminada)
+
+**Liquidaciones a fletero** — un solo flujo:
+- Sidebar → `/fleteros/liquidos-productos` (hub) → "EMITIR" → `/fleteros/liquidar` (creación)
+- Componente: `src/app/(dashboard)/fleteros/liquidar/liquidar-client.tsx`
+- Modal compartido: `src/app/(dashboard)/liquidaciones/_components/modal-preview-liquidacion.tsx`
+- Consulta: `/fleteros/liquidaciones`
+- `fechaEmision` viaja desde UI (modal preview) → payload → backend → ARCA
+- NO reintroducir pantallas paralelas de liquidación (e.g. `/liquidaciones` page fue eliminada)
+
 ### Modelos Prisma principales (67 modelos)
 - **Operaciones**: Viaje, Liquidacion, FacturaEmitida, NotaCreditoDebito
 - **Pagos**: PagoAFletero, PagoDeEmpresa, PagoProveedor, ChequeRecibido, ChequeEmitido
