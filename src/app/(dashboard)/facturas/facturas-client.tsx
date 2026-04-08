@@ -238,11 +238,6 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
         </div>
       )}
 
-      {!empresaId && esInterno && (
-        <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
-          <p className="text-lg">Seleccioná una Empresa para ver sus viajes y facturas</p>
-        </div>
-      )}
 
       {empresaId && (
         <>
