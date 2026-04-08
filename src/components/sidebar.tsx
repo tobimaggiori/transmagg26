@@ -170,15 +170,15 @@ function NavSimpleItem({
       href={href}
       onClick={onClose}
       title={collapsed ? label : undefined}
-      className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+      className={`flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${
         collapsed ? "justify-center" : ""
       } ${
         isActive
-          ? "bg-primary/20 text-white"
-          : "text-slate-200 hover:bg-white/10 hover:text-white"
+          ? "bg-sidebar-primary/20 text-white"
+          : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-white"
       }`}
     >
-      <Icon className="h-4 w-4 shrink-0" />
+      <Icon className="h-[18px] w-[18px] shrink-0" />
       {!collapsed && <span>{label}</span>}
     </Link>
   )
@@ -218,7 +218,6 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
       )
 
     if (collapsed) {
-      // In collapsed mode, render the group icon as a link to the first sub-item
       const firstHref = itemsVisibles[0]?.href ?? grupo.pathPrefix
       return (
         <Link
@@ -226,13 +225,13 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
           href={firstHref}
           onClick={onClose}
           title={grupo.label}
-          className={`flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+          className={`flex items-center justify-center rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${
             grupoActivo
-              ? "bg-primary/20 text-white"
-              : "text-slate-200 hover:bg-white/10 hover:text-white"
+              ? "bg-sidebar-primary/20 text-white"
+              : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-white"
           }`}
         >
-          <Icon className="h-4 w-4 shrink-0" />
+          <Icon className="h-[18px] w-[18px] shrink-0" />
         </Link>
       )
     }
@@ -242,18 +241,18 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
         <button
           type="button"
           onClick={() => setExpandido(estaExpandido ? null : grupo.id)}
-          className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+          className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${
             grupoActivo
-              ? "bg-primary/20 text-white"
-              : "text-slate-200 hover:bg-white/10 hover:text-white"
+              ? "bg-sidebar-primary/20 text-white"
+              : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-white"
           }`}
         >
-          <Icon className="h-4 w-4 shrink-0" />
+          <Icon className="h-[18px] w-[18px] shrink-0" />
           <span className="flex-1 text-left">{grupo.label}</span>
           {estaExpandido ? (
-            <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+            <ChevronDown className="h-3.5 w-3.5 opacity-50" />
           ) : (
-            <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+            <ChevronRight className="h-3.5 w-3.5 opacity-50" />
           )}
         </button>
         {estaExpandido && (
@@ -268,18 +267,20 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
   }
 
   return (
-    <aside className={`flex h-full flex-col bg-sidebar transition-all duration-200 ${collapsed ? "w-16" : "w-64"}`}>
+    <aside className={`flex h-full flex-col bg-sidebar transition-all duration-200 ${collapsed ? "w-16" : "w-60"}`}>
       {/* Logo */}
-      <div className="flex h-16 items-center border-b border-white/10 px-4">
-        <div className={`flex items-center gap-2 ${collapsed ? "justify-center w-full" : ""}`}>
-          <Truck className="h-6 w-6 text-primary-foreground shrink-0" />
-          {!collapsed && <span className="text-lg font-bold text-white">Transmagg</span>}
+      <div className="flex h-14 items-center border-b border-sidebar-border px-4">
+        <div className={`flex items-center gap-2.5 ${collapsed ? "justify-center w-full" : ""}`}>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary/20 shrink-0">
+            <Truck className="h-[18px] w-[18px] text-sidebar-primary-foreground" />
+          </div>
+          {!collapsed && <span className="text-[15px] font-bold text-white tracking-tight">Transmagg</span>}
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-auto px-2 py-4">
-        <div className="space-y-1">
+      <nav className="flex-1 overflow-auto px-2 py-3">
+        <div className="space-y-0.5">
           {esChoferTransmagg ? (
             <NavSimpleItem href="/dashboard" label="Mi Panel" icon={LayoutDashboard} pathname={pathname} onClose={onClose} collapsed={collapsed} />
           ) : (
@@ -297,7 +298,7 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
           {!collapsed && rol === "ADMIN_TRANSMAGG" && !arcaActiva && (
             <a
               href="/configuracion/arca"
-              className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs text-yellow-300 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors ml-2"
+              className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs text-warning bg-warning/10 hover:bg-warning/20 transition-colors mt-2"
             >
               <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
               <span>Config ARCA incompleta</span>
@@ -309,13 +310,13 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-white/10 p-3 space-y-2">
+      <div className="border-t border-sidebar-border p-3 space-y-2">
         {/* Collapse toggle — only visible on desktop */}
         {onToggleCollapse && (
           <button
             type="button"
             onClick={onToggleCollapse}
-            className="hidden md:flex w-full items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+            className="hidden md:flex w-full items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-white transition-colors"
             title={collapsed ? "Expandir menú" : "Colapsar menú"}
           >
             {collapsed ? (
@@ -331,7 +332,7 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
 
         {/* User info */}
         <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold uppercase shrink-0">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-primary text-sidebar-primary-foreground text-xs font-semibold uppercase shrink-0">
             {(nombreUsuario ?? emailUsuario ?? "U").charAt(0)}
           </div>
           {!collapsed && (
@@ -339,13 +340,13 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
               {nombreUsuario && (
                 <p className="truncate text-sm font-medium text-white">{nombreUsuario}</p>
               )}
-              <p className="truncate text-xs text-slate-400">{emailUsuario}</p>
+              <p className="truncate text-xs text-sidebar-foreground/50">{emailUsuario}</p>
             </div>
           )}
           <button
             type="button"
             onClick={() => signOut({ callbackUrl: "/login" })}
-            className={`text-slate-400 hover:text-white transition-colors ${collapsed ? "mt-2" : "ml-auto"}`}
+            className={`text-sidebar-foreground/40 hover:text-white transition-colors ${collapsed ? "mt-2" : "ml-auto"}`}
             title="Cerrar sesión"
           >
             <LogOut className="h-4 w-4" />

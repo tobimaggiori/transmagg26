@@ -34,10 +34,10 @@ export function NavSubItem({ href, label, onClose }: NavSubItemProps) {
     <Link
       href={href}
       onClick={onClose}
-      className={`block pl-10 pr-3 py-1.5 text-sm rounded-md transition-colors ${
+      className={`block pl-10 pr-3 py-1.5 text-[13px] rounded-md transition-colors ${
         isActive
-          ? "bg-primary/20 text-white font-medium"
-          : "text-slate-300 hover:bg-white/10 hover:text-white"
+          ? "bg-sidebar-primary/20 text-white font-medium"
+          : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-white"
       }`}
     >
       {label}

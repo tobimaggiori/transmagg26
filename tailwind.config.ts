@@ -43,6 +43,24 @@ const config: Config = {
         destructive: {
           DEFAULT: "var(--destructive)",
         },
+        success: {
+          DEFAULT: "var(--success)",
+          foreground: "var(--success-foreground)",
+          soft: "var(--success-soft)",
+        },
+        warning: {
+          DEFAULT: "var(--warning)",
+          foreground: "var(--warning-foreground)",
+          soft: "var(--warning-soft)",
+        },
+        error: {
+          DEFAULT: "var(--error)",
+          soft: "var(--error-soft)",
+        },
+        info: {
+          DEFAULT: "var(--info)",
+          soft: "var(--info-soft)",
+        },
         border: "var(--border)",
         input: "var(--input)",
         ring: "var(--ring)",

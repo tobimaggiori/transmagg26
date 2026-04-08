@@ -8,11 +8,19 @@ const badgeVariants = cva(
       variant: {
         default: "bg-primary/10 text-primary",
         secondary: "bg-secondary text-secondary-foreground",
-        destructive: "bg-destructive/10 text-destructive",
+        destructive: "bg-error-soft text-error",
         outline: "border border-border text-foreground",
-        success: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-        warning: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-        info: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+        success: "bg-success-soft text-success",
+        warning: "bg-warning-soft text-warning",
+        info: "bg-info-soft text-info",
+        // Estados de negocio
+        pendiente: "bg-warning-soft text-warning",
+        emitida: "bg-info-soft text-info",
+        autorizada: "bg-success-soft text-success",
+        rechazada: "bg-error-soft text-error",
+        pagada: "bg-success-soft text-success",
+        parcial: "bg-warning-soft text-warning",
+        anulada: "bg-secondary text-muted-foreground",
       },
     },
     defaultVariants: {
