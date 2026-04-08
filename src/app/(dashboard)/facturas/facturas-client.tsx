@@ -62,6 +62,7 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
   const [tipoCbte, setTipoCbte] = useState<number>(1)
   const [ivaPct, setIvaPct] = useState<number>(21)
   const [metodoPago, setMetodoPago] = useState<string>("Transferencia Bancaria")
+  const [fechaEmision, setFechaEmision] = useState(() => new Date().toISOString().slice(0, 10))
   const [generando, setGenerando] = useState(false)
   const [errorGen, setErrorGen] = useState<string | null>(null)
   const [facturaDetalle, setFacturaDetalle] = useState<Factura | null>(null)
@@ -146,6 +147,7 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
         tipoCbte,
         ivaPct,
         metodoPago,
+        fechaEmision,
         viajeIds: viajesSeleccionados.map((v) => v.id),
         ediciones: Object.fromEntries(
           viajesSeleccionados
@@ -419,7 +421,7 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
                 Esta vista previa refleja la tarifa comercial que va a quedar guardada para la empresa en la factura.
               </p>
               {errorGen && <div className="p-3 bg-red-50 text-red-700 rounded text-sm">{errorGen}</div>}
-              <div className="grid grid-cols-3 gap-3 text-sm">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <div>
                   <label className="text-xs font-medium text-muted-foreground block mb-1">Tipo de comprobante</label>
                   <select
@@ -456,6 +458,18 @@ export function FacturasClient({ rol, empresas, camiones, choferes, empresaIdPro
                     <option value="Cheque">Cheque</option>
                     <option value="Contado">Contado</option>
                   </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Fecha de emisión</label>
+                  <input
+                    type="date"
+                    value={fechaEmision}
+                    onChange={(e) => setFechaEmision(e.target.value)}
+                    max={new Date().toISOString().slice(0, 10)}
+                    min={(() => { const d = new Date(); d.setDate(d.getDate() - 10); return d.toISOString().slice(0, 10) })()}
+                    className="h-8 rounded border bg-background px-2 text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">ARCA permite hasta 10 días atrás</p>
                 </div>
               </div>
               <div className="space-y-1 text-sm">

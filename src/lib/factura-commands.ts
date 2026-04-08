@@ -19,6 +19,7 @@ export type DatosCrearFactura = {
   modalidadMiPymes?: string
   ivaPct: number
   metodoPago?: string
+  fechaEmision?: string
   ediciones?: Record<string, { kilos?: number; tarifaEmpresa?: number }>
 }
 
@@ -133,6 +134,7 @@ export async function ejecutarCrearFactura(
         modalidadMiPymes: modalidadMiPymes ?? null,
         ivaPct,
         metodoPago: metodoPago ?? "Transferencia Bancaria",
+        emitidaEn: data.fechaEmision ? new Date(data.fechaEmision + "T12:00:00") : new Date(),
         neto,
         ivaMonto,
         total,

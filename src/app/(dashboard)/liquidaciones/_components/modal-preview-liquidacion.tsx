@@ -25,12 +25,13 @@ export function ModalPreviewLiquidacion({
   generando: boolean
   error: string | null
   onCancelar: () => void
-  onConfirmar: (viajes: ViajeParaLiquidar[], comisionPct: number, ivaPct: number, metodoPago: string) => void
+  onConfirmar: (viajes: ViajeParaLiquidar[], comisionPct: number, ivaPct: number, metodoPago: string, fechaEmision: string) => void
 }) {
   const [viajes, setViajes] = useState<ViajeParaLiquidar[]>(viajesIniciales)
   const [comisionPct, setComisionPct] = useState(comisionPctInicial)
   const [ivaPct, setIvaPct] = useState(ivaPctInicial)
   const [metodoPago, setMetodoPago] = useState("Transferencia Bancaria")
+  const [fechaEmision, setFechaEmision] = useState(() => new Date().toISOString().slice(0, 10))
 
   function actualizarCelda(id: string, campo: keyof ViajeParaLiquidar, valor: unknown) {
     setViajes((prev) => prev.map((v) => v.id === id ? { ...v, [campo]: valor } : v))
@@ -255,6 +256,17 @@ export function ModalPreviewLiquidacion({
                 <option value="Contado">Contado</option>
               </select>
             </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Fecha de emisión</label>
+              <input
+                type="date"
+                value={fechaEmision}
+                onChange={(e) => setFechaEmision(e.target.value)}
+                max={new Date().toISOString().slice(0, 10)}
+                min={(() => { const d = new Date(); d.setDate(d.getDate() - 10); return d.toISOString().slice(0, 10) })()}
+                className="h-8 rounded border bg-background px-2 text-sm"
+              />
+            </div>
           </div>
           <div className="flex-1 text-sm space-y-0.5">
             <div className="flex justify-end gap-8">
@@ -283,7 +295,7 @@ export function ModalPreviewLiquidacion({
               Cancelar
             </button>
             <button
-              onClick={() => onConfirmar(viajes, comisionPct, ivaPct, metodoPago)}
+              onClick={() => onConfirmar(viajes, comisionPct, ivaPct, metodoPago, fechaEmision)}
               disabled={generando}
               className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
             >

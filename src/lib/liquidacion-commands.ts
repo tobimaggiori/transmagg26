@@ -33,6 +33,7 @@ export type DatosCrearLiquidacion = {
   comisionPct: number
   ivaPct: number
   metodoPago?: string
+  fechaEmision?: string
   viajes: ViajeEnLiqInput[]
 }
 
@@ -127,6 +128,7 @@ export async function ejecutarCrearLiquidacion(
         total: totalFinal,
         estado: EstadoLiquidacionDocumento.EMITIDA,
         metodoPago: metodoPago ?? "Transferencia Bancaria",
+        grabadaEn: data.fechaEmision ? new Date(data.fechaEmision + "T12:00:00") : new Date(),
         nroComprobante,
         ptoVenta: 1,
         tipoCbte: 60,
