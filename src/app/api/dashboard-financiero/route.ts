@@ -10,7 +10,7 @@ import { calcularTotalViaje } from "@/lib/viajes"
 import {
   requireFinancialAccess,
 } from "@/lib/financial-api"
-import { sumarImportes, restarImportes } from "@/lib/money"
+import { sumarImportes, restarImportes, maxMonetario } from "@/lib/money"
 import {
   calcularSaldoContableCuenta,
   calcularSaldoEnFciPropiosCuenta,
@@ -55,14 +55,20 @@ export async function GET() {
     } catch (e) { console.error("[dashboard] Error deudaEmpresas:", e) }
 
     try {
-      const liquidacionesAgg = await prisma.liquidacion.aggregate({
-        _sum: { total: true },
+      // Misma lógica que /api/dashboard-financiero/deuda-fleteros:
+      // Solo LPs EMITIDA/PARCIALMENTE_PAGADA sin orden de pago, con saldo > 0
+      const liqsConPagos = await prisma.liquidacion.findMany({
+        where: {
+          estado: { in: ["EMITIDA", "PARCIALMENTE_PAGADA"] },
+          pagos: { none: { ordenPagoId: { not: null }, anulado: false } },
+        },
+        select: { total: true, pagos: { select: { monto: true } } },
       })
-      const pagosFleterosAgg = await prisma.pagoAFletero.aggregate({
-        _sum: { monto: true },
-        where: { anulado: false },
+      const saldos = liqsConPagos.map((l) => {
+        const pagado = sumarImportes(l.pagos.map((p) => p.monto))
+        return maxMonetario(0, restarImportes(l.total, pagado))
       })
-      deudaFleteros = restarImportes(liquidacionesAgg._sum.total ?? 0, pagosFleterosAgg._sum.monto ?? 0)
+      deudaFleteros = sumarImportes(saldos)
     } catch (e) { console.error("[dashboard] Error deudaFleteros:", e) }
 
     try {
