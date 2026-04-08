@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { ShieldAlert, Check } from "lucide-react"
+import { ShieldAlert, Check, MapPin, FileText, Users, Package } from "lucide-react"
 import { formatearMoneda } from "@/lib/utils"
 import { parsearImporte } from "@/lib/money"
 import { FormError } from "@/components/ui/form-error"
@@ -30,6 +30,57 @@ function capitalizarPalabras(texto: string): string {
 function capitalizarPrimera(texto: string): string {
   return texto.charAt(0).toUpperCase() + texto.slice(1)
 }
+
+// ─── Sección visual reutilizable ─────────────────────────────────────────────
+
+function FormSection({ icon: Icon, title, children }: {
+  icon: React.ComponentType<{ className?: string }>
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card shadow-sm">
+      <div className="flex items-center gap-2 px-5 py-3 border-b border-border">
+        <Icon className="h-4 w-4 text-primary" />
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      </div>
+      <div className="px-5 py-4">
+        {children}
+      </div>
+    </div>
+  )
+}
+
+// ─── Toggle compacto ─────────────────────────────────────────────────────────
+
+function SegmentedToggle({ options, value, onChange }: {
+  options: { value: string; label: string }[]
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div className="inline-flex rounded-lg border border-border overflow-hidden h-8">
+      {options.map((opt, i) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className={`px-3.5 text-xs font-medium transition-colors ${
+            i < options.length - 1 ? "border-r border-border" : ""
+          } ${
+            value === opt.value
+              ? "bg-primary text-primary-foreground"
+              : "bg-card text-muted-foreground hover:bg-accent hover:text-foreground"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ─── Componente principal ────────────────────────────────────────────────────
 
 export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: NuevoViajeClientProps) {
   const router = useRouter()
@@ -149,20 +200,18 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
     }
   }
 
-  const labelCls = "text-sm font-medium text-foreground block mb-1"
-  const inputCls = "w-full h-9 rounded-md border bg-background px-2 text-sm"
+  const labelCls = "text-[13px] font-medium text-foreground block mb-1"
+  const inputCls = "w-full h-9 rounded-lg border border-input bg-background px-3 text-sm focus:border-ring focus:ring-2 focus:ring-ring/20 transition-colors outline-none"
 
   const hoy = new Date().toISOString().slice(0, 10)
 
   if (viajeCreado) {
     return (
       <div className="space-y-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Nuevo viaje</h2>
-        </div>
+        <h2 className="text-2xl font-bold tracking-tight text-foreground">Nuevo viaje</h2>
         <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-          <div className="rounded-full bg-green-100 p-3">
-            <Check className="h-8 w-8 text-green-600" />
+          <div className="rounded-full bg-success-soft p-3">
+            <Check className="h-8 w-8 text-success" />
           </div>
           <h2 className="text-xl font-semibold text-foreground">Viaje cargado con éxito</h2>
           <button
@@ -190,7 +239,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
               setError(null)
               setIntentoEnviar(false)
             }}
-            className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
+            className="h-9 px-5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
           >
             Cargar otro viaje
           </button>
@@ -200,46 +249,51 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   }
 
   return (
-    <div className="space-y-4">
-      {/* ────── Header: Título + Tipo de viaje + Fecha ────── */}
-      <div className="flex flex-wrap items-center gap-4">
-        <h2 className="text-2xl font-bold tracking-tight">Nuevo viaje</h2>
-        <div className="flex rounded-md border overflow-hidden h-9 w-fit">
-          <button
-            type="button"
-            onClick={() => { setEsCamionPropio(false); setCamionId(""); setChoferId("") }}
-            className={`px-4 text-xs font-medium border-r ${!esCamionPropio ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-          >
-            Con fletero externo
-          </button>
-          <button
-            type="button"
-            onClick={() => { setEsCamionPropio(true); setFleteroId(""); setCamionId(""); setChoferId(""); setComisionPct("") }}
-            className={`px-4 text-xs font-medium ${esCamionPropio ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-          >
-            Camión propio Transmagg
-          </button>
+    <div className="space-y-5 max-w-6xl">
+      {/* ════════ Header ════════ */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">Nuevo viaje</h2>
+          <SegmentedToggle
+            options={[
+              { value: "externo", label: "Fletero externo" },
+              { value: "propio", label: "Camión propio" },
+            ]}
+            value={esCamionPropio ? "propio" : "externo"}
+            onChange={(v) => {
+              const propio = v === "propio"
+              setEsCamionPropio(propio)
+              if (propio) { setFleteroId(""); setComisionPct("") }
+              setCamionId("")
+              setChoferId("")
+            }}
+          />
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-foreground whitespace-nowrap">Fecha</label>
-          <input type="date" value={fechaViaje} onChange={(e) => setFechaViaje(e.target.value)} className="h-9 rounded-md border bg-background px-2 text-sm" />
+          <label className="text-[13px] font-medium text-muted-foreground">Fecha</label>
+          <input
+            type="date"
+            value={fechaViaje}
+            onChange={(e) => setFechaViaje(e.target.value)}
+            className="h-9 rounded-lg border border-input bg-card px-3 text-sm font-medium focus:border-ring focus:ring-2 focus:ring-ring/20 transition-colors outline-none"
+          />
           <FormError message={fieldErrors.fechaViaje} className="text-xs" />
         </div>
       </div>
 
-      <div className="bg-background rounded-lg border shadow-sm w-full max-w-7xl p-6">
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md text-sm">{error}</div>
-        )}
+      {error && (
+        <div className="p-3 bg-error-soft text-error rounded-lg text-sm border border-error/20">{error}</div>
+      )}
 
-        <form onSubmit={handleSubmit} noValidate>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-8 gap-y-4">
-
-            {/* ────── Columna 1: Entidades + Origen/Destino ────── */}
+      <form onSubmit={handleSubmit} noValidate className="space-y-5">
+        {/* ════════ Fila 1: Participantes + Económico ════════ */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+          {/* ── Participantes ── */}
+          <FormSection icon={Users} title="Participantes">
             <div className="space-y-3">
               {!esCamionPropio && (
                 <div>
-                  <label className={labelCls}>Fletero *</label>
+                  <label className={labelCls}>Fletero <span className="text-error">*</span></label>
                   <SearchCombobox
                     items={fleteroItems}
                     value={fleteroId}
@@ -253,16 +307,13 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                   />
                   <FormError message={fieldErrors.fleteroId} className="text-xs mt-1" />
                   {fleteroId && (
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <label className="text-xs text-muted-foreground whitespace-nowrap">Comisión %</label>
+                    <div className="flex items-center gap-2 mt-2 px-3 py-1.5 rounded-md bg-accent/50 text-xs">
+                      <span className="text-muted-foreground">Comisión %</span>
                       <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.01"
+                        type="number" min="0" max="100" step="0.01"
                         value={comisionPct}
                         onChange={(e) => setComisionPct(e.target.value)}
-                        className="w-20 h-7 rounded-md border bg-background px-2 text-xs"
+                        className="w-16 h-6 rounded border border-input bg-background px-1.5 text-xs text-right"
                       />
                     </div>
                   )}
@@ -270,148 +321,187 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
               )}
 
               <div>
-                <label className={labelCls}>Empresa *</label>
-                <SearchCombobox
-                  items={empresaItems}
-                  value={empresaId}
-                  onChange={setEmpresaId}
-                  placeholder="Buscar por nombre o CUIT..."
-                />
+                <label className={labelCls}>Empresa <span className="text-error">*</span></label>
+                <SearchCombobox items={empresaItems} value={empresaId} onChange={setEmpresaId} placeholder="Buscar por nombre o CUIT..." />
                 <FormError message={fieldErrors.empresaId} className="text-xs mt-1" />
               </div>
 
-              <div>
-                <label className={labelCls}>Camión *</label>
-                <SearchCombobox
-                  items={camionItems}
-                  value={camionId}
-                  onChange={(id) => {
-                    setCamionId(id)
-                    if (esCamionPropio && id) {
-                      const c = camiones.find((x) => x.id === id)
-                      if (c?.choferActualId) setChoferId(c.choferActualId)
-                    }
-                  }}
-                  placeholder="Buscar por patente..."
-                />
-                <FormError message={fieldErrors.camionId} className="text-xs mt-1" />
-              </div>
-
-              <div>
-                <label className={labelCls}>Chofer *</label>
-                <SearchCombobox
-                  items={choferItems}
-                  value={choferId}
-                  onChange={setChoferId}
-                  placeholder="Buscar por nombre..."
-                />
-                <FormError message={fieldErrors.choferId} className="text-xs mt-1" />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Camión <span className="text-error">*</span></label>
+                  <SearchCombobox items={camionItems} value={camionId}
+                    onChange={(id) => {
+                      setCamionId(id)
+                      if (esCamionPropio && id) {
+                        const c = camiones.find((x) => x.id === id)
+                        if (c?.choferActualId) setChoferId(c.choferActualId)
+                      }
+                    }}
+                    placeholder="Patente..."
+                  />
+                  <FormError message={fieldErrors.camionId} className="text-xs mt-1" />
+                </div>
+                <div>
+                  <label className={labelCls}>Chofer <span className="text-error">*</span></label>
+                  <SearchCombobox items={choferItems} value={choferId} onChange={setChoferId} placeholder="Nombre..." />
+                  <FormError message={fieldErrors.choferId} className="text-xs mt-1" />
+                </div>
               </div>
 
               {esCamionPropio && camionId && (() => {
                 const c = camiones.find((x) => x.id === camionId)
                 return c && c.polizaVigente === false ? (
-                  <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800">
-                    <ShieldAlert className="h-4 w-4 shrink-0" />
-                    Este camión no tiene seguro vigente. Verificá la cobertura antes de registrar el viaje.
+                  <div className="flex items-center gap-2 p-2.5 bg-warning-soft border border-warning/20 rounded-lg text-xs text-warning-foreground">
+                    <ShieldAlert className="h-4 w-4 text-warning shrink-0" />
+                    Este camión no tiene seguro vigente.
                   </div>
                 ) : null
               })()}
+            </div>
+          </FormSection>
 
-              {/* Origen / Destino */}
-              <div className="grid grid-cols-2 gap-2">
+          {/* ── Recorrido ── */}
+          <FormSection icon={MapPin} title="Recorrido">
+            <div className="grid grid-cols-2 gap-4">
+              {/* Origen */}
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Origen</p>
                 <div>
-                  <label className={labelCls}>Ciudad de origen</label>
-                  <input type="text" value={procedencia} onChange={(e) => setProcedencia(e.target.value)} onBlur={() => procedencia && setProcedencia(capitalizarPalabras(procedencia))} className={inputCls} placeholder="Ciudad" />
-                  <label className={labelCls + " mt-1"}>Provincia *</label>
-                  <SearchCombobox items={provinciaItems} value={provinciaOrigen} onChange={setProvinciaOrigen} placeholder="Buscar provincia..." />
-                  <FormError message={fieldErrors.provinciaOrigen} className="text-xs mt-1" />
+                  <label className={labelCls}>Ciudad</label>
+                  <input type="text" value={procedencia} onChange={(e) => setProcedencia(e.target.value)} onBlur={() => procedencia && setProcedencia(capitalizarPalabras(procedencia))} className={inputCls} placeholder="Ej: Rosario" />
                 </div>
                 <div>
-                  <label className={labelCls}>Ciudad de destino</label>
-                  <input type="text" value={destino} onChange={(e) => setDestino(e.target.value)} onBlur={() => destino && setDestino(capitalizarPalabras(destino))} className={inputCls} placeholder="Ciudad" />
-                  <label className={labelCls + " mt-1"}>Provincia *</label>
-                  <SearchCombobox items={provinciaItems} value={provinciaDestino} onChange={setProvinciaDestino} placeholder="Buscar provincia..." />
+                  <label className={labelCls}>Provincia <span className="text-error">*</span></label>
+                  <SearchCombobox items={provinciaItems} value={provinciaOrigen} onChange={setProvinciaOrigen} placeholder="Buscar..." />
+                  <FormError message={fieldErrors.provinciaOrigen} className="text-xs mt-1" />
+                </div>
+              </div>
+
+              {/* Destino */}
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Destino</p>
+                <div>
+                  <label className={labelCls}>Ciudad</label>
+                  <input type="text" value={destino} onChange={(e) => setDestino(e.target.value)} onBlur={() => destino && setDestino(capitalizarPalabras(destino))} className={inputCls} placeholder="Ej: Buenos Aires" />
+                </div>
+                <div>
+                  <label className={labelCls}>Provincia <span className="text-error">*</span></label>
+                  <SearchCombobox items={provinciaItems} value={provinciaDestino} onChange={setProvinciaDestino} placeholder="Buscar..." />
                   <FormError message={fieldErrors.provinciaDestino} className="text-xs mt-1" />
                 </div>
               </div>
             </div>
+          </FormSection>
 
-            {/* ────── Columna 2: Datos del viaje + Carta de Porte ────── */}
+          {/* ── Carga y tarifa ── */}
+          <FormSection icon={Package} title="Carga y tarifa">
             <div className="space-y-3">
-              <div>
-                <label className={labelCls}>Remito</label>
-                <input type="text" value={remito} onChange={(e) => setRemito(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} />
-              </div>
-
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <label className="text-sm font-medium text-foreground">¿Lleva cupo?</label>
-                  <div className="flex rounded-md border overflow-hidden h-7 w-fit">
-                    <button type="button" onClick={() => { setTieneCupo(false); setCupo("") }} className={`px-2.5 text-[11px] font-medium border-r ${!tieneCupo ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>No</button>
-                    <button type="button" onClick={() => setTieneCupo(true)} className={`px-2.5 text-[11px] font-medium ${tieneCupo ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>Sí</button>
-                  </div>
-                </div>
-                {tieneCupo && (
-                  <input type="text" value={cupo} onChange={(e) => setCupo(e.target.value.toUpperCase())} placeholder="Nro. de cupo" style={{ textTransform: "uppercase" }} className={inputCls} />
-                )}
-              </div>
-
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <label className="text-sm font-medium text-foreground">Carta de Porte</label>
-                  <div className="flex rounded-md border overflow-hidden h-7 w-fit">
-                    <button type="button" onClick={() => setTieneCpe(true)} className={`px-2.5 text-[11px] font-medium border-r ${tieneCpe ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>Sí</button>
-                    <button type="button" onClick={() => { setTieneCpe(false); setNroCartaPorte(""); setCartaPorteS3Key("") }} className={`px-2.5 text-[11px] font-medium ${!tieneCpe ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>No</button>
-                  </div>
-                </div>
-                {tieneCpe && (
-                  <div className="space-y-2">
-                    <div className="flex items-start gap-2">
-                      <div className="flex-1">
-                        <input type="text" value={nroCartaPorte} onChange={(e) => setNroCartaPorte(e.target.value)} placeholder="Nro. carta de porte" className={inputCls} />
-                        <FormError message={fieldErrors.nroCartaPorte} className="text-xs mt-1" />
-                      </div>
-                      <div className="shrink-0 pt-0.5">
-                        <UploadPDF prefijo="cartas-de-porte" onUpload={(key) => setCartaPorteS3Key(key)} label="Subir" s3Key={cartaPorteS3Key || undefined} />
-                      </div>
-                    </div>
-                    <FormError message={fieldErrors.cartaPorteS3Key} className="text-xs" />
-                  </div>
-                )}
-              </div>
-
               <div>
                 <label className={labelCls}>Mercadería</label>
-                <input type="text" value={mercaderia} onChange={(e) => setMercaderia(e.target.value)} onBlur={() => mercaderia && setMercaderia(capitalizarPrimera(mercaderia))} className={inputCls} />
-              </div>
-            </div>
-
-            {/* ────── Columna 3: Económico ────── */}
-            <div className="space-y-3">
-              <div>
-                <label className={labelCls}>Kilos</label>
-                <input type="number" value={kilos} onChange={(e) => setKilos(e.target.value)} min="0" step="1" className={inputCls} />
-                {toneladas != null && <p className="text-xs text-muted-foreground mt-1">{toneladas} toneladas</p>}
+                <input type="text" value={mercaderia} onChange={(e) => setMercaderia(e.target.value)} onBlur={() => mercaderia && setMercaderia(capitalizarPrimera(mercaderia))} className={inputCls} placeholder="Tipo de carga" />
               </div>
 
               <div>
-                <label className={labelCls}>Tarifa / ton *</label>
-                <input type="number" value={tarifaInput} onChange={(e) => setTarifaBase(e.target.value)} min="0" step="0.01" className={inputCls} />
-                <FormError message={fieldErrors.tarifa} className="text-xs mt-1" />
-                {totalCalc != null && <p className="text-xs text-muted-foreground mt-1">Referencia inicial del viaje: {formatearMoneda(totalCalc)}</p>}
+                <label className={labelCls}>Remito</label>
+                <input type="text" value={remito} onChange={(e) => setRemito(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} placeholder="Nro. remito" />
               </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Kilos</label>
+                  <input type="number" value={kilos} onChange={(e) => setKilos(e.target.value)} min="0" step="1" className={inputCls} placeholder="0" />
+                  {toneladas != null && <p className="text-[11px] text-muted-foreground mt-1">{toneladas} ton</p>}
+                </div>
+                <div>
+                  <label className={labelCls}>Tarifa / ton <span className="text-error">*</span></label>
+                  <input type="number" value={tarifaInput} onChange={(e) => setTarifaBase(e.target.value)} min="0" step="0.01" className={inputCls} placeholder="0,00" />
+                  <FormError message={fieldErrors.tarifa} className="text-xs mt-1" />
+                </div>
+              </div>
+
+              {totalCalc != null && (
+                <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-accent/50 text-sm">
+                  <span className="text-muted-foreground">Referencia</span>
+                  <span className="font-semibold text-foreground">{formatearMoneda(totalCalc)}</span>
+                </div>
+              )}
+            </div>
+          </FormSection>
+        </div>
+
+        {/* ════════ Fila 2: Documentación ════════ */}
+        <FormSection icon={FileText} title="Documentación">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+            {/* Cupo */}
+            <div className="flex items-start gap-4">
+              <div className="pt-0.5">
+                <label className={labelCls}>¿Lleva cupo?</label>
+                <SegmentedToggle
+                  options={[
+                    { value: "no", label: "No" },
+                    { value: "si", label: "Sí" },
+                  ]}
+                  value={tieneCupo ? "si" : "no"}
+                  onChange={(v) => { setTieneCupo(v === "si"); if (v === "no") setCupo("") }}
+                />
+              </div>
+              {tieneCupo && (
+                <div className="flex-1 pt-0.5">
+                  <label className={labelCls}>Nro. de cupo</label>
+                  <input type="text" value={cupo} onChange={(e) => setCupo(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} placeholder="ABC-123" />
+                </div>
+              )}
+            </div>
+
+            {/* Carta de Porte */}
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <div>
+                  <label className={labelCls}>Carta de Porte</label>
+                  <SegmentedToggle
+                    options={[
+                      { value: "si", label: "Sí" },
+                      { value: "no", label: "No" },
+                    ]}
+                    value={tieneCpe ? "si" : "no"}
+                    onChange={(v) => { setTieneCpe(v === "si"); if (v === "no") { setNroCartaPorte(""); setCartaPorteS3Key("") } }}
+                  />
+                </div>
+              </div>
+              {tieneCpe && (
+                <div className="flex items-start gap-3">
+                  <div className="flex-1">
+                    <input type="text" value={nroCartaPorte} onChange={(e) => setNroCartaPorte(e.target.value)} placeholder="Nro. carta de porte" className={inputCls} />
+                    <FormError message={fieldErrors.nroCartaPorte} className="text-xs mt-1" />
+                  </div>
+                  <div className="shrink-0 pt-0.5">
+                    <UploadPDF prefijo="cartas-de-porte" onUpload={(key) => setCartaPorteS3Key(key)} label="Subir" s3Key={cartaPorteS3Key || undefined} />
+                  </div>
+                </div>
+              )}
+              {tieneCpe && <FormError message={fieldErrors.cartaPorteS3Key} className="text-xs mt-1" />}
             </div>
           </div>
+        </FormSection>
 
-          <div className="flex justify-end gap-2 pt-6 border-t mt-6">
-            <button type="button" onClick={() => router.back()} className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent">Cancelar</button>
-            <button type="submit" disabled={cargando} className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
-              {cargando ? "Guardando..." : "Cargar Viaje"}
-            </button>
-          </div>
-        </form>
-      </div>
+        {/* ════════ Footer ════════ */}
+        <div className="flex items-center justify-end gap-3 pt-2">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="h-9 px-5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={cargando}
+            className="h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            {cargando ? "Guardando..." : "Cargar Viaje"}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }
