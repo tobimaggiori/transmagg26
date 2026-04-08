@@ -777,7 +777,7 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
                   onClick={() => setModalAbierto("cheques-cartera-no-al-dia")}
                   className="text-xs text-orange-700 bg-orange-50 hover:bg-orange-100 px-2 py-0.5 rounded transition-colors"
                 >
-                  Vencidos: {formatearMoneda(data.chequesEnCartera?.noAlDia ?? 0)}
+                  No al día: {formatearMoneda(data.chequesEnCartera?.noAlDia ?? 0)}
                 </button>
               </div>
               <div className="flex flex-wrap gap-2 mt-1">

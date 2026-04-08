@@ -3,7 +3,7 @@
 /**
  * Propósito: Componente cliente para consultar el historial de facturas emitidas a empresas.
  * Filtros por empresa, nro comprobante, fechas y estado. Tabla con totales.
- * Acción principal: abrir PDF de cada factura desde R2.
+ * Acciones: abrir PDF, emitir NC/ND.
  */
 
 import { useState, useEffect, useCallback } from "react"
@@ -14,8 +14,15 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
+import Link from "next/link"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
+
+type ReciboRef = {
+  id: string
+  nro: number
+  ptoVenta: number
+}
 
 type FacturaRow = {
   id: string
@@ -32,6 +39,7 @@ type FacturaRow = {
   estadoArca: string
   pdfS3Key: string | null
   empresa: { id: string; razonSocial: string; cuit: string }
+  recibo: ReciboRef | null
   _count: { notasCreditoDebito: number }
 }
 
@@ -144,11 +152,9 @@ export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientPro
       if (!res.ok) return
       const contentType = res.headers.get("content-type") ?? ""
       if (contentType.includes("application/pdf")) {
-        // El endpoint sirve el PDF directamente
         const blob = await res.blob()
         window.open(URL.createObjectURL(blob), "_blank")
       } else {
-        // El endpoint devuelve JSON con URL firmada
         const data = await res.json()
         if (data.url) window.open(data.url, "_blank")
       }
@@ -160,6 +166,7 @@ export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientPro
     ...empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: formatearCuit(e.cuit) })),
   ]
 
+  // Columnas: Fecha, Tipo, Nº, [Empresa], Total, Estado, Recibo, NC/ND, Ver PDF
   const colCount = mostrarColumnaEmpresa ? 9 : 8
 
   return (
@@ -235,10 +242,10 @@ export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientPro
                   <th className="px-3 py-3 text-left">Tipo</th>
                   <th className="px-3 py-3 text-left">Nº Comprobante</th>
                   {mostrarColumnaEmpresa && <th className="px-3 py-3 text-left">Empresa</th>}
-                  <th className="px-3 py-3 text-right">Neto</th>
-                  <th className="px-3 py-3 text-right">IVA</th>
                   <th className="px-3 py-3 text-right font-semibold">Total</th>
                   <th className="px-3 py-3 text-center">Estado</th>
+                  <th className="px-3 py-3 text-left">Recibo</th>
+                  <th className="px-3 py-3 text-center">NC/ND</th>
                   <th className="px-3 py-3"></th>
                 </tr>
               </thead>
@@ -252,52 +259,67 @@ export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientPro
                     <td colSpan={colCount} className="px-3 py-8 text-center text-muted-foreground">Sin resultados</td>
                   </tr>
                 ) : (
-                  facturas.map((fact) => (
-                    <tr key={fact.id} className="border-b hover:bg-muted/30">
-                      <td className="px-3 py-2">{formatearFecha(fact.emitidaEn)}</td>
-                      <td className="px-3 py-2 text-sm">{labelTipoCbte(fact.tipoCbte, fact.modalidadMiPymes)}</td>
-                      <td className="px-3 py-2 font-mono text-sm">{formatNroComprobante(fact.ptoVenta, fact.nroComprobante)}</td>
-                      {mostrarColumnaEmpresa && <td className="px-3 py-2 max-w-[160px] truncate">{fact.empresa.razonSocial}</td>}
-                      <td className="px-3 py-2 text-right">{formatearMoneda(fact.neto)}</td>
-                      <td className="px-3 py-2 text-right">{formatearMoneda(fact.ivaMonto)}</td>
-                      <td className="px-3 py-2 text-right font-semibold">{formatearMoneda(fact.total)}</td>
-                      <td className="px-3 py-2 text-center">
-                        <EstadoBadge estado={fact.estado} />
-                        {(fact.estadoArca === "PENDIENTE" || fact.estadoArca === "RECHAZADA") && (
-                          <span className="inline-flex items-center gap-1 ml-1">
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${fact.estadoArca === "PENDIENTE" ? "bg-warning-soft text-warning" : "bg-error-soft text-error"}`}>
-                              {fact.estadoArca === "PENDIENTE" ? "Pendiente ARCA" : "Rechazada ARCA"}
+                  facturas.map((fact) => {
+                    const puedeEmitirNcNd = fact.estado === "EMITIDA" && fact.estadoArca === "AUTORIZADA"
+                    return (
+                      <tr key={fact.id} className="border-b hover:bg-muted/30">
+                        <td className="px-3 py-2">{formatearFecha(fact.emitidaEn)}</td>
+                        <td className="px-3 py-2 text-sm">{labelTipoCbte(fact.tipoCbte, fact.modalidadMiPymes)}</td>
+                        <td className="px-3 py-2 font-mono text-sm">{formatNroComprobante(fact.ptoVenta, fact.nroComprobante)}</td>
+                        {mostrarColumnaEmpresa && <td className="px-3 py-2 max-w-[160px] truncate">{fact.empresa.razonSocial}</td>}
+                        <td className="px-3 py-2 text-right font-semibold">{formatearMoneda(fact.total)}</td>
+                        <td className="px-3 py-2 text-center">
+                          <EstadoBadge estado={fact.estado} />
+                          {(fact.estadoArca === "PENDIENTE" || fact.estadoArca === "RECHAZADA") && (
+                            <span className="inline-flex items-center gap-1 ml-1">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${fact.estadoArca === "PENDIENTE" ? "bg-warning-soft text-warning" : "bg-error-soft text-error"}`}>
+                                {fact.estadoArca === "PENDIENTE" ? "Pendiente ARCA" : "Rechazada ARCA"}
+                              </span>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); reintentarArca(fact.id) }}
+                                disabled={autorizandoArcaId === fact.id}
+                                className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-warning text-warning-foreground hover:bg-warning/80 disabled:opacity-50"
+                                title="Reintentar autorización ARCA"
+                              >
+                                {autorizandoArcaId === fact.id ? "..." : "↻"}
+                              </button>
                             </span>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); reintentarArca(fact.id) }}
-                              disabled={autorizandoArcaId === fact.id}
-                              className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-warning text-warning-foreground hover:bg-warning/80 disabled:opacity-50"
-                              title="Reintentar autorización ARCA"
+                          )}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-sm">
+                          {fact.recibo ? formatNroComprobante(fact.recibo.ptoVenta, fact.recibo.nro) : ""}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          {fact._count.notasCreditoDebito > 0 && (
+                            <span className="text-sm text-muted-foreground">{fact._count.notasCreditoDebito}</span>
+                          )}
+                          {puedeEmitirNcNd && (
+                            <Link
+                              href="/contabilidad/notas-credito-debito"
+                              className="text-xs text-primary hover:text-primary/80 hover:underline font-medium ml-1"
                             >
-                              {autorizandoArcaId === fact.id ? "..." : "↻"}
-                            </button>
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        {fact.pdfS3Key ? (
-                          <Button size="sm" variant="outline" onClick={() => abrirPDF(fact.id)}>Ver PDF</Button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">Sin PDF</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))
+                              Emitir
+                            </Link>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          {fact.pdfS3Key ? (
+                            <Button size="sm" variant="outline" onClick={() => abrirPDF(fact.id)}>Ver PDF</Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Sin PDF</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })
                 )}
               </tbody>
               {facturas.length > 0 && (
                 <tfoot>
                   <tr className="bg-muted font-semibold border-t-2">
                     <td colSpan={mostrarColumnaEmpresa ? 4 : 3} className="px-3 py-3 text-right text-sm">Totales ({facturas.length})</td>
-                    <td className="px-3 py-3 text-right">{formatearMoneda(sumarImportes(facturas.map(f => f.neto)))}</td>
-                    <td className="px-3 py-3 text-right">{formatearMoneda(sumarImportes(facturas.map(f => f.ivaMonto)))}</td>
                     <td className="px-3 py-3 text-right">{formatearMoneda(sumarImportes(facturas.map(f => f.total)))}</td>
-                    <td colSpan={2}></td>
+                    <td colSpan={4}></td>
                   </tr>
                 </tfoot>
               )}
