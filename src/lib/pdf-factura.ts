@@ -624,7 +624,7 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
 
       if (emisor.logoArca) {
         try {
-          doc.image(emisor.logoArca, arcaTextX, fY + 38, { fit: [45, 16] })
+          doc.image(emisor.logoArca, arcaTextX, fY + 40, { fit: [60, 28] })
         } catch { /* skip invalid image */ }
       }
 
