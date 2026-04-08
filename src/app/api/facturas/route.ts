@@ -15,6 +15,7 @@ import { prisma } from "@/lib/prisma"
 import { esRolInterno, esRolEmpresa } from "@/lib/permissions"
 import { resolverOperadorId, resolverEmpresaIdPorEmail } from "@/lib/session-utils"
 import { emitirFacturaDirecta } from "@/lib/emision-directa"
+import { validarFechaEmisionArca } from "@/lib/fecha-emision"
 import type { Rol } from "@/types"
 
 // ─── Validación ──────────────────────────────────────────────────────────────
@@ -133,18 +134,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    // Validar ventana de fecha ARCA (máx 10 días hacia atrás, no futura)
     if (parsed.data.fechaEmision) {
-      const fecha = new Date(parsed.data.fechaEmision + "T12:00:00")
-      const hoy = new Date()
-      hoy.setHours(12, 0, 0, 0)
-      const hace10Dias = new Date(hoy)
-      hace10Dias.setDate(hace10Dias.getDate() - 10)
-      if (fecha < hace10Dias) {
-        return NextResponse.json({ error: "La fecha de emisión no puede ser anterior a 10 días" }, { status: 422 })
-      }
-      if (fecha > hoy) {
-        return NextResponse.json({ error: "La fecha de emisión no puede ser futura" }, { status: 422 })
+      const validacion = validarFechaEmisionArca(parsed.data.fechaEmision)
+      if (!validacion.ok) {
+        return NextResponse.json({ error: validacion.error }, { status: 422 })
       }
     }
 
