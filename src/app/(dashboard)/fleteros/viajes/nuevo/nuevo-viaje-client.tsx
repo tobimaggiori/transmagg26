@@ -290,7 +290,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
         <div className="p-3 bg-error-soft text-error rounded-lg text-[15px] border border-error/20">{error}</div>
       )}
 
-      <form onSubmit={handleSubmit} noValidate className="space-y-5">
+      <form id="nuevo-viaje-form" onSubmit={handleSubmit} noValidate className="space-y-5">
         {/* ════════ Fila 1: Participantes + Recorrido + Carga ════════ */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
           {/* ── Participantes ── */}
@@ -298,7 +298,21 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
             <div className="space-y-3">
               {!esCamionPropio && (
                 <div>
-                  <label className={labelCls}>Fletero <span className="text-error">*</span></label>
+                  <div className="flex items-baseline justify-between mb-1">
+                    <label className="text-[15px] font-medium text-foreground">Fletero <span className="text-error">*</span></label>
+                    {fleteroId && (
+                      <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                        Com.
+                        <input
+                          type="number" min="0" max="100" step="0.01"
+                          value={comisionPct}
+                          onChange={(e) => setComisionPct(e.target.value)}
+                          className="w-14 h-6 rounded border border-input bg-background px-1.5 text-sm text-right"
+                        />
+                        <span>%</span>
+                      </span>
+                    )}
+                  </div>
                   <SearchCombobox
                     items={fleteroItems}
                     value={fleteroId}
@@ -311,17 +325,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                     placeholder="Buscar por nombre o CUIT..."
                   />
                   <FormError message={fieldErrors.fleteroId} className="text-xs mt-1" />
-                  {fleteroId && (
-                    <div className="flex items-center gap-2 mt-2 px-3 py-1.5 rounded-md bg-accent/50 text-sm">
-                      <span className="text-muted-foreground">Comisión %</span>
-                      <input
-                        type="number" min="0" max="100" step="0.01"
-                        value={comisionPct}
-                        onChange={(e) => setComisionPct(e.target.value)}
-                        className="w-20 h-7 rounded border border-input bg-background px-2 text-sm text-right"
-                      />
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -460,24 +463,28 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
           </div>
         </FormSection>
 
-        {/* ════════ Footer ════════ */}
-        <div className="flex items-center justify-end gap-3 pt-2">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="h-10 px-5 rounded-lg border border-border text-[15px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-          >
-            Cancelar
-          </button>
-          <button
-            type="submit"
-            disabled={cargando}
-            className="h-10 px-6 rounded-lg bg-primary text-primary-foreground text-[15px] font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
-          >
-            {cargando ? "Guardando..." : "Cargar Viaje"}
-          </button>
-        </div>
+        {/* Spacer para que el contenido no quede tapado por la barra sticky */}
+        <div className="h-16" />
       </form>
+
+      {/* ════════ Barra de acciones sticky ════════ */}
+      <div className="sticky bottom-0 -mx-4 md:-mx-8 px-4 md:px-8 py-3 bg-card border-t border-border flex items-center justify-end gap-3 z-10">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="h-10 px-5 rounded-lg border border-border text-[15px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+        >
+          Cancelar
+        </button>
+        <button
+          type="submit"
+          form="nuevo-viaje-form"
+          disabled={cargando}
+          className="h-10 px-6 rounded-lg bg-primary text-primary-foreground text-[15px] font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+        >
+          {cargando ? "Guardando..." : "Cargar Viaje"}
+        </button>
+      </div>
     </div>
   )
 }
