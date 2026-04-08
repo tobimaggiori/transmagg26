@@ -256,7 +256,7 @@ export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientPro
                     <tr key={fact.id} className="border-b hover:bg-muted/30">
                       <td className="px-3 py-2">{formatearFecha(fact.emitidaEn)}</td>
                       <td className="px-3 py-2 text-sm">{labelTipoCbte(fact.tipoCbte, fact.modalidadMiPymes)}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{formatNroComprobante(fact.ptoVenta, fact.nroComprobante)}</td>
+                      <td className="px-3 py-2 font-mono text-sm">{formatNroComprobante(fact.ptoVenta, fact.nroComprobante)}</td>
                       {mostrarColumnaEmpresa && <td className="px-3 py-2 max-w-[160px] truncate">{fact.empresa.razonSocial}</td>}
                       <td className="px-3 py-2 text-right">{formatearMoneda(fact.neto)}</td>
                       <td className="px-3 py-2 text-right">{formatearMoneda(fact.ivaMonto)}</td>
