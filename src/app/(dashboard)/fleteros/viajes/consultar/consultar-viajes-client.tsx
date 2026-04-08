@@ -171,8 +171,8 @@ function EditableField({
   editLabel?: string
 }) {
   return (
-    <div className="space-y-0.5">
-      <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
+    <div>
+      <span className="text-sm font-medium text-foreground">{label}</span>
       {editing ? (
         <div>{children}</div>
       ) : (
@@ -259,7 +259,6 @@ function ModalDetalle({
 
   const tieneLP = viaje.estadoLiquidacion === "LIQUIDADO"
   const tieneFactura = viaje.estadoFactura === "FACTURADO"
-  const liquidadoYFacturado = tieneLP && tieneFactura
   const cambios = hayCambios(form, viaje)
 
   const empresaCambio = form.empresaId !== viaje.empresaId
@@ -397,12 +396,8 @@ function ModalDetalle({
           </div>
 
           <div className="px-6 py-4">
-            {liquidadoYFacturado && (
-              <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800 mb-4">Este viaje está liquidado y facturado. No se puede editar.</div>
-            )}
-
             {/* ── Fila 1: Fletero | Empresa ── */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-1.5">
               <EditableField label="Fletero" editLabel="Cambiar fletero" canEdit={editable.fleteroId} editing={isEditing("fleteroId")} onToggleEdit={() => toggleEdit("fleteroId")}
                 value={<div><p>{fleteroDisplay?.razonSocial ?? (form.fleteroId ? "—" : "Camión propio")}</p>{fleteroDisplay && <p className="text-xs text-gray-500">CUIT: {formatCuit(fleteroDisplay.cuit)}</p>}</div>}>
                 <SearchCombobox items={[{ id: "", label: "Camión propio" }, ...fleteroItems]} value={form.fleteroId}
@@ -416,7 +411,7 @@ function ModalDetalle({
             </div>
 
             {/* ── Fila 2: Chofer | Camión ── */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-1.5">
               <EditableField label="Chofer" editLabel="Cambiar chofer" canEdit={editable.choferId} editing={isEditing("choferId")} onToggleEdit={() => toggleEdit("choferId")}
                 value={choferDisplay ? `${choferDisplay.nombre} ${choferDisplay.apellido}` : (viaje.chofer ? `${viaje.chofer.nombre} ${viaje.chofer.apellido}` : "—")}>
                 <SearchCombobox items={choferItems} value={form.choferId} onChange={(id) => { setField("choferId", id); closeEdit("choferId") }} placeholder="Buscar chofer..." />
@@ -435,7 +430,7 @@ function ModalDetalle({
             </div>
 
             {/* ── Fila 3: Remito | Cupo | CPE ── */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-1.5">
               <EditableField label="Remito" canEdit={editable.remito} editing={isEditing("remito")} onToggleEdit={() => toggleEdit("remito")} value={viaje.remito || "—"}>
                 <InlineInput value={form.remito} onChange={(v) => setField("remito", v)} onConfirm={() => closeEdit("remito")} onCancel={() => cancelEdit("remito")} placeholder="Nro remito" />
               </EditableField>
@@ -460,8 +455,8 @@ function ModalDetalle({
               </EditableField>
 
               {/* CPE */}
-              <div className="space-y-0.5">
-                <span className="text-[11px] font-medium text-muted-foreground">CPE / Carta de Porte</span>
+              <div>
+                <span className="text-sm font-medium text-foreground">CPE / Carta de Porte</span>
                 {viaje.tieneCpe && viaje.nroCartaPorte ? (
                   <div>
                     <span className="text-sm font-medium">{viaje.nroCartaPorte}</span>
@@ -492,7 +487,7 @@ function ModalDetalle({
             </div>
 
             {/* ── Fila 4: Origen | Destino ── */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-1.5">
               <EditableField label="Origen" canEdit={editable.procedencia} editing={isEditing("origen")} onToggleEdit={() => toggleEdit("origen")}
                 value={`${viaje.procedencia || "—"}${viaje.provinciaOrigen ? `, ${viaje.provinciaOrigen}` : ""}`}>
                 <div className="space-y-2">
@@ -524,7 +519,7 @@ function ModalDetalle({
             </div>
 
             {/* ── Fila 5: Kilos | Tarifa Fletero | Tarifa Empresa ── */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-1.5">
               <EditableField label="Kilos" canEdit={editable.kilos} editing={isEditing("kilos")} onToggleEdit={() => toggleEdit("kilos")}
                 value={formatKilos(form.kilos ? Number(form.kilos) : viaje.kilos)}>
                 <InlineInput type="number" value={form.kilos} onChange={(v) => setField("kilos", v)} onConfirm={() => closeEdit("kilos")} onCancel={() => cancelEdit("kilos")} />
@@ -540,7 +535,7 @@ function ModalDetalle({
             </div>
 
             {/* ── Fila 6: Fecha | Mercadería | Comisión ── */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-2">
               <EditableField label="Fecha" canEdit={editable.fechaViaje} editing={isEditing("fechaViaje")} onToggleEdit={() => toggleEdit("fechaViaje")}
                 value={formatearFecha(new Date(viaje.fechaViaje))}>
                 <InlineInput type="date" value={form.fechaViaje} onChange={(v) => setField("fechaViaje", v)} onConfirm={() => closeEdit("fechaViaje")} onCancel={() => cancelEdit("fechaViaje")} />

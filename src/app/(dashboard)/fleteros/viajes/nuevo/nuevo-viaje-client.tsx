@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { ShieldAlert } from "lucide-react"
+import { ShieldAlert, Check } from "lucide-react"
 import { formatearMoneda } from "@/lib/utils"
 import { parsearImporte } from "@/lib/money"
 import { FormError } from "@/components/ui/form-error"
@@ -57,6 +57,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [intentoEnviar, setIntentoEnviar] = useState(false)
+  const [viajeCreado, setViajeCreado] = useState(false)
 
   const camionesDelFletero = esCamionPropio
     ? camiones.filter((c) => c.esPropio)
@@ -69,6 +70,9 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
 
   const fleteroItems = fleteros.map((f) => ({ id: f.id, label: f.razonSocial, sublabel: f.cuit }))
   const empresaItems = empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: e.cuit }))
+  const provinciaItems = PROVINCIAS_ARGENTINA.map((p) => ({ id: p, label: p }))
+  const camionItems = (esCamionPropio || fleteroId ? camionesDelFletero : camiones).map((c) => ({ id: c.id, label: c.patenteChasis }))
+  const choferItems = choferesDelFletero.map((c) => ({ id: c.id, label: `${c.apellido}, ${c.nombre}` }))
 
   const kilosNum = parsearImporte(kilos) || 0
   const tarifaNum = parsearImporte(tarifaInput)
@@ -137,7 +141,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
         }
         return
       }
-      router.push("/fleteros/viajes/consultar")
+      setViajeCreado(true)
     } catch {
       setError("Error de red")
     } finally {
@@ -145,15 +149,60 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
     }
   }
 
-  const labelCls = "text-xs font-medium text-muted-foreground block mb-1"
+  const labelCls = "text-sm font-medium text-foreground block mb-1"
   const inputCls = "w-full h-9 rounded-md border bg-background px-2 text-sm"
-  const selectCls = "w-full h-9 rounded-md border bg-background px-2 text-sm"
+
+  const hoy = new Date().toISOString().slice(0, 10)
+
+  if (viajeCreado) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Nuevo viaje</h2>
+        </div>
+        <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+          <div className="rounded-full bg-green-100 p-3">
+            <Check className="h-8 w-8 text-green-600" />
+          </div>
+          <h2 className="text-xl font-semibold text-foreground">Viaje cargado con éxito</h2>
+          <button
+            type="button"
+            onClick={() => {
+              setViajeCreado(false)
+              setFleteroId("")
+              setCamionId("")
+              setChoferId("")
+              setEmpresaId("")
+              setFechaViaje(hoy)
+              setRemito("")
+              setTieneCupo(false)
+              setCupo("")
+              setMercaderia("")
+              setProcedencia("")
+              setProvinciaOrigen("")
+              setDestino("")
+              setProvinciaDestino("")
+              setKilos("")
+              setTarifaBase("")
+              setComisionPct("")
+              setNroCartaPorte("")
+              setCartaPorteS3Key("")
+              setError(null)
+              setIntentoEnviar(false)
+            }}
+            className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
+          >
+            Cargar otro viaje
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Nuevo viaje</h2>
-        <p className="text-muted-foreground">Cargá los datos del viaje</p>
       </div>
 
       <div className="bg-background rounded-lg border shadow-sm w-full max-w-7xl p-6">
@@ -164,10 +213,8 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
         <form onSubmit={handleSubmit} noValidate>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-8 gap-y-4">
 
-            {/* ────── Columna 1: Entidades ────── */}
+            {/* ────── Columna 1: Entidades + Origen/Destino ────── */}
             <div className="space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground border-b pb-1">Entidades</p>
-
               <div>
                 <label className={labelCls}>Tipo de viaje</label>
                 <div className="flex rounded-md border overflow-hidden h-9 w-fit">
@@ -233,36 +280,29 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
 
               <div>
                 <label className={labelCls}>Camión *</label>
-                <select
+                <SearchCombobox
+                  items={camionItems}
                   value={camionId}
-                  onChange={(e) => {
-                    const id = e.target.value
+                  onChange={(id) => {
                     setCamionId(id)
                     if (esCamionPropio && id) {
                       const c = camiones.find((x) => x.id === id)
                       if (c?.choferActualId) setChoferId(c.choferActualId)
                     }
                   }}
-                  className={inputCls}
-                >
-                  <option value="">Seleccionar...</option>
-                  {(esCamionPropio || fleteroId ? camionesDelFletero : camiones).map((c) => (
-                    <option key={c.id} value={c.id}>{c.patenteChasis}</option>
-                  ))}
-                </select>
+                  placeholder="Buscar por patente..."
+                />
                 <FormError message={fieldErrors.camionId} className="text-xs mt-1" />
               </div>
 
               <div>
                 <label className={labelCls}>Chofer *</label>
-                <select
+                <SearchCombobox
+                  items={choferItems}
                   value={choferId}
-                  onChange={(e) => setChoferId(e.target.value)}
-                  className={inputCls}
-                >
-                  <option value="">Seleccionar...</option>
-                  {choferesDelFletero.map((c) => <option key={c.id} value={c.id}>{c.apellido}, {c.nombre}</option>)}
-                </select>
+                  onChange={setChoferId}
+                  placeholder="Buscar por nombre..."
+                />
                 <FormError message={fieldErrors.choferId} className="text-xs mt-1" />
               </div>
 
@@ -275,12 +315,28 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                   </div>
                 ) : null
               })()}
+
+              {/* Origen / Destino */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className={labelCls}>Ciudad de origen</label>
+                  <input type="text" value={procedencia} onChange={(e) => setProcedencia(e.target.value)} onBlur={() => procedencia && setProcedencia(capitalizarPalabras(procedencia))} className={inputCls} placeholder="Ciudad" />
+                  <label className={labelCls + " mt-1"}>Provincia *</label>
+                  <SearchCombobox items={provinciaItems} value={provinciaOrigen} onChange={setProvinciaOrigen} placeholder="Buscar provincia..." />
+                  <FormError message={fieldErrors.provinciaOrigen} className="text-xs mt-1" />
+                </div>
+                <div>
+                  <label className={labelCls}>Ciudad de destino</label>
+                  <input type="text" value={destino} onChange={(e) => setDestino(e.target.value)} onBlur={() => destino && setDestino(capitalizarPalabras(destino))} className={inputCls} placeholder="Ciudad" />
+                  <label className={labelCls + " mt-1"}>Provincia *</label>
+                  <SearchCombobox items={provinciaItems} value={provinciaDestino} onChange={setProvinciaDestino} placeholder="Buscar provincia..." />
+                  <FormError message={fieldErrors.provinciaDestino} className="text-xs mt-1" />
+                </div>
+              </div>
             </div>
 
             {/* ────── Columna 2: Datos del viaje ────── */}
             <div className="space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground border-b pb-1">Datos del viaje</p>
-
               <div>
                 <label className={labelCls}>Fecha de viaje *</label>
                 <input type="date" value={fechaViaje} onChange={(e) => setFechaViaje(e.target.value)} className={inputCls} />
@@ -307,43 +363,10 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                 <label className={labelCls}>Mercadería</label>
                 <input type="text" value={mercaderia} onChange={(e) => setMercaderia(e.target.value)} onBlur={() => mercaderia && setMercaderia(capitalizarPrimera(mercaderia))} className={inputCls} />
               </div>
-
-              {/* Origen */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className={labelCls}>Ciudad de origen</label>
-                  <input type="text" value={procedencia} onChange={(e) => setProcedencia(e.target.value)} onBlur={() => procedencia && setProcedencia(capitalizarPalabras(procedencia))} className={inputCls} placeholder="Ciudad" />
-                </div>
-                <div>
-                  <label className={labelCls}>Provincia *</label>
-                  <select value={provinciaOrigen} onChange={(e) => setProvinciaOrigen(e.target.value)} className={selectCls}>
-                    <option value="">Seleccionar...</option>
-                    {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                  <FormError message={fieldErrors.provinciaOrigen} className="text-xs mt-1" />
-                </div>
-              </div>
-
-              {/* Destino */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className={labelCls}>Ciudad de destino</label>
-                  <input type="text" value={destino} onChange={(e) => setDestino(e.target.value)} onBlur={() => destino && setDestino(capitalizarPalabras(destino))} className={inputCls} placeholder="Ciudad" />
-                </div>
-                <div>
-                  <label className={labelCls}>Provincia *</label>
-                  <select value={provinciaDestino} onChange={(e) => setProvinciaDestino(e.target.value)} className={selectCls}>
-                    <option value="">Seleccionar...</option>
-                    {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                  <FormError message={fieldErrors.provinciaDestino} className="text-xs mt-1" />
-                </div>
-              </div>
             </div>
 
             {/* ────── Columna 3: Económico y CPE ────── */}
             <div className="space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground border-b pb-1">Económico y CPE</p>
 
               <div>
                 <label className={labelCls}>Kilos</label>
@@ -390,7 +413,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
           <div className="flex justify-end gap-2 pt-6 border-t mt-6">
             <button type="button" onClick={() => router.back()} className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent">Cancelar</button>
             <button type="submit" disabled={cargando} className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
-              {cargando ? "Guardando..." : "Crear viaje"}
+              {cargando ? "Guardando..." : "Cargar Viaje"}
             </button>
           </div>
         </form>
