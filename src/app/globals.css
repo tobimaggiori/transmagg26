@@ -69,14 +69,15 @@
     --radius: 0.5rem;
 
     /* ── Sidebar — azul oscuro profundo ──────────────────────── */
-    --sidebar: oklch(0.24 0.045 255);            /* #13294B */
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.55 0.19 264);
+    --sidebar: oklch(0.24 0.045 255);            /* #13294B — fondo */
+    --sidebar-foreground: oklch(0.92 0 0);       /* texto principal — blanco suave */
+    --sidebar-muted: oklch(0.70 0 0);            /* texto secundario — gris claro */
+    --sidebar-primary: oklch(0.65 0.17 264);     /* azul claro para activos */
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.30 0.05 255);      /* hover bg */
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 8%);
-    --sidebar-ring: oklch(0.55 0.19 264);
+    --sidebar-accent: oklch(0.33 0.04 255);      /* hover bg — visible sobre sidebar */
+    --sidebar-accent-foreground: oklch(0.95 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.65 0.17 264);
   }
 
   .dark {

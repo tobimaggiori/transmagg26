@@ -67,6 +67,7 @@ const config: Config = {
         sidebar: {
           DEFAULT: "var(--sidebar)",
           foreground: "var(--sidebar-foreground)",
+          muted: "var(--sidebar-muted)",
           primary: "var(--sidebar-primary)",
           "primary-foreground": "var(--sidebar-primary-foreground)",
           accent: "var(--sidebar-accent)",

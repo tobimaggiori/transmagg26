@@ -174,8 +174,8 @@ function NavSimpleItem({
         collapsed ? "justify-center" : ""
       } ${
         isActive
-          ? "bg-sidebar-primary/20 text-white"
-          : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-white"
+          ? "bg-sidebar-primary/25 text-white"
+          : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-white"
       }`}
     >
       <Icon className="h-[18px] w-[18px] shrink-0" />
@@ -227,8 +227,8 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
           title={grupo.label}
           className={`flex items-center justify-center rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${
             grupoActivo
-              ? "bg-sidebar-primary/20 text-white"
-              : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-white"
+              ? "bg-sidebar-primary/25 text-white"
+              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-white"
           }`}
         >
           <Icon className="h-[18px] w-[18px] shrink-0" />
@@ -243,16 +243,16 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
           onClick={() => setExpandido(estaExpandido ? null : grupo.id)}
           className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${
             grupoActivo
-              ? "bg-sidebar-primary/20 text-white"
-              : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-white"
+              ? "bg-sidebar-primary/25 text-white"
+              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-white"
           }`}
         >
           <Icon className="h-[18px] w-[18px] shrink-0" />
           <span className="flex-1 text-left">{grupo.label}</span>
           {estaExpandido ? (
-            <ChevronDown className="h-3.5 w-3.5 opacity-50" />
+            <ChevronDown className="h-3.5 w-3.5 text-sidebar-muted" />
           ) : (
-            <ChevronRight className="h-3.5 w-3.5 opacity-50" />
+            <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted" />
           )}
         </button>
         {estaExpandido && (
@@ -271,8 +271,8 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
       {/* Logo */}
       <div className="flex h-14 items-center border-b border-sidebar-border px-4">
         <div className={`flex items-center gap-2.5 ${collapsed ? "justify-center w-full" : ""}`}>
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary/20 shrink-0">
-            <Truck className="h-[18px] w-[18px] text-sidebar-primary-foreground" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary/25 shrink-0">
+            <Truck className="h-[18px] w-[18px] text-sidebar-primary" />
           </div>
           {!collapsed && <span className="text-[15px] font-bold text-white tracking-tight">Transmagg</span>}
         </div>
@@ -311,12 +311,11 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
 
       {/* Footer */}
       <div className="border-t border-sidebar-border p-3 space-y-2">
-        {/* Collapse toggle — only visible on desktop */}
         {onToggleCollapse && (
           <button
             type="button"
             onClick={onToggleCollapse}
-            className="hidden md:flex w-full items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-white transition-colors"
+            className="hidden md:flex w-full items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs text-sidebar-muted hover:bg-sidebar-accent hover:text-white transition-colors"
             title={collapsed ? "Expandir menú" : "Colapsar menú"}
           >
             {collapsed ? (
@@ -330,7 +329,6 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
           </button>
         )}
 
-        {/* User info */}
         <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-primary text-sidebar-primary-foreground text-xs font-semibold uppercase shrink-0">
             {(nombreUsuario ?? emailUsuario ?? "U").charAt(0)}
@@ -340,13 +338,13 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
               {nombreUsuario && (
                 <p className="truncate text-sm font-medium text-white">{nombreUsuario}</p>
               )}
-              <p className="truncate text-xs text-sidebar-foreground/50">{emailUsuario}</p>
+              <p className="truncate text-xs text-sidebar-muted">{emailUsuario}</p>
             </div>
           )}
           <button
             type="button"
             onClick={() => signOut({ callbackUrl: "/login" })}
-            className={`text-sidebar-foreground/40 hover:text-white transition-colors ${collapsed ? "mt-2" : "ml-auto"}`}
+            className={`text-sidebar-muted hover:text-white transition-colors ${collapsed ? "mt-2" : "ml-auto"}`}
             title="Cerrar sesión"
           >
             <LogOut className="h-4 w-4" />
