@@ -15,7 +15,7 @@
   }
   :root {
     /* ── Superficies ──────────────────────────────────────────── */
-    --background: oklch(0.975 0.005 265);       /* #F5F7FB — fondo app */
+    --background: oklch(0.98 0.003 260);          /* #F7F9FC — fondo app neutro */
     --foreground: oklch(0.22 0.02 260);          /* #182033 — texto principal */
     --card: oklch(1 0 0);                        /* #FFFFFF — card/superficie */
     --card-foreground: oklch(0.22 0.02 260);

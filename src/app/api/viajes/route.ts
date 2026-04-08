@@ -38,34 +38,33 @@ const crearViajeSchema = z.object({
   choferId: z.string().uuid(),
   empresaId: z.string().uuid(),
   fechaViaje: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida (YYYY-MM-DD)"),
-  remito: z.string().optional(),
+  remito: z.string().min(1, "El remito es obligatorio"),
   tieneCupo: z.boolean().default(false),
   cupo: z.string().nullable().optional(),
-  mercaderia: z.string().optional(),
+  mercaderia: z.string().min(1, "La mercadería es obligatoria"),
   procedencia: z.string().optional(),
   provinciaOrigen: provinciaSchema,
   destino: z.string().optional(),
   provinciaDestino: provinciaSchema,
-  kilos: z.number().positive().optional(),
+  kilos: z.number().positive("Los kilos deben ser mayor a 0"),
   tarifa: z.number().positive("La tarifa debe ser mayor a 0"),
   comisionPct: z.number().min(0).max(100).optional(),
   estadoLiquidacion: z.string().default("PENDIENTE_LIQUIDAR"),
   estadoFactura: z.string().default("PENDIENTE_FACTURAR"),
-  tieneCpe: z.boolean().default(true),
+  tieneCpe: z.boolean().default(false),
   nroCartaPorte: z.string().nullable().optional(),
   cartaPorteS3Key: z.string().nullable().optional(),
 }).refine(
   (data) => data.esCamionPropio || !!data.fleteroId,
   { message: "El fletero es obligatorio para viajes con transportista externo", path: ["fleteroId"] }
 ).refine(
-  (data) => !data.tieneCupo || (data.cupo != null && data.cupo.trim().length > 0),
-  { message: "El número de cupo es obligatorio cuando el viaje lleva cupo", path: ["cupo"] }
-).refine(
-  (data) => !data.tieneCpe || (data.nroCartaPorte && data.nroCartaPorte.trim().length > 0),
-  { message: "El número de carta de porte es obligatorio", path: ["nroCartaPorte"] }
-).refine(
-  (data) => !data.tieneCpe || (data.cartaPorteS3Key && data.cartaPorteS3Key.trim().length > 0),
-  { message: "El PDF de la carta de porte es obligatorio", path: ["cartaPorteS3Key"] }
+  (data) => {
+    // Si hay nro de carta de porte, el PDF es obligatorio
+    const tieneNro = data.nroCartaPorte && data.nroCartaPorte.trim().length > 0
+    if (!tieneNro) return true
+    return data.cartaPorteS3Key != null && data.cartaPorteS3Key.trim().length > 0
+  },
+  { message: "El PDF de la carta de porte es obligatorio cuando se indica un número", path: ["cartaPorteS3Key"] }
 )
 
 // ─── GET ──────────────────────────────────────────────────────────────────────

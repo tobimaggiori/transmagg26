@@ -93,7 +93,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const [empresaId, setEmpresaId] = useState("")
   const [fechaViaje, setFechaViaje] = useState(new Date().toISOString().slice(0, 10))
   const [remito, setRemito] = useState("")
-  const [tieneCupo, setTieneCupo] = useState(false)
   const [cupo, setCupo] = useState("")
   const [mercaderia, setMercaderia] = useState("")
   const [procedencia, setProcedencia] = useState("")
@@ -102,13 +101,16 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const [provinciaDestino, setProvinciaDestino] = useState("")
   const [kilos, setKilos] = useState("")
   const [tarifaInput, setTarifaBase] = useState("")
-  const [tieneCpe, setTieneCpe] = useState(true)
   const [nroCartaPorte, setNroCartaPorte] = useState("")
   const [cartaPorteS3Key, setCartaPorteS3Key] = useState("")
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [intentoEnviar, setIntentoEnviar] = useState(false)
   const [viajeCreado, setViajeCreado] = useState(false)
+
+  // Inferir cupo y carta de porte por valor del campo
+  const tieneCupo = cupo.trim().length > 0
+  const tieneCpe = nroCartaPorte.trim().length > 0
 
   const camionesDelFletero = esCamionPropio
     ? camiones.filter((c) => c.esPropio)
@@ -132,8 +134,10 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
 
   const puedeGuardar =
     (esCamionPropio || fleteroId) && camionId && choferId && empresaId && fechaViaje &&
-    provinciaOrigen && provinciaDestino && tarifaNum > 0 &&
-    (!tieneCpe || (nroCartaPorte.trim() !== "" && cartaPorteS3Key !== ""))
+    remito.trim() !== "" &&
+    provinciaOrigen && provinciaDestino && tarifaNum > 0 && kilosNum > 0 &&
+    mercaderia.trim() !== "" &&
+    (!tieneCpe || cartaPorteS3Key !== "")
 
   const fieldErrors = intentoEnviar ? {
     fleteroId: !esCamionPropio && !fleteroId ? "Campo requerido" : null,
@@ -141,11 +145,13 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
     camionId: !camionId ? "Campo requerido" : null,
     choferId: !choferId ? "Campo requerido" : null,
     fechaViaje: !fechaViaje ? "Campo requerido" : null,
+    remito: !remito.trim() ? "Campo requerido" : null,
+    mercaderia: !mercaderia.trim() ? "Campo requerido" : null,
+    kilos: kilosNum <= 0 ? "Campo requerido" : null,
     provinciaOrigen: !provinciaOrigen ? "Campo requerido" : null,
     provinciaDestino: !provinciaDestino ? "Campo requerido" : null,
     tarifa: tarifaNum <= 0 ? "Campo requerido" : null,
-    nroCartaPorte: tieneCpe && !nroCartaPorte.trim() ? "Campo requerido" : null,
-    cartaPorteS3Key: tieneCpe && !cartaPorteS3Key ? "Debés subir el PDF" : null,
+    cartaPorteS3Key: tieneCpe && !cartaPorteS3Key ? "Debés subir el PDF de la carta de porte" : null,
   } : {} as Record<string, string | null>
 
   async function handleSubmit(e: React.FormEvent) {
@@ -164,16 +170,16 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
           choferId,
           empresaId,
           fechaViaje,
-          remito: remito || undefined,
+          remito: remito.trim(),
           tieneCupo,
-          cupo: tieneCupo ? (cupo || undefined) : null,
-          mercaderia: mercaderia ? capitalizarPrimera(mercaderia) : undefined,
-          procedencia: procedencia ? capitalizarPalabras(procedencia) : undefined,
-          provinciaOrigen: provinciaOrigen || undefined,
-          destino: destino ? capitalizarPalabras(destino) : undefined,
-          provinciaDestino: provinciaDestino || undefined,
+          cupo: tieneCupo ? cupo.trim() : null,
+          mercaderia: capitalizarPrimera(mercaderia.trim()),
+          procedencia: procedencia.trim() ? capitalizarPalabras(procedencia.trim()) : undefined,
+          provinciaOrigen,
+          destino: destino.trim() ? capitalizarPalabras(destino.trim()) : undefined,
+          provinciaDestino,
           kilos: kilosNum > 0 ? kilosNum : undefined,
-          tarifa: tarifaNum > 0 ? tarifaNum : undefined,
+          tarifa: tarifaNum,
           tieneCpe,
           nroCartaPorte: tieneCpe ? nroCartaPorte.trim() : null,
           cartaPorteS3Key: tieneCpe ? cartaPorteS3Key : null,
@@ -224,7 +230,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
               setEmpresaId("")
               setFechaViaje(hoy)
               setRemito("")
-              setTieneCupo(false)
               setCupo("")
               setMercaderia("")
               setProcedencia("")
@@ -286,7 +291,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
       )}
 
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
-        {/* ════════ Fila 1: Participantes + Económico ════════ */}
+        {/* ════════ Fila 1: Participantes + Recorrido + Carga ════════ */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
           {/* ── Participantes ── */}
           <FormSection icon={Users} title="Participantes">
@@ -363,7 +368,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
           {/* ── Recorrido ── */}
           <FormSection icon={MapPin} title="Recorrido">
             <div className="grid grid-cols-2 gap-4">
-              {/* Origen */}
               <div className="space-y-2">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Origen</p>
                 <div>
@@ -376,8 +380,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                   <FormError message={fieldErrors.provinciaOrigen} className="text-xs mt-1" />
                 </div>
               </div>
-
-              {/* Destino */}
               <div className="space-y-2">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Destino</p>
                 <div>
@@ -393,23 +395,20 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
             </div>
           </FormSection>
 
-          {/* ── Carga y tarifa ── */}
-          <FormSection icon={Package} title="Carga y tarifa">
+          {/* ── Carga ── */}
+          <FormSection icon={Package} title="Carga">
             <div className="space-y-3">
               <div>
-                <label className={labelCls}>Mercadería</label>
+                <label className={labelCls}>Mercadería <span className="text-error">*</span></label>
                 <input type="text" value={mercaderia} onChange={(e) => setMercaderia(e.target.value)} onBlur={() => mercaderia && setMercaderia(capitalizarPrimera(mercaderia))} className={inputCls} placeholder="Tipo de carga" />
-              </div>
-
-              <div>
-                <label className={labelCls}>Remito</label>
-                <input type="text" value={remito} onChange={(e) => setRemito(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} placeholder="Nro. remito" />
+                <FormError message={fieldErrors.mercaderia} className="text-xs mt-1" />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className={labelCls}>Kilos</label>
+                  <label className={labelCls}>Kilos <span className="text-error">*</span></label>
                   <input type="number" value={kilos} onChange={(e) => setKilos(e.target.value)} min="0" step="1" className={inputCls} placeholder="0" />
+                  <FormError message={fieldErrors.kilos} className="text-xs mt-1" />
                   {toneladas != null && <p className="text-[11px] text-muted-foreground mt-1">{toneladas} ton</p>}
                 </div>
                 <div>
@@ -431,54 +430,31 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
 
         {/* ════════ Fila 2: Documentación ════════ */}
         <FormSection icon={FileText} title="Documentación">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4">
+            {/* Remito */}
+            <div>
+              <label className={labelCls}>Remito <span className="text-error">*</span></label>
+              <input type="text" value={remito} onChange={(e) => setRemito(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} placeholder="Nro. remito" />
+              <FormError message={fieldErrors.remito} className="text-xs mt-1" />
+            </div>
+
             {/* Cupo */}
-            <div className="flex items-start gap-4">
-              <div className="pt-0.5">
-                <label className={labelCls}>¿Lleva cupo?</label>
-                <SegmentedToggle
-                  options={[
-                    { value: "no", label: "No" },
-                    { value: "si", label: "Sí" },
-                  ]}
-                  value={tieneCupo ? "si" : "no"}
-                  onChange={(v) => { setTieneCupo(v === "si"); if (v === "no") setCupo("") }}
-                />
-              </div>
-              {tieneCupo && (
-                <div className="flex-1 pt-0.5">
-                  <label className={labelCls}>Nro. de cupo</label>
-                  <input type="text" value={cupo} onChange={(e) => setCupo(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} placeholder="ABC-123" />
-                </div>
-              )}
+            <div>
+              <label className={labelCls}>Cupo <span className="text-muted-foreground font-normal">(opcional)</span></label>
+              <input type="text" value={cupo} onChange={(e) => setCupo(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} placeholder="Nro. de cupo" />
             </div>
 
             {/* Carta de Porte */}
             <div>
-              <div className="flex items-center gap-3 mb-2">
-                <div>
-                  <label className={labelCls}>Carta de Porte</label>
-                  <SegmentedToggle
-                    options={[
-                      { value: "si", label: "Sí" },
-                      { value: "no", label: "No" },
-                    ]}
-                    value={tieneCpe ? "si" : "no"}
-                    onChange={(v) => { setTieneCpe(v === "si"); if (v === "no") { setNroCartaPorte(""); setCartaPorteS3Key("") } }}
-                  />
+              <label className={labelCls}>Carta de Porte <span className="text-muted-foreground font-normal">(opcional)</span></label>
+              <div className="flex items-start gap-2">
+                <div className="flex-1">
+                  <input type="text" value={nroCartaPorte} onChange={(e) => setNroCartaPorte(e.target.value)} className={inputCls} placeholder="Nro. carta de porte" />
+                </div>
+                <div className="shrink-0 pt-0.5">
+                  <UploadPDF prefijo="cartas-de-porte" onUpload={(key) => setCartaPorteS3Key(key)} label="Subir" s3Key={cartaPorteS3Key || undefined} />
                 </div>
               </div>
-              {tieneCpe && (
-                <div className="flex items-start gap-3">
-                  <div className="flex-1">
-                    <input type="text" value={nroCartaPorte} onChange={(e) => setNroCartaPorte(e.target.value)} placeholder="Nro. carta de porte" className={inputCls} />
-                    <FormError message={fieldErrors.nroCartaPorte} className="text-xs mt-1" />
-                  </div>
-                  <div className="shrink-0 pt-0.5">
-                    <UploadPDF prefijo="cartas-de-porte" onUpload={(key) => setCartaPorteS3Key(key)} label="Subir" s3Key={cartaPorteS3Key || undefined} />
-                  </div>
-                </div>
-              )}
               {tieneCpe && <FormError message={fieldErrors.cartaPorteS3Key} className="text-xs mt-1" />}
             </div>
           </div>
