@@ -117,7 +117,7 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
           provinciaOrigen: provinciaOrigen || undefined,
           destino: destino || undefined,
           provinciaDestino: provinciaDestino || undefined,
-          kilos: kilos ? parseFloat(kilos) : undefined,
+          kilos: kilos ? parsearImporte(kilos) : undefined,
           tarifa: parsearImporte(tarifa),
         }),
       })

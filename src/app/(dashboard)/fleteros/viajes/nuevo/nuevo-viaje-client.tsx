@@ -70,7 +70,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const fleteroItems = fleteros.map((f) => ({ id: f.id, label: f.razonSocial, sublabel: f.cuit }))
   const empresaItems = empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: e.cuit }))
 
-  const kilosNum = parseFloat(kilos) || 0
+  const kilosNum = parsearImporte(kilos) || 0
   const tarifaNum = parsearImporte(tarifaInput)
   const toneladas = kilosNum > 0 ? calcularToneladas(kilosNum) : null
   const totalCalc = kilosNum > 0 && tarifaNum > 0 ? calcularTotalViaje(kilosNum, tarifaNum) : null
@@ -104,7 +104,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...(esCamionPropio ? { esCamionPropio: true } : { fleteroId, ...(comisionPct ? { comisionPct: parseFloat(comisionPct) } : {}) }),
+          ...(esCamionPropio ? { esCamionPropio: true } : { fleteroId, ...(comisionPct ? { comisionPct: parsearImporte(comisionPct) } : {}) }),
           camionId,
           choferId,
           empresaId,
