@@ -545,7 +545,7 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
       doc.restore()
 
       // QR fiscal — 3×3 cm = 85pt
-      const qrSize = 85
+      const qrSize = 80
       const qrX = left + 8
       const qrY = fY + (footerH - qrSize) / 2
       if (qrBuffer) {
