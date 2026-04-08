@@ -138,8 +138,21 @@ export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientPro
     finally { setAutorizandoArcaId(null) }
   }
 
-  function abrirPDF(facturaId: string) {
-    window.open(`/api/facturas/${facturaId}/pdf`, "_blank")
+  async function abrirPDF(facturaId: string) {
+    try {
+      const res = await fetch(`/api/facturas/${facturaId}/pdf`)
+      if (!res.ok) return
+      const contentType = res.headers.get("content-type") ?? ""
+      if (contentType.includes("application/pdf")) {
+        // El endpoint sirve el PDF directamente
+        const blob = await res.blob()
+        window.open(URL.createObjectURL(blob), "_blank")
+      } else {
+        // El endpoint devuelve JSON con URL firmada
+        const data = await res.json()
+        if (data.url) window.open(data.url, "_blank")
+      }
+    } catch { /* ignore */ }
   }
 
   const empresasItems = [
