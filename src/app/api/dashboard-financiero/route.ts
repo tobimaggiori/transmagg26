@@ -66,8 +66,16 @@ export async function GET() {
     } catch (e) { console.error("[dashboard] Error deudaFleteros:", e) }
 
     try {
+      // Solo viajes con LP en estado activo (EMITIDA, PAGADA, PARCIALMENTE_PAGADA)
       const viajesPendienteFacturar = await prisma.viaje.findMany({
-        where: { estadoFactura: "PENDIENTE_FACTURAR" },
+        where: {
+          estadoFactura: "PENDIENTE_FACTURAR",
+          enLiquidaciones: {
+            some: {
+              liquidacion: { estado: { in: ["EMITIDA", "PAGADA", "PARCIALMENTE_PAGADA"] } },
+            },
+          },
+        },
         select: { kilos: true, tarifaEmpresa: true },
       })
       pendienteFacturar = sumarImportes(

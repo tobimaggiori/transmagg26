@@ -55,7 +55,7 @@ export async function GET() {
 
     const porEmpresa = new Map<string, EmpresaEntry>()
 
-    // Solo mostrar viajes facturables (con LP en estado activo)
+    // Solo viajes facturables (con LP en estado activo)
     const viajesFacturables = viajes.filter((v) => viajeEsFacturable({
       estadoFactura: "PENDIENTE_FACTURAR",
       enLiquidaciones: v.enLiquidaciones.map((el) => ({
