@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
     const [viajesPendientes, facturas] = await Promise.all([
       empresaIdReal
         ? prisma.viaje.findMany({
-            where: { empresaId: empresaIdReal, estadoFactura: "PENDIENTE_FACTURAR", estadoLiquidacion: "LIQUIDADO" },
+            where: { empresaId: empresaIdReal, estadoFactura: "PENDIENTE_FACTURAR" },
             include: {
               empresa: { select: { razonSocial: true } },
               fletero: { select: { razonSocial: true } },
