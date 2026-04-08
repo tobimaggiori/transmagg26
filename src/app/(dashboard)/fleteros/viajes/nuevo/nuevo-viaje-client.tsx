@@ -337,7 +337,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
               </div>
             </div>
 
-            {/* ────── Columna 2: Datos del viaje ────── */}
+            {/* ────── Columna 2: Datos del viaje + Carta de Porte ────── */}
             <div className="space-y-3">
               <div>
                 <label className={labelCls}>Remito</label>
@@ -345,13 +345,39 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
               </div>
 
               <div>
-                <label className={labelCls}>¿Lleva cupo?</label>
-                <div className="flex rounded-md border overflow-hidden h-9">
-                  <button type="button" onClick={() => { setTieneCupo(false); setCupo("") }} className={`flex-1 text-xs font-medium border-r ${!tieneCupo ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>No</button>
-                  <button type="button" onClick={() => setTieneCupo(true)} className={`flex-1 text-xs font-medium ${tieneCupo ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>Sí</button>
+                <div className="flex items-center gap-2 mb-1">
+                  <label className="text-sm font-medium text-foreground">¿Lleva cupo?</label>
+                  <div className="flex rounded-md border overflow-hidden h-7 w-fit">
+                    <button type="button" onClick={() => { setTieneCupo(false); setCupo("") }} className={`px-2.5 text-[11px] font-medium border-r ${!tieneCupo ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>No</button>
+                    <button type="button" onClick={() => setTieneCupo(true)} className={`px-2.5 text-[11px] font-medium ${tieneCupo ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>Sí</button>
+                  </div>
                 </div>
                 {tieneCupo && (
-                  <input type="text" value={cupo} onChange={(e) => setCupo(e.target.value.toUpperCase())} placeholder="Nro. de cupo" style={{ textTransform: "uppercase" }} className={`${inputCls} mt-2`} />
+                  <input type="text" value={cupo} onChange={(e) => setCupo(e.target.value.toUpperCase())} placeholder="Nro. de cupo" style={{ textTransform: "uppercase" }} className={inputCls} />
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <label className="text-sm font-medium text-foreground">Carta de Porte</label>
+                  <div className="flex rounded-md border overflow-hidden h-7 w-fit">
+                    <button type="button" onClick={() => setTieneCpe(true)} className={`px-2.5 text-[11px] font-medium border-r ${tieneCpe ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>Sí</button>
+                    <button type="button" onClick={() => { setTieneCpe(false); setNroCartaPorte(""); setCartaPorteS3Key("") }} className={`px-2.5 text-[11px] font-medium ${!tieneCpe ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>No</button>
+                  </div>
+                </div>
+                {tieneCpe && (
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1">
+                        <input type="text" value={nroCartaPorte} onChange={(e) => setNroCartaPorte(e.target.value)} placeholder="Nro. carta de porte" className={inputCls} />
+                        <FormError message={fieldErrors.nroCartaPorte} className="text-xs mt-1" />
+                      </div>
+                      <div className="shrink-0 pt-0.5">
+                        <UploadPDF prefijo="cartas-de-porte" onUpload={(key) => setCartaPorteS3Key(key)} label="Subir" s3Key={cartaPorteS3Key || undefined} />
+                      </div>
+                    </div>
+                    <FormError message={fieldErrors.cartaPorteS3Key} className="text-xs" />
+                  </div>
                 )}
               </div>
 
@@ -361,9 +387,8 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
               </div>
             </div>
 
-            {/* ────── Columna 3: Económico y CPE ────── */}
+            {/* ────── Columna 3: Económico ────── */}
             <div className="space-y-3">
-
               <div>
                 <label className={labelCls}>Kilos</label>
                 <input type="number" value={kilos} onChange={(e) => setKilos(e.target.value)} min="0" step="1" className={inputCls} />
@@ -375,33 +400,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                 <input type="number" value={tarifaInput} onChange={(e) => setTarifaBase(e.target.value)} min="0" step="0.01" className={inputCls} />
                 <FormError message={fieldErrors.tarifa} className="text-xs mt-1" />
                 {totalCalc != null && <p className="text-xs text-muted-foreground mt-1">Referencia inicial del viaje: {formatearMoneda(totalCalc)}</p>}
-              </div>
-
-              <div className="space-y-3 border-t pt-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Carta de Porte</p>
-                  <div className="flex rounded-md border overflow-hidden h-8 w-fit">
-                    <button type="button" onClick={() => setTieneCpe(true)} className={`px-3 text-xs font-medium border-r ${tieneCpe ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>Sí</button>
-                    <button type="button" onClick={() => { setTieneCpe(false); setNroCartaPorte(""); setCartaPorteS3Key("") }} className={`px-3 text-xs font-medium ${!tieneCpe ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>No</button>
-                  </div>
-                </div>
-                {tieneCpe ? (
-                  <div className="space-y-3">
-                    <div>
-                      <label className={labelCls}>Nro. de carta de porte *</label>
-                      <input type="text" value={nroCartaPorte} onChange={(e) => setNroCartaPorte(e.target.value)} placeholder="Ej: 12345678" className={inputCls} />
-                      <FormError message={fieldErrors.nroCartaPorte} className="text-xs mt-1" />
-                      {!fieldErrors.nroCartaPorte && <p className="text-[11px] text-muted-foreground mt-1">Debe ser único en el sistema.</p>}
-                    </div>
-                    <div>
-                      <label className={labelCls}>PDF de la carta de porte *</label>
-                      <UploadPDF prefijo="cartas-de-porte" onUpload={(key) => setCartaPorteS3Key(key)} label="Subir PDF" s3Key={cartaPorteS3Key || undefined} />
-                      <FormError message={fieldErrors.cartaPorteS3Key} className="text-xs mt-1" />
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">El viaje se creará sin carta de porte.</p>
-                )}
               </div>
             </div>
           </div>
