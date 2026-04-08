@@ -48,6 +48,7 @@ export type DatosNotaCD = {
   descripcion: string
   motivoDetalle?: string
   viajesIds?: string[]
+  fechaEmision?: string
   nroComprobanteExterno?: string
   fechaComprobanteExterno?: string
   emisorExterno?: string
@@ -140,6 +141,7 @@ async function crearNCEmitida(
     tipoCbte,
     arcaEstado: "PENDIENTE" as const,
     operadorId,
+    creadoEn: data.fechaEmision ? new Date(data.fechaEmision + "T12:00:00") : new Date(),
   }
 
   if (data.subtipo === "ANULACION_TOTAL") {
@@ -263,6 +265,7 @@ async function crearNDEmitida(
         tipoCbte,
         arcaEstado: "PENDIENTE",
         operadorId,
+        creadoEn: data.fechaEmision ? new Date(data.fechaEmision + "T12:00:00") : new Date(),
       },
     })
   })

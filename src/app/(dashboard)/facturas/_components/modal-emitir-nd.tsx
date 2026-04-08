@@ -32,6 +32,7 @@ export function ModalEmitirND({
   const [ivaPct, setIvaPct] = useState(21)
   const [descripcion, setDescripcion] = useState("")
   const [motivoDetalle, setMotivoDetalle] = useState("")
+  const [fechaEmision, setFechaEmision] = useState(() => new Date().toISOString().slice(0, 10))
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -51,6 +52,7 @@ export function ModalEmitirND({
         ivaPct,
         descripcion,
         motivoDetalle: motivoDetalle || undefined,
+        fechaEmision,
         emisionArca: true,
         idempotencyKey: crypto.randomUUID(),
       }
@@ -143,6 +145,18 @@ export function ModalEmitirND({
               className="w-full rounded border bg-white px-2 py-1.5 text-sm"
               placeholder="Detalle adicional..."
             />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Fecha de emisión</label>
+            <input
+              type="date"
+              value={fechaEmision}
+              onChange={(e) => setFechaEmision(e.target.value)}
+              max={new Date().toISOString().slice(0, 10)}
+              min={(() => { const d = new Date(); d.setDate(d.getDate() - 10); return d.toISOString().slice(0, 10) })()}
+              className="w-full h-9 rounded border bg-white px-2 text-sm"
+            />
+            <p className="text-xs text-gray-500 mt-1">ARCA permite hasta 10 días hacia atrás</p>
           </div>
           {/* Preview totales */}
           <div className="bg-orange-50 rounded-md p-3 text-sm space-y-1">
