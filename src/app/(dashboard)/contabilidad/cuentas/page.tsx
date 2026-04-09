@@ -20,10 +20,10 @@ export default async function CuentasPage() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Cuentas</h1>
-        <p className="text-muted-foreground">Gestioná cuentas bancarias, brokers y billeteras virtuales.</p>
+        <h1 className="text-2xl font-bold">Cuentas y Tarjetas</h1>
+        <p className="text-muted-foreground">Gestioná cuentas bancarias, brokers, billeteras y tarjetas.</p>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <ActionCard
           title="CUENTAS"
           subtitle="BANCOS"
@@ -44,6 +44,12 @@ export default async function CuentasPage() {
           href="/contabilidad/cuentas/billeteras"
           icon={Wallet}
           description="Billeteras virtuales y cuentas de pago"
+        />
+        <ActionCard
+          title="RESÚMENES"
+          subtitle="TARJETAS"
+          href="/contabilidad/tarjetas"
+          description="Carga y gestión de resúmenes de tarjeta"
         />
       </div>
     </div>

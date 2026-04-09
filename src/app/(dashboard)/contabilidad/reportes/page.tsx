@@ -33,7 +33,7 @@ export default async function ReportesPage() {
         />
         <ActionCard
           title="LIBRO"
-          subtitle="IIBB"
+          subtitle="Ingresos Brutos"
           href="/contabilidad/iibb"
         />
         <ActionCard
@@ -60,6 +60,11 @@ export default async function ReportesPage() {
           title="COMPROBANTES"
           subtitle="R2"
           href="/contabilidad/comprobantes"
+        />
+        <ActionCard
+          title="LIBRO"
+          subtitle="Percepciones"
+          href="/contabilidad/percepciones"
         />
       </div>
     </div>
