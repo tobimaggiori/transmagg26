@@ -32,10 +32,11 @@ export function formatearFechaArca(fecha: Date): string {
  * Ejemplos:
  * parsearFechaArca("20260403") // → 2026-04-03T00:00:00.000Z
  */
-export function parsearFechaArca(yyyymmdd: string): Date {
-  const y = parseInt(yyyymmdd.slice(0, 4))
-  const m = parseInt(yyyymmdd.slice(4, 6)) - 1
-  const d = parseInt(yyyymmdd.slice(6, 8))
+export function parsearFechaArca(yyyymmdd: string | number): Date {
+  const str = String(yyyymmdd)
+  const y = parseInt(str.slice(0, 4))
+  const m = parseInt(str.slice(4, 6)) - 1
+  const d = parseInt(str.slice(6, 8))
   return new Date(y, m, d)
 }
 

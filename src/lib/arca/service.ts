@@ -734,8 +734,8 @@ async function _autorizarComprobante(
     throw new ArcaRechazoError(observaciones)
   }
 
-  // Autorizado
-  const cae = det.CAE
+  // Autorizado — ARCA puede devolver números en vez de strings
+  const cae = String(det.CAE)
   const caeVto = parsearFechaArca(det.CAEFchVto)
   const qrData = generarQRFiscal({
     cuitEmisor: config.cuit,
