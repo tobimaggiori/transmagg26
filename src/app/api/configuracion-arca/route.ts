@@ -138,6 +138,7 @@ export async function PATCH(req: NextRequest) {
 
   // Cifrar certificado y password si están presentes; string vacío = eliminar
   const datosSensibles: Record<string, string | null> = {}
+  const cambióCertificado = certificadoB64 !== undefined
   if (certificadoB64 !== undefined) datosSensibles.certificadoB64 = certificadoB64 ? cifrarValor(certificadoB64) : null
   if (certificadoPass !== undefined) datosSensibles.certificadoPass = certificadoPass ? cifrarValor(certificadoPass) : null
 
@@ -205,6 +206,11 @@ export async function PATCH(req: NextRequest) {
     } else {
       throw err
     }
+  }
+
+  // Si cambió el certificado, invalidar ticket WSAA cacheado
+  if (cambióCertificado) {
+    try { await prisma.ticketWsaa.deleteMany({}) } catch { /* ignore */ }
   }
 
   return NextResponse.json(serializarConfig(updated))
