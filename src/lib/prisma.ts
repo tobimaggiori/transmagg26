@@ -1,23 +1,20 @@
 /**
  * Propósito: Instancia singleton de Prisma Client para Transmagg.
- * Usa el adapter LibSQL para SQLite (requerido por Prisma 7).
  * Previene múltiples conexiones en desarrollo (hot-reload de Next.js).
  *
  * CONVERSIÓN DECIMAL → NUMBER
  * Los campos Decimal del schema se convierten a number via result extension.
- * Esto NO agrega precisión: SQLite almacena DECIMAL como REAL (IEEE 754 float64),
- * así que el valor ya es float64 antes de la conversión.
+ * PostgreSQL almacena DECIMAL con precisión real, pero el código de aplicación
+ * trabaja con number (los cálculos se hacen con decimal.js via src/lib/money.ts).
  *
  * La precisión monetaria depende exclusivamente de que los cálculos pasen
  * por src/lib/money.ts (que usa decimal.js internamente). Los valores leídos
- * de la DB son float64 redondeados a 2 decimales — seguros para comparación
- * y display, pero NO para aritmética directa (usar sumarImportes, etc.).
- *
- * Si se migra a PostgreSQL, Decimal daría precisión real en disco.
+ * de la DB son convertidos a number — seguros para comparación y display,
+ * pero NO para aritmética directa (usar sumarImportes, etc.).
  */
 
 import { PrismaClient } from "@prisma/client"
-import { PrismaLibSql } from "@prisma/adapter-libsql"
+import { PrismaPg } from "@prisma/adapter-pg"
 
 // ─── Helpers para result extension ──────────────────────────────────────────
 
@@ -45,8 +42,8 @@ function dnNull(field: string) {
 // ─── Creación del cliente ────────────────────────────────────────────────────
 
 function createPrismaClient() {
-  const url = process.env.DATABASE_URL ?? "file:./prisma/dev.db"
-  const adapter = new PrismaLibSql({ url })
+  const connectionString = process.env.DATABASE_URL!
+  const adapter = new PrismaPg({ connectionString })
   const base = new PrismaClient({
     adapter,
     log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
