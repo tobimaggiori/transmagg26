@@ -18,6 +18,7 @@ jobs:
           script: |
             cd ~/transmagg26
             git pull origin main
+            cp ~/.env.transmagg .env
             npm install
             npx prisma migrate deploy
             pm2 restart transmagg
