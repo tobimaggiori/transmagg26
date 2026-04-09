@@ -70,6 +70,14 @@ const mockPrisma = {
 }
 
 jest.mock("@/lib/prisma", () => ({ prisma: mockPrisma }))
+jest.mock("@/lib/arca/config", () => ({
+  cargarConfigArca: jest.fn().mockResolvedValue({
+    cuit: "30709381683", razonSocial: "TEST", modo: "simulacion",
+    puntosVenta: { FACTURA_A: 1, FACTURA_B: 2 },
+    comprobantesHabilitados: [1, 6, 201], cbuMiPymes: null, activa: true,
+    certificadoB64: "", certificadoPass: "",
+  }),
+}))
 
 import { ejecutarCrearFactura } from "@/lib/factura-commands"
 
@@ -83,6 +91,7 @@ describe("facturas se crean como EMITIDA (inmutable)", () => {
     mockPrisma.viaje.findMany.mockResolvedValue([{
       id: "v1", empresaId: "e1", kilos: 30000, tarifaEmpresa: 50,
       fechaViaje: new Date("2026-01-10"), estadoFactura: "PENDIENTE_FACTURAR",
+      esCamionPropio: false,
       remito: null, cupo: null, mercaderia: null, procedencia: null,
       provinciaOrigen: "Santa Fe", destino: null, provinciaDestino: null,
       fleteroId: "f1", camionId: "c1", choferId: "ch1",

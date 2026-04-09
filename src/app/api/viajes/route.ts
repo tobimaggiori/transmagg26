@@ -198,7 +198,8 @@ export async function POST(request: NextRequest) {
         fechaViaje: new Date(fechaViaje),
         tarifa,
         tarifaEmpresa: tarifa,
-        estadoLiquidacion,
+        // Camión propio no pasa por liquidación a fletero → queda LIQUIDADO automáticamente
+        estadoLiquidacion: esCamionPropio ? "LIQUIDADO" : estadoLiquidacion,
         estadoFactura,
         ...resto,
       },

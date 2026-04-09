@@ -99,6 +99,8 @@ type TabId = (typeof TABS)[number]["id"]
 const CLAVES_PTO_VENTA = [
   { clave: "FACTURA_A", label: "Factura A (1) / FCE (201/202/203)" },
   { clave: "FACTURA_B", label: "Factura B (6)" },
+  { clave: "FACTURA_A_CAMION_PROPIO", label: "Factura A Camión Propio (1/201)" },
+  { clave: "FACTURA_B_CAMION_PROPIO", label: "Factura B Camión Propio (6)" },
   { clave: "NOTA_CREDITO_A", label: "NC/ND A (2/3)" },
   { clave: "NOTA_CREDITO_B", label: "NC/ND B (7/8)" },
   { clave: "LP_A", label: "CVLP A (60)" },

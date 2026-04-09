@@ -391,8 +391,11 @@ export async function autorizarFacturaArca(
   }
 
   const tipoCbte = factura.tipoCbte
-  const tipoKey = tipoCbte === 201 ? "FACTURA_A" : tipoCbte === 1 ? "FACTURA_A" : "FACTURA_B"
-  const ptoVenta = config.puntosVenta[tipoKey] ?? 1
+  // Usar ptoVenta persistido en la factura (resuelto al crear según camión propio/fletero).
+  // Fallback a lógica vieja por tipoCbte para facturas creadas antes del cambio.
+  const ptoVenta = (factura.ptoVenta && factura.ptoVenta > 0)
+    ? factura.ptoVenta
+    : config.puntosVenta[tipoCbte === 201 ? "FACTURA_A" : tipoCbte === 1 ? "FACTURA_A" : "FACTURA_B"] ?? 1
 
   try {
     const result = await _autorizarComprobante(config, {

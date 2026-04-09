@@ -9,6 +9,8 @@
 import { prisma } from "@/lib/prisma"
 import { calcularTotalViaje, calcularFactura } from "@/lib/viajes"
 import { EstadoFacturaDocumento, EstadoFacturaViaje } from "@/lib/viaje-workflow"
+import { resolverPuntoVentaFacturaEmpresa } from "@/lib/arca/catalogo"
+import { cargarConfigArca } from "@/lib/arca/config"
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -87,7 +89,7 @@ export async function ejecutarCrearFactura(
       fechaViaje: true, remito: true, cupo: true, mercaderia: true,
       procedencia: true, provinciaOrigen: true, destino: true,
       provinciaDestino: true, fleteroId: true, camionId: true,
-      choferId: true, estadoFactura: true,
+      choferId: true, estadoFactura: true, esCamionPropio: true,
     },
   })
 
@@ -106,6 +108,22 @@ export async function ejecutarCrearFactura(
   if (viajesNoFacturables.length > 0) {
     return { ok: false, status: 400, error: "Uno o más viajes no están pendientes de facturar" }
   }
+
+  // Validar que no se mezclen viajes de camión propio con viajes de fletero
+  const tienePropios = viajes.some((v) => v.esCamionPropio)
+  const tieneAjenos = viajes.some((v) => !v.esCamionPropio)
+  if (tienePropios && tieneAjenos) {
+    return { ok: false, status: 422, error: "No se puede mezclar viajes de camión propio y viajes de fletero en la misma factura" }
+  }
+
+  // Resolver punto de venta según origen del viaje y tipo de comprobante
+  const esCamionPropio = tienePropios
+  const config = await cargarConfigArca()
+  const ptoVenta = resolverPuntoVentaFacturaEmpresa({
+    tipoCbte,
+    esCamionPropio,
+    puntosVentaConfig: config.puntosVenta,
+  })
 
   // Aplicar ediciones y calcular totales
   const viajesConEdiciones = viajes.map((v) => {
@@ -131,6 +149,7 @@ export async function ejecutarCrearFactura(
         empresaId,
         operadorId,
         tipoCbte,
+        ptoVenta,
         modalidadMiPymes: modalidadMiPymes ?? null,
         ivaPct,
         metodoPago: metodoPago ?? "Transferencia Bancaria",

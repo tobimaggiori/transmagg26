@@ -30,6 +30,7 @@ type ViajeParaFacturar = {
   fechaViaje: string
   nroCartaPorte: string | null
   tieneCpe: boolean
+  esCamionPropio: boolean
   fletero: { razonSocial: string } | null
   enLiquidaciones: Array<{
     liquidacion: { nroComprobante: number | null; ptoVenta: number | null; id: string }
@@ -139,24 +140,50 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
     (tipoCbteNum !== null && codigosDisponibles.includes(tipoCbteNum) &&
       (tipoCbteNum !== 201 || modalidadMiPymes !== null))
 
+  // Determinar el tipo de origen de los viajes ya seleccionados
+  const origenSeleccionado: "propio" | "fletero" | null = useMemo(() => {
+    if (seleccionados.size === 0) return null
+    const primerSeleccionado = viajes.find((v) => seleccionados.has(v.id))
+    return primerSeleccionado?.esCamionPropio ? "propio" : "fletero"
+  }, [seleccionados, viajes])
+
+  // Un viaje es seleccionable si no hay selección o si coincide el origen
+  function esSeleccionable(v: ViajeParaFacturar): boolean {
+    if (seleccionados.size === 0) return true
+    return origenSeleccionado === (v.esCamionPropio ? "propio" : "fletero")
+  }
+
   // Toggle individual viaje
   function toggleViaje(id: string) {
     setSeleccionados((prev) => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
       return next
     })
   }
 
-  // Toggle todos
+  // Toggle todos: si no hay mezcla, selecciona/deselecciona todos.
+  // Si hay mezcla y no hay selección previa, no hace nada (el usuario debe elegir uno primero).
   function toggleTodos() {
-    if (seleccionados.size === viajes.length) {
+    if (seleccionados.size > 0) {
       setSeleccionados(new Set())
     } else {
+      // Si hay mezcla, no seleccionar todos (forzar selección individual primero)
+      if (hayMezclaEnViajes) return
       setSeleccionados(new Set(viajes.map((v) => v.id)))
     }
   }
+
+  // Advertencia si hay mezcla posible
+  const hayMezclaEnViajes = useMemo(() => {
+    const tienePropios = viajes.some((v) => v.esCamionPropio)
+    const tieneAjenos = viajes.some((v) => !v.esCamionPropio)
+    return tienePropios && tieneAjenos
+  }, [viajes])
 
   // Obtener valor efectivo de kilos/tarifa (con ediciones)
   function getKilos(v: ViajeParaFacturar): number {
@@ -538,6 +565,13 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
               )}
             </div>
 
+            {hayMezclaEnViajes && origenSeleccionado && (
+              <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                Solo se pueden seleccionar viajes del mismo tipo ({origenSeleccionado === "propio" ? "camión propio" : "fletero"}).
+                Los viajes del otro tipo están deshabilitados.
+              </div>
+            )}
+
             {cargando ? (
               <div className="text-center py-6 text-muted-foreground">Cargando...</div>
             ) : viajes.length === 0 ? (
@@ -557,7 +591,7 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
                       </th>
                       <th className="px-3 py-2 text-left">Fecha</th>
                       <th className="px-3 py-2 text-left">CPE</th>
-                      <th className="px-3 py-2 text-left">Fletero</th>
+                      <th className="px-3 py-2 text-left">Origen</th>
                       <th className="px-3 py-2 text-left">Mercadería</th>
                       <th className="px-3 py-2 text-left">Origen</th>
                       <th className="px-3 py-2 text-left">Destino</th>
@@ -583,8 +617,9 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
                             <input
                               type="checkbox"
                               checked={isSelected}
+                              disabled={!isSelected && !esSeleccionable(v)}
                               onChange={() => toggleViaje(v.id)}
-                              className="accent-primary"
+                              className="accent-primary disabled:opacity-30"
                             />
                           </td>
                           <td className="px-3 py-2">{formatearFecha(v.fechaViaje)}</td>
@@ -593,7 +628,11 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
                               ? v.nroCartaPorte ?? "Si"
                               : <span className="text-muted-foreground">No</span>}
                           </td>
-                          <td className="px-3 py-2">{v.fletero?.razonSocial ?? "-"}</td>
+                          <td className="px-3 py-2">
+                            {v.esCamionPropio
+                              ? <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">Camión propio</span>
+                              : v.fletero?.razonSocial ?? "-"}
+                          </td>
                           <td className="px-3 py-2">{v.mercaderia ?? "-"}</td>
                           <td className="px-3 py-2">{v.provinciaOrigen ?? v.procedencia ?? "-"}</td>
                           <td className="px-3 py-2">{v.destino ?? v.provinciaDestino ?? "-"}</td>

@@ -387,3 +387,40 @@ export function claveConfigPtoVenta(tipoCbte: number): string {
     default: return "FACTURA_A"
   }
 }
+
+/**
+ * resolverPuntoVentaFacturaEmpresa: { tipoCbte, esCamionPropio, puntosVentaConfig } -> number
+ *
+ * Resuelve el punto de venta para una factura a empresa según:
+ * - Si esCamionPropio: usa FACTURA_A_CAMION_PROPIO / FACTURA_B_CAMION_PROPIO
+ * - Si fletero: usa FACTURA_A / FACTURA_B (comportamiento original)
+ * Fallback: clave estándar por tipoCbte, luego 1.
+ *
+ * Ejemplos:
+ * resolverPuntoVentaFacturaEmpresa({ tipoCbte: 1, esCamionPropio: true, puntosVentaConfig: { FACTURA_A_CAMION_PROPIO: 5 } })
+ *   // => 5
+ * resolverPuntoVentaFacturaEmpresa({ tipoCbte: 6, esCamionPropio: true, puntosVentaConfig: { FACTURA_B_CAMION_PROPIO: 7 } })
+ *   // => 7
+ * resolverPuntoVentaFacturaEmpresa({ tipoCbte: 1, esCamionPropio: false, puntosVentaConfig: { FACTURA_A: 2 } })
+ *   // => 2
+ * resolverPuntoVentaFacturaEmpresa({ tipoCbte: 201, esCamionPropio: true, puntosVentaConfig: { FACTURA_A_CAMION_PROPIO: 5 } })
+ *   // => 5
+ */
+export function resolverPuntoVentaFacturaEmpresa(params: {
+  tipoCbte: number
+  esCamionPropio: boolean
+  puntosVentaConfig: Record<string, number>
+}): number {
+  const { tipoCbte, esCamionPropio, puntosVentaConfig } = params
+
+  if (esCamionPropio) {
+    const claveCamionPropio = [1, 201].includes(tipoCbte)
+      ? "FACTURA_A_CAMION_PROPIO"
+      : "FACTURA_B_CAMION_PROPIO"
+    if (puntosVentaConfig[claveCamionPropio]) return puntosVentaConfig[claveCamionPropio]
+  }
+
+  // Fletero o fallback: clave estándar
+  const claveEstandar = claveConfigPtoVenta(tipoCbte)
+  return puntosVentaConfig[claveEstandar] ?? 1
+}
