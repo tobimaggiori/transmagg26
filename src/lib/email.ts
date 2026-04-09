@@ -46,22 +46,17 @@ export async function enviarEmail(opciones: OpcionesEmail): Promise<{ ok: boolea
 
 // ── Resend ──────────────────────────────────────────────────────────────────
 
+const RESEND_FROM = "Trans-Magg S.R.L. <auth@transmagg.com.ar>"
+
 async function enviarConResend(opciones: OpcionesEmail): Promise<{ ok: boolean; error?: string }> {
-  const resend = new Resend(process.env.RESEND_API_KEY)
+  const apiKey = process.env.RESEND_API_KEY!
+  const resend = new Resend(apiKey)
 
-  // Leer remitente de ConfiguracionOtp
-  const config = await prisma.configuracionOtp.findUnique({
-    where: { id: "singleton" },
-    select: { emailRemitente: true, nombreRemitente: true, activo: true },
-  }).catch(() => null)
-
-  const nombreRemitente = config?.nombreRemitente ?? "Trans-Magg S.R.L."
-  const emailRemitente = config?.emailRemitente ?? "noreply@transmagg.com.ar"
-  const from = `${nombreRemitente} <${emailRemitente}>`
+  console.log(`[EMAIL RESEND] Enviando a ${opciones.para} | from=${RESEND_FROM} | asunto="${opciones.asunto}"`)
 
   try {
-    const { error } = await resend.emails.send({
-      from,
+    const { data, error } = await resend.emails.send({
+      from: RESEND_FROM,
       to: opciones.para,
       subject: opciones.asunto,
       html: opciones.html,
@@ -74,15 +69,15 @@ async function enviarConResend(opciones: OpcionesEmail): Promise<{ ok: boolean; 
     })
 
     if (error) {
-      console.error(`[EMAIL RESEND] Error enviando a ${opciones.para}:`, error.message)
+      console.error(`[EMAIL RESEND] Rechazado por Resend:`, JSON.stringify(error))
       return { ok: false, error: error.message }
     }
 
-    console.log(`[EMAIL RESEND] Enviado a ${opciones.para}: ${opciones.asunto}`)
+    console.log(`[EMAIL RESEND] OK id=${data?.id} → ${opciones.para}`)
     return { ok: true }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[EMAIL RESEND] Error enviando a ${opciones.para}:`, msg)
+    console.error(`[EMAIL RESEND] Excepción:`, msg)
     return { ok: false, error: msg }
   }
 }
