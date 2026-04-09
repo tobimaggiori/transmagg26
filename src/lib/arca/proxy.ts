@@ -9,9 +9,6 @@
  * Si ARCA_PROXY_URL no está definida, las llamadas van directo a ARCA.
  */
 
-const PROXY_URL = process.env.ARCA_PROXY_URL || ""
-const PROXY_SECRET = process.env.ARCA_PROXY_SECRET || "transmagg-arca-proxy-2026"
-
 /**
  * fetchArcaSOAP: (url, headers, body, timeout) -> Promise<Response>
  *
@@ -24,14 +21,19 @@ export async function fetchArcaSOAP(
   body: string,
   timeoutMs: number
 ): Promise<Response> {
-  if (PROXY_URL) {
-    // Enviar al proxy con la URL destino en header
-    return fetch(PROXY_URL, {
+  // Leer en cada request (no cachear en top-level por si Vercel reutiliza el módulo)
+  const proxyUrl = process.env.ARCA_PROXY_URL || ""
+  const proxySecret = process.env.ARCA_PROXY_SECRET || "transmagg-arca-proxy-2026"
+
+  console.info("[ARCA-PROXY]", proxyUrl ? `Usando proxy: ${proxyUrl}` : "Sin proxy, llamada directa a ARCA", "| Target:", url)
+
+  if (proxyUrl) {
+    return fetch(proxyUrl, {
       method: "POST",
       headers: {
         ...headers,
         "X-Target-Url": url,
-        "X-Proxy-Secret": PROXY_SECRET,
+        "X-Proxy-Secret": proxySecret,
       },
       body,
       signal: AbortSignal.timeout(timeoutMs),
