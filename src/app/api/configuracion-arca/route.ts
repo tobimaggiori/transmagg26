@@ -136,10 +136,10 @@ export async function PATCH(req: NextRequest) {
   try {
   const { puntosVenta, comprobantesHabilitados, certificadoB64, certificadoPass, logoComprobanteB64, logoArcaB64, ...rest } = parsed.data
 
-  // Cifrar certificado y password si están presentes
-  const datosSensibles: Record<string, string> = {}
-  if (certificadoB64 !== undefined) datosSensibles.certificadoB64 = cifrarValor(certificadoB64)
-  if (certificadoPass !== undefined) datosSensibles.certificadoPass = cifrarValor(certificadoPass)
+  // Cifrar certificado y password si están presentes; string vacío = eliminar
+  const datosSensibles: Record<string, string | null> = {}
+  if (certificadoB64 !== undefined) datosSensibles.certificadoB64 = certificadoB64 ? cifrarValor(certificadoB64) : null
+  if (certificadoPass !== undefined) datosSensibles.certificadoPass = certificadoPass ? cifrarValor(certificadoPass) : null
 
   const pvJson = puntosVenta !== undefined ? normalizarPuntosVentaInput(puntosVenta) : undefined
 
