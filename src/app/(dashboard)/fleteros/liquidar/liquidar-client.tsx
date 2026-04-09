@@ -176,7 +176,7 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
         metodoPago,
         fechaEmision,
         emisionArca: true,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey: (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`),
       }
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 45000)

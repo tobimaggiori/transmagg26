@@ -443,7 +443,7 @@ function ModalEmitirNotaEmpresa({
           tipoNota,
           fechaEmision,
           items: itemsValidos,
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey: (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`),
         }),
       })
 

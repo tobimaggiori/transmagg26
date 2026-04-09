@@ -224,7 +224,7 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
         fechaEmision,
         ediciones: Object.keys(edicionesAEnviar).length > 0 ? edicionesAEnviar : undefined,
         emisionArca: true,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey: (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`),
       }
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 45000)
