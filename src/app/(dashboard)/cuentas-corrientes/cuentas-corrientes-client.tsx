@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
 import { parsearImporte } from "@/lib/money"
 import { Plus, Printer } from "lucide-react"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 interface FacturaImpaga {
   id: string
@@ -82,7 +83,7 @@ export function CuentasCorrientesClient({
   const [fleteroSeleccionado, setFleteroSeleccionado] = useState<string | null>(null)
   const [modalPagoEmpresa, setModalPagoEmpresa] = useState(false)
   const [modalPagoFletero, setModalPagoFletero] = useState(false)
-  const [formPago, setFormPago] = useState({ monto: "", tipo: "TRANSFERENCIA", referencia: "", fecha: new Date().toISOString().slice(0, 10) })
+  const [formPago, setFormPago] = useState({ monto: "", tipo: "TRANSFERENCIA", referencia: "", fecha: hoyLocalYmd() })
   const [error, setError] = useState("")
   const [guardando, setGuardando] = useState(false)
 
@@ -227,7 +228,7 @@ export function CuentasCorrientesClient({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold">{empresaDetalle.empresa.razonSocial}</h3>
-                  <Button size="sm" onClick={() => { setFormPago({ monto: "", tipo: "TRANSFERENCIA", referencia: "", fecha: new Date().toISOString().slice(0,10) }); setModalPagoEmpresa(true) }}>
+                  <Button size="sm" onClick={() => { setFormPago({ monto: "", tipo: "TRANSFERENCIA", referencia: "", fecha: hoyLocalYmd() }); setModalPagoEmpresa(true) }}>
                     <Plus className="h-4 w-4 mr-1" /> Registrar pago
                   </Button>
                 </div>
@@ -277,7 +278,7 @@ export function CuentasCorrientesClient({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold">{fleteroDetalle.fletero.razonSocial}</h3>
-                  <Button size="sm" onClick={() => { setFormPago({ monto: "", tipo: "TRANSFERENCIA", referencia: "", fecha: new Date().toISOString().slice(0,10) }); setModalPagoFletero(true) }}>
+                  <Button size="sm" onClick={() => { setFormPago({ monto: "", tipo: "TRANSFERENCIA", referencia: "", fecha: hoyLocalYmd() }); setModalPagoFletero(true) }}>
                     <Plus className="h-4 w-4 mr-1" /> Registrar pago
                   </Button>
                 </div>

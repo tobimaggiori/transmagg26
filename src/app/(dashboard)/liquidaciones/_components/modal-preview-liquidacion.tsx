@@ -7,6 +7,7 @@ import type { ProvinciaArgentina } from "@/lib/provincias"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
 import { labelCondicionIva, formatearNroComprobante } from "@/lib/liquidacion-utils"
 import type { FleteroInfo, ViajeParaLiquidar } from "./types"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 export function ModalPreviewLiquidacion({
   fletero,
@@ -31,7 +32,7 @@ export function ModalPreviewLiquidacion({
   const [comisionPct, setComisionPct] = useState(comisionPctInicial)
   const [ivaPct, setIvaPct] = useState(ivaPctInicial)
   const [metodoPago, setMetodoPago] = useState("Transferencia Bancaria")
-  const [fechaEmision, setFechaEmision] = useState(() => new Date().toISOString().slice(0, 10))
+  const [fechaEmision, setFechaEmision] = useState(() => hoyLocalYmd())
 
   function actualizarCelda(id: string, campo: keyof ViajeParaLiquidar, valor: unknown) {
     setViajes((prev) => prev.map((v) => v.id === id ? { ...v, [campo]: valor } : v))
@@ -262,8 +263,8 @@ export function ModalPreviewLiquidacion({
                 type="date"
                 value={fechaEmision}
                 onChange={(e) => setFechaEmision(e.target.value)}
-                max={new Date().toISOString().slice(0, 10)}
-                min={(() => { const d = new Date(); d.setDate(d.getDate() - 10); return d.toISOString().slice(0, 10) })()}
+                max={hoyLocalYmd()}
+                min={hoyLocalYmd(new Date(Date.now() - 10 * 24 * 60 * 60 * 1000))}
                 className="h-8 rounded border bg-background px-2 text-sm"
               />
             </div>

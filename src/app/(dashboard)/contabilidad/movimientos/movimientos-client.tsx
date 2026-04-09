@@ -11,6 +11,7 @@ import { FormError } from "@/components/ui/form-error"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { sumarImportes, parsearImporte } from "@/lib/money"
 import { Download, Plus } from "lucide-react"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 type Cuenta = { id: string; nombre: string }
 
@@ -68,7 +69,7 @@ const FORM_INICIAL = {
   tipo: "INGRESO" as "INGRESO" | "EGRESO",
   categoria: "TRANSFERENCIA_RECIBIDA",
   monto: "",
-  fecha: new Date().toISOString().slice(0, 10),
+  fecha: hoyLocalYmd(),
   descripcion: "",
   referencia: "",
   cuentaDestinoId: "",

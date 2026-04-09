@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { formatearMoneda } from "@/lib/utils"
 import { parsearImporte } from "@/lib/money"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 interface Fletero {
   id: string
@@ -30,7 +31,7 @@ export function IngresarAdelantoClient({ fleteros }: { fleteros: Fletero[] }) {
   const [fleteroId, setFleteroId] = useState("")
   const [tipo, setTipo] = useState("EFECTIVO")
   const [monto, setMonto] = useState("")
-  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10))
+  const [fecha, setFecha] = useState(hoyLocalYmd())
   const [descripcion, setDescripcion] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -66,7 +67,7 @@ export function IngresarAdelantoClient({ fleteros }: { fleteros: Fletero[] }) {
       setFleteroId("")
       setTipo("EFECTIVO")
       setMonto("")
-      setFecha(new Date().toISOString().slice(0, 10))
+      setFecha(hoyLocalYmd())
       setDescripcion("")
     } catch {
       setError("Error de red al registrar el adelanto")

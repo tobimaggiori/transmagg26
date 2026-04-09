@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { Select } from "@/components/ui/select"
 import { sumarImportes, restarImportes, maxMonetario, parsearImporte, formatearMoneda as ars } from "@/lib/money"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 type CuentaBancaria = {
   id: string
@@ -80,7 +81,7 @@ export function RegistrarCobroModal({
   onSuccess,
   onClose,
 }: Props) {
-  const hoy = new Date().toISOString().split("T")[0]
+  const hoy = hoyLocalYmd()
   const [fecha, setFecha] = useState(hoy)
   const [pagos, setPagos] = useState<PagoItem[]>([defaultPago()])
   const [loading, setLoading] = useState(false)

@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 type Empresa = { id: string; razonSocial: string; cuit: string }
 type Movimiento = {
@@ -42,8 +43,8 @@ interface CCEmpresasClientProps {
  * // => buscador de empresas + tabla de movimientos al filtrar
  */
 export function CCEmpresasClient({ empresas }: CCEmpresasClientProps) {
-  const hoy = new Date().toISOString().slice(0, 10)
-  const noventa = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const hoy = hoyLocalYmd()
+  const noventa = hoyLocalYmd(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000))
 
   const [empresaId, setEmpresaId] = useState("")
   const [desde, setDesde] = useState(noventa)

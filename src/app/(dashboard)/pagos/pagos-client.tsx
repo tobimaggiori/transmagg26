@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
 import { parsearImporte, restarImportes } from "@/lib/money"
 import { Plus } from "lucide-react"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 // --- Tipos ---
 
@@ -54,7 +55,7 @@ function TabRecibidosEmpresas() {
   const [busqueda, setBusqueda] = useState("")
   const [seleccionada, setSeleccionada] = useState<string | null>(null)
   const [modalPago, setModalPago] = useState(false)
-  const [formPago, setFormPago] = useState({ monto: "", tipo: "TRANSFERENCIA", referencia: "", fecha: new Date().toISOString().slice(0,10) })
+  const [formPago, setFormPago] = useState({ monto: "", tipo: "TRANSFERENCIA", referencia: "", fecha: hoyLocalYmd() })
   const [error, setError] = useState("")
   const [guardando, setGuardando] = useState(false)
 
@@ -118,7 +119,7 @@ function TabRecibidosEmpresas() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold">{empresaSelec.empresa.razonSocial}</h3>
-              <Button size="sm" onClick={() => { setFormPago({ monto: "", tipo: "TRANSFERENCIA", referencia: "", fecha: new Date().toISOString().slice(0,10) }); setModalPago(true) }}>
+              <Button size="sm" onClick={() => { setFormPago({ monto: "", tipo: "TRANSFERENCIA", referencia: "", fecha: hoyLocalYmd() }); setModalPago(true) }}>
                 <Plus className="h-4 w-4 mr-1" /> Registrar pago
               </Button>
             </div>
@@ -172,7 +173,7 @@ function TabAFleteros() {
   const [busqueda, setBusqueda] = useState("")
   const [seleccionado, setSeleccionado] = useState<string | null>(null)
   const [modalPago, setModalPago] = useState(false)
-  const [formPago, setFormPago] = useState({ monto: "", tipo: "TRANSFERENCIA", referencia: "", fecha: new Date().toISOString().slice(0,10) })
+  const [formPago, setFormPago] = useState({ monto: "", tipo: "TRANSFERENCIA", referencia: "", fecha: hoyLocalYmd() })
   const [error, setError] = useState("")
   const [guardando, setGuardando] = useState(false)
 
@@ -236,7 +237,7 @@ function TabAFleteros() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold">{fleteroSelec.fletero.razonSocial}</h3>
-              <Button size="sm" onClick={() => { setFormPago({ monto: "", tipo: "TRANSFERENCIA", referencia: "", fecha: new Date().toISOString().slice(0,10) }); setModalPago(true) }}>
+              <Button size="sm" onClick={() => { setFormPago({ monto: "", tipo: "TRANSFERENCIA", referencia: "", fecha: hoyLocalYmd() }); setModalPago(true) }}>
                 <Plus className="h-4 w-4 mr-1" /> Registrar pago
               </Button>
             </div>
@@ -329,7 +330,7 @@ function TabAdelantosFleteros() {
   const [loading, setLoading] = useState(true)
   const [modalAbierto, setModalAbierto] = useState(false)
   const [form, setForm] = useState({
-    fleteroId: "", tipo: "TRANSFERENCIA", monto: "", fecha: new Date().toISOString().slice(0,10), descripcion: "",
+    fleteroId: "", tipo: "TRANSFERENCIA", monto: "", fecha: hoyLocalYmd(), descripcion: "",
   })
   const [error, setError] = useState("")
   const [guardando, setGuardando] = useState(false)

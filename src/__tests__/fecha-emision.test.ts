@@ -2,60 +2,140 @@
  * Tests de fechaEmision punta a punta.
  *
  * Cubre:
- * A. Validación: validarFechaEmisionArca (fecha actual, pasada válida, pasada inválida, futura, inválida)
- * B. Persistencia: factura-commands y liquidacion-commands usan fechaEmision cuando se provee
- * C. Propagación ARCA: el servicio recibe la fecha correcta del comprobante
- * D. No regresión estructural: las rutas canónicas existen, las duplicadas no
+ * A. Helpers de fecha local (date-local.ts)
+ * B. Validación: validarFechaEmisionArca (determinístico con fecha fija)
+ * C. Persistencia: factura-commands y liquidacion-commands usan fechaEmision
+ * D. Propagación ARCA: el servicio recibe la fecha correcta del comprobante
+ * E. No regresión estructural: las rutas canónicas existen, las duplicadas no
  */
 
 import { validarFechaEmisionArca } from "@/lib/fecha-emision"
+import {
+  hoyLocalYmd,
+  parsearFechaLocalMediodia,
+  normalizarMediodiaLocal,
+  sumarDiasLocal,
+} from "@/lib/date-local"
 import * as fs from "fs"
 import * as path from "path"
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// A. VALIDACIÓN — validarFechaEmisionArca
+// A. HELPERS DE FECHA LOCAL — date-local.ts
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("hoyLocalYmd", () => {
+  it("devuelve YYYY-MM-DD del Date dado", () => {
+    expect(hoyLocalYmd(new Date(2026, 3, 8))).toBe("2026-04-08")
+  })
+
+  it("padea mes y día a 2 dígitos", () => {
+    expect(hoyLocalYmd(new Date(2026, 0, 1))).toBe("2026-01-01")
+  })
+
+  it("funciona a las 23:59 local sin saltar al día siguiente", () => {
+    expect(hoyLocalYmd(new Date(2026, 3, 8, 23, 59, 59))).toBe("2026-04-08")
+  })
+
+  it("funciona a las 00:00 local sin retroceder al día anterior", () => {
+    expect(hoyLocalYmd(new Date(2026, 3, 8, 0, 0, 0))).toBe("2026-04-08")
+  })
+})
+
+describe("parsearFechaLocalMediodia", () => {
+  it("parsea YYYY-MM-DD a mediodía local", () => {
+    const d = parsearFechaLocalMediodia("2026-04-08")
+    expect(d.getFullYear()).toBe(2026)
+    expect(d.getMonth()).toBe(3)
+    expect(d.getDate()).toBe(8)
+    expect(d.getHours()).toBe(12)
+    expect(d.getMinutes()).toBe(0)
+    expect(d.getSeconds()).toBe(0)
+  })
+
+  it("rechaza formato inválido", () => {
+    expect(() => parsearFechaLocalMediodia("abc")).toThrow("inválido")
+    expect(() => parsearFechaLocalMediodia("2026-4-8")).toThrow("inválido")
+    expect(() => parsearFechaLocalMediodia("08-04-2026")).toThrow("inválido")
+  })
+
+  it("rechaza fecha inexistente", () => {
+    expect(() => parsearFechaLocalMediodia("2026-02-30")).toThrow("inexistente")
+    expect(() => parsearFechaLocalMediodia("2026-13-01")).toThrow("inexistente")
+  })
+})
+
+describe("normalizarMediodiaLocal", () => {
+  it("fija hora a 12:00:00.000 sin cambiar fecha", () => {
+    const d = normalizarMediodiaLocal(new Date(2026, 3, 8, 23, 59, 59, 999))
+    expect(d.getDate()).toBe(8)
+    expect(d.getHours()).toBe(12)
+    expect(d.getMinutes()).toBe(0)
+  })
+
+  it("no muta la fecha original", () => {
+    const original = new Date(2026, 3, 8, 18, 30)
+    normalizarMediodiaLocal(original)
+    expect(original.getHours()).toBe(18)
+  })
+})
+
+describe("sumarDiasLocal", () => {
+  it("suma días positivos", () => {
+    const d = sumarDiasLocal(new Date(2026, 3, 8, 12), 5)
+    expect(d.getDate()).toBe(13)
+    expect(d.getHours()).toBe(12)
+  })
+
+  it("resta días negativos", () => {
+    const d = sumarDiasLocal(new Date(2026, 3, 8, 12), -10)
+    expect(d.getMonth()).toBe(2) // marzo
+    expect(d.getDate()).toBe(29)
+  })
+
+  it("cruza mes correctamente", () => {
+    const d = sumarDiasLocal(new Date(2026, 0, 31, 12), 1)
+    expect(d.getMonth()).toBe(1) // febrero
+    expect(d.getDate()).toBe(1)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// B. VALIDACIÓN — validarFechaEmisionArca (determinístico con fecha fija)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe("validarFechaEmisionArca", () => {
+  // Fecha de referencia fija: 8 de abril 2026 a las 15:30 local
+  const AHORA = new Date(2026, 3, 8, 15, 30, 0)
+
   it("acepta la fecha de hoy", () => {
-    const hoy = new Date().toISOString().slice(0, 10)
-    const r = validarFechaEmisionArca(hoy)
+    const r = validarFechaEmisionArca("2026-04-08", AHORA)
     expect(r.ok).toBe(true)
     if (r.ok) {
       expect(r.fecha).toBeInstanceOf(Date)
-      // La fecha debe tener hora 12:00 para evitar timezone issues
       expect(r.fecha.getHours()).toBe(12)
     }
   })
 
-  it("acepta fecha de ayer (pasada válida dentro de ventana ARCA)", () => {
-    const ayer = new Date()
-    ayer.setDate(ayer.getDate() - 1)
-    const r = validarFechaEmisionArca(ayer.toISOString().slice(0, 10))
+  it("acepta fecha de ayer", () => {
+    const r = validarFechaEmisionArca("2026-04-07", AHORA)
     expect(r.ok).toBe(true)
   })
 
   it("acepta fecha de hace 10 días (límite ventana ARCA)", () => {
-    const hace10 = new Date()
-    hace10.setDate(hace10.getDate() - 10)
-    const r = validarFechaEmisionArca(hace10.toISOString().slice(0, 10))
+    const r = validarFechaEmisionArca("2026-03-29", AHORA)
     expect(r.ok).toBe(true)
   })
 
   it("rechaza fecha de hace 11 días (fuera de ventana ARCA)", () => {
-    const hace11 = new Date()
-    hace11.setDate(hace11.getDate() - 11)
-    const r = validarFechaEmisionArca(hace11.toISOString().slice(0, 10))
+    const r = validarFechaEmisionArca("2026-03-28", AHORA)
     expect(r.ok).toBe(false)
     if (!r.ok) {
       expect(r.error).toContain("anterior a 10 días")
     }
   })
 
-  it("rechaza fecha futura", () => {
-    const manana = new Date()
-    manana.setDate(manana.getDate() + 1)
-    const r = validarFechaEmisionArca(manana.toISOString().slice(0, 10))
+  it("rechaza fecha futura (mañana)", () => {
+    const r = validarFechaEmisionArca("2026-04-09", AHORA)
     expect(r.ok).toBe(false)
     if (!r.ok) {
       expect(r.error).toContain("futura")
@@ -63,16 +143,15 @@ describe("validarFechaEmisionArca", () => {
   })
 
   it("rechaza fecha inválida", () => {
-    const r = validarFechaEmisionArca("no-es-una-fecha")
+    const r = validarFechaEmisionArca("no-es-una-fecha", AHORA)
     expect(r.ok).toBe(false)
     if (!r.ok) {
       expect(r.error).toContain("inválida")
     }
   })
 
-  it("normaliza a mediodía (timezone-safe)", () => {
-    const hoy = new Date().toISOString().slice(0, 10)
-    const r = validarFechaEmisionArca(hoy)
+  it("normaliza a mediodía local exacto", () => {
+    const r = validarFechaEmisionArca("2026-04-08", AHORA)
     expect(r.ok).toBe(true)
     if (r.ok) {
       expect(r.fecha.getHours()).toBe(12)
@@ -80,10 +159,17 @@ describe("validarFechaEmisionArca", () => {
       expect(r.fecha.getSeconds()).toBe(0)
     }
   })
+
+  it("funciona sin parámetro ahora (usa reloj real, no lanza error)", () => {
+    // Solo verificamos que no lanza — no asumimos qué fecha es "hoy"
+    const hoy = hoyLocalYmd()
+    const r = validarFechaEmisionArca(hoy)
+    expect(r.ok).toBe(true)
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// B. PERSISTENCIA — DatosCrearFactura y DatosCrearLiquidacion incluyen fechaEmision
+// C. PERSISTENCIA — DatosCrearFactura y DatosCrearLiquidacion incluyen fechaEmision
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe("Tipo DatosCrearFactura acepta fechaEmision", () => {
@@ -106,13 +192,11 @@ describe("Tipo DatosCrearFactura acepta fechaEmision", () => {
 
 describe("fechaEmision se convierte a Date con hora 12:00 en persistencia", () => {
   it("factura: fechaEmision '2026-04-05' → emitidaEn con T12:00:00", () => {
-    // Verificamos la lógica de conversión que usan los commands
-    const fechaStr = "2026-04-05"
-    const resultado = new Date(fechaStr + "T12:00:00")
-    expect(resultado.getFullYear()).toBe(2026)
-    expect(resultado.getMonth()).toBe(3) // abril = 3
-    expect(resultado.getDate()).toBe(5)
-    expect(resultado.getHours()).toBe(12)
+    const fecha = parsearFechaLocalMediodia("2026-04-05")
+    expect(fecha.getFullYear()).toBe(2026)
+    expect(fecha.getMonth()).toBe(3) // abril = 3
+    expect(fecha.getDate()).toBe(5)
+    expect(fecha.getHours()).toBe(12)
   })
 
   it("liquidación: sin fechaEmision → usa new Date() (fecha actual)", () => {
@@ -125,7 +209,7 @@ describe("fechaEmision se convierte a Date con hora 12:00 en persistencia", () =
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// C. API — Schema Zod acepta fechaEmision
+// D. API — Schema Zod acepta fechaEmision
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe("Schema Zod de facturas valida fechaEmision", () => {
@@ -143,7 +227,7 @@ describe("Schema Zod de facturas valida fechaEmision", () => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// D. NO REGRESIÓN ESTRUCTURAL — rutas canónicas existen, duplicadas eliminadas
+// E. NO REGRESIÓN ESTRUCTURAL — rutas canónicas existen, duplicadas eliminadas
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe("Rutas canónicas de facturas", () => {
@@ -184,6 +268,14 @@ describe("Rutas canónicas de facturas", () => {
     )
     expect(content).toContain("metodoPago")
     expect(content).toContain("setMetodoPago")
+  })
+
+  it("facturar-client.tsx NO usa toISOString().slice para inputs date", () => {
+    const content = fs.readFileSync(
+      path.join(basePath, "empresas/facturar/facturar-client.tsx"),
+      "utf-8"
+    )
+    expect(content).not.toMatch(/toISOString\(\)\.slice\(0,\s*10\)/)
   })
 })
 
@@ -244,7 +336,7 @@ describe("Rutas canónicas de liquidaciones", () => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// E. CADENA COMPLETA — fechaEmision fluye desde frontend payload hasta ARCA
+// F. CADENA COMPLETA — fechaEmision fluye desde frontend payload hasta ARCA
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe("Cadena fechaEmision: API route → commands → persistencia → ARCA", () => {

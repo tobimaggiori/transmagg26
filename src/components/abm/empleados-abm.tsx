@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dialog"
 import { formatearCuit, formatearFecha } from "@/lib/utils"
 import { Plus, Pencil, Search } from "lucide-react"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 export interface EmpleadoAbm {
   id: string
@@ -64,7 +65,7 @@ function EmpleadoFormModal({ empleado, onSuccess }: { empleado?: EmpleadoAbm; on
     apellido: empleado?.apellido ?? "",
     cuit: empleado?.cuit ?? "",
     cargo: empleado?.cargo ?? "",
-    fechaIngreso: empleado?.fechaIngreso ? new Date(empleado.fechaIngreso).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+    fechaIngreso: empleado?.fechaIngreso ? hoyLocalYmd(new Date(empleado.fechaIngreso)) : hoyLocalYmd(),
     activo: empleado?.activo ?? true,
   })
   const [loading, setLoading] = useState(false)

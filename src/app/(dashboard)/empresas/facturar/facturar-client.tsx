@@ -12,6 +12,7 @@ import { calcularTotalViaje, calcularFactura } from "@/lib/viajes"
 import { facturasEmpresaDisponibles } from "@/lib/arca/catalogo"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { CeldaEditable } from "@/components/ui/celda-editable"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 // ---- Tipos ----
 
@@ -84,7 +85,7 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
   const [modalidadMiPymes, setModalidadMiPymes] = useState<"SCA" | "ADC" | null>(null)
   const [ivaPct, setIvaPct] = useState<number>(21)
   const [metodoPago, setMetodoPago] = useState<string>("Transferencia Bancaria")
-  const [fechaEmision, setFechaEmision] = useState(() => new Date().toISOString().slice(0, 10))
+  const [fechaEmision, setFechaEmision] = useState(() => hoyLocalYmd())
   const [cargando, setCargando] = useState(false)
   const [generando, setGenerando] = useState(false)
   const [errorGen, setErrorGen] = useState<string | null>(null)
@@ -287,7 +288,7 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
     setModalidadMiPymes(null)
     setIvaPct(21)
     setMetodoPago("Transferencia Bancaria")
-    setFechaEmision(new Date().toISOString().slice(0, 10))
+    setFechaEmision(hoyLocalYmd())
     setErrorGen(null)
     setReintentableInfo(null)
   }
@@ -723,8 +724,8 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
                     type="date"
                     value={fechaEmision}
                     onChange={(e) => setFechaEmision(e.target.value)}
-                    max={new Date().toISOString().slice(0, 10)}
-                    min={(() => { const d = new Date(); d.setDate(d.getDate() - 10); return d.toISOString().slice(0, 10) })()}
+                    max={hoyLocalYmd()}
+                    min={hoyLocalYmd(new Date(Date.now() - 10 * 24 * 60 * 60 * 1000))}
                     className="h-8 rounded border bg-background px-2 text-sm"
                   />
                   <p className="text-xs text-muted-foreground mt-1">ARCA permite hasta 10 días atrás</p>

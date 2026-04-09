@@ -14,6 +14,7 @@ import { Select } from "@/components/ui/select"
 import { FormError } from "@/components/ui/form-error"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { parsearImporte } from "@/lib/money"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 interface Fletero { id: string; razonSocial: string; cuit: string }
 interface Camion { id: string; patenteChasis: string; fleteroId: string }
@@ -60,7 +61,7 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
   const [camionId, setCamionId] = useState("")
   const [choferId, setChoferId] = useState("")
   const [empresaId, setEmpresaId] = useState("")
-  const [fechaViaje, setFechaViaje] = useState(new Date().toISOString().slice(0, 10))
+  const [fechaViaje, setFechaViaje] = useState(hoyLocalYmd())
   const [remito, setRemito] = useState("")
   const [cupo, setCupo] = useState("")
   const [mercaderia, setMercaderia] = useState("")

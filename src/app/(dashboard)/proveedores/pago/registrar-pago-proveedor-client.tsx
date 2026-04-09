@@ -17,6 +17,7 @@ import { UploadPDF } from "@/components/upload-pdf"
 import { ViewPDF } from "@/components/view-pdf"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { parsearImporte } from "@/lib/money"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 // --- Tipos ---
 
@@ -82,7 +83,7 @@ export function RegistrarPagoProveedorClient({
   const [cargandoFacturas, setCargandoFacturas] = useState(false)
   const [facturaSeleccionada, setFacturaSeleccionada] = useState<FacturaPendiente | null>(null)
   // Paso 3: formulario de pago
-  const [fechaPago, setFechaPago] = useState(new Date().toISOString().slice(0, 10))
+  const [fechaPago, setFechaPago] = useState(hoyLocalYmd())
   const [monto, setMonto] = useState("")
   const [tipoPago, setTipoPago] = useState("TRANSFERENCIA")
   const [observaciones, setObservaciones] = useState("")
@@ -90,7 +91,7 @@ export function RegistrarPagoProveedorClient({
   const [chequeRecibidoId, setChequeRecibidoId] = useState("")
   const [comprobantePdfS3Key, setComprobantePdfS3Key] = useState("")
   const [chequeNro, setChequeNro] = useState("")
-  const [chequeFechaEmision, setChequeFechaEmision] = useState(new Date().toISOString().slice(0, 10))
+  const [chequeFechaEmision, setChequeFechaEmision] = useState(hoyLocalYmd())
   const [chequeFechaPago, setChequeFechaPago] = useState("")
   const [chequeClausula, setChequeClausula] = useState("NO_A_LA_ORDEN")
   // Estado de envío
@@ -150,7 +151,7 @@ export function RegistrarPagoProveedorClient({
     setChequeRecibidoId("")
     setComprobantePdfS3Key("")
     setChequeNro("")
-    setChequeFechaEmision(new Date().toISOString().slice(0, 10))
+    setChequeFechaEmision(hoyLocalYmd())
     setChequeFechaPago("")
     setChequeClausula("NO_A_LA_ORDEN")
     setError("")

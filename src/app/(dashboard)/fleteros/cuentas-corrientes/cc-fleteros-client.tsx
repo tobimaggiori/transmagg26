@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
 import { ExternalLink } from "lucide-react"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 // --- Tipos ---
 
@@ -85,8 +86,8 @@ function formatLP(ptoVenta: number | null, nro: number | null): string {
 // --- Componente principal ---
 
 export function CCFleterosClient({ fleteros }: CCFleterosClientProps) {
-  const hoy = new Date().toISOString().slice(0, 10)
-  const inicioAnio = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10)
+  const hoy = hoyLocalYmd()
+  const inicioAnio = hoyLocalYmd(new Date(new Date().getFullYear(), 0, 1))
 
   const [fleteroId, setFleteroId] = useState("")
   const [estadoFiltro, setEstadoFiltro] = useState("")

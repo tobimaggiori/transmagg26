@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { formatearMoneda } from "@/lib/utils"
 import { sumarImportes, parsearImporte } from "@/lib/money"
 import { Plus, RefreshCw } from "lucide-react"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 // --- Tipos ---
 
@@ -81,7 +82,7 @@ export function BrokersClient() {
   // Modal actualizar saldo FCI
   const [modalSaldo, setModalSaldo] = useState(false)
   const [fciParaSaldo, setFciParaSaldo] = useState<FciItem | null>(null)
-  const [formSaldo, setFormSaldo] = useState({ saldoNuevo: "", fechaConsulta: new Date().toISOString().slice(0, 10) })
+  const [formSaldo, setFormSaldo] = useState({ saldoNuevo: "", fechaConsulta: hoyLocalYmd() })
   const [guardandoSaldo, setGuardandoSaldo] = useState(false)
   const [errorSaldo, setErrorSaldo] = useState("")
 
@@ -95,35 +96,35 @@ export function BrokersClient() {
   // Modal confirmar depósito
   const [modalConfirmarDeposito, setModalConfirmarDeposito] = useState(false)
   const [chequeParaConfirmar, setChequeParaConfirmar] = useState<ChequeCartera | null>(null)
-  const [fechaDeposito, setFechaDeposito] = useState(new Date().toISOString().slice(0, 10))
+  const [fechaDeposito, setFechaDeposito] = useState(hoyLocalYmd())
   const [guardandoDeposito, setGuardandoDeposito] = useState(false)
   const [errorDeposito, setErrorDeposito] = useState("")
 
   // Modal rescate (Forma A — transferencia)
   const [modalRescate, setModalRescate] = useState(false)
   const [brokerParaRescate, setBrokerParaRescate] = useState<Cuenta | null>(null)
-  const [formRescate, setFormRescate] = useState({ cuentaDestinoId: "", monto: "", fecha: new Date().toISOString().slice(0, 10), referencia: "" })
+  const [formRescate, setFormRescate] = useState({ cuentaDestinoId: "", monto: "", fecha: hoyLocalYmd(), referencia: "" })
   const [guardandoRescate, setGuardandoRescate] = useState(false)
   const [errorRescate, setErrorRescate] = useState("")
 
   // Modal cheque de broker (Forma B)
   const [modalChequeBroker, setModalChequeBroker] = useState(false)
   const [brokerParaChequeBroker, setBrokerParaChequeBroker] = useState<Cuenta | null>(null)
-  const [formChequeBroker, setFormChequeBroker] = useState({ nroCheque: "", bancoEmisor: "", monto: "", fechaEmision: new Date().toISOString().slice(0, 10), fechaCobro: "" })
+  const [formChequeBroker, setFormChequeBroker] = useState({ nroCheque: "", bancoEmisor: "", monto: "", fechaEmision: hoyLocalYmd(), fechaCobro: "" })
   const [guardandoChequeBroker, setGuardandoChequeBroker] = useState(false)
   const [errorChequeBroker, setErrorChequeBroker] = useState("")
 
   // Modal suscripción FCI
   const [modalSuscripcion, setModalSuscripcion] = useState(false)
   const [fciParaSuscripcion, setFciParaSuscripcion] = useState<FciItem | null>(null)
-  const [formSuscripcion, setFormSuscripcion] = useState({ cuentaId: "", monto: "", fecha: new Date().toISOString().slice(0, 10) })
+  const [formSuscripcion, setFormSuscripcion] = useState({ cuentaId: "", monto: "", fecha: hoyLocalYmd() })
   const [guardandoSuscripcion, setGuardandoSuscripcion] = useState(false)
   const [errorSuscripcion, setErrorSuscripcion] = useState("")
 
   // Modal rescate FCI
   const [modalRescateFci, setModalRescateFci] = useState(false)
   const [fciParaRescate, setFciParaRescate] = useState<FciItem | null>(null)
-  const [formRescateFci, setFormRescateFci] = useState({ cuentaId: "", monto: "", fecha: new Date().toISOString().slice(0, 10) })
+  const [formRescateFci, setFormRescateFci] = useState({ cuentaId: "", monto: "", fecha: hoyLocalYmd() })
   const [guardandoRescateFci, setGuardandoRescateFci] = useState(false)
   const [errorRescateFci, setErrorRescateFci] = useState("")
 
@@ -242,7 +243,7 @@ export function BrokersClient() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             saldoNuevo: saldoInicial,
-            fechaConsulta: new Date().toISOString().slice(0, 10),
+            fechaConsulta: hoyLocalYmd(),
           }),
         })
       }
@@ -256,7 +257,7 @@ export function BrokersClient() {
   // --- Actualizar saldo FCI ---
   function abrirModalSaldo(fci: FciItem) {
     setFciParaSaldo(fci)
-    setFormSaldo({ saldoNuevo: "", fechaConsulta: new Date().toISOString().slice(0, 10) })
+    setFormSaldo({ saldoNuevo: "", fechaConsulta: hoyLocalYmd() })
     setErrorSaldo("")
     setModalSaldo(true)
   }
@@ -322,7 +323,7 @@ export function BrokersClient() {
   // --- Confirmar depósito ---
   function abrirModalConfirmarDeposito(cheque: ChequeCartera) {
     setChequeParaConfirmar(cheque)
-    setFechaDeposito(new Date().toISOString().slice(0, 10))
+    setFechaDeposito(hoyLocalYmd())
     setErrorDeposito("")
     setModalConfirmarDeposito(true)
   }
@@ -353,7 +354,7 @@ export function BrokersClient() {
   // --- Rescate por transferencia (Forma A) ---
   function abrirModalRescate(broker: Cuenta) {
     setBrokerParaRescate(broker)
-    setFormRescate({ cuentaDestinoId: cuentasBanco[0]?.id ?? "", monto: "", fecha: new Date().toISOString().slice(0, 10), referencia: "" })
+    setFormRescate({ cuentaDestinoId: cuentasBanco[0]?.id ?? "", monto: "", fecha: hoyLocalYmd(), referencia: "" })
     setErrorRescate("")
     setModalRescate(true)
   }
@@ -392,7 +393,7 @@ export function BrokersClient() {
   // --- Cheque emitido por broker (Forma B) ---
   function abrirModalChequeBroker(broker: Cuenta) {
     setBrokerParaChequeBroker(broker)
-    setFormChequeBroker({ nroCheque: "", bancoEmisor: "", monto: "", fechaEmision: new Date().toISOString().slice(0, 10), fechaCobro: "" })
+    setFormChequeBroker({ nroCheque: "", bancoEmisor: "", monto: "", fechaEmision: hoyLocalYmd(), fechaCobro: "" })
     setErrorChequeBroker("")
     setModalChequeBroker(true)
   }
@@ -433,7 +434,7 @@ export function BrokersClient() {
   // --- Suscripción FCI ---
   function abrirModalSuscripcion(fci: FciItem) {
     setFciParaSuscripcion(fci)
-    setFormSuscripcion({ cuentaId: cuentasBanco[0]?.id ?? "", monto: "", fecha: new Date().toISOString().slice(0, 10) })
+    setFormSuscripcion({ cuentaId: cuentasBanco[0]?.id ?? "", monto: "", fecha: hoyLocalYmd() })
     setErrorSuscripcion("")
     setModalSuscripcion(true)
   }
@@ -467,7 +468,7 @@ export function BrokersClient() {
   // --- Rescate FCI ---
   function abrirModalRescateFci(fci: FciItem) {
     setFciParaRescate(fci)
-    setFormRescateFci({ cuentaId: cuentasBanco[0]?.id ?? "", monto: "", fecha: new Date().toISOString().slice(0, 10) })
+    setFormRescateFci({ cuentaId: cuentasBanco[0]?.id ?? "", monto: "", fecha: hoyLocalYmd() })
     setErrorRescateFci("")
     setModalRescateFci(true)
   }

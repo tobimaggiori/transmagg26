@@ -9,6 +9,7 @@ import { SearchCombobox } from "@/components/ui/search-combobox"
 import { CiudadArgentinaInput } from "@/components/ui/ciudad-argentina-input"
 import { UploadPDF } from "@/components/upload-pdf"
 import type { ViajeAPI, Fletero, Empresa, Camion, Chofer } from "./types"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 /**
  * ModalViaje: props -> JSX.Element
@@ -46,7 +47,7 @@ export function ModalViaje({
   const [choferId, setChoferId] = useState(viaje?.choferId ?? "")
   const [empresaId, setEmpresaId] = useState(viaje?.empresaId ?? "")
   const [fechaViaje, setFechaViaje] = useState(
-    viaje ? viaje.fechaViaje.slice(0, 10) : new Date().toISOString().slice(0, 10)
+    viaje ? viaje.fechaViaje.slice(0, 10) : hoyLocalYmd()
   )
   const [remito, setRemito] = useState(viaje?.remito ?? "")
   const [tieneCupo, setTieneCupo] = useState(viaje?.tieneCupo ?? false)

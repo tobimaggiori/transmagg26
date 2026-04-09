@@ -12,6 +12,7 @@ import Link from "next/link"
 import { Truck, User, UserX, Plus, Pencil, Trash2, ShieldAlert, ShieldCheck, ShieldX, X } from "lucide-react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { parsearImporte } from "@/lib/money"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -120,7 +121,7 @@ function fmt(iso: string) {
 }
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10)
+  return hoyLocalYmd()
 }
 
 // ── Modales ───────────────────────────────────────────────────────────────────

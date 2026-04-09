@@ -10,6 +10,7 @@ import { UploadPDF } from "@/components/upload-pdf"
 import { formatearFecha } from "@/lib/utils"
 import { parsearImporte, multiplicarImporte, calcularIva, sumarImportes, restarImportes, maxMonetario, formatearMoneda } from "@/lib/money"
 import { Plus, Trash2 } from "lucide-react"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 type Proveedor = { id: string; razonSocial: string; cuit: string }
 type Cuenta = { id: string; nombre: string; tipo: string; tieneChequera: boolean }
@@ -124,7 +125,7 @@ function calcularItem(item: ItemForm, discriminaIVA: boolean) {
   return { subtotalNeto, montoIva, subtotalTotal: sumarImportes([subtotalNeto, montoIva]), esExento, alicuota }
 }
 
-const todayStr = () => new Date().toISOString().slice(0, 10)
+const todayStr = () => hoyLocalYmd()
 
 /**
  * FacturaProveedorIngresoClient: FacturaProveedorIngresoClientProps -> JSX.Element

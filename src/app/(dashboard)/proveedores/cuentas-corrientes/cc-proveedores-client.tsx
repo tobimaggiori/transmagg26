@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 type Proveedor = { id: string; razonSocial: string; cuit: string }
 type Movimiento = {
@@ -46,8 +47,8 @@ interface CCProveedoresClientProps {
  * // => buscador de proveedores + tabla de movimientos al filtrar
  */
 export function CCProveedoresClient({ proveedores }: CCProveedoresClientProps) {
-  const hoy = new Date().toISOString().slice(0, 10)
-  const noventa = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const hoy = hoyLocalYmd()
+  const noventa = hoyLocalYmd(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000))
 
   const [proveedorId, setProveedorId] = useState("")
   const [desde, setDesde] = useState(noventa)

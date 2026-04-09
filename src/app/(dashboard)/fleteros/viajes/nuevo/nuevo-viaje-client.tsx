@@ -10,6 +10,7 @@ import { calcularToneladas, calcularTotalViaje } from "@/lib/viajes"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 import { UploadPDF } from "@/components/upload-pdf"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 type Fletero = { id: string; razonSocial: string; cuit: string; comisionDefault: number }
 type Empresa = { id: string; razonSocial: string; cuit: string }
@@ -91,7 +92,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const [camionId, setCamionId] = useState("")
   const [choferId, setChoferId] = useState("")
   const [empresaId, setEmpresaId] = useState("")
-  const [fechaViaje, setFechaViaje] = useState(new Date().toISOString().slice(0, 10))
+  const [fechaViaje, setFechaViaje] = useState(hoyLocalYmd())
   const [remito, setRemito] = useState("")
   const [cupo, setCupo] = useState("")
   const [mercaderia, setMercaderia] = useState("")
@@ -209,7 +210,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const labelCls = "text-[15px] font-medium text-foreground block mb-1"
   const inputCls = "w-full h-10 rounded-lg border border-input bg-background px-3 text-base focus:border-ring focus:ring-2 focus:ring-ring/20 transition-colors outline-none"
 
-  const hoy = new Date().toISOString().slice(0, 10)
+  const hoy = hoyLocalYmd()
 
   if (viajeCreado) {
     return (

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
 import { sumarImportes, parsearImporte } from "@/lib/money"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 type FacturaImpaga = {
   id: string
@@ -54,7 +55,7 @@ export function ProveedoresCCClient({ saldos: saldosIniciales }: ProveedoresCCCl
   const [monto, setMonto] = useState("")
   const [tipo, setTipo] = useState<string>("TRANSFERENCIA")
   const [referencia, setReferencia] = useState("")
-  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10))
+  const [fecha, setFecha] = useState(hoyLocalYmd())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 

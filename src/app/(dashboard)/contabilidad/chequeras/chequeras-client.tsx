@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { formatearFecha } from "@/lib/utils"
 import { aplicarPorcentaje, restarImportes, parsearImporte, sumarImportes, formatearMoneda } from "@/lib/money"
 import { Plus, AlertTriangle, Clock, ChevronDown, Info } from "lucide-react"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 // --- Tipos ---
 
@@ -82,7 +83,7 @@ type AccionEmitido =
 
 // --- Helpers ---
 
-const hoy = () => new Date().toISOString().slice(0, 10)
+const hoy = () => hoyLocalYmd()
 
 function diasHasta(fechaStr: string): number {
   const ahora = new Date(); ahora.setHours(0, 0, 0, 0)

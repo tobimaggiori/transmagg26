@@ -14,6 +14,7 @@ import { Select } from "@/components/ui/select"
 import { UploadPDF } from "@/components/upload-pdf"
 import { formatearFecha } from "@/lib/utils"
 import { sumarImportes, restarImportes, maxMonetario, parsearImporte, importesIguales, formatearMoneda } from "@/lib/money"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -122,7 +123,7 @@ function nroLP(ptoVenta: number | null, nro: number | null): string {
 }
 
 function defaultDraft(tipo: PagoItem["tipoPago"]): PagoItem {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = hoyLocalYmd()
   if (tipo === "TRANSFERENCIA") return { tipoPago: "TRANSFERENCIA", monto: "", cuentaBancariaId: "", referencia: "" }
   if (tipo === "CHEQUE_PROPIO") return {
     tipoPago: "CHEQUE_PROPIO", monto: "", cuentaId: "", nroCheque: "",
@@ -272,7 +273,7 @@ export function RegistrarPagoFleteroModal({
     setError(null)
     setLoading(true)
     try {
-      const today = new Date().toISOString().split("T")[0]
+      const today = hoyLocalYmd()
       const gastosPayload = gastosPendientes
         .filter((g) => gastosSeleccionados[g.id])
         .map((g) => ({ gastoId: g.id, montoDescontar: parsearImporte(gastosMontos[g.id] ?? "0") }))
@@ -347,7 +348,7 @@ export function RegistrarPagoFleteroModal({
     return (
       <PreviewOrdenPago
         nro={proximoNro}
-        fecha={new Date().toISOString().slice(0, 10)}
+        fecha={hoyLocalYmd()}
         fletero={fletero}
         liquidaciones={liquidaciones}
         pagos={pagos}

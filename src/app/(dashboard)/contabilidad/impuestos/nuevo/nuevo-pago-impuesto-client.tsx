@@ -10,6 +10,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { parsearImporte } from "@/lib/money"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 interface Cuenta {
   id: string
@@ -57,7 +58,7 @@ function getAnios(): number[] {
 }
 
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10)
+  return hoyLocalYmd()
 }
 
 const COMPROBANTE_PREFIX = "comprobantes-impuestos"

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { formatearMoneda } from "@/lib/utils"
 import { sumarImportes } from "@/lib/money"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 interface Tarjeta {
   id: string
@@ -67,7 +68,7 @@ export function ResumenTarjetasClient({ tarjetas, cuentas }: Props) {
   const [modalOpen, setModalOpen] = useState(false)
   const [modalTarjetaId, setModalTarjetaId] = useState("")
   const [cuentaPagoId, setCuentaPagoId] = useState("")
-  const [fechaPago, setFechaPago] = useState(today.toISOString().split("T")[0])
+  const [fechaPago, setFechaPago] = useState(hoyLocalYmd())
   const [pagoLoading, setPagoLoading] = useState(false)
   const [pagoError, setPagoError] = useState<string | null>(null)
 
@@ -201,7 +202,7 @@ export function ResumenTarjetasClient({ tarjetas, cuentas }: Props) {
                     setModalTarjetaId(tarjeta.id)
                     setPagoError(null)
                     setCuentaPagoId("")
-                    setFechaPago(today.toISOString().split("T")[0])
+                    setFechaPago(hoyLocalYmd())
                     setModalOpen(true)
                   }}
                 >

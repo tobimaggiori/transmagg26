@@ -21,6 +21,7 @@ import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { parsearImporte } from "@/lib/money"
 import { Plus, RefreshCw, Download, Trash2, Pencil } from "lucide-react"
 import { diasHabilesDesde } from "@/lib/financial"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 // --- Tipos ---
 
@@ -153,7 +154,7 @@ function TabMovimientos({ cuenta, esAdmin }: { cuenta: Cuenta; esAdmin: boolean 
 
   const [modalNuevo, setModalNuevo] = useState(false)
   const [form, setForm] = useState({
-    tipo: "INGRESO", categoria: "OTRO", monto: "", fecha: new Date().toISOString().slice(0, 10),
+    tipo: "INGRESO", categoria: "OTRO", monto: "", fecha: hoyLocalYmd(),
     descripcion: "", referencia: "",
   })
   const [guardando, setGuardando] = useState(false)
@@ -216,7 +217,7 @@ function TabMovimientos({ cuenta, esAdmin }: { cuenta: Cuenta; esAdmin: boolean 
     setGuardando(false)
     if (res.ok) {
       setModalNuevo(false)
-      setForm({ tipo: "INGRESO", categoria: "OTRO", monto: "", fecha: new Date().toISOString().slice(0, 10), descripcion: "", referencia: "" })
+      setForm({ tipo: "INGRESO", categoria: "OTRO", monto: "", fecha: hoyLocalYmd(), descripcion: "", referencia: "" })
       cargar(1)
     } else {
       const d = await res.json()
@@ -568,7 +569,7 @@ function TabBrokerPendiente({ cuenta }: { cuenta: Cuenta }) {
   const [loading, setLoading] = useState(true)
   const [modalConfirmar, setModalConfirmar] = useState(false)
   const [chequeSeleccionado, setChequeSeleccionado] = useState<ChequeRecibidoBroker | null>(null)
-  const [fechaDeposito, setFechaDeposito] = useState(new Date().toISOString().slice(0, 10))
+  const [fechaDeposito, setFechaDeposito] = useState(hoyLocalYmd())
   const [error, setError] = useState("")
   const [guardando, setGuardando] = useState(false)
 
@@ -656,7 +657,7 @@ function TabBrokerPendiente({ cuenta }: { cuenta: Cuenta }) {
                         className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded hover:bg-blue-100"
                         onClick={() => {
                           setChequeSeleccionado(c)
-                          setFechaDeposito(new Date().toISOString().slice(0, 10))
+                          setFechaDeposito(hoyLocalYmd())
                           setError("")
                           setModalConfirmar(true)
                         }}
@@ -756,8 +757,8 @@ function TabFCI({ cuenta }: { cuenta: Cuenta }) {
   const [loading, setLoading] = useState(true)
   const [modalSaldo, setModalSaldo] = useState<string | null>(null)
   const [modalMovFci, setModalMovFci] = useState<{ fciId: string; tipo: "SUSCRIPCION" | "RESCATE" } | null>(null)
-  const [formSaldo, setFormSaldo] = useState({ saldoInformado: "", fechaActualizacion: new Date().toISOString().slice(0,10) })
-  const [formMov, setFormMov] = useState({ monto: "", fecha: new Date().toISOString().slice(0,10), descripcion: "" })
+  const [formSaldo, setFormSaldo] = useState({ saldoInformado: "", fechaActualizacion: hoyLocalYmd() })
+  const [formMov, setFormMov] = useState({ monto: "", fecha: hoyLocalYmd(), descripcion: "" })
   const [error, setError] = useState("")
   const [guardando, setGuardando] = useState(false)
 
@@ -829,11 +830,11 @@ function TabFCI({ cuenta }: { cuenta: Cuenta }) {
               </div>
             </div>
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => { setFormSaldo({ saldoInformado: "", fechaActualizacion: new Date().toISOString().slice(0,10) }); setModalSaldo(fci.id) }}>
+              <Button size="sm" variant="outline" onClick={() => { setFormSaldo({ saldoInformado: "", fechaActualizacion: hoyLocalYmd() }); setModalSaldo(fci.id) }}>
                 <RefreshCw className="h-3 w-3 mr-1" /> Actualizar saldo
               </Button>
-              <Button size="sm" variant="outline" onClick={() => { setFormMov({ monto: "", fecha: new Date().toISOString().slice(0,10), descripcion: "" }); setModalMovFci({ fciId: fci.id, tipo: "SUSCRIPCION" }) }}>Suscripción</Button>
-              <Button size="sm" variant="outline" onClick={() => { setFormMov({ monto: "", fecha: new Date().toISOString().slice(0,10), descripcion: "" }); setModalMovFci({ fciId: fci.id, tipo: "RESCATE" }) }}>Rescate</Button>
+              <Button size="sm" variant="outline" onClick={() => { setFormMov({ monto: "", fecha: hoyLocalYmd(), descripcion: "" }); setModalMovFci({ fciId: fci.id, tipo: "SUSCRIPCION" }) }}>Suscripción</Button>
+              <Button size="sm" variant="outline" onClick={() => { setFormMov({ monto: "", fecha: hoyLocalYmd(), descripcion: "" }); setModalMovFci({ fciId: fci.id, tipo: "RESCATE" }) }}>Rescate</Button>
             </div>
           </div>
         )

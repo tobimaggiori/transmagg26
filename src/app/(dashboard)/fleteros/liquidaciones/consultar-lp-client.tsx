@@ -16,6 +16,7 @@ import { usePDFViewer } from "@/hooks/use-pdf-viewer"
 import { Check, ChevronsUpDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Rol } from "@/types"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -318,8 +319,8 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
 
   // Filtros con defaults
   const [filtroEstado, setFiltroEstado] = useState<string>("EMITIDO")
-  const [filtroDesde, setFiltroDesde] = useState<string>(hace30.toISOString().slice(0, 10))
-  const [filtroHasta, setFiltroHasta] = useState<string>(hoy.toISOString().slice(0, 10))
+  const [filtroDesde, setFiltroDesde] = useState<string>(hoyLocalYmd(hace30))
+  const [filtroHasta, setFiltroHasta] = useState<string>(hoyLocalYmd(hoy))
   const [filtroNroLP, setFiltroNroLP] = useState<string>("")
 
   const fleteroSeleccionado = fleteros.find((f) => f.id === fleteroId)

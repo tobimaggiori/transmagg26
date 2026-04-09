@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { parsearImporte, calcularIva, sumarImportes, dividirImporte, formatearMoneda } from "@/lib/money"
 import { Plus, Trash2 } from "lucide-react"
+import { hoyLocalYmd } from "@/lib/date-local"
 
 interface Proveedor {
   id: string
@@ -102,7 +103,7 @@ const SELECT_CLS =
 
 export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Props) {
   const router = useRouter()
-  const today = new Date().toISOString().split("T")[0]
+  const today = hoyLocalYmd()
 
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [loading, setLoading] = useState(false)

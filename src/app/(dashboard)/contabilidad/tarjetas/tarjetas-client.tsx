@@ -17,6 +17,7 @@ import { UploadPDF } from "@/components/upload-pdf"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { sumarImportes, parsearImporte } from "@/lib/money"
 import { Plus, CreditCard, X, AlertTriangle } from "lucide-react"
+import { hoyLocalYmd, mesLocalYm } from "@/lib/date-local"
 
 // --- Tipos ---
 
@@ -451,7 +452,7 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
   const [modalResumen, setModalResumen] = useState(false)
   const [modalGasto, setModalGasto] = useState(false)
   const [formResumen, setFormResumen] = useState({
-    periodo: new Date().toISOString().slice(0, 7),
+    periodo: mesLocalYm(),
     fechaVtoPago: "",
     totalARS: "",
     totalUSD: "",
@@ -461,7 +462,7 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
   const [formGasto, setFormGasto] = useState({
     tipoGasto: "COMBUSTIBLE",
     monto: "",
-    fecha: new Date().toISOString().slice(0, 10),
+    fecha: hoyLocalYmd(),
     descripcion: "",
     comprobanteS3Key: "",
   })
@@ -474,9 +475,9 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
 
   // Cierre resumen modal
   const [modalCierre, setModalCierre] = useState(false)
-  const [cierreMesAnio, setCierreMesAnio] = useState(new Date().toISOString().slice(0, 7))
+  const [cierreMesAnio, setCierreMesAnio] = useState(mesLocalYm())
   const [cierreCuentaId, setCierreCuentaId] = useState("")
-  const [cierreFechaPago, setCierreFechaPago] = useState(new Date().toISOString().slice(0, 10))
+  const [cierreFechaPago, setCierreFechaPago] = useState(hoyLocalYmd())
   const [cierrePdfS3Key, setCierrePdfS3Key] = useState("")
   const [cierreDiferencia, setCierreDiferencia] = useState(0)
   const [cierreDescDiferencia, setCierreDescDiferencia] = useState("")
@@ -514,9 +515,9 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
         seleccionada: false,
       }))
     )
-    setCierreMesAnio(new Date().toISOString().slice(0, 7))
+    setCierreMesAnio(mesLocalYm())
     setCierreCuentaId("")
-    setCierreFechaPago(new Date().toISOString().slice(0, 10))
+    setCierreFechaPago(hoyLocalYmd())
     setCierrePdfS3Key("")
     setCierreDiferencia(0)
     setCierreDescDiferencia("")
@@ -634,7 +635,7 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
     setGuardando(false)
     if (res.ok) {
       setModalResumen(false)
-      setFormResumen({ periodo: new Date().toISOString().slice(0, 7), fechaVtoPago: "", totalARS: "", totalUSD: "", s3Key: "", pagado: false })
+      setFormResumen({ periodo: mesLocalYm(), fechaVtoPago: "", totalARS: "", totalUSD: "", s3Key: "", pagado: false })
       await recargarResumenes()
       await onActualizar()
     } else {
@@ -669,7 +670,7 @@ function TarjetaDetalle({ tarjeta, cuentas, onActualizar }: { tarjeta: Tarjeta; 
     setGuardando(false)
     if (res.ok) {
       setModalGasto(false)
-      setFormGasto({ tipoGasto: "COMBUSTIBLE", monto: "", fecha: new Date().toISOString().slice(0, 10), descripcion: "", comprobanteS3Key: "" })
+      setFormGasto({ tipoGasto: "COMBUSTIBLE", monto: "", fecha: hoyLocalYmd(), descripcion: "", comprobanteS3Key: "" })
       await recargarGastos()
     } else {
       const d = await res.json()
