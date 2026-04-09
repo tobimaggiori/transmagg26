@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer"
+import { Resend } from "resend"
 import { prisma } from "@/lib/prisma"
 import { decrypt } from "@/lib/crypto"
 
@@ -11,7 +12,7 @@ export interface OpcionesEmail {
   html: string
   /** Cuerpo texto plano (opcional) */
   texto?: string
-  /** "sistema" usa ConfiguracionOtp; "usuario" usa config SMTP del Usuario */
+  /** "sistema" usa Resend (o ConfiguracionOtp SMTP como fallback); "usuario" usa config SMTP del Usuario */
   tipo: "sistema" | "usuario"
   /** Requerido cuando tipo === "usuario" */
   usuarioId?: string
@@ -21,10 +22,11 @@ export interface OpcionesEmail {
 /**
  * enviarEmail: OpcionesEmail -> Promise<{ ok: boolean; error?: string }>
  *
- * Envía un email usando la configuración SMTP del sistema (ConfiguracionOtp singleton)
- * o del usuario (campos smtpHost/etc. en Usuario), según `tipo`.
+ * Envía un email. Para tipo "sistema":
+ *   1) Si existe RESEND_API_KEY, usa Resend API
+ *   2) Si no, usa SMTP desde ConfiguracionOtp
+ * Para tipo "usuario", usa la config SMTP del Usuario.
  * Nunca lanza excepciones — siempre devuelve un resultado.
- * Si no hay configuración activa, loguea el fallback y devuelve ok: false.
  *
  * Ejemplos:
  * await enviarEmail({ para: "x@acme.com", asunto: "Test", html: "<p>Hola</p>", tipo: "sistema" })
@@ -33,6 +35,61 @@ export interface OpcionesEmail {
  * // => { ok: true } | { ok: false, error: "Sin configuración SMTP activa" }
  */
 export async function enviarEmail(opciones: OpcionesEmail): Promise<{ ok: boolean; error?: string }> {
+  // ── Resend para emails de sistema ─────────────────────────────────────────
+  if (opciones.tipo === "sistema" && process.env.RESEND_API_KEY) {
+    return enviarConResend(opciones)
+  }
+
+  // ── SMTP (sistema fallback o usuario) ─────────────────────────────────────
+  return enviarConSmtp(opciones)
+}
+
+// ── Resend ──────────────────────────────────────────────────────────────────
+
+async function enviarConResend(opciones: OpcionesEmail): Promise<{ ok: boolean; error?: string }> {
+  const resend = new Resend(process.env.RESEND_API_KEY)
+
+  // Leer remitente de ConfiguracionOtp
+  const config = await prisma.configuracionOtp.findUnique({
+    where: { id: "singleton" },
+    select: { emailRemitente: true, nombreRemitente: true, activo: true },
+  }).catch(() => null)
+
+  const nombreRemitente = config?.nombreRemitente ?? "Trans-Magg S.R.L."
+  const emailRemitente = config?.emailRemitente ?? "noreply@transmagg.com.ar"
+  const from = `${nombreRemitente} <${emailRemitente}>`
+
+  try {
+    const { error } = await resend.emails.send({
+      from,
+      to: opciones.para,
+      subject: opciones.asunto,
+      html: opciones.html,
+      text: opciones.texto,
+      attachments: opciones.adjuntos?.map((a) => ({
+        filename: a.nombre,
+        content: a.contenido,
+        contentType: a.tipo,
+      })),
+    })
+
+    if (error) {
+      console.error(`[EMAIL RESEND] Error enviando a ${opciones.para}:`, error.message)
+      return { ok: false, error: error.message }
+    }
+
+    console.log(`[EMAIL RESEND] Enviado a ${opciones.para}: ${opciones.asunto}`)
+    return { ok: true }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[EMAIL RESEND] Error enviando a ${opciones.para}:`, msg)
+    return { ok: false, error: msg }
+  }
+}
+
+// ── SMTP ────────────────────────────────────────────────────────────────────
+
+async function enviarConSmtp(opciones: OpcionesEmail): Promise<{ ok: boolean; error?: string }> {
   let host: string | null = null
   let puerto: number | null = null
   let smtpUser: string | null = null
