@@ -346,7 +346,7 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
       {esInterno && (
         <div className="flex flex-wrap gap-4 p-4 bg-muted/40 rounded-lg border">
           <div className="flex flex-col gap-1 min-w-[300px]">
-            <label className="text-xs font-medium text-muted-foreground">Fletero (dejar vacío para ver todos)</label>
+            <label className="text-xs font-medium text-muted-foreground">Fletero</label>
             <SearchCombobox
               items={fleteros.map((f) => ({ id: f.id, label: f.razonSocial, sublabel: f.cuit }))}
               value={fleteroId}
@@ -357,7 +357,7 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
         </div>
       )}
 
-      {(fleteroId || esInterno) && (
+      {fleteroId && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
