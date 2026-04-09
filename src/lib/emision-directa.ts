@@ -17,7 +17,7 @@
 import { prisma } from "@/lib/prisma"
 import { ejecutarCrearFactura, type DatosCrearFactura } from "@/lib/factura-commands"
 import { ejecutarCrearLiquidacion, type DatosCrearLiquidacion } from "@/lib/liquidacion-commands"
-import { ejecutarCrearNotaCD, type DatosNotaCD } from "@/lib/nota-cd-commands"
+import { ejecutarCrearNotaCD, type DatosNotaCD, crearNotaEmpresaEmitida, type DatosNotaEmpresaEmitida } from "@/lib/nota-cd-commands"
 import {
   autorizarFacturaArca,
   autorizarLiquidacionArca,
@@ -285,6 +285,62 @@ export async function emitirNotaCDDirecta(
     }
 
     await _revertirNotaCD(nota.id, data)
+    return { ok: false, ...clasificado }
+  }
+}
+
+// ─── Nota Empresa Items-Based ───────────────────────────────────────────────
+
+/**
+ * emitirNotaEmpresaDirecta: DatosNotaEmpresaEmitida string string -> Promise<ResultadoEmisionDirecta>
+ *
+ * Crea NC/ND empresa con ítems y la autoriza en ARCA.
+ * Si ARCA falla no-reintentable: borra nota (cascade borra ítems).
+ * Si ARCA falla reintentable: conserva nota para reintento.
+ * Si CAE ya otorgado: no revierte aunque falle PDF.
+ */
+export async function emitirNotaEmpresaDirecta(
+  data: DatosNotaEmpresaEmitida,
+  operadorId: string,
+  idempotencyKey: string
+): Promise<ResultadoEmisionDirecta> {
+  const resultado = await crearNotaEmpresaEmitida(data, operadorId)
+  if (!resultado.ok) return { ...resultado, code: "ERROR_CREAR_COMPROBANTE", reintentable: false }
+
+  const nota = resultado.nota as { id: string }
+
+  try {
+    const arca = await autorizarNotaCDArca(nota.id, idempotencyKey)
+    return { ok: true, documento: nota, arca }
+  } catch (err) {
+    const notaActual = await prisma.notaCreditoDebito.findUnique({
+      where: { id: nota.id },
+      select: { cae: true, arcaEstado: true },
+    }).catch(() => null)
+
+    if (notaActual?.cae && notaActual.arcaEstado === "AUTORIZADA") {
+      console.error("[emision-directa] Error post-CAE nota empresa (no se revierte):", err)
+      return {
+        ok: false,
+        status: 500,
+        error: `El comprobante fue autorizado por ARCA (CAE: ${notaActual.cae}) pero falló al generar el PDF. El comprobante quedó emitido.`,
+        code: "POST_CAE_PDF_ERROR",
+        reintentable: false,
+        documentoId: nota.id,
+      }
+    }
+
+    const clasificado = clasificarError(err)
+
+    if (clasificado.reintentable) {
+      console.error("[emision-directa] Error transitorio ARCA nota empresa, conservada:", err)
+      return { ok: false, ...clasificado, documentoId: nota.id }
+    }
+
+    // Revertir: borrar nota (cascade borra ítems). No hay viajes que revertir.
+    await prisma.notaCreditoDebito.delete({ where: { id: nota.id } }).catch((e) =>
+      console.error("[emision-directa] Error revirtiendo nota empresa:", e)
+    )
     return { ok: false, ...clasificado }
   }
 }

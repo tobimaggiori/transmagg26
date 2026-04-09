@@ -6,7 +6,7 @@
  * en la UI y en los API routes.
  */
 
-import { calcularNetoMasIva, type MonetaryInput } from "@/lib/money"
+import { calcularNetoMasIva, sumarImportes, type MonetaryInput } from "@/lib/money"
 
 /**
  * labelTipoNotaCD: string -> string
@@ -144,4 +144,84 @@ export function calcularTotalesNotaCD(
 ): { montoNeto: number; montoIva: number; montoTotal: number } {
   const result = calcularNetoMasIva(montoNeto, ivaPct)
   return { montoNeto: result.neto, montoIva: result.iva, montoTotal: result.total }
+}
+
+/**
+ * resolverTipoCbteNotaEmpresa: { tipoNota, tipoCbteOrigen } -> number
+ *
+ * Dado el tipo de nota (NC/ND) y el tipoCbte de la factura origen,
+ * devuelve el código ARCA de la nota según la matriz cerrada.
+ *
+ * Ejemplos:
+ * resolverTipoCbteNotaEmpresa({ tipoNota: "NC", tipoCbteOrigen: 1 })   // => 3
+ * resolverTipoCbteNotaEmpresa({ tipoNota: "ND", tipoCbteOrigen: 1 })   // => 2
+ * resolverTipoCbteNotaEmpresa({ tipoNota: "NC", tipoCbteOrigen: 6 })   // => 8
+ * resolverTipoCbteNotaEmpresa({ tipoNota: "ND", tipoCbteOrigen: 6 })   // => 7
+ * resolverTipoCbteNotaEmpresa({ tipoNota: "NC", tipoCbteOrigen: 201 }) // => 203
+ * resolverTipoCbteNotaEmpresa({ tipoNota: "ND", tipoCbteOrigen: 201 }) // => 202
+ */
+export function resolverTipoCbteNotaEmpresa(params: {
+  tipoNota: "NC" | "ND"
+  tipoCbteOrigen: number
+}): number {
+  const tipo = params.tipoNota === "NC" ? "NC_EMITIDA" : "ND_EMITIDA"
+  return tipoCbteArcaParaNotaCD(tipo, params.tipoCbteOrigen)
+}
+
+/**
+ * resolverPuntoVentaNotaEmpresa: { tipoCbteNota, puntosVentaConfig } -> number
+ *
+ * Dado el tipoCbte de la nota y la configuración de puntos de venta ARCA,
+ * devuelve el punto de venta correcto con claves separadas por tipo.
+ * Fallback: NOTA_CREDITO_A/B genérica, luego 1.
+ *
+ * Ejemplos:
+ * resolverPuntoVentaNotaEmpresa({ tipoCbteNota: 3, puntosVentaConfig: { NOTA_CREDITO_A: 5 } }) // => 5
+ * resolverPuntoVentaNotaEmpresa({ tipoCbteNota: 2, puntosVentaConfig: { NOTA_DEBITO_A: 6 } })  // => 6
+ * resolverPuntoVentaNotaEmpresa({ tipoCbteNota: 202, puntosVentaConfig: { NOTA_DEBITO_FCE_A: 8 } }) // => 8
+ */
+export function resolverPuntoVentaNotaEmpresa(params: {
+  tipoCbteNota: number
+  puntosVentaConfig: Record<string, number>
+}): number {
+  const { tipoCbteNota, puntosVentaConfig } = params
+  const CLAVE_MAP: Record<number, string> = {
+    3: "NOTA_CREDITO_A",
+    2: "NOTA_DEBITO_A",
+    8: "NOTA_CREDITO_B",
+    7: "NOTA_DEBITO_B",
+    203: "NOTA_CREDITO_FCE_A",
+    202: "NOTA_DEBITO_FCE_A",
+  }
+  const clave = CLAVE_MAP[tipoCbteNota]
+  if (clave && puntosVentaConfig[clave]) return puntosVentaConfig[clave]
+  // Fallback: clave genérica por grupo (backward compat)
+  if ([2, 3, 202, 203].includes(tipoCbteNota)) {
+    return puntosVentaConfig["NOTA_CREDITO_A"] ?? 1
+  }
+  if ([7, 8].includes(tipoCbteNota)) {
+    return puntosVentaConfig["NOTA_CREDITO_B"] ?? 1
+  }
+  return 1
+}
+
+/**
+ * calcularTotalesDesdeItems: (items, ivaPct) -> { montoNeto, montoIva, montoTotal }
+ *
+ * Dados los ítems (cada uno con subtotal) y el % de IVA,
+ * suma los subtotales para obtener el neto y calcula IVA y total.
+ * Usa exclusivamente money.ts para aritmética segura.
+ *
+ * Ejemplos:
+ * calcularTotalesDesdeItems([{ subtotal: 500 }, { subtotal: 300 }], 21)
+ *   // => { montoNeto: 800, montoIva: 168, montoTotal: 968 }
+ * calcularTotalesDesdeItems([{ subtotal: 1000 }], 0)
+ *   // => { montoNeto: 1000, montoIva: 0, montoTotal: 1000 }
+ */
+export function calcularTotalesDesdeItems(
+  items: Array<{ subtotal: MonetaryInput }>,
+  ivaPct: number
+): { montoNeto: number; montoIva: number; montoTotal: number } {
+  const neto = sumarImportes(items.map((i) => i.subtotal))
+  return calcularTotalesNotaCD(neto, ivaPct)
 }

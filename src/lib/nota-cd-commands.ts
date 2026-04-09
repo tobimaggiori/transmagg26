@@ -11,11 +11,17 @@
 import { prisma } from "@/lib/prisma"
 import {
   calcularTotalesNotaCD,
+  calcularTotalesDesdeItems,
   tipoCbteArcaParaNotaCD,
+  resolverTipoCbteNotaEmpresa,
+  resolverPuntoVentaNotaEmpresa,
 } from "@/lib/nota-cd-utils"
 import { validarComprobanteHabilitado } from "@/lib/arca/catalogo"
 import { leerComprobantesHabilitados } from "@/lib/arca/leer-config-habilitados"
+import { cargarConfigArca } from "@/lib/arca/config"
+import { calcularSaldoPendienteFactura } from "@/lib/cuenta-corriente"
 import { EstadoFacturaViaje } from "@/lib/viaje-workflow"
+import { parsearFechaLocalMediodia } from "@/lib/date-local"
 
 // ─── Próximo nro comprobante (server-only, usa prisma) ──────────────────────
 
@@ -333,4 +339,142 @@ async function crearNDRecibida(
   }
 
   return { ok: false, status: 400, error: "Subtipo ND_RECIBIDA no reconocido" }
+}
+
+// ─── Flujo items-based para NC/ND sobre facturas empresa ────────────────────
+
+export type DatosNotaEmpresaEmitida = {
+  facturaId: string
+  tipoNota: "NC" | "ND"
+  fechaEmision?: string
+  items: Array<{ concepto: string; subtotal: number }>
+}
+
+/**
+ * crearNotaEmpresaEmitida: DatosNotaEmpresaEmitida string -> Promise<ResultadoNotaCD>
+ *
+ * Dado [los datos de la nota con ítems y el operadorId],
+ * devuelve [la nota creada con ítems o un error].
+ *
+ * Valida regla de saldo: saldo > 0 → NC, saldo ≤ 0 → ND.
+ * Resuelve tipoCbte y PV automáticamente desde la factura origen.
+ * Persiste cbteAsoc para ARCA.
+ * NO toca estados de viajes.
+ */
+export async function crearNotaEmpresaEmitida(
+  data: DatosNotaEmpresaEmitida,
+  operadorId: string
+): Promise<ResultadoNotaCD> {
+  const { facturaId, tipoNota, items } = data
+
+  // 1. Cargar factura
+  const factura = await prisma.facturaEmitida.findUnique({
+    where: { id: facturaId },
+    select: {
+      id: true, tipoCbte: true, ptoVenta: true, nroComprobante: true,
+      ivaPct: true, total: true, estadoArca: true, emitidaEn: true,
+      empresa: { select: { id: true, cuit: true, condicionIva: true } },
+    },
+  })
+  if (!factura) return { ok: false, status: 404, error: "Factura no encontrada" }
+
+  // 2. Validar autorizada ARCA
+  if (factura.estadoArca !== "AUTORIZADA") {
+    return { ok: false, status: 422, error: "La factura debe estar autorizada en ARCA para emitir NC/ND" }
+  }
+
+  // 3. Regla de saldo
+  const saldo = await calcularSaldoPendienteFactura(facturaId)
+  if (tipoNota === "NC" && saldo <= 0) {
+    return { ok: false, status: 422, error: "No se puede emitir NC: la factura está completamente cobrada" }
+  }
+  if (tipoNota === "ND" && saldo > 0) {
+    return { ok: false, status: 422, error: "No se puede emitir ND: la factura aún tiene saldo pendiente de cobro" }
+  }
+
+  // 4. Resolver tipoCbte
+  const tipoCbteNota = resolverTipoCbteNotaEmpresa({ tipoNota, tipoCbteOrigen: factura.tipoCbte })
+  if (tipoCbteNota === 0) {
+    return { ok: false, status: 422, error: "Tipo de comprobante origen no compatible con NC/ND" }
+  }
+
+  // 5. Validar habilitado en ARCA
+  const habilitados = await leerComprobantesHabilitados()
+  const errorHab = validarComprobanteHabilitado(tipoCbteNota, habilitados)
+  if (errorHab) return { ok: false, status: 422, error: errorHab }
+
+  // 6. Resolver PV
+  const config = await cargarConfigArca()
+  const ptoVenta = resolverPuntoVentaNotaEmpresa({
+    tipoCbteNota,
+    puntosVentaConfig: config.puntosVenta,
+  })
+
+  // 7. Validar items
+  if (items.length === 0) {
+    return { ok: false, status: 400, error: "Se requiere al menos un ítem" }
+  }
+  for (const item of items) {
+    if (!item.concepto || item.concepto.trim().length === 0) {
+      return { ok: false, status: 400, error: "El concepto de cada ítem es obligatorio" }
+    }
+    if (item.subtotal <= 0) {
+      return { ok: false, status: 400, error: "El subtotal de cada ítem debe ser mayor a 0" }
+    }
+  }
+
+  // 8. Calcular totales
+  const totales = calcularTotalesDesdeItems(items, factura.ivaPct)
+
+  // 9. Armar descripción auto
+  const descripcion = items.map((i) => i.concepto).join("; ")
+
+  // 10. Nro comprobante
+  const tipo = tipoNota === "NC" ? "NC_EMITIDA" : "ND_EMITIDA"
+  const nroComprobante = await calcularProximoNroComprobanteNotaCD(tipo)
+
+  // 11. Fecha
+  const creadoEn = data.fechaEmision
+    ? parsearFechaLocalMediodia(data.fechaEmision)
+    : new Date()
+
+  // 12. Transacción
+  const nota = await prisma.$transaction(async (tx) => {
+    const n = await tx.notaCreditoDebito.create({
+      data: {
+        tipo,
+        subtipo: null,
+        facturaId,
+        montoNeto: totales.montoNeto,
+        montoIva: totales.montoIva,
+        montoTotal: totales.montoTotal,
+        descripcion,
+        estado: "EMITIDA",
+        nroComprobante,
+        ptoVenta,
+        tipoCbte: tipoCbteNota,
+        arcaEstado: "PENDIENTE",
+        cbteAsocTipo: factura.tipoCbte,
+        cbteAsocPtoVta: factura.ptoVenta ?? 1,
+        cbteAsocNro: parseInt(factura.nroComprobante ?? "0"),
+        operadorId,
+        creadoEn,
+      },
+    })
+
+    for (let i = 0; i < items.length; i++) {
+      await tx.notaCreditoDebitoItem.create({
+        data: {
+          notaId: n.id,
+          orden: i + 1,
+          concepto: items[i].concepto.trim(),
+          subtotal: items[i].subtotal,
+        },
+      })
+    }
+
+    return n
+  })
+
+  return { ok: true, nota }
 }

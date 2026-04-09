@@ -1295,6 +1295,7 @@ model NotaCreditoDebito {
   chequeRecibido      ChequeRecibido?   @relation(fields: [chequeRecibidoId], references: [id], onDelete: SetNull)
   operador            Usuario           @relation("OperadorNotaCreditoDebito", fields: [operadorId], references: [id])
   viajesAfectados     ViajeEnNotaCD[]
+  items               NotaCreditoDebitoItem[]
 
   @@map("notas_credito_debito")
 }
@@ -1313,6 +1314,18 @@ model ViajeEnNotaCD {
 
   @@unique([notaId, viajeId])
   @@map("viajes_en_nota_cd")
+}
+
+model NotaCreditoDebitoItem {
+  id       String  @id @default(uuid())
+  notaId   String  @map("nota_id")
+  orden    Int
+  concepto String
+  subtotal Decimal
+
+  nota NotaCreditoDebito @relation(fields: [notaId], references: [id], onDelete: Cascade)
+
+  @@map("notas_cd_items")
 }
 
 // ─── NEXTAUTH ─────────────────────────────────────────────────────────────────

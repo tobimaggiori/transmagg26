@@ -101,8 +101,12 @@ const CLAVES_PTO_VENTA = [
   { clave: "FACTURA_B", label: "Factura B (6)" },
   { clave: "FACTURA_A_CAMION_PROPIO", label: "Factura A Camión Propio (1/201)" },
   { clave: "FACTURA_B_CAMION_PROPIO", label: "Factura B Camión Propio (6)" },
-  { clave: "NOTA_CREDITO_A", label: "NC/ND A (2/3)" },
-  { clave: "NOTA_CREDITO_B", label: "NC/ND B (7/8)" },
+  { clave: "NOTA_CREDITO_A", label: "NC A (3)" },
+  { clave: "NOTA_DEBITO_A", label: "ND A (2)" },
+  { clave: "NOTA_CREDITO_B", label: "NC B (8)" },
+  { clave: "NOTA_DEBITO_B", label: "ND B (7)" },
+  { clave: "NOTA_CREDITO_FCE_A", label: "NC FCE A (203)" },
+  { clave: "NOTA_DEBITO_FCE_A", label: "ND FCE A (202)" },
   { clave: "LP_A", label: "CVLP A (60)" },
   { clave: "LP_B", label: "CVLP B (61)" },
 ]
@@ -272,7 +276,7 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
 
   async function handleCertFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    if (!file || !certPass) return
+    if (!file) return
     setSaving("certificado")
     try {
       const b64 = await new Promise<string>((resolve) => {
@@ -283,7 +287,7 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
         }
         reader.readAsDataURL(file)
       })
-      await patch({ certificadoB64: b64, certificadoPass: certPass }, "certificado")
+      await patch({ certificadoB64: b64, ...(certPass ? { certificadoPass: certPass } : {}) }, "certificado")
       setCertPass("")
       cargarCertInfo()
     } finally { setSaving(null) }
@@ -572,10 +576,10 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
               <div className="space-y-2">
                 <div>
                   <Label className="text-xs">Contraseña del certificado *</Label>
-                  <Input type="password" value={certPass} onChange={(e) => setCertPass(e.target.value)} className="h-8 text-sm mt-0.5" placeholder="Ingresá la contraseña antes de subir" />
+                  <Input type="password" value={certPass} onChange={(e) => setCertPass(e.target.value)} className="h-8 text-sm mt-0.5" placeholder="Opcional — dejar vacío si no tiene" />
                 </div>
                 <input ref={fileRef} type="file" accept=".pfx,.p12,.pem,.crt" onChange={handleCertFile} className="hidden" />
-                <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={!certPass || saving === "certificado"}>
+                <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={saving === "certificado"}>
                   {saving === "certificado" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Upload className="h-3 w-3 mr-1" />}
                   {config?.tieneCertificado ? "Reemplazar certificado" : "Cargar certificado"}
                 </Button>

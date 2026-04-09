@@ -11,10 +11,10 @@ import { randomUUID } from "crypto"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
-import { crearNotaCDSchema } from "@/lib/financial-schemas"
+import { crearNotaCDSchema, crearNotaEmpresaSchema } from "@/lib/financial-schemas"
 import { resolverOperadorId } from "@/lib/session-utils"
 import { ejecutarCrearNotaCD } from "@/lib/nota-cd-commands"
-import { emitirNotaCDDirecta } from "@/lib/emision-directa"
+import { emitirNotaCDDirecta, emitirNotaEmpresaDirecta } from "@/lib/emision-directa"
 import { validarFechaEmisionArca } from "@/lib/fecha-emision"
 import type { Rol } from "@/types"
 
@@ -121,6 +121,30 @@ export async function POST(request: NextRequest) {
   // Validación
   try {
     const body = await request.json()
+
+    // ── Flujo items-based: NC/ND empresa contextual ──
+    const parsedEmpresa = crearNotaEmpresaSchema.safeParse(body)
+    if (parsedEmpresa.success) {
+      if (parsedEmpresa.data.fechaEmision) {
+        const validacion = validarFechaEmisionArca(parsedEmpresa.data.fechaEmision)
+        if (!validacion.ok) {
+          return NextResponse.json({ error: validacion.error }, { status: 422 })
+        }
+      }
+      const idempotencyKey = parsedEmpresa.data.idempotencyKey ?? randomUUID()
+      const resultado = await emitirNotaEmpresaDirecta(parsedEmpresa.data, operadorId, idempotencyKey)
+      if (!resultado.ok) {
+        return NextResponse.json({
+          error: resultado.error,
+          code: resultado.code,
+          reintentable: resultado.reintentable,
+          documentoId: resultado.documentoId,
+        }, { status: resultado.status })
+      }
+      return NextResponse.json(resultado, { status: 201 })
+    }
+
+    // ── Flujo legacy: subtipo-based ──
     const parsed = crearNotaCDSchema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
@@ -136,8 +160,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (esEmitida) {
-      // NC/ND emitidas: emisión directa ARCA obligatoria.
-      // Si ARCA devuelve CAE → EMITIDA. Si ARCA falla → no queda nota.
       const idempotencyKey = parsed.data.idempotencyKey ?? randomUUID()
       const resultado = await emitirNotaCDDirecta(parsed.data, operadorId, idempotencyKey)
       if (!resultado.ok) {

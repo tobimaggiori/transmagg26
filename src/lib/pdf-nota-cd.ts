@@ -75,6 +75,7 @@ export async function generarPDFNotaCD(notaId: string): Promise<Buffer> {
         },
       },
       operador: { select: { nombre: true, apellido: true } },
+      items: { orderBy: { orden: "asc" as const }, select: { concepto: true, subtotal: true } },
       viajesAfectados: {
         select: {
           viaje: {
@@ -186,17 +187,41 @@ export async function generarPDFNotaCD(notaId: string): Promise<Buffer> {
     /* ── Detalle ── */
     doc.font("Helvetica").fontSize(10).fillColor("#000000")
 
-    if (nota.descripcion) {
-      doc.font("Helvetica-Bold").text("Concepto: ", pageLeft, doc.y, { continued: true })
-      doc.font("Helvetica").text(nota.descripcion)
-    }
-    if (nota.motivoDetalle) {
-      doc.font("Helvetica-Bold").text("Motivo: ", pageLeft, doc.y + 2, { continued: true })
-      doc.font("Helvetica").text(nota.motivoDetalle)
-    }
-    if (nota.subtipo) {
-      doc.font("Helvetica-Bold").text("Subtipo: ", pageLeft, doc.y + 2, { continued: true })
-      doc.font("Helvetica").text(nota.subtipo.replace(/_/g, " "))
+    // Ítems detallados (flujo items-based)
+    if (nota.items && nota.items.length > 0) {
+      doc.font("Helvetica-Bold").fontSize(9).text("Detalle de ítems:", pageLeft, doc.y)
+      doc.y += 6
+      // Header
+      doc.font("Helvetica-Bold").fontSize(8)
+      doc.text("#", pageLeft, doc.y, { width: 25 })
+      doc.text("Concepto", pageLeft + 30, doc.y - doc.currentLineHeight(), { width: 330 })
+      doc.text("Subtotal", pageLeft + 370, doc.y - doc.currentLineHeight(), { width: pageRight - pageLeft - 370, align: "right" })
+      doc.y += 4
+      doc.moveTo(pageLeft, doc.y).lineTo(pageRight, doc.y).strokeColor("#cccccc").stroke()
+      doc.y += 4
+      // Rows
+      doc.font("Helvetica").fontSize(8)
+      nota.items.forEach((item, idx) => {
+        doc.text(String(idx + 1), pageLeft, doc.y, { width: 25 })
+        doc.text(item.concepto, pageLeft + 30, doc.y - doc.currentLineHeight(), { width: 330 })
+        doc.font("Courier").text(fmt(Number(item.subtotal)), pageLeft + 370, doc.y - doc.currentLineHeight(), { width: pageRight - pageLeft - 370, align: "right" })
+        doc.font("Helvetica")
+        doc.y += 3
+      })
+    } else {
+      // Legacy: concepto/motivo/subtipo
+      if (nota.descripcion) {
+        doc.font("Helvetica-Bold").text("Concepto: ", pageLeft, doc.y, { continued: true })
+        doc.font("Helvetica").text(nota.descripcion)
+      }
+      if (nota.motivoDetalle) {
+        doc.font("Helvetica-Bold").text("Motivo: ", pageLeft, doc.y + 2, { continued: true })
+        doc.font("Helvetica").text(nota.motivoDetalle)
+      }
+      if (nota.subtipo) {
+        doc.font("Helvetica-Bold").text("Subtipo: ", pageLeft, doc.y + 2, { continued: true })
+        doc.font("Helvetica").text(nota.subtipo.replace(/_/g, " "))
+      }
     }
 
     // Viajes afectados (si hay)

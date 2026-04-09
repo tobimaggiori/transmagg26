@@ -14,6 +14,7 @@
  */
 
 import { prisma } from "@/lib/prisma"
+import { resolverPuntoVentaNotaEmpresa } from "@/lib/nota-cd-utils"
 import { cargarConfigArca, resolverUrls } from "./config"
 import { validarComprobanteHabilitado } from "./catalogo"
 import { obtenerTicketWsaa } from "./wsaa"
@@ -488,38 +489,57 @@ export async function autorizarNotaCDArca(
     throw new DocumentoEnProcesoError()
   }
 
-  // Determinar comprobante asociado
+  // Determinar receptor y comprobante asociado
   let cuitReceptor = ""
   let condicionIvaReceptor: string | undefined
   let comprobanteAsociado: DatosComprobanteBase["comprobanteAsociado"]
 
+  // Usar cbteAsoc persistido si está disponible (flujo items-based)
+  if (nota.cbteAsocTipo && nota.cbteAsocPtoVta != null && nota.cbteAsocNro != null) {
+    const fechaAsoc = nota.factura?.emitidaEn ?? nota.liquidacion?.grabadaEn ?? nota.creadoEn
+    comprobanteAsociado = {
+      tipo: nota.cbteAsocTipo,
+      ptoVta: nota.cbteAsocPtoVta,
+      nro: nota.cbteAsocNro,
+      cuit: config.cuit,
+      fecha: fechaAsoc,
+    }
+  }
+
   if (nota.factura) {
     cuitReceptor = nota.factura.empresa.cuit.replace(/\D/g, "")
     condicionIvaReceptor = nota.factura.empresa.condicionIva
-    comprobanteAsociado = {
-      tipo: nota.factura.tipoCbte,
-      ptoVta: nota.factura.ptoVenta ?? 1,
-      nro: parseInt(nota.factura.nroComprobante ?? "0"),
-      cuit: config.cuit,
-      fecha: nota.factura.emitidaEn,
+    // Fallback legacy si cbteAsoc no fue persistido
+    if (!comprobanteAsociado) {
+      comprobanteAsociado = {
+        tipo: nota.factura.tipoCbte,
+        ptoVta: nota.factura.ptoVenta ?? 1,
+        nro: parseInt(nota.factura.nroComprobante ?? "0"),
+        cuit: config.cuit,
+        fecha: nota.factura.emitidaEn,
+      }
     }
   } else if (nota.liquidacion) {
     cuitReceptor = nota.liquidacion.fletero.cuit.replace(/\D/g, "")
     condicionIvaReceptor = (nota.liquidacion.fletero as { condicionIva?: string }).condicionIva ?? undefined
-    comprobanteAsociado = {
-      tipo: nota.liquidacion.tipoCbte ?? 60,
-      ptoVta: nota.liquidacion.ptoVenta ?? 1,
-      nro: nota.liquidacion.nroComprobante ?? 0,
-      cuit: config.cuit,
-      fecha: nota.liquidacion.grabadaEn,
+    if (!comprobanteAsociado) {
+      comprobanteAsociado = {
+        tipo: nota.liquidacion.tipoCbte ?? 60,
+        ptoVta: nota.liquidacion.ptoVenta ?? 1,
+        nro: nota.liquidacion.nroComprobante ?? 0,
+        cuit: config.cuit,
+        fecha: nota.liquidacion.grabadaEn,
+      }
     }
   } else {
     throw new ArcaValidacionError(["La nota no tiene factura ni liquidación asociada"])
   }
 
   const tipoCbte = nota.tipoCbte ?? 0
-  const tipoKey = [2, 3].includes(tipoCbte) ? "NOTA_CREDITO_A" : "NOTA_CREDITO_B"
-  const ptoVenta = config.puntosVenta[tipoKey] ?? config.puntosVenta["FACTURA_A"] ?? 1
+  // Usar PV persistido si existe, si no resolver desde config con claves correctas
+  const ptoVenta = (nota.ptoVenta && nota.ptoVenta > 0)
+    ? nota.ptoVenta
+    : resolverPuntoVentaNotaEmpresa({ tipoCbteNota: tipoCbte, puntosVentaConfig: config.puntosVenta })
 
   try {
     const result = await _autorizarComprobante(config, {

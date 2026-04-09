@@ -304,3 +304,19 @@ export const crearNotaCDSchema = z.object({
   emisionArca: z.boolean().optional(),
   idempotencyKey: z.string().uuid().optional(),
 })
+
+/**
+ * Schema para emisión contextual de NC/ND empresa con ítems.
+ * El operador ingresa facturaId, tipoNota, fechaEmision e ítems.
+ * tipoCbte, PV, IVA, total se resuelven en backend.
+ */
+export const crearNotaEmpresaSchema = z.object({
+  facturaId: z.string().uuid(),
+  tipoNota: z.enum(["NC", "ND"]),
+  fechaEmision: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de fecha inválido (YYYY-MM-DD)").optional(),
+  items: z.array(z.object({
+    concepto: z.string().min(1, "El concepto es obligatorio"),
+    subtotal: z.number().positive("El subtotal debe ser mayor a 0"),
+  })).min(1, "Se requiere al menos un ítem"),
+  idempotencyKey: z.string().uuid().optional(),
+})
