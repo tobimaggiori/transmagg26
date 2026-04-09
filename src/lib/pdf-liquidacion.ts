@@ -153,6 +153,7 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
           kilos: true,
           tarifaFletero: true,
           subtotal: true,
+          viaje: { select: { nroCartaPorte: true } },
         },
       },
     },
@@ -345,14 +346,13 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
     // ─── 4. TABLA DE VIAJES ────────────────────────────────────────────
 
     const colDefs = [
-      { header: "Fecha",    w: 52,  align: "left" as const },
-      { header: "Remito",   w: 52,  align: "left" as const },
-      { header: "Producto", w: 60,  align: "left" as const },
-      { header: "Origen",   w: 68,  align: "left" as const },
-      { header: "Destino",  w: 68,  align: "left" as const },
-      { header: "Kilos",    w: 48,  align: "right" as const },
-      { header: "Tarifa",   w: 72,  align: "right" as const },
-      { header: "SubTotal", w: 90,  align: "right" as const },
+      { header: "Fecha",    w: 56,  align: "left" as const },
+      { header: "Producto", w: 70,  align: "left" as const },
+      { header: "Origen",   w: 76,  align: "left" as const },
+      { header: "Destino",  w: 76,  align: "left" as const },
+      { header: "Kilos",    w: 52,  align: "right" as const },
+      { header: "Tarifa",   w: 76,  align: "right" as const },
+      { header: "SubTotal", w: 104, align: "right" as const },
     ]
 
     const tableW = colDefs.reduce((s, c) => s + c.w, 0)
@@ -360,7 +360,7 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
     const rowHBase = 18
     const rowHWithProv = 30
     const headerRowH = 28
-    const cupoH = 16
+    const docBadgeH = 16
 
     function drawTableHeader() {
       doc.save()
@@ -382,7 +382,8 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
     for (const v of liq.viajes) {
       const hasProv = !!(v.provinciaOrigen || v.provinciaDestino)
       const rowH = hasProv ? rowHWithProv : rowHBase
-      const neededH = rowH + (v.cupo ? cupoH : 0)
+      const hasDocBadge = !!(v.remito || v.cupo || v.viaje?.nroCartaPorte)
+      const neededH = rowH + (hasDocBadge ? docBadgeH : 0)
 
       if (cursorY + neededH > footerLineY) {
         doc.addPage()
@@ -404,56 +405,55 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
       const textY = cursorY + (hasProv ? 2 : (rowH - 10) / 2)
 
       doc.font("Helvetica").fontSize(10).fillColor(TEXT)
+      // Fecha
       doc.text(fmtFechaCorta(v.fechaViaje), colXs[0] + 4, textY, { lineBreak: false })
-      doc.text(v.remito ?? "—", colXs[1] + 4, textY, { lineBreak: false })
-      doc.text(v.mercaderia ?? "—", colXs[2] + 4, textY, { lineBreak: false })
+      // Producto
+      doc.text(v.mercaderia ?? "—", colXs[1] + 4, textY, { lineBreak: false })
 
-      // Origen
-      doc.font("Helvetica").fontSize(10).fillColor(TEXT)
-      doc.text(v.procedencia ?? "—", colXs[3] + 4, textY, { lineBreak: false })
+      // Origen: ciudad + provincia debajo
+      doc.text(v.procedencia ?? "—", colXs[2] + 4, textY, { lineBreak: false })
       if (v.provinciaOrigen) {
-        doc.font("Helvetica").fontSize(10).fillColor(TEXT)
-        doc.text(fmtProvincia(v.provinciaOrigen), colXs[3] + 4, textY + 13, { lineBreak: false })
+        doc.text(fmtProvincia(v.provinciaOrigen), colXs[2] + 4, textY + 13, { lineBreak: false })
       }
 
-      // Destino
-      doc.font("Helvetica").fontSize(10).fillColor(TEXT)
-      doc.text(v.destino ?? "—", colXs[4] + 4, textY, { lineBreak: false })
+      // Destino: ciudad + provincia debajo
+      doc.text(v.destino ?? "—", colXs[3] + 4, textY, { lineBreak: false })
       if (v.provinciaDestino) {
-        doc.font("Helvetica").fontSize(10).fillColor(TEXT)
-        doc.text(fmtProvincia(v.provinciaDestino), colXs[4] + 4, textY + 13, { lineBreak: false })
+        doc.text(fmtProvincia(v.provinciaDestino), colXs[3] + 4, textY + 13, { lineBreak: false })
       }
 
       // Kilos
-      doc.font("Helvetica").fontSize(10).fillColor(TEXT)
       const kilosText = v.kilos != null ? fmtKilos(v.kilos) : "—"
       const kilosW = doc.widthOfString(kilosText)
-      doc.text(kilosText, colXs[5] + colDefs[5].w - 4 - kilosW, textY, { lineBreak: false })
+      doc.text(kilosText, colXs[4] + colDefs[4].w - 4 - kilosW, textY, { lineBreak: false })
 
-      // Tarifa (tarifaFletero)
-      doc.font("Helvetica").fontSize(10).fillColor(TEXT)
-      doc.text(`$ ${fmtMonedaCompacta(Number(v.tarifaFletero))}`, colXs[6] + 4, textY, { width: colDefs[6].w - 8, align: "right" })
+      // Tarifa
+      doc.text(`$ ${fmtMonedaCompacta(Number(v.tarifaFletero))}`, colXs[5] + 4, textY, { width: colDefs[5].w - 8, align: "right" })
 
       // SubTotal
       doc.font("Helvetica-Bold").fontSize(10).fillColor(TEXT)
-      doc.text(`$ ${fmtMonedaCompacta(Number(v.subtotal))}`, colXs[7] + 4, textY, { width: colDefs[7].w - 8, align: "right" })
+      doc.text(`$ ${fmtMonedaCompacta(Number(v.subtotal))}`, colXs[6] + 4, textY, { width: colDefs[6].w - 8, align: "right" })
 
       cursorY += rowH
 
-      // Badge de cupo
-      if (v.cupo) {
-        const cupoText = `Cupo: ${v.cupo}`
+      // Badge de documentación: Remito / Cupo / CDP en una línea
+      if (hasDocBadge) {
+        const parts: string[] = []
+        if (v.remito) parts.push(`Remito: ${v.remito}`)
+        if (v.cupo) parts.push(`Cupo: ${v.cupo}`)
+        if (v.viaje?.nroCartaPorte) parts.push(`CDP: ${v.viaje.nroCartaPorte}`)
+        const badgeText = parts.join("   ")
         doc.font("Helvetica").fontSize(8.5)
-        const cupoTextW = doc.widthOfString(cupoText) + 12
+        const badgeTextW = doc.widthOfString(badgeText) + 12
         doc.save()
         doc.fillColor(BG_LIGHT)
-        doc.roundedRect(tableLeft + 8, cursorY, cupoTextW, 13, 4).fill()
+        doc.roundedRect(tableLeft + 8, cursorY, badgeTextW, 13, 4).fill()
         doc.strokeColor(BORDER).lineWidth(0.5)
-        doc.roundedRect(tableLeft + 8, cursorY, cupoTextW, 13, 4).stroke()
+        doc.roundedRect(tableLeft + 8, cursorY, badgeTextW, 13, 4).stroke()
         doc.restore()
         doc.font("Helvetica").fontSize(8.5).fillColor(TEXT)
-          .text(cupoText, tableLeft + 14, cursorY + 2)
-        cursorY += cupoH
+          .text(badgeText, tableLeft + 14, cursorY + 2)
+        cursorY += docBadgeH
       }
 
       // Separador
