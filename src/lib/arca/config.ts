@@ -55,7 +55,7 @@ export async function cargarConfigArca(): Promise<ArcaConfig> {
   // En modo simulación no se requiere certificado
   if (!esSimulacion) {
     if (!row.certificadoB64) throw new ArcaConfigIncompletaError("certificado digital")
-    if (!row.certificadoPass) throw new ArcaConfigIncompletaError("contraseña del certificado")
+    // certificadoPass es opcional — algunos certificados no tienen contraseña
   }
 
   const puntosVenta: Record<string, number> = {}
