@@ -175,6 +175,12 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
   const [verificando, setVerificando] = useState(false)
   const [verificResult, setVerificResult] = useState<{ ok: boolean; errores?: string[]; mensaje?: string } | null>(null)
 
+  // Consulta manual último autorizado
+  const [consultaPV, setConsultaPV] = useState("")
+  const [consultaTipo, setConsultaTipo] = useState("")
+  const [consultando, setConsultando] = useState(false)
+  const [consultaResult, setConsultaResult] = useState<{ ok: boolean; mensaje: string; tiempoMs?: number; resultado?: { ptoVenta: number; tipoCbte: number; ultimoNro: number } } | null>(null)
+
   // Logos
   const [logoComprobantePreview, setLogoComprobantePreview] = useState<string | null>(null)
   const [logoArcaPreview, setLogoArcaPreview] = useState<string | null>(null)
@@ -302,6 +308,30 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
       setTestResult({ area, ok: data.ok, mensaje: data.mensaje, tiempoMs: data.tiempoMs })
     } catch { setTestResult({ area, ok: false, mensaje: "Error de red" }) }
     finally { setTesting(null) }
+  }
+
+  async function consultarUltimoAutorizado() {
+    const pv = parseInt(consultaPV, 10)
+    const tc = parseInt(consultaTipo, 10)
+    if (!pv || pv <= 0 || !tc || tc <= 0) {
+      setConsultaResult({ ok: false, mensaje: "Punto de venta y tipo de comprobante deben ser enteros positivos" })
+      return
+    }
+    setConsultando(true)
+    setConsultaResult(null)
+    try {
+      const res = await fetch("/api/configuracion-arca/consultar-ultimo-autorizado", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ptoVenta: pv, tipoCbte: tc }),
+      })
+      const data = await res.json()
+      setConsultaResult({ ok: data.ok, mensaje: data.mensaje, tiempoMs: data.tiempoMs, resultado: data.resultado })
+    } catch {
+      setConsultaResult({ ok: false, mensaje: "Error de red" })
+    } finally {
+      setConsultando(false)
+    }
   }
 
   async function confirmarProduccion() {
@@ -786,6 +816,57 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
                   {verificResult.errores.map((e, i) => (
                     <p key={i} className="flex items-center gap-1"><XCircle className="h-3 w-3 flex-shrink-0" />{e}</p>
                   ))}
+                </div>
+              )}
+            </div>
+
+            {/* Consulta manual: último comprobante autorizado */}
+            <div className="rounded-lg border p-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Consultar último comprobante autorizado</p>
+              <p className="text-xs text-muted-foreground">Consulta de solo lectura a WSFEv1. No emite ni altera numeración.</p>
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <Label className="text-xs">Punto de venta</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={consultaPV}
+                    onChange={(e) => setConsultaPV(e.target.value)}
+                    placeholder="Ej: 4"
+                    className="w-28"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Tipo comprobante</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={consultaTipo}
+                    onChange={(e) => setConsultaTipo(e.target.value)}
+                    placeholder="Ej: 1"
+                    className="w-28"
+                  />
+                </div>
+                <Button size="sm" variant="outline" onClick={consultarUltimoAutorizado} disabled={consultando || !consultaPV || !consultaTipo}>
+                  {consultando ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Activity className="h-3 w-3 mr-1" />}
+                  Consultar
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground">Códigos comunes: 1=Fact.A, 6=Fact.B, 201=MiPyme, 2=ND A, 3=NC A, 60=LP A, 61=LP B</p>
+
+              {consultaResult && (
+                <div className={`rounded-md px-3 py-2 text-xs flex items-start gap-2 ${consultaResult.ok ? "bg-green-50 border border-green-200 text-green-800" : "bg-red-50 border border-red-200 text-red-800"}`}>
+                  {consultaResult.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
+                  <div>
+                    <p className="font-medium">{consultaResult.ok ? "Exitoso" : "Error"}</p>
+                    <p>{consultaResult.mensaje}</p>
+                    {consultaResult.ok && consultaResult.resultado && (
+                      <div className="mt-1 font-mono text-[11px] space-y-0.5">
+                        <p>PV: {consultaResult.resultado.ptoVenta} — Tipo: {consultaResult.resultado.tipoCbte} — Último Nro: <span className="font-bold">{consultaResult.resultado.ultimoNro}</span></p>
+                      </div>
+                    )}
+                    {consultaResult.tiempoMs !== undefined && <p className="text-[10px] mt-0.5">{consultaResult.tiempoMs}ms</p>}
+                  </div>
                 </div>
               )}
             </div>

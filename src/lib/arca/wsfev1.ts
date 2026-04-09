@@ -12,6 +12,7 @@
 
 import { XMLParser } from "fast-xml-parser"
 import { Wsfev1Error } from "./errors"
+import { fetchArcaSOAP } from "./proxy"
 import type {
   AuthWsfev1,
   FECAERequest,
@@ -51,6 +52,14 @@ export async function feCompUltimoAutorizado(
   ptoVta: number,
   cbteTipo: number
 ): Promise<UltimoAutorizadoResponse> {
+  console.info("[WSFE] FECompUltimoAutorizado auth debug:", {
+    TokenLength: auth.Token?.length ?? 0,
+    SignLength: auth.Sign?.length ?? 0,
+    Cuit: auth.Cuit,
+    PtoVta: ptoVta,
+    CbteTipo: cbteTipo,
+  })
+
   const soapBody = `
     <FECompUltimoAutorizado xmlns="http://ar.gov.afip.dif.FEV1/">
       <Auth>
@@ -65,6 +74,13 @@ export async function feCompUltimoAutorizado(
   const responseXml = await llamarConRetry(url, "FECompUltimoAutorizado", soapBody)
   const parsed = xmlParser.parse(responseXml)
   const result = navegarRespuesta(parsed, "FECompUltimoAutorizadoResponse", "FECompUltimoAutorizadoResult")
+
+  console.info("[WSFE] FECompUltimoAutorizado response:", {
+    PtoVta: result?.PtoVta,
+    CbteTipo: result?.CbteTipo,
+    CbteNro: result?.CbteNro,
+    Errors: result?.Errors ?? null,
+  })
 
   if (result?.Errors?.Err) {
     const errores = Array.isArray(result.Errors.Err) ? result.Errors.Err : [result.Errors.Err]
@@ -226,15 +242,15 @@ async function llamarWsfev1(url: string, soapAction: string, soapBody: string): 
 
   let response: Response
   try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: {
+    response = await fetchArcaSOAP(
+      url,
+      {
         "Content-Type": "text/xml; charset=utf-8",
         SOAPAction: `http://ar.gov.afip.dif.FEV1/${soapAction}`,
       },
-      body: envelope,
-      signal: AbortSignal.timeout(WSFEV1_TIMEOUT_MS),
-    })
+      envelope,
+      WSFEV1_TIMEOUT_MS,
+    )
   } catch (err) {
     const isTimeout = err instanceof Error && err.name === "TimeoutError"
     const msg = isTimeout ? `Timeout (${WSFEV1_TIMEOUT_MS}ms) al contactar WSFEv1` : "Error de red al contactar WSFEv1"

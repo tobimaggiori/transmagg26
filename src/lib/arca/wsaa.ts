@@ -15,6 +15,7 @@
 import forge from "node-forge"
 import { prisma } from "@/lib/prisma"
 import { WsaaError } from "./errors"
+import { fetchArcaSOAP } from "./proxy"
 import type { ArcaConfig, TicketAcceso } from "./types"
 import { resolverUrls } from "./config"
 // Nota: cargarConfigArca() ya descifra certificadoB64 y certificadoPass.
@@ -226,12 +227,12 @@ async function llamarWsaa(url: string, cmsSigned: string): Promise<string> {
 
   let response: Response
   try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: "" },
-      body: soapEnvelope,
-      signal: AbortSignal.timeout(WSAA_TIMEOUT_MS),
-    })
+    response = await fetchArcaSOAP(
+      url,
+      { "Content-Type": "text/xml; charset=utf-8", SOAPAction: "" },
+      soapEnvelope,
+      WSAA_TIMEOUT_MS,
+    )
   } catch (err) {
     // Error de red/timeout — reintentable
     const msg = err instanceof Error && err.name === "TimeoutError"
