@@ -508,7 +508,7 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
                 variant={modoSel === "produccion" ? "destructive" : "default"}
                 onClick={() => {
                   if (modoSel === "produccion" && config?.modo !== "produccion") { setConfirmProduccion(true); return }
-                  patch({ modo: modoSel, activa: modoSel === "produccion" ? true : config?.activa }, "ambiente").then(() => cargarDiagnostico())
+                  patch({ modo: modoSel, activa: true }, "ambiente").then(() => cargarDiagnostico())
                 }}
                 disabled={saving === "ambiente"}
               >
