@@ -22,4 +22,4 @@ jobs:
             npm install
             npx prisma migrate deploy
             npm run build
-            pm2 restart transmagg
+            pm2 restart ecosystem.config.js
