@@ -65,7 +65,7 @@ type Props = {
   chequesEnCartera: ChequeEnCartera[]
   saldoAFavorCC: number
   gastosPendientes?: GastoPendiente[]
-  onSuccess: (nroOP: number, opId: string) => void
+  onSuccess: (nroOP: string, opId: string) => void
   onClose: () => void
 }
 
@@ -185,7 +185,7 @@ export function RegistrarPagoFleteroModal({
   const [error, setError] = useState<string | null>(null)
 
   const [mostrandoPreview, setMostrandoPreview] = useState(false)
-  const [proximoNro, setProximoNro] = useState<number | null>(null)
+  const [proximoNro, setProximoNro] = useState<{ nro: number; anio: number; display: string } | null>(null)
 
   // ── Cálculos ────────────────────────────────────────────────────────────────
   const saldoPendienteTotal = sumarImportes(liquidaciones.map(l => l.saldoPendiente))
@@ -318,7 +318,7 @@ export function RegistrarPagoFleteroModal({
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error ?? "Error al registrar pago"); return }
-      onSuccess(data.ordenPago.nro, data.ordenPago.id)
+      onSuccess(data.ordenPago.display ?? `${data.ordenPago.nro}-${data.ordenPago.anio}`, data.ordenPago.id)
     } catch {
       setError("Error de red al registrar pago")
     } finally {
@@ -331,10 +331,10 @@ export function RegistrarPagoFleteroModal({
   async function abrirPreview() {
     setError(null)
     try {
-      const res = await fetch("/api/ordenes-pago/proximo-nro")
+      const res = await fetch(`/api/ordenes-pago/proximo-nro?fleteroId=${fletero.id}`)
       if (res.ok) {
         const data = await res.json()
-        setProximoNro(data.nro)
+        setProximoNro({ nro: data.nro, anio: data.anio, display: data.display })
       } else {
         setProximoNro(null)
       }
@@ -862,7 +862,7 @@ function PreviewOrdenPago({
   onVolver,
   onConfirmar,
 }: {
-  nro: number | null
+  nro: { nro: number; anio: number; display: string } | null
   fecha: string
   fletero: { id: string; razonSocial: string; cuit: string }
   liquidaciones: LiqItem[]
@@ -886,7 +886,7 @@ function PreviewOrdenPago({
         <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
           <div>
             <h2 className="text-base font-semibold">
-              Preview — Orden de Pago{nro != null ? ` Nro ${nro.toLocaleString("es-AR")}` : ""}
+              Preview — Orden de Pago{nro != null ? ` Nro ${nro.display}` : ""}
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
               {fletero.razonSocial} · {new Date(fecha + "T00:00:00").toLocaleDateString("es-AR")}

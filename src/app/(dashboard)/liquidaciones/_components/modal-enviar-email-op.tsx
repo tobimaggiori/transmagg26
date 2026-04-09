@@ -10,7 +10,7 @@ export function ModalEnviarEmailOP({
   onCerrar,
 }: {
   opId: string
-  opNro: number
+  opNro: number | string
   fleteroId: string
   onCerrar: () => void
 }) {
@@ -44,7 +44,7 @@ export function ModalEnviarEmailOP({
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
       <div className="bg-background rounded-lg shadow-xl w-full max-w-sm p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold">Enviar OP Nro {opNro.toLocaleString("es-AR")}</h2>
+          <h2 className="text-base font-semibold">Enviar OP Nro {opNro}</h2>
           <button onClick={onCerrar} className="text-muted-foreground hover:text-foreground text-xl leading-none">&times;</button>
         </div>
         {resultado ? (

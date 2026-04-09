@@ -1387,10 +1387,11 @@ model VerificationToken {
 
 model OrdenPago {
   id         String   @id @default(uuid())
-  nro        Int      @unique                 // correlativo global: 1, 2, 3...
+  nro        Int                              // correlativo por (fleteroId, anio)
+  anio       Int                              // año calendario de emisión, ej. 2026
   fecha      DateTime @default(now())
   fleteroId  String   @map("fletero_id")
-  pdfS3Key   String?  @map("pdf_s3_key")     // reservado para futura generación binaria en R2
+  pdfS3Key   String?  @map("pdf_s3_key")
   operadorId String   @map("operador_id")
   creadoEn   DateTime @default(now()) @map("creado_en")
 
@@ -1398,6 +1399,7 @@ model OrdenPago {
   operador Usuario        @relation("OperadorOrdenPago", fields: [operadorId], references: [id])
   pagos    PagoAFletero[]
 
+  @@unique([fleteroId, nro, anio])
   @@map("ordenes_pago")
 }
 

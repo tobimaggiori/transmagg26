@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
             where: { anulado: false },
             select: {
               id: true, monto: true, tipoPago: true, fechaPago: true, anulado: true,
-              ordenPago: { select: { id: true, nro: true, fecha: true, pdfS3Key: true } },
+              ordenPago: { select: { id: true, nro: true, anio: true, fecha: true, pdfS3Key: true } },
             },
           },
           gastoDescuentos: {

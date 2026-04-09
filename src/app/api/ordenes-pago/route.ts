@@ -40,13 +40,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         fletero: { select: { id: true, razonSocial: true } },
         pagos: { where: { anulado: false }, select: { monto: true } },
       },
-      orderBy: { nro: "desc" },
+      orderBy: [{ fecha: "desc" }, { creadoEn: "desc" }],
       take: 200,
     })
 
     const resultado = ordenes.map((op) => ({
       id: op.id,
       nro: op.nro,
+      anio: op.anio,
+      display: `${op.nro}-${op.anio}`,
       fecha: op.fecha.toISOString(),
       fletero: op.fletero,
       total: sumarImportes(op.pagos.map(p => p.monto)),

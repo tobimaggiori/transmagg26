@@ -91,7 +91,7 @@ export async function GET(
                 pagos: {
                   where: { anulado: false },
                   select: {
-                    ordenPago: { select: { id: true, nro: true, pdfS3Key: true, fecha: true } },
+                    ordenPago: { select: { id: true, nro: true, anio: true, pdfS3Key: true, fecha: true } },
                   },
                 },
               },

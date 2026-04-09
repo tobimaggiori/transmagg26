@@ -72,7 +72,7 @@ interface RegistrarPagoClientProps {
 }
 
 interface ConfirmacionOP {
-  opNro: number
+  opNro: string
   opId: string
   fleteroId: string
   fleteroNombre: string
@@ -134,7 +134,7 @@ function ModalConfirmacionOP({
           <div>
             <h2 className="text-lg font-semibold">Orden de Pago generada</h2>
             <p className="text-sm text-muted-foreground mt-0.5">
-              OP Nro {opNro.toLocaleString("es-AR")} — {fleteroNombre}
+              OP Nro {opNro} — {fleteroNombre}
             </p>
           </div>
           <button
@@ -314,7 +314,7 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera, opera
     setPagando(true)
   }
 
-  function onSuccess(nroOP: number, opId: string) {
+  function onSuccess(nroOP: string, opId: string) {
     setPagando(false)
     setSeleccionados(new Set())
     setConfirmacionOP({

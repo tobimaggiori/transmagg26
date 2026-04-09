@@ -18,6 +18,7 @@ type Fletero = { id: string; razonSocial: string; cuit: string }
 type OrdenPago = {
   id: string
   nro: number
+  anio: number
   fecha: string
   pdfS3Key: string | null
 }
@@ -326,12 +327,12 @@ export function CCFleterosClient({ fleteros }: CCFleterosClientProps) {
                                 rel="noopener noreferrer"
                                 className="text-primary hover:underline inline-flex items-center gap-1 whitespace-nowrap"
                               >
-                                OP Nro {liq.ordenPago.nro}
+                                OP Nro {liq.ordenPago.nro}-{liq.ordenPago.anio}
                                 <ExternalLink className="h-3 w-3" />
                               </a>
                             ) : (
                               <span className="text-muted-foreground whitespace-nowrap">
-                                OP Nro {liq.ordenPago.nro}
+                                OP Nro {liq.ordenPago.nro}-{liq.ordenPago.anio}
                               </span>
                             )
                           ) : (

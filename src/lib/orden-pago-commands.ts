@@ -67,7 +67,7 @@ export type DatosCrearOrdenPago = {
 }
 
 type ResultadoOrdenPago =
-  | { ok: true; result: { ordenPago: { id: string; nro: number } } }
+  | { ok: true; result: { ordenPago: { id: string; nro: number; anio: number; display: string } } }
   | { ok: false; status: number; error: string }
 
 // ── Comando principal ────────────────────────────────────────────────────────
@@ -172,7 +172,7 @@ export async function ejecutarCrearOrdenPago(
   const fechaPago = new Date(fecha)
 
   // ── Transaccion ─────────────────────────────────────────────────────────
-  const { ordenPagoId, nroOrdenPago } = await prisma.$transaction(async (tx) => {
+  const { ordenPagoId, nroOrdenPago, anioOP } = await prisma.$transaction(async (tx) => {
     const pagoIdsParaOP: string[] = []
 
     // Saldo restante por LP para la distribucion
@@ -342,12 +342,18 @@ export async function ejecutarCrearOrdenPago(
       })
     }
 
-    // ── Crear la Orden de Pago ──────────────────────────────────────────
-    const ultimaOP = await tx.ordenPago.findFirst({ orderBy: { nro: "desc" } })
-    const nroOP = (ultimaOP?.nro ?? 0) + 1
+    // ── Crear la Orden de Pago (numeración por fletero + año) ──────────
+    const anioOP = fechaPago.getFullYear()
+    const ultimaOPFletero = await tx.ordenPago.findFirst({
+      where: { fleteroId, anio: anioOP },
+      orderBy: { nro: "desc" },
+      select: { nro: true },
+    })
+    const nroOP = (ultimaOPFletero?.nro ?? 0) + 1
     const op = await tx.ordenPago.create({
       data: {
         nro: nroOP,
+        anio: anioOP,
         fecha: fechaPago,
         fleteroId,
         operadorId,
@@ -355,7 +361,7 @@ export async function ejecutarCrearOrdenPago(
       },
     })
 
-    return { ordenPagoId: op.id, nroOrdenPago: nroOP }
+    return { ordenPagoId: op.id, nroOrdenPago: nroOP, anioOP }
   })
 
   // ── Generar HTML y subir a R2 (no fatal si falla) ─────────────────────
@@ -363,12 +369,13 @@ export async function ejecutarCrearOrdenPago(
     try {
       const html = await generarHTMLOrdenPago(ordenPagoId)
       const buffer = Buffer.from(html, "utf-8")
-      const key = await subirPDF(buffer, "comprobantes-pago-fletero", `OP-${nroOrdenPago}.html`)
+      const key = await subirPDF(buffer, "comprobantes-pago-fletero", `OP-${nroOrdenPago}-${anioOP}.html`)
       await prisma.ordenPago.update({ where: { id: ordenPagoId }, data: { pdfS3Key: key } })
     } catch {
       // No bloquear la respuesta si el storage falla
     }
   }
 
-  return { ok: true, result: { ordenPago: { id: ordenPagoId, nro: nroOrdenPago } } }
+  const display = `${nroOrdenPago}-${anioOP}`
+  return { ok: true, result: { ordenPago: { id: ordenPagoId, nro: nroOrdenPago, anio: anioOP, display } } }
 }

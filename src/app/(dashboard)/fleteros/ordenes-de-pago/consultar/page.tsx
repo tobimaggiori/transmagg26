@@ -23,6 +23,8 @@ interface Fletero {
 interface OrdenPago {
   id: string
   nro: number
+  anio: number
+  display: string
   fecha: string
   fletero: { id: string; razonSocial: string }
   total: number
@@ -116,6 +118,7 @@ export default function ConsultarOrdenesDePagoPage() {
     setError(null)
     try {
       const params = new URLSearchParams()
+      if (filtroFleteroId) params.set("fleteroId", filtroFleteroId)
       if (filtroNro) params.set("nro", filtroNro)
       if (filtroDesde) params.set("desde", filtroDesde)
       if (filtroHasta) params.set("hasta", filtroHasta)
@@ -127,13 +130,11 @@ export default function ConsultarOrdenesDePagoPage() {
     } finally {
       setCargando(false)
     }
-  }, [filtroNro, filtroDesde, filtroHasta])
+  }, [filtroFleteroId, filtroNro, filtroDesde, filtroHasta])
 
   useEffect(() => { cargar() }, [cargar])
 
-  const ordenesFiltradas = ordenes.filter((op) =>
-    filtroFleteroId ? op.fletero.id === filtroFleteroId : true
-  )
+  const ordenesFiltradas = ordenes
 
   return (
     <div className="space-y-5">
@@ -207,7 +208,7 @@ export default function ConsultarOrdenesDePagoPage() {
               {ordenesFiltradas.map((op) => (
                 <tr key={op.id} className="hover:bg-muted/20">
                   <td className="px-4 py-3 font-mono font-semibold">
-                    {op.nro.toLocaleString("es-AR")}
+                    {op.display}
                   </td>
                   <td className="px-4 py-3">{formatearFecha(new Date(op.fecha))}</td>
                   <td className="px-4 py-3">{op.fletero.razonSocial}</td>
@@ -216,7 +217,7 @@ export default function ConsultarOrdenesDePagoPage() {
                     <button
                       onClick={() => abrirPDF({
                         url: `/api/ordenes-pago/${op.id}/pdf`,
-                        titulo: `Orden de Pago Nro ${op.nro.toLocaleString("es-AR")} — ${op.fletero.razonSocial}`,
+                        titulo: `Orden de Pago Nro ${op.display} — ${op.fletero.razonSocial}`,
                       })}
                       className="h-7 px-3 rounded-md border text-xs font-medium hover:bg-accent"
                     >

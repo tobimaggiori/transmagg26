@@ -1,23 +1,31 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
+import { requireFinancialAccess, badRequestResponse, serverErrorResponse } from "@/lib/financial-api"
 
 /**
- * GET /api/ordenes-pago/proximo-nro
+ * GET /api/ordenes-pago/proximo-nro?fleteroId={uuid}
  *
- * Devuelve el número que tendría la próxima Orden de Pago si se confirmara ahora.
- * Se usa para mostrar el número provisional en el preview antes de guardar.
+ * Devuelve el número que tendría la próxima Orden de Pago para un fletero
+ * en el año actual, si se confirmara ahora.
  *
- * Respuesta: { nro: number }
+ * Respuesta: { nro: number, anio: number, display: string }
  */
-export async function GET(): Promise<NextResponse> {
+export async function GET(req: NextRequest): Promise<NextResponse> {
   const acceso = await requireFinancialAccess()
   if (!acceso.ok) return acceso.response
 
+  const fleteroId = req.nextUrl.searchParams.get("fleteroId")
+  if (!fleteroId) return badRequestResponse("Se requiere fleteroId")
+
   try {
-    const ultima = await prisma.ordenPago.findFirst({ orderBy: { nro: "desc" }, select: { nro: true } })
+    const anio = new Date().getFullYear()
+    const ultima = await prisma.ordenPago.findFirst({
+      where: { fleteroId, anio },
+      orderBy: { nro: "desc" },
+      select: { nro: true },
+    })
     const nro = (ultima?.nro ?? 0) + 1
-    return NextResponse.json({ nro })
+    return NextResponse.json({ nro, anio, display: `${nro}-${anio}` })
   } catch (error) {
     return serverErrorResponse("GET /api/ordenes-pago/proximo-nro", error)
   }

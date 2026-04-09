@@ -48,7 +48,7 @@ export function ModalDetalleLiquidacion({
   onCerrar: () => void
   cargando?: boolean
 }) {
-  const [modalEmail, setModalEmail] = useState<{ opId: string; opNro: number } | null>(null)
+  const [modalEmail, setModalEmail] = useState<{ opId: string; opNro: string } | null>(null)
 
   // Obtener la Orden de Pago del primer pago no anulado que la tenga
   const ordenPago = liq.pagos.find((p) => !p.anulado && p.ordenPago)?.ordenPago ?? null
@@ -205,7 +205,7 @@ export function ModalDetalleLiquidacion({
         {ordenPago && (
           <div className="mb-4 pt-4 border-t">
             <p className="text-sm font-medium mb-2">
-              Orden de Pago Nro {ordenPago.nro.toLocaleString("es-AR")}
+              Orden de Pago Nro {ordenPago.nro}-{ordenPago.anio}
             </p>
             <div className="flex gap-2">
               <button
@@ -221,7 +221,7 @@ export function ModalDetalleLiquidacion({
                 Imprimir
               </button>
               <button
-                onClick={() => setModalEmail({ opId: ordenPago.id, opNro: ordenPago.nro })}
+                onClick={() => setModalEmail({ opId: ordenPago.id, opNro: `${ordenPago.nro}-${ordenPago.anio}` })}
                 className="h-8 px-3 rounded-md border text-xs font-medium hover:bg-accent"
               >
                 Enviar por email

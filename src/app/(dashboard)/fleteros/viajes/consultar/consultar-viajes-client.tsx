@@ -60,7 +60,7 @@ type ViajeAPI = {
     liquidacion: {
       id: string; estado: string; nroComprobante: number | null; ptoVenta: number | null
       comisionPct: number | null; ivaPct: number | null; pdfS3Key: string | null; grabadaEn: string
-      pagos?: Array<{ ordenPago: { id: string; nro: number; pdfS3Key: string | null; fecha: string } | null }>
+      pagos?: Array<{ ordenPago: { id: string; nro: number; anio: number; pdfS3Key: string | null; fecha: string } | null }>
     } | null
   }>
   enFacturas: Array<{
@@ -645,7 +645,7 @@ function ModalDetalle({
                             <div key={i} className="flex items-center justify-between">
                               <div>
                                 <p className={labelSmCls}>Orden de Pago</p>
-                                <p className="font-mono font-semibold">#{pago.ordenPago!.nro}</p>
+                                <p className="font-mono font-semibold">#{pago.ordenPago!.nro}-{pago.ordenPago!.anio}</p>
                                 <p className={labelSmCls}>{formatearFecha(new Date(pago.ordenPago!.fecha))}</p>
                               </div>
                               <button type="button" onClick={() => window.open(`/api/ordenes-pago/${pago.ordenPago!.id}/pdf`, "_blank")} className={pdfBtnCls}>VER ORDEN</button>

@@ -80,7 +80,7 @@ export type Liquidacion = {
   fleteroId: string
   fletero: { razonSocial: string }
   viajes: ViajeEnLiquidacion[]
-  pagos: { id: string; monto: number; tipoPago: string; fechaPago: string; anulado: boolean; ordenPago?: { id: string; nro: number; fecha: string; pdfS3Key?: string | null } | null }[]
+  pagos: { id: string; monto: number; tipoPago: string; fechaPago: string; anulado: boolean; ordenPago?: { id: string; nro: number; anio: number; fecha: string; pdfS3Key?: string | null } | null }[]
   gastoDescuentos?: {
     id: string
     montoDescontado: number

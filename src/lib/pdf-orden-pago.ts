@@ -1,30 +1,53 @@
 /**
- * Propósito: Generación del PDF de la Orden de Pago a Fletero.
- * Replica fielmente el layout del documento real de Transmagg
- * usando pdfkit para generación directa de PDF (sin Puppeteer).
+ * Propósito: Generación del PDF y HTML de la Orden de Pago a Fletero.
+ * Diseño navy/celeste consistente con pdf-factura.ts y pdf-liquidacion.ts.
+ * Usa pdfkit para generación directa de PDF (sin Puppeteer).
+ *
+ * Secciones del PDF:
+ * 1. Encabezado con logo y datos del emisor (idéntico a factura)
+ * 2. Datos del destinatario (fletero)
+ * 3. Comprobantes Cancelados (liquidaciones pagadas)
+ * 4. Descuentos por Adelantos:
+ *    a) Estado de Cta Cte de Adelantos de Combustible
+ *    b) Otros adelantos
+ * 5. Detalle del Pago (solo métodos usados):
+ *    - Transferencia Bancaria
+ *    - Efectivo
+ *    - E-Cheqs (propios electrónicos + tercero electrónicos)
+ *    - Cheques (tercero físicos)
+ * 6. Total de Pago
+ * 7. Firma y footer
  */
 
 import { prisma } from "@/lib/prisma"
+import { obtenerDatosEmisor } from "@/lib/pdf-common"
 import { sumarImportes } from "@/lib/money"
 import PDFDocument from "pdfkit"
 import QRCode from "qrcode"
 
+/* ── Paleta (consistente con pdf-factura.ts) ───────────────────────────── */
+
+const NAVY = "#1e3a5f"
+const BG_LIGHT = "#edf1f7"
+const BORDER = "#c8d1dc"
+const TEXT = "#1a1a1a"
+const HEADER_BG = "#dce3ed"
+const SECTION_BG = "#f0f0f0"
+const DARK_BG = "#1a1a1a"
+
 /* ── Helpers de formato ─────────────────────────────────────────────────── */
 
 function fmt(n: number): string {
-  return "$ " + n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const parts = Math.abs(n).toFixed(2).split(".")
+  const entero = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".")
+  return `${n < 0 ? "-" : ""}$ ${entero},${parts[1]}`
 }
 
 function fmtFecha(fecha: Date): string {
-  return new Intl.DateTimeFormat("es-AR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(fecha)
-}
-
-function fmtNro(nro: number): string {
-  return new Intl.NumberFormat("es-AR").format(nro)
+  const dd = String(fecha.getDate()).padStart(2, "0")
+  const mm = String(fecha.getMonth() + 1).padStart(2, "0")
+  const yyyy = fecha.getFullYear()
+  return `${dd}/${mm}/${yyyy}`
 }
 
 function fmtNroComprobante(ptoVenta: number | null, nro: number | null): string {
@@ -47,23 +70,74 @@ const condicionIvaLabel: Record<string, string> = {
 
 /* ── Constantes de layout ───────────────────────────────────────────────── */
 
-const LEFT = 40
-const RIGHT = 555
-const PAGE_W = RIGHT - LEFT // 515
-const BLUE = "#1e40af"
-const GREY_BG = "#f0f0f0"
-const HEADER_BG = "#e8e8e8"
-const DARK_BG = "#1a1a1a"
-const MUTED = "#999999"
+const MARGIN = 42.52 // ~15mm
+const PAGE_W = 595.28
+const LEFT = MARGIN
+const RIGHT = PAGE_W - MARGIN
+const CONTENT_W = RIGHT - LEFT
 
-/* ── Carga de datos (compartida) ────────────────────────────────────────── */
+/* ── Tipos internos ─────────────────────────────────────────────────────── */
 
+interface LiquidacionRow {
+  fecha: Date
+  ptoVenta: number | null
+  nro: number | null
+  total: number
+}
+
+interface GastoCombustibleCCRow {
+  gastoId: string
+  fechaFactura: Date
+  emisor: string
+  nroFactura: string
+  totalFactura: number
+  seDescuentan: number
+  saldo: number
+}
+
+interface OtroAdelantoRow {
+  adelantoId: string
+  fecha: Date
+  concepto: string
+  total: number
+  seDescuentan: number
+  saldo: number
+}
+
+interface EcheqRow {
+  banco: string
+  nro: string
+  fechaEmision: Date
+  fechaPago: Date
+  emisor: string
+  monto: number
+}
+
+interface ChequeFisicoRow {
+  banco: string
+  nro: string
+  fechaEmision: Date
+  fechaPago: Date
+  emisor: string
+  monto: number
+}
+
+/* ── Carga de datos ─────────────────────────────────────────────────────── */
+
+/**
+ * loadOP: string -> Promise<OPData>
+ *
+ * Propósito: Carga todos los datos necesarios para generar el PDF/HTML de una OP.
+ * Incluye comprobantes cancelados, estado de cta cte de combustible, adelantos,
+ * E-Cheqs y cheques físicos.
+ */
 async function loadOP(ordenPagoId: string) {
   const op = await prisma.ordenPago.findUnique({
     where: { id: ordenPagoId },
     include: {
       fletero: {
         select: {
+          id: true,
           razonSocial: true,
           cuit: true,
           condicionIva: true,
@@ -76,50 +150,33 @@ async function loadOP(ordenPagoId: string) {
         include: {
           liquidacion: {
             select: {
+              id: true,
               nroComprobante: true,
               ptoVenta: true,
               grabadaEn: true,
               total: true,
-              adelantoDescuentos: {
-                include: {
-                  adelanto: {
-                    select: { tipo: true, descripcion: true, monto: true },
-                  },
-                },
-              },
-              gastoDescuentos: {
-                include: {
-                  gasto: {
-                    select: {
-                      montoPagado: true,
-                      descripcion: true,
-                      facturaProveedor: {
-                        select: {
-                          tipoCbte: true,
-                          nroComprobante: true,
-                          proveedor: { select: { razonSocial: true } },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
             },
           },
           chequeEmitido: {
             select: {
               nroCheque: true,
+              fechaEmision: true,
               fechaPago: true,
               monto: true,
+              esElectronico: true,
               cuenta: { select: { nombre: true, bancoOEntidad: true } },
             },
           },
           chequeRecibido: {
             select: {
               nroCheque: true,
+              bancoEmisor: true,
+              fechaEmision: true,
               fechaCobro: true,
               monto: true,
-              bancoEmisor: true,
+              esElectronico: true,
+              empresa: { select: { razonSocial: true } },
+              proveedorOrigen: { select: { razonSocial: true } },
             },
           },
         },
@@ -129,13 +186,11 @@ async function loadOP(ordenPagoId: string) {
 
   if (!op) throw new Error(`OrdenPago ${ordenPagoId} no encontrada`)
 
-  // ── Estructurar secciones ──────────────────────────────────────────
-
-  // Facturas aplicadas (una fila por liquidación única)
-  const liquidacionesUnicas = new Map<string, { fecha: Date; ptoVenta: number | null; nro: number | null; total: number }>()
+  // ── Liquidaciones únicas (comprobantes cancelados) ──────────────────
+  const liqMap = new Map<string, LiquidacionRow>()
   for (const pago of op.pagos) {
-    if (pago.liquidacion && !liquidacionesUnicas.has(pago.liquidacionId ?? "")) {
-      liquidacionesUnicas.set(pago.liquidacionId ?? "", {
+    if (pago.liquidacion && pago.liquidacionId && !liqMap.has(pago.liquidacionId)) {
+      liqMap.set(pago.liquidacionId, {
         fecha: pago.liquidacion.grabadaEn,
         ptoVenta: pago.liquidacion.ptoVenta,
         nro: pago.liquidacion.nroComprobante,
@@ -143,94 +198,183 @@ async function loadOP(ordenPagoId: string) {
       })
     }
   }
-  const facturas = Array.from(liquidacionesUnicas.values())
+  const facturas = Array.from(liqMap.values())
   const totalFacturas = sumarImportes(facturas.map(f => f.total))
 
-  // Cheques propios — deduplicar por chequeEmitidoId
-  type ChequePropioRow = { cuenta: string; vencimiento: Date; nro: string; monto: number }
-  const chequesPropiosMap = new Map<string, ChequePropioRow>()
-  for (const p of op.pagos) {
-    if (p.tipoPago === "CHEQUE_PROPIO" && p.chequeEmitido && p.chequeEmitidoId) {
-      if (!chequesPropiosMap.has(p.chequeEmitidoId)) {
-        chequesPropiosMap.set(p.chequeEmitidoId, {
-          cuenta: p.chequeEmitido.cuenta?.nombre ?? p.chequeEmitido.cuenta?.bancoOEntidad ?? "-",
-          vencimiento: p.chequeEmitido.fechaPago,
-          nro: p.chequeEmitido.nroCheque ?? "-",
-          monto: p.chequeEmitido.monto,
-        })
-      }
-    }
-  }
-  const chequesPropios = Array.from(chequesPropiosMap.values())
-  const totalChequesPropios = sumarImportes(chequesPropios.map(c => c.monto))
+  // IDs de liquidaciones de esta OP (para filtrar descuentos)
+  const liqIds = Array.from(liqMap.keys())
 
-  // Cheques de tercero — deduplicar por chequeRecibidoId
-  type ChequeTerceroRow = { banco: string; vencimiento: Date; nro: string; monto: number }
-  const chequesTerceroMap = new Map<string, ChequeTerceroRow>()
-  for (const p of op.pagos) {
-    if (p.tipoPago === "CHEQUE_TERCERO" && p.chequeRecibido && p.chequeRecibidoId) {
-      if (!chequesTerceroMap.has(p.chequeRecibidoId)) {
-        chequesTerceroMap.set(p.chequeRecibidoId, {
-          banco: p.chequeRecibido.bancoEmisor,
-          vencimiento: p.chequeRecibido.fechaCobro,
-          nro: p.chequeRecibido.nroCheque,
-          monto: p.chequeRecibido.monto,
-        })
-      }
-    }
-  }
-  const chequesTercero = Array.from(chequesTerceroMap.values())
-  const totalChequesTercero = sumarImportes(chequesTercero.map(c => c.monto))
+  // ── Gastos de combustible: estado de cta cte ────────────────────────
+  const gastosCombustibleDB = await prisma.gastoFletero.findMany({
+    where: {
+      fleteroId: op.fletero.id,
+      tipo: "COMBUSTIBLE",
+      estado: { not: "DESCONTADO_TOTAL" },
+    },
+    include: {
+      facturaProveedor: {
+        select: {
+          ptoVenta: true,
+          nroComprobante: true,
+          proveedor: { select: { razonSocial: true } },
+        },
+      },
+      descuentos: true,
+    },
+    orderBy: { creadoEn: "asc" },
+  })
 
-  // Transferencias y efectivo
+  // También traer gastos ya DESCONTADO_TOTAL que tengan descuento en esta OP
+  const gastosTotalDescontadosEnOP = await prisma.gastoFletero.findMany({
+    where: {
+      fleteroId: op.fletero.id,
+      tipo: "COMBUSTIBLE",
+      estado: "DESCONTADO_TOTAL",
+      descuentos: { some: { liquidacionId: { in: liqIds } } },
+    },
+    include: {
+      facturaProveedor: {
+        select: {
+          ptoVenta: true,
+          nroComprobante: true,
+          proveedor: { select: { razonSocial: true } },
+        },
+      },
+      descuentos: true,
+    },
+    orderBy: { creadoEn: "asc" },
+  })
+
+  const todosGastosCombustible = [...gastosCombustibleDB, ...gastosTotalDescontadosEnOP]
+  // Deduplicar por id
+  const gastosUnicos = new Map(todosGastosCombustible.map(g => [g.id, g]))
+
+  const gastosCombustibleCC: GastoCombustibleCCRow[] = []
+  let totalDescontadoCombustible = 0
+
+  for (const gasto of Array.from(gastosUnicos.values())) {
+    const fp = gasto.facturaProveedor
+    const nroFact = fp
+      ? `${String(fp.ptoVenta ?? 0).padStart(4, "0")}-${String(fp.nroComprobante ?? "s/n")}`
+      : "Sin factura"
+    const emisor = fp?.proveedor?.razonSocial ?? (gasto.descripcion ?? "Combustible")
+
+    const descEnEstaOP = sumarImportes(
+      gasto.descuentos
+        .filter((desc: { liquidacionId: string }) => liqIds.includes(desc.liquidacionId))
+        .map((desc: { montoDescontado: number }) => desc.montoDescontado)
+    )
+    const totalDescontadoAcum = sumarImportes(gasto.descuentos.map((desc: { montoDescontado: number }) => desc.montoDescontado))
+    const saldo = Math.max(0, gasto.montoPagado - totalDescontadoAcum)
+
+    gastosCombustibleCC.push({
+      gastoId: gasto.id,
+      fechaFactura: gasto.creadoEn,
+      emisor,
+      nroFactura: nroFact,
+      totalFactura: gasto.montoPagado,
+      seDescuentan: descEnEstaOP,
+      saldo,
+    })
+
+    totalDescontadoCombustible = sumarImportes([totalDescontadoCombustible, descEnEstaOP])
+  }
+
+  // ── Adelantos no-combustible descontados en esta OP ─────────────────
+  const adelantoDescuentosOP = await prisma.adelantoDescuento.findMany({
+    where: { liquidacionId: { in: liqIds } },
+    include: {
+      adelanto: {
+        select: {
+          id: true,
+          tipo: true,
+          monto: true,
+          fecha: true,
+          descripcion: true,
+          montoDescontado: true,
+        },
+      },
+    },
+  })
+
+  // Agrupar por adelantoId, excluir COMBUSTIBLE
+  const otrosAdelantosMap = new Map<string, OtroAdelantoRow>()
+  for (const desc of adelantoDescuentosOP) {
+    if (desc.adelanto.tipo === "COMBUSTIBLE") continue
+    const key = desc.adelanto.id
+    if (!otrosAdelantosMap.has(key)) {
+      otrosAdelantosMap.set(key, {
+        adelantoId: key,
+        fecha: desc.adelanto.fecha,
+        concepto: desc.adelanto.descripcion ?? "Adelanto",
+        total: desc.adelanto.monto,
+        seDescuentan: 0,
+        saldo: Math.max(0, desc.adelanto.monto - desc.adelanto.montoDescontado),
+      })
+    }
+    const row = otrosAdelantosMap.get(key)!
+    row.seDescuentan = sumarImportes([row.seDescuentan, desc.montoDescontado])
+  }
+  const otrosAdelantos = Array.from(otrosAdelantosMap.values())
+  const totalOtrosAdelantos = sumarImportes(otrosAdelantos.map(a => a.seDescuentan))
+
+  // ── Transferencias y efectivo ───────────────────────────────────────
   const totalTransferencia = sumarImportes(
-    op.pagos.filter((p) => p.tipoPago === "TRANSFERENCIA").map(p => p.monto)
+    op.pagos.filter(p => p.tipoPago === "TRANSFERENCIA").map(p => p.monto)
   )
   const totalEfectivo = sumarImportes(
-    op.pagos.filter((p) => p.tipoPago === "EFECTIVO").map(p => p.monto)
+    op.pagos.filter(p => p.tipoPago === "EFECTIVO").map(p => p.monto)
   )
 
-  // Adelantos descontados (deduplicados por liquidacion)
-  type AdelantoRow = { descripcion: string; efectivo: number; gasOil: number; faltante: number }
-  const adelantosMap = new Map<string, AdelantoRow>()
-  for (const pago of op.pagos) {
-    if (!pago.liquidacion) continue
-    for (const desc of pago.liquidacion.adelantoDescuentos) {
-      const key = desc.adelantoId
-      if (!adelantosMap.has(key)) {
-        adelantosMap.set(key, { descripcion: desc.adelanto.descripcion ?? `AD-${key.slice(0, 6)}`, efectivo: 0, gasOil: 0, faltante: 0 })
-      }
-      const row = adelantosMap.get(key)!
-      const tipo = desc.adelanto.tipo
-      const monto = desc.montoDescontado
-      if (tipo === "EFECTIVO") row.efectivo += monto
-      else if (tipo === "COMBUSTIBLE") row.gasOil += monto
-      else row.faltante += monto
-    }
-  }
-  const adelantos = Array.from(adelantosMap.values())
-  const totalAdelantosEfectivo = sumarImportes(adelantos.map(a => a.efectivo))
-  const totalAdelantosGasOil = sumarImportes(adelantos.map(a => a.gasOil))
-  const totalAdelantosFaltante = sumarImportes(adelantos.map(a => a.faltante))
-  const totalAdelantosGeneral = sumarImportes([totalAdelantosEfectivo, totalAdelantosGasOil, totalAdelantosFaltante])
+  // ── E-Cheqs (propios + tercero electrónicos) ────────────────────────
+  const echeqs: EcheqRow[] = []
+  const chequesFisicos: ChequeFisicoRow[] = []
 
-  // Gastos descontados (deduplicados por gastoId x liquidacion)
-  type GastoRow = { proveedor: string; cbte: string; montoDescontado: number }
-  const gastosMap = new Map<string, GastoRow>()
-  for (const pago of op.pagos) {
-    if (!pago.liquidacion) continue
-    for (const desc of pago.liquidacion.gastoDescuentos) {
-      const key = `${desc.gastoId}-${desc.liquidacionId}`
-      if (!gastosMap.has(key)) {
-        const fp = desc.gasto.facturaProveedor
-        const cbte = fp ? [fp.tipoCbte, fp.nroComprobante ?? "s/n"].filter(Boolean).join(" ") : "Sin factura"
-        const proveedor = fp ? fp.proveedor.razonSocial : (desc.gasto.descripcion ?? "Gasto sin factura")
-        gastosMap.set(key, { proveedor, cbte, montoDescontado: desc.montoDescontado })
+  // Cheques propios — deduplicar por chequeEmitidoId
+  const chPropiosVistos = new Set<string>()
+  for (const p of op.pagos) {
+    if (p.tipoPago === "CHEQUE_PROPIO" && p.chequeEmitido && p.chequeEmitidoId) {
+      if (chPropiosVistos.has(p.chequeEmitidoId)) continue
+      chPropiosVistos.add(p.chequeEmitidoId)
+      echeqs.push({
+        banco: p.chequeEmitido.cuenta?.bancoOEntidad ?? p.chequeEmitido.cuenta?.nombre ?? "—",
+        nro: p.chequeEmitido.nroCheque ?? "—",
+        fechaEmision: p.chequeEmitido.fechaEmision,
+        fechaPago: p.chequeEmitido.fechaPago,
+        emisor: "Trans-Magg S.R.L.",
+        monto: p.chequeEmitido.monto,
+      })
+    }
+  }
+
+  // Cheques de tercero — deduplicar por chequeRecibidoId, separar por esElectronico
+  const chTercerosVistos = new Set<string>()
+  for (const p of op.pagos) {
+    if (p.tipoPago === "CHEQUE_TERCERO" && p.chequeRecibido && p.chequeRecibidoId) {
+      if (chTercerosVistos.has(p.chequeRecibidoId)) continue
+      chTercerosVistos.add(p.chequeRecibidoId)
+
+      const ch = p.chequeRecibido
+      const emisorLabel = ch.empresa?.razonSocial ?? ch.proveedorOrigen?.razonSocial ?? "—"
+      const row = {
+        banco: ch.bancoEmisor,
+        nro: ch.nroCheque,
+        fechaEmision: ch.fechaEmision,
+        fechaPago: ch.fechaCobro,
+        emisor: emisorLabel,
+        monto: ch.monto,
+      }
+
+      if (ch.esElectronico) {
+        echeqs.push(row)
+      } else {
+        chequesFisicos.push(row)
       }
     }
   }
-  const gastos = Array.from(gastosMap.values())
-  const totalGastosDescontados = sumarImportes(gastos.map(g => g.montoDescontado))
+
+  const totalEcheqs = sumarImportes(echeqs.map(e => e.monto))
+  const totalChequesFisicos = sumarImportes(chequesFisicos.map(c => c.monto))
 
   const condicionIva = condicionIvaLabel[op.fletero.condicionIva] ?? op.fletero.condicionIva
 
@@ -238,45 +382,31 @@ async function loadOP(ordenPagoId: string) {
     op,
     facturas,
     totalFacturas,
-    chequesPropios,
-    totalChequesPropios,
-    chequesTercero,
-    totalChequesTercero,
+    gastosCombustibleCC,
+    totalDescontadoCombustible,
+    otrosAdelantos,
+    totalOtrosAdelantos,
     totalTransferencia,
     totalEfectivo,
-    adelantos,
-    totalAdelantosEfectivo,
-    totalAdelantosGasOil,
-    totalAdelantosFaltante,
-    totalAdelantosGeneral,
-    gastos,
-    totalGastosDescontados,
+    echeqs,
+    totalEcheqs,
+    chequesFisicos,
+    totalChequesFisicos,
     condicionIva,
   }
 }
 
 /* ── PDF helpers ────────────────────────────────────────────────────────── */
 
-function blueLine(doc: PDFKit.PDFDocument) {
-  doc.moveTo(LEFT, doc.y).lineTo(RIGHT, doc.y).strokeColor(BLUE).lineWidth(1.5).stroke()
-  doc.moveDown(0.3)
-}
-
 function sectionTitle(doc: PDFKit.PDFDocument, title: string) {
-  const h = 16
+  const h = 18
   const startY = doc.y
-  doc.rect(LEFT, startY, PAGE_W, h).fill(GREY_BG)
-  doc.fillColor("#000").fontSize(8).font("Helvetica-Bold")
-    .text(title.toUpperCase(), LEFT + 8, startY + 4, { width: PAGE_W - 16 })
-  doc.y = startY + h
+  doc.rect(LEFT, startY, CONTENT_W, h).fill(SECTION_BG)
+  doc.fillColor(TEXT).fontSize(8).font("Helvetica-Bold")
+    .text(title.toUpperCase(), LEFT + 8, startY + 5, { width: CONTENT_W - 16 })
+  doc.y = startY + h + 2
 }
 
-/**
- * Draws a table with header row and data rows.
- * cols: array of { label, width, align }
- * rows: array of arrays of strings (one per col)
- * subtotalRow: optional subtotal row (array of strings, same length as cols)
- */
 function drawTable(
   doc: PDFKit.PDFDocument,
   cols: { label: string; width: number; align?: "left" | "center" | "right" }[],
@@ -284,15 +414,15 @@ function drawTable(
   subtotalRow?: string[],
 ) {
   const ROW_H = 16
-  const FONT_SIZE = 8
-  const PAD = 6
+  const FONT_SIZE = 7.5
+  const PAD = 5
 
   // Header
   let x = LEFT
   const headerY = doc.y
   for (const col of cols) {
     doc.rect(x, headerY, col.width, ROW_H).fill(HEADER_BG)
-    doc.fillColor("#000").fontSize(FONT_SIZE).font("Helvetica-Bold")
+    doc.fillColor(TEXT).fontSize(FONT_SIZE).font("Helvetica-Bold")
       .text(col.label, x + PAD, headerY + 4, { width: col.width - PAD * 2, align: col.align ?? "left" })
     x += col.width
   }
@@ -300,58 +430,61 @@ function drawTable(
 
   // Data rows
   for (const row of rows) {
+    // Page break check
+    if (doc.y + ROW_H > 780) {
+      doc.addPage()
+      doc.y = MARGIN
+    }
     x = LEFT
     const startY = doc.y
     for (let i = 0; i < cols.length; i++) {
       const col = cols[i]
       const val = row[i] ?? ""
-      doc.fontSize(FONT_SIZE).font("Helvetica").fillColor("#000")
+      doc.fontSize(FONT_SIZE).font("Helvetica").fillColor(TEXT)
         .text(val, x + PAD, startY + 4, { width: col.width - PAD * 2, align: col.align ?? "left" })
-      doc.y = startY // keep alignment
+      doc.y = startY
       x += col.width
     }
     doc.y = startY + ROW_H
   }
 
-  // Empty-state row
+  // Empty-state
   if (rows.length === 0) {
-    doc.fontSize(FONT_SIZE).font("Helvetica-Oblique").fillColor(MUTED)
-    doc.text("-- Sin registros --", LEFT + PAD, doc.y + 4, { width: PAGE_W - PAD * 2, align: "center" })
+    doc.fontSize(FONT_SIZE).font("Helvetica-Oblique").fillColor("#999999")
+    doc.text("— Sin registros —", LEFT + PAD, doc.y + 4, { width: CONTENT_W - PAD * 2, align: "center" })
     doc.y += ROW_H
-    doc.fillColor("#000").font("Helvetica")
+    doc.fillColor(TEXT).font("Helvetica")
   }
 
   // Subtotal row
   if (subtotalRow) {
     x = LEFT
     const subY = doc.y
-    doc.rect(LEFT, subY, PAGE_W, ROW_H).fill("#f9f9f9")
+    doc.rect(LEFT, subY, CONTENT_W, ROW_H).fill("#f5f7fa")
     for (let i = 0; i < cols.length; i++) {
       const col = cols[i]
       const val = subtotalRow[i] ?? ""
-      doc.fontSize(FONT_SIZE).font("Helvetica-Bold").fillColor("#000")
+      doc.fontSize(FONT_SIZE).font("Helvetica-Bold").fillColor(TEXT)
         .text(val, x + PAD, subY + 4, { width: col.width - PAD * 2, align: col.align ?? "left" })
       x += col.width
     }
     doc.y = subY + ROW_H
   }
 
-  doc.moveDown(0.5)
+  doc.moveDown(0.4)
 }
 
-/* ── generarHTMLOrdenPago (conservada para rutas que sirven HTML) ──────── */
+/* ── generarHTMLOrdenPago ───────────────────────────────────────────────── */
 
 /**
- * generarHTMLOrdenPago: (ordenPagoId: string) -> Promise<string>
+ * generarHTMLOrdenPago: string -> Promise<string>
  *
- * Dado el id de una Orden de Pago, carga todos los datos necesarios y genera
- * el HTML imprimible que replica el documento real de Trans-Magg S.R.L.
- * Incluye: datos del emisor, datos del fletero, facturas aplicadas,
- * cheques propios, cheques de tercero, adelantos y totales del pago.
+ * Propósito: Genera el HTML imprimible de la Orden de Pago con formato nro-anio.
  */
 export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string> {
   const d = await loadOP(ordenPagoId)
   const { op } = d
+  const nroDisplay = `${op.nro}-${op.anio}`
 
   function fmtHtml(n: number): string {
     return new Intl.NumberFormat("es-AR", {
@@ -364,101 +497,97 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
   const filaFacturas = d.facturas.map((f) => `
     <tr>
       <td>${fmtFecha(f.fecha)}</td>
-      <td class="center">${f.ptoVenta ?? "-"}</td>
       <td>${fmtNroComprobante(f.ptoVenta, f.nro)}</td>
       <td class="right">${fmtHtml(f.total)}</td>
     </tr>
   `).join("")
 
-  const filasChequesPropios = d.chequesPropios.length > 0
-    ? d.chequesPropios.map((c) => `
+  const filasCombustibleCC = d.gastosCombustibleCC.length > 0
+    ? d.gastosCombustibleCC.map((g) => `
       <tr>
-        <td>${c.cuenta}</td>
-        <td class="center">${fmtFecha(c.vencimiento)}</td>
-        <td>${c.nro}</td>
-        <td class="right">${fmtHtml(c.monto)}</td>
+        <td>${fmtFecha(g.fechaFactura)}</td>
+        <td>${g.emisor}</td>
+        <td>${g.nroFactura}</td>
+        <td class="right">${fmtHtml(g.totalFactura)}</td>
+        <td class="right">${fmtHtml(g.seDescuentan)}</td>
+        <td class="right">${fmtHtml(g.saldo)}</td>
       </tr>
     `).join("")
-    : `<tr><td colspan="4" class="center muted">— Sin cheques propios —</td></tr>`
+    : ""
 
-  const filasChequesTercero = d.chequesTercero.length > 0
-    ? d.chequesTercero.map((c) => `
+  const filasOtrosAdelantos = d.otrosAdelantos.length > 0
+    ? d.otrosAdelantos.map((a) => `
+      <tr>
+        <td>${fmtFecha(a.fecha)}</td>
+        <td>${a.concepto}</td>
+        <td class="right">${fmtHtml(a.total)}</td>
+        <td class="right">${fmtHtml(a.seDescuentan)}</td>
+        <td class="right">${fmtHtml(a.saldo)}</td>
+      </tr>
+    `).join("")
+    : ""
+
+  const filasEcheqs = d.echeqs.length > 0
+    ? d.echeqs.map((e) => `
+      <tr>
+        <td>${e.banco}</td>
+        <td>${e.nro}</td>
+        <td>${fmtFecha(e.fechaEmision)}</td>
+        <td>${fmtFecha(e.fechaPago)}</td>
+        <td>${e.emisor}</td>
+        <td class="right">${fmtHtml(e.monto)}</td>
+      </tr>
+    `).join("")
+    : ""
+
+  const filasChequesFisicos = d.chequesFisicos.length > 0
+    ? d.chequesFisicos.map((c) => `
       <tr>
         <td>${c.banco}</td>
-        <td class="center">${fmtFecha(c.vencimiento)}</td>
         <td>${c.nro}</td>
+        <td>${fmtFecha(c.fechaEmision)}</td>
+        <td>${fmtFecha(c.fechaPago)}</td>
+        <td>${c.emisor}</td>
         <td class="right">${fmtHtml(c.monto)}</td>
       </tr>
     `).join("")
-    : `<tr><td colspan="4" class="center muted">— Sin cheques de tercero —</td></tr>`
-
-  const filasAdelantos = d.adelantos.length > 0
-    ? d.adelantos.map((a) => `
-      <tr>
-        <td>${a.descripcion}</td>
-        <td class="right">${fmtHtml(a.efectivo)}</td>
-        <td class="right">${fmtHtml(a.gasOil)}</td>
-        <td class="right">${fmtHtml(a.faltante)}</td>
-      </tr>
-    `).join("")
-    : `<tr><td colspan="4" class="center muted">— Sin adelantos descontados —</td></tr>`
-
-  const filasGastos = d.gastos.length > 0
-    ? d.gastos.map((g) => `
-      <tr>
-        <td>${g.proveedor}</td>
-        <td>${g.cbte}</td>
-        <td class="right">${fmtHtml(g.montoDescontado)}</td>
-      </tr>
-    `).join("")
-    : `<tr><td colspan="3" class="center muted">— Sin gastos descontados —</td></tr>`
+    : ""
 
   const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Orden de Pago Nro ${fmtNro(op.nro)} — Trans-Magg S.R.L.</title>
+  <title>Orden de Pago Nro ${nroDisplay} — Trans-Magg S.R.L.</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: Arial, sans-serif; font-size: 11px; color: #000; padding: 15mm 18mm; }
-
-    .encabezado { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+    .encabezado { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; border-bottom: 2px solid ${NAVY}; padding-bottom: 10px; }
     .encabezado-empresa .nombre { font-size: 16px; font-weight: bold; }
     .encabezado-empresa .datos { font-size: 10px; color: #333; margin-top: 2px; }
     .encabezado-op { text-align: right; }
-    .encabezado-op .label { font-size: 10px; color: #555; text-transform: uppercase; }
-    .encabezado-op .nro { font-size: 20px; font-weight: bold; }
+    .encabezado-op .label { font-size: 13px; font-weight: bold; color: ${NAVY}; }
+    .encabezado-op .nro { font-size: 18px; font-weight: bold; }
     .encabezado-op .fecha { font-size: 11px; margin-top: 2px; }
-
-    .fletero-box { border: 1px solid #ccc; padding: 8px 12px; margin-bottom: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    .fletero-box { border: 1px solid ${BORDER}; padding: 8px 12px; margin-bottom: 12px; background: ${BG_LIGHT}; }
     .fletero-box .lbl { color: #555; font-size: 10px; text-transform: uppercase; }
     .fletero-box .val { font-weight: bold; }
-
     .seccion { margin-bottom: 12px; }
-    .seccion-titulo { font-size: 10px; font-weight: bold; text-transform: uppercase; background: #f0f0f0; padding: 4px 8px; border: 1px solid #ccc; border-bottom: none; letter-spacing: 0.5px; }
+    .seccion-titulo { font-size: 10px; font-weight: bold; text-transform: uppercase; background: ${SECTION_BG}; padding: 4px 8px; border: 1px solid #ccc; border-bottom: none; letter-spacing: 0.5px; }
+    .sub-titulo { font-size: 10px; font-weight: bold; font-style: italic; padding: 4px 8px; background: #fafafa; border: 1px solid #ddd; border-bottom: none; }
     table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    th { background: #e8e8e8; padding: 4px 8px; text-align: left; font-size: 10px; border: 1px solid #ccc; }
+    th { background: ${HEADER_BG}; padding: 4px 8px; text-align: left; font-size: 10px; border: 1px solid #ccc; }
     td { padding: 4px 8px; border: 1px solid #ddd; }
-    tr.subtotal { background: #f9f9f9; font-weight: bold; }
+    tr.subtotal { background: #f5f7fa; font-weight: bold; }
     .right { text-align: right; }
     .center { text-align: center; }
     .muted { color: #999; font-style: italic; font-size: 10px; }
-
-    .totales-finales { border: 2px solid #000; margin-top: 12px; }
-    .totales-finales thead th { background: #1a1a1a; color: #fff; font-size: 10px; padding: 5px 8px; }
-    .totales-finales tbody td { padding: 6px 8px; font-weight: bold; font-size: 12px; }
-
+    .total-box { border: 2px solid ${NAVY}; margin-top: 12px; background: ${DARK_BG}; color: #fff; padding: 10px 16px; display: flex; justify-content: space-between; font-size: 14px; font-weight: bold; }
     .firma { margin-top: 40px; display: flex; justify-content: flex-end; }
     .firma-linea { text-align: center; }
     .firma-linea .linea { border-top: 1px solid #000; width: 200px; margin-bottom: 4px; }
     .firma-linea .texto { font-size: 10px; color: #555; }
-
     .footer { margin-top: 20px; text-align: center; font-size: 9px; color: #aaa; border-top: 1px solid #eee; padding-top: 8px; }
-
-    @media print {
-      body { padding: 10mm 14mm; }
-      @page { margin: 10mm; }
-    }
+    @media print { body { padding: 10mm 14mm; } @page { margin: 10mm; } }
   </style>
 </head>
 <body>
@@ -466,152 +595,92 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
   <div class="encabezado">
     <div class="encabezado-empresa">
       <div class="nombre">TRANS-MAGG S.R.L.</div>
-      <div class="datos">C.U.I.T. 30-70938168-3</div>
+      <div class="datos">C.U.I.T. ${fmtCuit(op.fletero.cuit.length > 5 ? "30709381683" : "30709381683")}</div>
       <div class="datos">Belgrano 184 — 2109 Acebal (S.F.)</div>
     </div>
     <div class="encabezado-op">
-      <div class="label">Orden de Pago Nro:</div>
-      <div class="nro">${fmtNro(op.nro)}</div>
+      <div class="label">Orden de Pago</div>
+      <div class="nro">${nroDisplay}</div>
       <div class="fecha">Fecha: ${fmtFecha(op.fecha)}</div>
     </div>
   </div>
 
   <div class="fletero-box">
-    <div class="lbl">Fletero</div>
-    <div class="val">${op.fletero.razonSocial}</div>
-    <div class="lbl">Direccion</div>
-    <div class="val">${op.fletero.direccion ?? "—"}</div>
-    <div class="lbl">Cond. IVA</div>
-    <div class="val">${d.condicionIva}</div>
-    <div class="lbl">CUIT</div>
-    <div class="val">${fmtCuit(op.fletero.cuit)}</div>
+    <div><span class="lbl">Sres: </span><span class="val">${op.fletero.razonSocial}</span>
+      <span style="margin-left:20px" class="lbl">CUIT: </span><span class="val">${fmtCuit(op.fletero.cuit)}</span></div>
+    <div><span class="lbl">Domicilio: </span><span class="val">${op.fletero.direccion ?? "—"}</span></div>
+    <div><span class="lbl">Situación IVA: </span><span class="val">${d.condicionIva}</span></div>
   </div>
 
   <div class="seccion">
-    <div class="seccion-titulo">Facturas Aplicadas</div>
+    <div class="seccion-titulo">Comprobantes Cancelados</div>
     <table>
-      <thead><tr>
-        <th>Fecha</th>
-        <th class="center">Pto. Vta.</th>
-        <th>Nro. Fact.</th>
-        <th class="right">Importe</th>
-      </tr></thead>
+      <thead><tr><th>Fecha</th><th>Nro</th><th class="right">Total</th></tr></thead>
       <tbody>
         ${filaFacturas}
-        <tr class="subtotal">
-          <td colspan="3">Total Facturas Aplicadas</td>
-          <td class="right">${fmtHtml(d.totalFacturas)}</td>
-        </tr>
+        <tr class="subtotal"><td colspan="2">Total</td><td class="right">${fmtHtml(d.totalFacturas)}</td></tr>
       </tbody>
     </table>
   </div>
 
+  ${d.gastosCombustibleCC.length > 0 ? `
   <div class="seccion">
-    <div class="seccion-titulo">Detalle de Cheques Propios</div>
+    <div class="seccion-titulo">Descuentos por Adelantos</div>
+    <div class="sub-titulo">Estado de Cta Cte de Adelantos de Combustible</div>
     <table>
-      <thead><tr>
-        <th>Cuenta</th>
-        <th class="center">Vencimiento</th>
-        <th>Nro. Cheque</th>
-        <th class="right">Importe</th>
-      </tr></thead>
+      <thead><tr><th>Fecha</th><th>Emisor</th><th>Nro</th><th class="right">Total</th><th class="right">Se descuentan</th><th class="right">Saldo</th></tr></thead>
       <tbody>
-        ${filasChequesPropios}
-        <tr class="subtotal">
-          <td colspan="3">Total Cheques Propios</td>
-          <td class="right">${fmtHtml(d.totalChequesPropios)}</td>
-        </tr>
+        ${filasCombustibleCC}
+        <tr class="subtotal"><td colspan="4">Total descuento por adelanto de combustible</td><td class="right">${fmtHtml(d.totalDescontadoCombustible)}</td><td></td></tr>
       </tbody>
     </table>
-  </div>
+  </div>` : ""}
 
+  ${d.otrosAdelantos.length > 0 ? `
   <div class="seccion">
-    <div class="seccion-titulo">Detalle de Cheques de Tercero</div>
+    <div class="sub-titulo">Otros adelantos</div>
     <table>
-      <thead><tr>
-        <th>Banco</th>
-        <th class="center">Vencimiento</th>
-        <th>Nro. Cheque</th>
-        <th class="right">Importe</th>
-      </tr></thead>
+      <thead><tr><th>Fecha</th><th>Concepto</th><th class="right">Total</th><th class="right">Se descuentan</th><th class="right">Saldo</th></tr></thead>
       <tbody>
-        ${filasChequesTercero}
-        <tr class="subtotal">
-          <td colspan="3">Total Cheques de Tercero</td>
-          <td class="right">${fmtHtml(d.totalChequesTercero)}</td>
-        </tr>
+        ${filasOtrosAdelantos}
+        <tr class="subtotal"><td colspan="3">Total otros adelantos</td><td class="right">${fmtHtml(d.totalOtrosAdelantos)}</td><td></td></tr>
       </tbody>
     </table>
-  </div>
+  </div>` : ""}
 
   <div class="seccion">
-    <div class="seccion-titulo">Detalle de Adelantos</div>
+    <div class="seccion-titulo">Detalle del Pago</div>
+    ${d.totalTransferencia > 0 ? `<p style="padding:4px 8px;font-weight:bold;">Transferencia Bancaria: ${fmtHtml(d.totalTransferencia)}</p>` : ""}
+    ${d.totalEfectivo > 0 ? `<p style="padding:4px 8px;font-weight:bold;">Efectivo: ${fmtHtml(d.totalEfectivo)}</p>` : ""}
+    ${d.echeqs.length > 0 ? `
+    <div class="sub-titulo">E-Cheqs</div>
     <table>
-      <thead><tr>
-        <th>Concepto</th>
-        <th class="right">Efectivo</th>
-        <th class="right">Gas-Oil</th>
-        <th class="right">Faltante</th>
-      </tr></thead>
+      <thead><tr><th>Banco</th><th>Nro</th><th>Fecha Emisión</th><th>Fecha Pago</th><th>Emisor</th><th class="right">Monto</th></tr></thead>
       <tbody>
-        ${filasAdelantos}
-        <tr class="subtotal">
-          <td>Total Adelantos</td>
-          <td class="right">${fmtHtml(d.totalAdelantosEfectivo)}</td>
-          <td class="right">${fmtHtml(d.totalAdelantosGasOil)}</td>
-          <td class="right">${fmtHtml(d.totalAdelantosFaltante)}</td>
-        </tr>
+        ${filasEcheqs}
+        <tr class="subtotal"><td colspan="5">Total pago en E-Cheq</td><td class="right">${fmtHtml(d.totalEcheqs)}</td></tr>
       </tbody>
-    </table>
-  </div>
-
-  <div class="seccion">
-    <div class="seccion-titulo">Gastos Descontados</div>
+    </table>` : ""}
+    ${d.chequesFisicos.length > 0 ? `
+    <div class="sub-titulo">Cheques</div>
     <table>
-      <thead><tr>
-        <th>Proveedor</th>
-        <th>Comprobante</th>
-        <th class="right">Monto Descontado</th>
-      </tr></thead>
+      <thead><tr><th>Banco</th><th>Nro</th><th>Fecha Emisión</th><th>Fecha Pago</th><th>Emisor</th><th class="right">Monto</th></tr></thead>
       <tbody>
-        ${filasGastos}
-        <tr class="subtotal">
-          <td colspan="2">Total Gastos Descontados</td>
-          <td class="right">${fmtHtml(d.totalGastosDescontados)}</td>
-        </tr>
+        ${filasChequesFisicos}
+        <tr class="subtotal"><td colspan="5">Total pago en Cheques</td><td class="right">${fmtHtml(d.totalChequesFisicos)}</td></tr>
       </tbody>
-    </table>
+    </table>` : ""}
   </div>
 
-  <div class="seccion">
-    <table class="totales-finales">
-      <thead><tr>
-        <th class="right">Efectivo</th>
-        <th class="right">Transferencias</th>
-        <th class="right">Cheques Propios</th>
-        <th class="right">Cheques de Terc.</th>
-        <th class="right">Adelantos</th>
-        <th class="right">Gas-Oil</th>
-        <th class="right">Faltantes</th>
-        <th class="right">Gastos Desc.</th>
-      </tr></thead>
-      <tbody><tr>
-        <td class="right">${fmtHtml(d.totalEfectivo)}</td>
-        <td class="right">${fmtHtml(d.totalTransferencia)}</td>
-        <td class="right">${fmtHtml(d.totalChequesPropios)}</td>
-        <td class="right">${fmtHtml(d.totalChequesTercero)}</td>
-        <td class="right">${fmtHtml(d.totalAdelantosGeneral)}</td>
-        <td class="right">${fmtHtml(d.totalAdelantosGasOil)}</td>
-        <td class="right">${fmtHtml(d.totalAdelantosFaltante)}</td>
-        <td class="right">${fmtHtml(d.totalGastosDescontados)}</td>
-      </tr></tbody>
-    </table>
+  <div class="total-box">
+    <span>Total</span>
+    <span>${fmtHtml(d.totalFacturas)}</span>
   </div>
 
   <div class="firma">
     <div class="firma-linea">
       <div class="linea"></div>
-      <div class="texto">Firma y aclaracion del receptor</div>
+      <div class="texto">Firma y aclaración del receptor</div>
     </div>
   </div>
 
@@ -625,23 +694,26 @@ export async function generarHTMLOrdenPago(ordenPagoId: string): Promise<string>
   return html
 }
 
-/* ── generarPDFOrdenPago (pdfkit, sin Puppeteer) ────────────────────────── */
+/* ── generarPDFOrdenPago (pdfkit) ───────────────────────────────────────── */
 
 /**
- * generarPDFOrdenPago: (ordenPagoId: string) -> Promise<Buffer>
+ * generarPDFOrdenPago: string -> Promise<Buffer>
  *
- * Dado el id de una Orden de Pago, genera el PDF directamente con pdfkit.
- * Replica la estructura visual del documento real de Trans-Magg S.R.L.
+ * Propósito: Genera el PDF de la Orden de Pago con diseño navy/celeste
+ * consistente con factura y liquidación.
  */
 export async function generarPDFOrdenPago(ordenPagoId: string): Promise<Buffer> {
   const d = await loadOP(ordenPagoId)
   const { op } = d
+  const nroDisplay = `${op.nro}-${op.anio}`
+
+  const emisor = await obtenerDatosEmisor()
 
   // QR con link a la OP
   const qrUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://transmagg.com"}/ordenes-pago/${ordenPagoId}`
   const qrBuffer = await QRCode.toBuffer(qrUrl, { width: 80 })
 
-  const doc = new PDFDocument({ size: "A4", margin: 40 })
+  const doc = new PDFDocument({ size: "A4", margin: MARGIN })
   const chunks: Buffer[] = []
   doc.on("data", (c: Buffer) => chunks.push(c))
 
@@ -650,223 +722,280 @@ export async function generarPDFOrdenPago(ordenPagoId: string): Promise<Buffer> 
     doc.on("error", reject)
   })
 
-  // ── Encabezado ────────────────────────────────────────────────────────
+  // ─── 1. LÍNEA DECORATIVA SUPERIOR ──────────────────────────────────
+  doc.save()
+  doc.strokeColor(NAVY).lineWidth(2.5)
+  doc.moveTo(LEFT, MARGIN).lineTo(RIGHT, MARGIN).stroke()
+  doc.restore()
 
-  doc.font("Helvetica-Bold").fontSize(16).fillColor("#000")
-    .text("TRANS-MAGG S.R.L.", LEFT, 40)
-  doc.font("Helvetica").fontSize(9).fillColor("#333")
-    .text("C.U.I.T. 30-70938168-3", LEFT, doc.y + 2)
-    .text("Belgrano 184 — 2109 Acebal (S.F.)")
+  let cursorY = MARGIN + 10
 
-  // OP number — right aligned
-  const opY = 40
-  doc.font("Helvetica").fontSize(8).fillColor("#555")
-    .text("ORDEN DE PAGO NRO:", RIGHT - 160, opY, { width: 160, align: "right" })
-  doc.font("Helvetica-Bold").fontSize(18).fillColor("#000")
-    .text(fmtNro(op.nro), RIGHT - 160, opY + 10, { width: 160, align: "right" })
-  doc.font("Helvetica").fontSize(9).fillColor("#000")
-    .text(`Fecha: ${fmtFecha(op.fecha)}`, RIGHT - 160, opY + 30, { width: 160, align: "right" })
+  // ─── 2. ENCABEZADO ─────────────────────────────────────────────────
+  const headerLeftW = CONTENT_W * 0.48
+  const headerRightW = 220
+  const headerRightX = RIGHT - headerRightW
 
-  // QR
-  doc.image(qrBuffer, RIGHT - 80, opY + 44, { width: 60 })
+  // Izquierda: logo + datos emisor
+  let leftY = cursorY
+  if (emisor.logoComprobante) {
+    try {
+      doc.image(emisor.logoComprobante, LEFT, leftY, { fit: [180, 50] })
+      leftY += 54
+    } catch {
+      doc.font("Helvetica-Bold").fontSize(16).fillColor(TEXT)
+        .text(emisor.razonSocial, LEFT, leftY, { width: headerLeftW })
+      leftY = doc.y + 4
+    }
+  } else {
+    doc.font("Helvetica-Bold").fontSize(16).fillColor(TEXT)
+      .text(emisor.razonSocial, LEFT, leftY, { width: headerLeftW })
+    leftY = doc.y + 4
+  }
 
-  doc.y = Math.max(doc.y, opY + 106)
+  doc.font("Helvetica").fontSize(10).fillColor(TEXT)
+  doc.text(emisor.domicilio, LEFT, leftY, { width: headerLeftW })
+  leftY = doc.y + 1
+  doc.text(`CUIT: ${fmtCuit(emisor.cuit)}`, LEFT, leftY, { width: headerLeftW })
+  leftY = doc.y + 1
+  doc.text(`Condición IVA: ${emisor.condicionIva}`, LEFT, leftY, { width: headerLeftW })
 
-  // Blue separator
-  blueLine(doc)
+  // Derecha: recuadro redondeado con "Orden de Pago" + nro
+  const rightBoxH = 90
+  const rightBoxY = cursorY
+  const pad = 18
+  const innerW = headerRightW - pad * 2
 
-  // ── Datos del fletero ─────────────────────────────────────────────────
+  doc.save()
+  doc.strokeColor(BORDER).lineWidth(1)
+  doc.roundedRect(headerRightX, rightBoxY, headerRightW, rightBoxH, 6).stroke()
+  doc.restore()
 
-  const fleteroY = doc.y
-  const col1 = LEFT
-  const col2 = LEFT + 80
-  const col3 = LEFT + PAGE_W / 2
-  const col4 = col3 + 80
-  const LBL_SIZE = 7
-  const VAL_SIZE = 9
+  // Título
+  doc.font("Helvetica-Bold").fontSize(13).fillColor(NAVY)
+    .text("Orden de Pago", headerRightX + pad, rightBoxY + pad, { width: innerW })
 
-  doc.font("Helvetica").fontSize(LBL_SIZE).fillColor("#555")
-    .text("FLETERO", col1, fleteroY)
-  doc.font("Helvetica-Bold").fontSize(VAL_SIZE).fillColor("#000")
-    .text(op.fletero.razonSocial, col2, fleteroY)
+  // Número
+  doc.font("Helvetica-Bold").fontSize(16).fillColor(TEXT)
+    .text(nroDisplay, headerRightX + pad, doc.y + 4, { width: innerW })
 
-  doc.font("Helvetica").fontSize(LBL_SIZE).fillColor("#555")
-    .text("CUIT", col3, fleteroY)
-  doc.font("Helvetica-Bold").fontSize(VAL_SIZE).fillColor("#000")
-    .text(fmtCuit(op.fletero.cuit), col4, fleteroY)
+  // Fecha
+  doc.font("Helvetica").fontSize(9).fillColor(TEXT)
+    .text(`Fecha: ${fmtFecha(op.fecha)}`, headerRightX + pad, doc.y + 4, { width: innerW })
 
-  const row2Y = fleteroY + 14
-  doc.font("Helvetica").fontSize(LBL_SIZE).fillColor("#555")
-    .text("DIRECCION", col1, row2Y)
-  doc.font("Helvetica-Bold").fontSize(VAL_SIZE).fillColor("#000")
-    .text(op.fletero.direccion ?? "—", col2, row2Y)
+  cursorY = Math.max(doc.y + 4, rightBoxY + rightBoxH) + 12
 
-  doc.font("Helvetica").fontSize(LBL_SIZE).fillColor("#555")
-    .text("COND. IVA", col3, row2Y)
-  doc.font("Helvetica-Bold").fontSize(VAL_SIZE).fillColor("#000")
-    .text(d.condicionIva, col4, row2Y)
+  // ─── 3. DATOS DEL DESTINATARIO ──────────────────────────────────────
 
-  doc.y = row2Y + 18
-  blueLine(doc)
+  const clientBoxPadX = 12
+  const clientBoxPadY = 10
+  const clientLineH = 16
+  const clientBoxH = clientBoxPadY * 2 + clientLineH * 3
 
-  // ── Facturas Aplicadas ────────────────────────────────────────────────
+  doc.save()
+  doc.fillColor(BG_LIGHT)
+  doc.roundedRect(LEFT, cursorY, CONTENT_W, clientBoxH, 6).fill()
+  doc.restore()
 
-  sectionTitle(doc, "Facturas Aplicadas")
+  let cLineY = cursorY + clientBoxPadY
+  const labelX = LEFT + clientBoxPadX
+  const valueX = LEFT + clientBoxPadX + 60
+  const col2LabelX = LEFT + CONTENT_W * 0.55
+  const col2ValueX = col2LabelX + 40
+
+  // Fila 1: Sres + CUIT
+  doc.font("Helvetica-Bold").fontSize(8).fillColor(TEXT)
+    .text("Sres:", labelX, cLineY + 3, { continued: false })
+  doc.font("Helvetica-Bold").fontSize(9).fillColor(TEXT)
+    .text(op.fletero.razonSocial, valueX, cLineY + 2)
+  doc.font("Helvetica-Bold").fontSize(8).fillColor(TEXT)
+    .text("CUIT:", col2LabelX, cLineY + 3)
+  doc.font("Helvetica").fontSize(9).fillColor(TEXT)
+    .text(fmtCuit(op.fletero.cuit), col2ValueX, cLineY + 2)
+
+  cLineY += clientLineH
+
+  // Fila 2: Domicilio
+  doc.font("Helvetica-Bold").fontSize(8).fillColor(TEXT)
+    .text("Domicilio:", labelX, cLineY + 3)
+  doc.font("Helvetica").fontSize(9).fillColor(TEXT)
+    .text(op.fletero.direccion ?? "—", valueX + 10, cLineY + 2)
+
+  cLineY += clientLineH
+
+  // Fila 3: Situación IVA
+  doc.font("Helvetica-Bold").fontSize(8).fillColor(TEXT)
+    .text("Situación IVA:", labelX, cLineY + 3)
+  doc.font("Helvetica").fontSize(9).fillColor(TEXT)
+    .text(d.condicionIva, valueX + 20, cLineY + 2)
+
+  cursorY = cursorY + clientBoxH + 12
+  doc.y = cursorY
+
+  // ─── 4. COMPROBANTES CANCELADOS ─────────────────────────────────────
+
+  sectionTitle(doc, "Comprobantes Cancelados")
   drawTable(
     doc,
     [
-      { label: "Fecha", width: 100 },
-      { label: "Pto. Vta.", width: 80, align: "center" },
-      { label: "Nro. Fact.", width: 170 },
-      { label: "Importe", width: 165, align: "right" },
+      { label: "Fecha", width: 130 },
+      { label: "Nro", width: 200 },
+      { label: "Total", width: CONTENT_W - 330, align: "right" },
     ],
     d.facturas.map((f) => [
       fmtFecha(f.fecha),
-      String(f.ptoVenta ?? "-"),
       fmtNroComprobante(f.ptoVenta, f.nro),
       fmt(f.total),
     ]),
-    ["Total Facturas Aplicadas", "", "", fmt(d.totalFacturas)],
+    ["Total", "", fmt(d.totalFacturas)],
   )
 
-  // ── Cheques Propios ───────────────────────────────────────────────────
+  // ─── 5. DESCUENTOS POR ADELANTOS ───────────────────────────────────
 
-  sectionTitle(doc, "Detalle de Cheques Propios")
-  drawTable(
-    doc,
-    [
-      { label: "Cuenta", width: 170 },
-      { label: "Vencimiento", width: 100, align: "center" },
-      { label: "Nro. Cheque", width: 120 },
-      { label: "Importe", width: 125, align: "right" },
-    ],
-    d.chequesPropios.map((c) => [
-      c.cuenta,
-      fmtFecha(c.vencimiento),
-      c.nro,
-      fmt(c.monto),
-    ]),
-    ["Total Cheques Propios", "", "", fmt(d.totalChequesPropios)],
-  )
-
-  // ── Cheques de Tercero ────────────────────────────────────────────────
-
-  sectionTitle(doc, "Detalle de Cheques de Tercero")
-  drawTable(
-    doc,
-    [
-      { label: "Banco", width: 170 },
-      { label: "Vencimiento", width: 100, align: "center" },
-      { label: "Nro. Cheque", width: 120 },
-      { label: "Importe", width: 125, align: "right" },
-    ],
-    d.chequesTercero.map((c) => [
-      c.banco,
-      fmtFecha(c.vencimiento),
-      c.nro,
-      fmt(c.monto),
-    ]),
-    ["Total Cheques de Tercero", "", "", fmt(d.totalChequesTercero)],
-  )
-
-  // ── Adelantos ─────────────────────────────────────────────────────────
-
-  sectionTitle(doc, "Detalle de Adelantos")
-  drawTable(
-    doc,
-    [
-      { label: "Concepto", width: 215 },
-      { label: "Efectivo", width: 100, align: "right" },
-      { label: "Gas-Oil", width: 100, align: "right" },
-      { label: "Faltante", width: 100, align: "right" },
-    ],
-    d.adelantos.map((a) => [
-      a.descripcion,
-      fmt(a.efectivo),
-      fmt(a.gasOil),
-      fmt(a.faltante),
-    ]),
-    ["Total Adelantos", fmt(d.totalAdelantosEfectivo), fmt(d.totalAdelantosGasOil), fmt(d.totalAdelantosFaltante)],
-  )
-
-  // ── Gastos Descontados ────────────────────────────────────────────────
-
-  sectionTitle(doc, "Gastos Descontados")
-  drawTable(
-    doc,
-    [
-      { label: "Proveedor", width: 215 },
-      { label: "Comprobante", width: 170 },
-      { label: "Monto Descontado", width: 130, align: "right" },
-    ],
-    d.gastos.map((g) => [
-      g.proveedor,
-      g.cbte,
-      fmt(g.montoDescontado),
-    ]),
-    ["Total Gastos Descontados", "", fmt(d.totalGastosDescontados)],
-  )
-
-  // ── Totales del Pago ──────────────────────────────────────────────────
-
-  const totCols = [
-    { label: "Efectivo", width: 64, align: "right" as const },
-    { label: "Transf.", width: 64, align: "right" as const },
-    { label: "Ch. Propios", width: 66, align: "right" as const },
-    { label: "Ch. Terc.", width: 66, align: "right" as const },
-    { label: "Adelantos", width: 64, align: "right" as const },
-    { label: "Gas-Oil", width: 64, align: "right" as const },
-    { label: "Faltantes", width: 64, align: "right" as const },
-    { label: "Gastos Desc.", width: 63, align: "right" as const },
-  ]
-  const TOT_ROW_H = 18
-  const TOT_PAD = 4
-
-  // Dark header
-  let tx = LEFT
-  const thY = doc.y
-  for (const col of totCols) {
-    doc.rect(tx, thY, col.width, TOT_ROW_H).fill(DARK_BG)
-    doc.font("Helvetica-Bold").fontSize(7).fillColor("#ffffff")
-      .text(col.label, tx + TOT_PAD, thY + 5, { width: col.width - TOT_PAD * 2, align: "right" })
-    tx += col.width
+  // 5a. Estado de Cta Cte de Adelantos de Combustible
+  if (d.gastosCombustibleCC.length > 0) {
+    sectionTitle(doc, "Estado de Cta Cte de Adelantos de Combustible")
+    drawTable(
+      doc,
+      [
+        { label: "Fecha", width: 70 },
+        { label: "Emisor", width: 110 },
+        { label: "Nro", width: 80 },
+        { label: "Total", width: 75, align: "right" },
+        { label: "Se descuentan", width: 85, align: "right" },
+        { label: "Saldo", width: CONTENT_W - 420, align: "right" },
+      ],
+      d.gastosCombustibleCC.map((g) => [
+        fmtFecha(g.fechaFactura),
+        g.emisor,
+        g.nroFactura,
+        fmt(g.totalFactura),
+        fmt(g.seDescuentan),
+        fmt(g.saldo),
+      ]),
+      ["Total descuento por adelanto de combustible", "", "", "", fmt(d.totalDescontadoCombustible), ""],
+    )
   }
-  doc.y = thY + TOT_ROW_H
 
-  // Values row
-  const totValues = [
-    fmt(d.totalEfectivo),
-    fmt(d.totalTransferencia),
-    fmt(d.totalChequesPropios),
-    fmt(d.totalChequesTercero),
-    fmt(d.totalAdelantosGeneral),
-    fmt(d.totalAdelantosGasOil),
-    fmt(d.totalAdelantosFaltante),
-    fmt(d.totalGastosDescontados),
-  ]
-  tx = LEFT
-  const tvY = doc.y
-  for (let i = 0; i < totCols.length; i++) {
-    const col = totCols[i]
-    doc.font("Helvetica-Bold").fontSize(8).fillColor("#000")
-      .text(totValues[i], tx + TOT_PAD, tvY + 5, { width: col.width - TOT_PAD * 2, align: "right" })
-    doc.y = tvY
-    tx += col.width
+  // 5b. Otros adelantos
+  if (d.otrosAdelantos.length > 0) {
+    sectionTitle(doc, "Otros Adelantos")
+    drawTable(
+      doc,
+      [
+        { label: "Fecha", width: 85 },
+        { label: "Concepto", width: 140 },
+        { label: "Total", width: 90, align: "right" },
+        { label: "Se descuentan", width: 95, align: "right" },
+        { label: "Saldo", width: CONTENT_W - 410, align: "right" },
+      ],
+      d.otrosAdelantos.map((a) => [
+        fmtFecha(a.fecha),
+        a.concepto,
+        fmt(a.total),
+        fmt(a.seDescuentan),
+        fmt(a.saldo),
+      ]),
+      ["Total otros adelantos", "", "", fmt(d.totalOtrosAdelantos), ""],
+    )
   }
-  doc.y = tvY + TOT_ROW_H + 4
 
-  // Border around totals
-  doc.rect(LEFT, thY, PAGE_W, TOT_ROW_H * 2).strokeColor("#000").lineWidth(1.5).stroke()
+  // ─── 6. DETALLE DEL PAGO ───────────────────────────────────────────
 
-  // ── Firma ─────────────────────────────────────────────────────────────
+  sectionTitle(doc, "Detalle del Pago")
+
+  // 6a. Transferencia
+  if (d.totalTransferencia > 0) {
+    doc.font("Helvetica-Bold").fontSize(8).fillColor(TEXT)
+      .text(`Transferencia Bancaria:   ${fmt(d.totalTransferencia)}`, LEFT + 8, doc.y + 2)
+    doc.moveDown(0.5)
+  }
+
+  // 6b. Efectivo
+  if (d.totalEfectivo > 0) {
+    doc.font("Helvetica-Bold").fontSize(8).fillColor(TEXT)
+      .text(`Efectivo:   ${fmt(d.totalEfectivo)}`, LEFT + 8, doc.y + 2)
+    doc.moveDown(0.5)
+  }
+
+  // 6c. E-Cheqs
+  if (d.echeqs.length > 0) {
+    doc.font("Helvetica-Bold").fontSize(7.5).fillColor(NAVY)
+      .text("E-Cheqs", LEFT + 8, doc.y + 2)
+    doc.moveDown(0.2)
+
+    drawTable(
+      doc,
+      [
+        { label: "Banco", width: 100 },
+        { label: "Nro", width: 80 },
+        { label: "F. Emisión", width: 70, align: "center" },
+        { label: "F. Pago", width: 70, align: "center" },
+        { label: "Emisor", width: 100 },
+        { label: "Monto", width: CONTENT_W - 420, align: "right" },
+      ],
+      d.echeqs.map((e) => [
+        e.banco,
+        e.nro,
+        fmtFecha(e.fechaEmision),
+        fmtFecha(e.fechaPago),
+        e.emisor,
+        fmt(e.monto),
+      ]),
+      ["Total pago en E-Cheq", "", "", "", "", fmt(d.totalEcheqs)],
+    )
+  }
+
+  // 6d. Cheques físicos
+  if (d.chequesFisicos.length > 0) {
+    doc.font("Helvetica-Bold").fontSize(7.5).fillColor(NAVY)
+      .text("Cheques", LEFT + 8, doc.y + 2)
+    doc.moveDown(0.2)
+
+    drawTable(
+      doc,
+      [
+        { label: "Banco", width: 100 },
+        { label: "Nro", width: 80 },
+        { label: "F. Emisión", width: 70, align: "center" },
+        { label: "F. Pago", width: 70, align: "center" },
+        { label: "Emisor", width: 100 },
+        { label: "Monto", width: CONTENT_W - 420, align: "right" },
+      ],
+      d.chequesFisicos.map((c) => [
+        c.banco,
+        c.nro,
+        fmtFecha(c.fechaEmision),
+        fmtFecha(c.fechaPago),
+        c.emisor,
+        fmt(c.monto),
+      ]),
+      ["Total pago en Cheques", "", "", "", "", fmt(d.totalChequesFisicos)],
+    )
+  }
+
+  // ─── 7. TOTAL DE PAGO ─────────────────────────────────────────────
+
+  const totY = doc.y + 4
+  const TOT_H = 28
+
+  doc.rect(LEFT, totY, CONTENT_W, TOT_H).fill(DARK_BG)
+
+  doc.font("Helvetica-Bold").fontSize(11).fillColor("#ffffff")
+    .text("Total:", LEFT + 16, totY + 8)
+  doc.font("Helvetica-Bold").fontSize(12).fillColor("#ffffff")
+    .text(fmt(d.totalFacturas), LEFT + 16, totY + 8, { width: CONTENT_W - 32, align: "right" })
+
+  doc.y = totY + TOT_H
+
+  // ─── 8. FIRMA ─────────────────────────────────────────────────────
 
   doc.y += 30
   const firmaX = RIGHT - 200
   doc.moveTo(firmaX, doc.y).lineTo(RIGHT, doc.y).strokeColor("#000").lineWidth(0.5).stroke()
   doc.font("Helvetica").fontSize(8).fillColor("#555")
-    .text("Firma y aclaracion del receptor", firmaX, doc.y + 4, { width: 200, align: "center" })
+    .text("Firma y aclaración del receptor", firmaX, doc.y + 4, { width: 200, align: "center" })
 
-  // ── Footer ────────────────────────────────────────────────────────────
+  // ─── 9. FOOTER ────────────────────────────────────────────────────
 
   doc.y += 20
   doc.moveTo(LEFT, doc.y).lineTo(RIGHT, doc.y).strokeColor("#eeeeee").lineWidth(0.5).stroke()
@@ -875,8 +1004,13 @@ export async function generarPDFOrdenPago(ordenPagoId: string): Promise<Buffer> 
       `Trans-Magg S.R.L. — Orden de Pago generada el ${fmtFecha(new Date())} — Operador: ${op.operador.nombre} ${op.operador.apellido}`,
       LEFT,
       doc.y + 4,
-      { width: PAGE_W, align: "center" },
+      { width: CONTENT_W, align: "center" },
     )
+
+  // QR en la esquina inferior
+  try {
+    doc.image(qrBuffer, LEFT, doc.y + 10, { width: 50 })
+  } catch { /* skip */ }
 
   doc.end()
   return finished

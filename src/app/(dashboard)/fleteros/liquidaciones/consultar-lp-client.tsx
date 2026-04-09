@@ -57,7 +57,7 @@ type Liquidacion = {
   fleteroId: string
   fletero: { razonSocial: string; cuit?: string }
   viajes: ViajeEnLiquidacion[]
-  pagos: { id: string; monto: number; tipoPago: string; fechaPago: string; anulado: boolean; ordenPago: { id: string; nro: number; fecha: string; pdfS3Key?: string | null } | null }[]
+  pagos: { id: string; monto: number; tipoPago: string; fechaPago: string; anulado: boolean; ordenPago: { id: string; nro: number; anio: number; fecha: string; pdfS3Key?: string | null } | null }[]
 }
 
 type ConsultarLPClientProps = {
@@ -267,8 +267,8 @@ function TablaLiquidaciones({
                 )}
                 <td className="px-3 py-2 font-mono text-xs">
                   {op ? (
-                    <button type="button" onClick={() => onAbrirPDF({ url: `/api/ordenes-pago/${op.id}/pdf`, titulo: `OP Nro ${String(op.nro).padStart(8, "0")}` })} className="text-primary hover:underline font-medium">
-                      {String(op.nro).padStart(8, "0")}
+                    <button type="button" onClick={() => onAbrirPDF({ url: `/api/ordenes-pago/${op.id}/pdf`, titulo: `OP Nro ${op.nro}-${op.anio}` })} className="text-primary hover:underline font-medium">
+                      {op.nro}-{op.anio}
                     </button>
                   ) : (
                     <span className="text-xs text-muted-foreground">—</span>

@@ -57,7 +57,7 @@ export async function GET(
           where: { anulado: false },
           include: {
             ordenPago: {
-              select: { id: true, nro: true, fecha: true, pdfS3Key: true },
+              select: { id: true, nro: true, anio: true, fecha: true, pdfS3Key: true },
             },
           },
         },
@@ -88,6 +88,7 @@ export async function GET(
           ? {
               id: ordenPago.id,
               nro: ordenPago.nro,
+              anio: ordenPago.anio,
               fecha: ordenPago.fecha.toISOString(),
               pdfS3Key: ordenPago.pdfS3Key,
             }
