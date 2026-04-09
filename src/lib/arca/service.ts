@@ -711,7 +711,9 @@ async function _autorizarComprobante(
     throw new Error("Respuesta FECAESolicitar sin detalle de comprobante")
   }
 
-  const observaciones = det.Observaciones?.Obs?.map((o) => `${o.Code}: ${o.Msg}`).join("; ") ?? ""
+  const obsRaw = det.Observaciones?.Obs
+  const obsArr = obsRaw ? (Array.isArray(obsRaw) ? obsRaw : [obsRaw]) : []
+  const observaciones = obsArr.map((o: { Code: unknown; Msg: unknown }) => `${o.Code}: ${o.Msg}`).join("; ")
 
   if (det.Resultado === "R") {
     logArca("warn", "autorizacion", "Comprobante rechazado por ARCA", {
