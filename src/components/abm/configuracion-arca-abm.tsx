@@ -579,10 +579,28 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
                   <Input type="password" value={certPass} onChange={(e) => setCertPass(e.target.value)} className="h-8 text-sm mt-0.5" placeholder="Opcional — dejar vacío si no tiene" />
                 </div>
                 <input ref={fileRef} type="file" accept=".pfx,.p12,.pem,.crt" onChange={handleCertFile} className="hidden" />
-                <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={saving === "certificado"}>
-                  {saving === "certificado" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Upload className="h-3 w-3 mr-1" />}
-                  {config?.tieneCertificado ? "Reemplazar certificado" : "Cargar certificado"}
-                </Button>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={saving === "certificado"}>
+                    {saving === "certificado" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Upload className="h-3 w-3 mr-1" />}
+                    {config?.tieneCertificado ? "Reemplazar certificado" : "Cargar certificado"}
+                  </Button>
+                  {config?.tieneCertificado && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      disabled={saving === "certificado"}
+                      onClick={async () => {
+                        if (!confirm("¿Eliminar el certificado cargado? ARCA no podrá emitir comprobantes sin certificado.")) return
+                        await patch({ certificadoB64: "", certificadoPass: "" }, "certificado")
+                        setCertInfo(null)
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3 mr-1" />
+                      Eliminar
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
 
