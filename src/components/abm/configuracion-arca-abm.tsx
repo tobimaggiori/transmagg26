@@ -187,6 +187,20 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
   const logoComprobanteRef = useRef<HTMLInputElement>(null)
   const logoArcaRef = useRef<HTMLInputElement>(null)
 
+  // Cargar previews de logos existentes desde R2
+  useEffect(() => {
+    async function cargarLogo(tipo: "comprobante" | "arca", setPreview: (v: string | null) => void) {
+      try {
+        const res = await fetch(`/api/configuracion-arca/logos?tipo=${tipo}`)
+        if (!res.ok) return
+        const blob = await res.blob()
+        setPreview(URL.createObjectURL(blob))
+      } catch { /* ignore */ }
+    }
+    if (config?.tieneLogoComprobante) cargarLogo("comprobante", setLogoComprobantePreview)
+    if (config?.tieneLogoArca) cargarLogo("arca", setLogoArcaPreview)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handleLogoFile(
     file: File,
     setPreview: (v: string | null) => void,
