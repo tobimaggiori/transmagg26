@@ -113,6 +113,8 @@ export async function GET(
           creadoEn: true,
           tipo: true,
           montoTotal: true,
+          nroComprobante: true,
+          ptoVenta: true,
           nroComprobanteExterno: true,
         },
       }),
@@ -143,12 +145,17 @@ export async function GET(
     }
 
     for (const nc of notasCreditoDebito) {
+      // Formatear nro comprobante: preferir nro interno, fallback a externo
+      const cbteNro = nc.nroComprobante && nc.ptoVenta
+        ? `${String(nc.ptoVenta).padStart(4, "0")}-${String(nc.nroComprobante).padStart(8, "0")}`
+        : nc.nroComprobanteExterno ?? ""
+
       if (nc.tipo === "NC_EMITIDA") {
         movimientos.push({
           fechaRaw: nc.creadoEn,
           fecha: nc.creadoEn.toISOString(),
           concepto: "Nota de Crédito",
-          comprobante: nc.nroComprobanteExterno ?? "",
+          comprobante: cbteNro,
           debe: 0,
           haber: nc.montoTotal,
         })
@@ -157,7 +164,7 @@ export async function GET(
           fechaRaw: nc.creadoEn,
           fecha: nc.creadoEn.toISOString(),
           concepto: "Nota de Débito",
-          comprobante: nc.nroComprobanteExterno ?? "",
+          comprobante: cbteNro,
           debe: nc.montoTotal,
           haber: 0,
         })

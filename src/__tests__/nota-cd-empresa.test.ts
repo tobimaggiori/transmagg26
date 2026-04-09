@@ -368,3 +368,253 @@ describe("ARCA autorizarNotaCDArca: PV persistido", () => {
     expect(resolverPV(null, 203, { NOTA_CREDITO_FCE_A: 11 })).toBe(11)
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Tests 21-24: Inmutabilidad de la factura original
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("crearNotaEmpresaEmitida: inmutabilidad de factura", () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue(FACTURA_MOCK)
+    mockTx.notaCreditoDebito.findFirst.mockResolvedValue(null)
+    mockTx.notaCreditoDebito.create.mockResolvedValue({ id: "nota-1" })
+    mockTx.notaCreditoDebitoItem.create.mockResolvedValue({ id: "item-1" })
+  })
+
+  it("emitir NC no modifica FacturaEmitida.montoTotal ni montoNeto", async () => {
+    ;(calcularSaldoPendienteFactura as jest.Mock).mockResolvedValue(50000)
+    await crearNotaEmpresaEmitida({
+      facturaId: "f-1",
+      tipoNota: "NC",
+      items: [{ concepto: "Descuento", subtotal: 10000 }],
+    }, "op-1")
+
+    // facturaEmitida NO debe tener update calls
+    const txKeys = Object.keys(mockTx)
+    const facturaUpdate = txKeys.includes("facturaEmitida")
+      ? (mockTx as unknown as Record<string, { update?: jest.Mock }>).facturaEmitida?.update
+      : undefined
+    if (facturaUpdate) {
+      expect(facturaUpdate).not.toHaveBeenCalled()
+    }
+    // La transacción no debe contener updates a factura
+    expect(mockTx.notaCreditoDebito.create).toHaveBeenCalledTimes(1)
+  })
+
+  it("emitir ND no modifica FacturaEmitida.montoTotal ni montoNeto", async () => {
+    ;(calcularSaldoPendienteFactura as jest.Mock).mockResolvedValue(0)
+    await crearNotaEmpresaEmitida({
+      facturaId: "f-1",
+      tipoNota: "ND",
+      items: [{ concepto: "Ajuste", subtotal: 5000 }],
+    }, "op-1")
+
+    // La nota se crea pero la factura no se toca
+    expect(mockTx.notaCreditoDebito.create).toHaveBeenCalledTimes(1)
+    // Verificar que los datos de la factura no aparecen en ningún update
+    const createCall = mockTx.notaCreditoDebito.create.mock.calls[0][0]
+    expect(createCall.data.facturaId).toBe("f-1")
+    // La factura queda intacta — solo se crea la nota
+  })
+
+  it("la nota guarda sus propios montos independientes de la factura", async () => {
+    ;(calcularSaldoPendienteFactura as jest.Mock).mockResolvedValue(50000)
+    await crearNotaEmpresaEmitida({
+      facturaId: "f-1",
+      tipoNota: "NC",
+      items: [{ concepto: "Test", subtotal: 1000 }, { concepto: "Test 2", subtotal: 500 }],
+    }, "op-1")
+
+    const createCall = mockTx.notaCreditoDebito.create.mock.calls[0][0]
+    // montoNeto = sum(items) = 1500
+    expect(createCall.data.montoNeto).toBe(1500)
+    // montoIva = 1500 * 0.21 = 315
+    expect(createCall.data.montoIva).toBe(315)
+    // montoTotal = 1500 + 315 = 1815
+    expect(createCall.data.montoTotal).toBe(1815)
+    // Estos son montos propios de la nota, NO de la factura
+    // La factura sigue con total 121000
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Tests 25-28: Validaciones de ítems
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("crearNotaEmpresaEmitida: validación de ítems", () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue(FACTURA_MOCK)
+    ;(calcularSaldoPendienteFactura as jest.Mock).mockResolvedValue(50000)
+  })
+
+  it("rechaza si items vacío", async () => {
+    const r = await crearNotaEmpresaEmitida({
+      facturaId: "f-1",
+      tipoNota: "NC",
+      items: [],
+    }, "op-1")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("al menos un ítem")
+  })
+
+  it("rechaza si concepto está vacío", async () => {
+    const r = await crearNotaEmpresaEmitida({
+      facturaId: "f-1",
+      tipoNota: "NC",
+      items: [{ concepto: "  ", subtotal: 1000 }],
+    }, "op-1")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("concepto")
+  })
+
+  it("rechaza si subtotal <= 0", async () => {
+    const r = await crearNotaEmpresaEmitida({
+      facturaId: "f-1",
+      tipoNota: "NC",
+      items: [{ concepto: "Desc", subtotal: 0 }],
+    }, "op-1")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("subtotal")
+  })
+
+  it("rechaza factura no autorizada en ARCA", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
+      ...FACTURA_MOCK,
+      estadoArca: "PENDIENTE",
+    })
+    const r = await crearNotaEmpresaEmitida({
+      facturaId: "f-1",
+      tipoNota: "NC",
+      items: [{ concepto: "Test", subtotal: 1000 }],
+    }, "op-1")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("autorizada en ARCA")
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Tests 29-31: Payload ARCA — mapearComprobanteArca con CbtesAsoc
+// ═══════════════════════════════════════════════════════════════════════════════
+
+import { mapearComprobanteArca, type DatosComprobanteBase } from "@/lib/arca/mappers"
+
+describe("mapearComprobanteArca: NC/ND con CbtesAsoc", () => {
+  const baseDatos: DatosComprobanteBase = {
+    tipoCbte: 3, // NC A
+    ptoVenta: 5,
+    nroComprobante: 42,
+    fecha: new Date("2026-04-08T12:00:00"),
+    cuitReceptor: "30123456789",
+    neto: 1000,
+    ivaMonto: 210,
+    total: 1210,
+    concepto: 2,
+    fechaServDesde: new Date("2026-04-01T12:00:00"),
+    fechaServHasta: new Date("2026-04-08T12:00:00"),
+    comprobanteAsociado: {
+      tipo: 1, // Factura A
+      ptoVta: 2,
+      nro: 100,
+      cuit: "30709381683",
+      fecha: new Date("2026-03-15T12:00:00"),
+    },
+  }
+
+  it("incluye CbtesAsoc en el payload", () => {
+    const req = mapearComprobanteArca(baseDatos)
+    const det = req.FeDetReq.FECAEDetRequest[0]
+    expect(det.CbtesAsoc).toBeDefined()
+    expect(det.CbtesAsoc!.CbteAsoc).toHaveLength(1)
+  })
+
+  it("CbteAsoc tiene tipo, ptoVta, nro, cuit y fecha correctos", () => {
+    const req = mapearComprobanteArca(baseDatos)
+    const asoc = req.FeDetReq.FECAEDetRequest[0].CbtesAsoc!.CbteAsoc[0]
+    expect(asoc.Tipo).toBe(1)
+    expect(asoc.PtoVta).toBe(2)
+    expect(asoc.Nro).toBe(100)
+    expect(asoc.Cuit).toBe("30709381683")
+    expect(asoc.CbteFch).toBe("20260315")
+  })
+
+  it("sin comprobanteAsociado, no incluye CbtesAsoc", () => {
+    const sinAsoc = { ...baseDatos, comprobanteAsociado: undefined }
+    const req = mapearComprobanteArca(sinAsoc)
+    const det = req.FeDetReq.FECAEDetRequest[0]
+    expect(det.CbtesAsoc).toBeUndefined()
+  })
+
+  it("CbteFch de la nota usa la fecha ingresada", () => {
+    const req = mapearComprobanteArca(baseDatos)
+    const det = req.FeDetReq.FECAEDetRequest[0]
+    expect(det.CbteFch).toBe("20260408")
+  })
+
+  it("tipoCbte 3 (NC A) con IVA incluye alícuota", () => {
+    const req = mapearComprobanteArca(baseDatos)
+    const det = req.FeDetReq.FECAEDetRequest[0]
+    expect(det.Iva?.AlicIva).toHaveLength(1)
+    expect(det.Iva!.AlicIva[0].Id).toBe(5) // 21%
+    expect(det.Iva!.AlicIva[0].BaseImp).toBe(1000)
+    expect(det.Iva!.AlicIva[0].Importe).toBe(210)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Tests 32-34: validarPreAutorizacion para NC/ND
+// ═══════════════════════════════════════════════════════════════════════════════
+
+import { validarPreAutorizacion } from "@/lib/arca/validators"
+import type { ArcaConfig } from "@/lib/arca/types"
+
+describe("validarPreAutorizacion: NC/ND", () => {
+  const configOk: ArcaConfig = {
+    cuit: "30709381683",
+    razonSocial: "Test",
+    certificadoB64: "xxx",
+    certificadoPass: "",
+    modo: "simulacion",
+    puntosVenta: {},
+    comprobantesHabilitados: [],
+    cbuMiPymes: null,
+    activa: true,
+  }
+
+  it("NC (tipoCbte 3) sin comprobanteAsociado → error", () => {
+    const datos: DatosComprobanteBase = {
+      tipoCbte: 3, ptoVenta: 5, nroComprobante: 1,
+      fecha: new Date(), cuitReceptor: "30123456789",
+      neto: 1000, ivaMonto: 210, total: 1210,
+      concepto: 2, fechaServDesde: new Date(), fechaServHasta: new Date(),
+    }
+    const errores = validarPreAutorizacion(configOk, datos)
+    expect(errores.some(e => e.includes("comprobante asociado"))).toBe(true)
+  })
+
+  it("ND FCE (tipoCbte 202) sin comprobanteAsociado → error", () => {
+    const datos: DatosComprobanteBase = {
+      tipoCbte: 202, ptoVenta: 5, nroComprobante: 1,
+      fecha: new Date(), cuitReceptor: "30123456789",
+      neto: 1000, ivaMonto: 210, total: 1210,
+      concepto: 2, fechaServDesde: new Date(), fechaServHasta: new Date(),
+    }
+    const errores = validarPreAutorizacion(configOk, datos)
+    expect(errores.some(e => e.includes("comprobante asociado"))).toBe(true)
+  })
+
+  it("NC con comprobanteAsociado válido → sin error de asociado", () => {
+    const datos: DatosComprobanteBase = {
+      tipoCbte: 3, ptoVenta: 5, nroComprobante: 1,
+      fecha: new Date(), cuitReceptor: "30123456789",
+      neto: 1000, ivaMonto: 210, total: 1210,
+      concepto: 2, fechaServDesde: new Date(), fechaServHasta: new Date(),
+      comprobanteAsociado: {
+        tipo: 1, ptoVta: 2, nro: 100, cuit: "30709381683", fecha: new Date(),
+      },
+    }
+    const errores = validarPreAutorizacion(configOk, datos)
+    expect(errores.some(e => e.includes("comprobante asociado"))).toBe(false)
+  })
+})

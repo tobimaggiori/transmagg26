@@ -171,8 +171,21 @@ export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientPro
     ...empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: formatearCuit(e.cuit) })),
   ]
 
-  // Columnas: Fecha, Tipo, Nº, [Empresa], Total, Estado, Recibo, NC/ND, Ver PDF
-  const colCount = mostrarColumnaEmpresa ? 9 : 8
+  // Columnas: Fecha, Tipo, Nº, [Empresa], Total, Saldo, Estado, Recibo, NC/ND, Ver PDF
+  const colCount = mostrarColumnaEmpresa ? 10 : 9
+
+  /**
+   * calcularSaldoVigente: FacturaRow -> number
+   * saldo = total + sum(ND) - sum(NC) - totalPagado
+   */
+  function calcularSaldoVigente(fact: FacturaRow): number {
+    const totalPagado = fact.totalPagado ?? 0
+    const notas = fact.notasCreditoDebito ?? []
+    const ajusteNC = sumarImportes(notas.filter((n) => n.tipo === "NC_EMITIDA").map((n) => n.montoTotal))
+    const ajusteND = sumarImportes(notas.filter((n) => n.tipo === "ND_EMITIDA").map((n) => n.montoTotal))
+    const netoVigente = Math.max(0, restarImportes(sumarImportes([fact.total, ajusteND]), ajusteNC))
+    return Math.max(0, restarImportes(netoVigente, totalPagado))
+  }
 
   return (
     <div className="space-y-5">
@@ -248,6 +261,7 @@ export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientPro
                   <th className="px-3 py-3 text-left">Nº Comprobante</th>
                   {mostrarColumnaEmpresa && <th className="px-3 py-3 text-left">Empresa</th>}
                   <th className="px-3 py-3 text-right font-semibold">Total</th>
+                  <th className="px-3 py-3 text-right">Saldo</th>
                   <th className="px-3 py-3 text-center">Estado</th>
                   <th className="px-3 py-3 text-left">Recibo</th>
                   <th className="px-3 py-3 text-center">NC/ND</th>
@@ -274,6 +288,12 @@ export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientPro
                         <td className="px-3 py-2 font-mono text-sm">{formatNroComprobante(fact.ptoVenta, fact.nroComprobante)}</td>
                         {mostrarColumnaEmpresa && <td className="px-3 py-2 max-w-[160px] truncate">{fact.empresa.razonSocial}</td>}
                         <td className="px-3 py-2 text-right font-semibold">{formatearMoneda(fact.total)}</td>
+                        <td className="px-3 py-2 text-right text-muted-foreground">
+                          {(() => {
+                            const saldo = calcularSaldoVigente(fact)
+                            return saldo > 0 ? formatearMoneda(saldo) : <span className="text-success">Saldada</span>
+                          })()}
+                        </td>
                         <td className="px-3 py-2 text-center">
                           <EstadoBadge estado={fact.estado} />
                           {(fact.estadoArca === "PENDIENTE" || fact.estadoArca === "RECHAZADA") && (
@@ -325,6 +345,7 @@ export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientPro
                   <tr className="bg-muted font-semibold border-t-2">
                     <td colSpan={mostrarColumnaEmpresa ? 4 : 3} className="px-3 py-3 text-right text-sm">Totales ({facturas.length})</td>
                     <td className="px-3 py-3 text-right">{formatearMoneda(sumarImportes(facturas.map(f => f.total)))}</td>
+                    <td className="px-3 py-3 text-right text-muted-foreground">{formatearMoneda(sumarImportes(facturas.map(f => calcularSaldoVigente(f))))}</td>
                     <td colSpan={4}></td>
                   </tr>
                 </tfoot>
