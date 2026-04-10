@@ -156,6 +156,7 @@ model Empresa {
   chequesRecibidos ChequeRecibido[]
   contactosEmail   ContactoEmail[]
   recibosCobranza  ReciboCobranza[]
+  faltantesViaje   FaltanteViaje[]
 
   @@map("empresas")
 }
@@ -198,6 +199,7 @@ model Fletero {
   facturasPorCuenta        FacturaProveedor[]  @relation("FacturaPorCuentaDeFletero")
   ordenesPago              OrdenPago[]
   contactosEmail           ContactoEmail[]
+  faltantesViaje           FaltanteViaje[]
 
   @@map("fleteros")
 }
@@ -368,6 +370,7 @@ model Viaje {
   enLiquidaciones ViajeEnLiquidacion[]
   enFacturas      ViajeEnFactura[]
   viajesEnNotasCD ViajeEnNotaCD[]
+  faltantes       FaltanteViaje[]
 
   @@index([nroCartaPorte])
   @@map("viajes")
@@ -470,6 +473,7 @@ model Liquidacion {
   asientosIva          AsientoIva[]
   facturaEmitidaId     String?              @unique @map("factura_emitida_id")
   facturaEmitida       FacturaEmitida?      @relation("LiquidacionFactura", fields: [facturaEmitidaId], references: [id])
+  faltantesDescontados FaltanteViaje[]
 
   @@map("liquidaciones")
 }
@@ -511,7 +515,6 @@ model FacturaEmitida {
   estado           String   @default("EMITIDA")
   pdfS3Key         String?  @map("pdf_s3_key")
   emitidaEn        DateTime @default(now()) @map("emitida_en")
-  reciboId         String?  @map("recibo_id")
   estadoCobro      String   @default("PENDIENTE") @map("estado_cobro")
   metodoPago       String   @default("Transferencia Bancaria") @map("metodo_pago")
 
@@ -522,7 +525,7 @@ model FacturaEmitida {
   asientosIva          AsientoIva[]
   chequesRecibidos     ChequeRecibido[]
   notasCreditoDebito   NotaCreditoDebito[]
-  recibo               ReciboCobranza?     @relation("FacturasRecibo", fields: [reciboId], references: [id])
+  enRecibos            FacturaEnRecibo[]
   liquidacion          Liquidacion?        @relation("LiquidacionFactura")
 
   @@map("facturas_emitidas")
@@ -1573,23 +1576,60 @@ model ReciboCobranza {
   retencionGanancias Decimal     @default(0) @map("retencion_ganancias")
   retencionIIBB      Decimal     @default(0) @map("retencion_iibb")
   retencionSUSS      Decimal     @default(0) @map("retencion_suss")
+  totalFaltantes     Decimal     @default(0) @map("total_faltantes")
+  saldoACuenta       Decimal     @default(0) @map("saldo_a_cuenta")
   pdfS3Key           String?   @map("pdf_s3_key")
   operadorId         String    @map("operador_id")
   creadoEn           DateTime  @default(now()) @map("creado_en")
 
-  empresa           Empresa           @relation(fields: [empresaId], references: [id])
-  operador          Usuario           @relation("OperadorRecibo", fields: [operadorId], references: [id])
-  facturas          FacturaEmitida[]  @relation("FacturasRecibo")
+  empresa           Empresa             @relation(fields: [empresaId], references: [id])
+  operador          Usuario             @relation("OperadorRecibo", fields: [operadorId], references: [id])
+  facturasEnRecibo  FacturaEnRecibo[]
   mediosPago        MedioPagoRecibo[]
-  chequesRecibidos  ChequeRecibido[]  @relation("ChequesRecibo")
+  chequesRecibidos  ChequeRecibido[]    @relation("ChequesRecibo")
+  faltantes         FaltanteViaje[]
 
   @@map("recibos_cobranza")
+}
+
+model FacturaEnRecibo {
+  id            String   @id @default(uuid())
+  reciboId      String   @map("recibo_id")
+  facturaId     String   @map("factura_id")
+  montoAplicado Decimal  @map("monto_aplicado")
+
+  recibo   ReciboCobranza @relation(fields: [reciboId], references: [id])
+  factura  FacturaEmitida @relation(fields: [facturaId], references: [id])
+
+  @@unique([reciboId, facturaId])
+  @@map("facturas_en_recibo")
+}
+
+model FaltanteViaje {
+  id                     String    @id @default(uuid())
+  reciboCobranzaId       String    @map("recibo_cobranza_id")
+  viajeId                String    @map("viaje_id")
+  fleteroId              String    @map("fletero_id")
+  empresaId              String    @map("empresa_id")
+  monto                  Decimal
+  descripcion            String?
+  descontado             Boolean   @default(false)
+  liquidacionDescuentoId String?   @map("liquidacion_descuento_id")
+  creadoEn               DateTime  @default(now()) @map("creado_en")
+
+  recibo      ReciboCobranza @relation(fields: [reciboCobranzaId], references: [id])
+  viaje       Viaje          @relation(fields: [viajeId], references: [id])
+  fletero     Fletero        @relation(fields: [fleteroId], references: [id])
+  empresa     Empresa        @relation(fields: [empresaId], references: [id])
+  liquidacion Liquidacion?   @relation(fields: [liquidacionDescuentoId], references: [id])
+
+  @@map("faltantes_viaje")
 }
 
 model MedioPagoRecibo {
   id                 String    @id @default(uuid())
   reciboId           String    @map("recibo_id")
-  tipo               String    // TRANSFERENCIA | ECHEQ | CHEQUE_FISICO
+  tipo               String    // TRANSFERENCIA | ECHEQ | CHEQUE_FISICO | EFECTIVO | SALDO_CTA_CTE
   monto              Decimal
   cuentaId           String?   @map("cuenta_id")
   fechaTransferencia DateTime? @map("fecha_transferencia")

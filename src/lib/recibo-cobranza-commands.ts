@@ -1,21 +1,21 @@
 /**
  * recibo-cobranza-commands.ts
  *
- * Logica de negocio transaccional para creacion de Recibos de Cobranza.
- * Valida precondiciones, crea el recibo con medios de pago,
- * actualiza facturas a COBRADA, crea movimientos y cheques recibidos,
- * y genera el PDF.
+ * Lógica de negocio transaccional para creación de Recibos de Cobranza.
+ * Soporta: aplicación parcial de facturas, efectivo, saldo cta cte,
+ * faltantes de viaje, saldo a cuenta, retenciones, cheques y transferencias.
  */
 
 import { prisma } from "@/lib/prisma"
 import { subirPDF } from "@/lib/storage"
 import { generarPDFReciboCobranza } from "@/lib/pdf-recibo-cobranza"
-import { sumarImportes, m, importesIguales } from "@/lib/money"
+import { sumarImportes, restarImportes, m } from "@/lib/money"
+import { calcularSaldoCCEmpresa } from "@/lib/cuenta-corriente"
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
 type MedioPago = {
-  tipo: "TRANSFERENCIA" | "ECHEQ" | "CHEQUE_FISICO"
+  tipo: "TRANSFERENCIA" | "ECHEQ" | "CHEQUE_FISICO" | "EFECTIVO" | "SALDO_CTA_CTE"
   monto: number
   cuentaId?: string
   fechaTransferencia?: string
@@ -26,13 +26,26 @@ type MedioPago = {
   fechaPago?: string
 }
 
+type FacturaAplicada = {
+  facturaId: string
+  montoAplicado: number
+}
+
+type FaltanteInput = {
+  viajeId: string
+  fleteroId: string
+  monto: number
+  descripcion?: string
+}
+
 export type DatosCrearReciboCobranza = {
   empresaId: string
-  facturaIds: string[]
+  facturasAplicadas: FacturaAplicada[]
   mediosPago: MedioPago[]
   retencionGanancias: number
   retencionIIBB: number
   retencionSUSS: number
+  faltantes: FaltanteInput[]
   fecha: string
 }
 
@@ -48,16 +61,13 @@ type ResultadoReciboCobranza =
  * Dado [los datos validados del recibo y el operadorId],
  * devuelve [el recibo creado o un error con status HTTP].
  *
- * Valida:
- * - Facturas existen, pertenecen a la empresa y estan pendientes
- * - Total de medios + retenciones = total facturas
- *
- * Ejecuta en transaccion:
- * - Crea recibo con numero correlativo
- * - Crea medios de pago, movimientos bancarios y cheques recibidos
- * - Actualiza facturas a COBRADA
- * - Crea PagoDeEmpresa proporcional por factura
- * - Genera PDF y sube a R2 (no fatal)
+ * Ecuación de balance:
+ *   totalAplicado = sum(facturasAplicadas[].montoAplicado)
+ *   totalFaltantes = sum(faltantes[].monto)
+ *   montoCubrir = totalAplicado - totalFaltantes
+ *   montoProvisto = totalMedios + totalRetenciones
+ *   saldoACuenta = max(0, montoProvisto - montoCubrir)
+ *   Validación: montoProvisto >= montoCubrir
  */
 export async function ejecutarCrearReciboCobranza(
   data: DatosCrearReciboCobranza,
@@ -65,17 +75,29 @@ export async function ejecutarCrearReciboCobranza(
 ): Promise<ResultadoReciboCobranza> {
   const {
     empresaId,
-    facturaIds,
+    facturasAplicadas,
     mediosPago,
     retencionGanancias,
     retencionIIBB,
     retencionSUSS,
+    faltantes,
     fecha,
   } = data
 
-  // Validar facturas: deben pertenecer a la empresa y estar pendientes
+  // ── Validar facturas ────────────────────────────────────────────────────
+
+  const facturaIds = facturasAplicadas.map((fa) => fa.facturaId)
   const facturas = await prisma.facturaEmitida.findMany({
-    where: { id: { in: facturaIds }, empresaId, estado: "EMITIDA", estadoCobro: "PENDIENTE" },
+    where: {
+      id: { in: facturaIds },
+      empresaId,
+      estado: "EMITIDA",
+      estadoCobro: { in: ["PENDIENTE", "PARCIALMENTE_COBRADA"] },
+    },
+    include: {
+      pagos: { select: { monto: true } },
+      notasCreditoDebito: { select: { tipo: true, montoTotal: true } },
+    },
   })
 
   if (facturas.length !== facturaIds.length) {
@@ -86,24 +108,72 @@ export async function ejecutarCrearReciboCobranza(
     }
   }
 
-  const totalComprobantes = sumarImportes(facturas.map((f) => f.total))
-  const totalMedios = sumarImportes(mediosPago.map((mp) => mp.monto))
-  const totalRetenciones = sumarImportes([retencionGanancias, retencionIIBB, retencionSUSS])
-  const totalCobrado = totalMedios
+  // Validar montoAplicado <= saldoPendiente de cada factura
+  for (const fa of facturasAplicadas) {
+    const factura = facturas.find((f) => f.id === fa.facturaId)!
+    const totalPagado = sumarImportes(factura.pagos.map((p) => p.monto))
+    // Ajuste por NC/ND
+    const ajusteNC = sumarImportes(
+      factura.notasCreditoDebito
+        .filter((n) => n.tipo === "NC_EMITIDA" || n.tipo === "NC_RECIBIDA")
+        .map((n) => n.montoTotal)
+    )
+    const ajusteND = sumarImportes(
+      factura.notasCreditoDebito
+        .filter((n) => n.tipo === "ND_EMITIDA" || n.tipo === "ND_RECIBIDA")
+        .map((n) => n.montoTotal)
+    )
+    const netoVigente = Math.max(0, sumarImportes([factura.total, ajusteND]) - ajusteNC)
+    const saldoPendiente = Math.max(0, restarImportes(netoVigente, totalPagado))
 
-  // Validar que medios + retenciones = total facturas
-  if (!importesIguales(totalComprobantes, sumarImportes([totalMedios, totalRetenciones]))) {
-    return {
-      ok: false,
-      status: 400,
-      error: `La suma de medios de pago (${totalMedios.toFixed(2)}) + retenciones (${totalRetenciones.toFixed(2)}) no coincide con el total de facturas (${totalComprobantes.toFixed(2)})`,
+    if (fa.montoAplicado > saldoPendiente + 0.01) {
+      return {
+        ok: false,
+        status: 400,
+        error: `El monto aplicado ($${fa.montoAplicado.toFixed(2)}) supera el saldo pendiente ($${saldoPendiente.toFixed(2)}) de la factura`,
+      }
     }
   }
 
-  // ─── Transaccion ──────────────────────────────────────────────────────────
+  // ── Calcular totales y ecuación de balance ──────────────────────────────
+
+  const totalAplicado = sumarImportes(facturasAplicadas.map((fa) => fa.montoAplicado))
+  const totalFaltantes = sumarImportes(faltantes.map((f) => f.monto))
+  const totalMedios = sumarImportes(mediosPago.map((mp) => mp.monto))
+  const totalRetenciones = sumarImportes([retencionGanancias, retencionIIBB, retencionSUSS])
+
+  const montoCubrir = restarImportes(totalAplicado, totalFaltantes)
+  const montoProvisto = sumarImportes([totalMedios, totalRetenciones])
+  const saldoACuenta = Math.max(0, m(montoProvisto - montoCubrir))
+
+  if (montoProvisto + 0.01 < montoCubrir) {
+    return {
+      ok: false,
+      status: 400,
+      error: `Los medios de pago ($${montoProvisto.toFixed(2)}) + retenciones no cubren el monto a cobrar ($${montoCubrir.toFixed(2)})`,
+    }
+  }
+
+  // ── Validar SALDO_CTA_CTE ─────────────────────────────────────────────
+
+  const totalSaldoCtaCte = sumarImportes(
+    mediosPago.filter((mp) => mp.tipo === "SALDO_CTA_CTE").map((mp) => mp.monto)
+  )
+  if (totalSaldoCtaCte > 0) {
+    const cc = await calcularSaldoCCEmpresa(empresaId)
+    if (totalSaldoCtaCte > cc.saldoAFavor + 0.01) {
+      return {
+        ok: false,
+        status: 400,
+        error: `El saldo a favor disponible ($${cc.saldoAFavor.toFixed(2)}) es menor al monto de Saldo Cta. Cte. ($${totalSaldoCtaCte.toFixed(2)})`,
+      }
+    }
+  }
+
+  // ── Transacción ────────────────────────────────────────────────────────
 
   const reciboCreado = await prisma.$transaction(async (tx) => {
-    // Numero correlativo
+    // Número correlativo
     const maxNro = await tx.reciboCobranza.aggregate({ _max: { nro: true } })
     const nro = (maxNro._max.nro ?? 0) + 1
 
@@ -114,15 +184,19 @@ export async function ejecutarCrearReciboCobranza(
         ptoVenta: 1,
         fecha: new Date(fecha),
         empresaId,
-        totalCobrado,
+        totalCobrado: totalMedios,
         totalRetenciones,
-        totalComprobantes,
+        totalComprobantes: totalAplicado,
         retencionGanancias,
         retencionIIBB,
         retencionSUSS,
+        totalFaltantes,
+        saldoACuenta,
         operadorId,
       },
     })
+
+    const reciboLabel = `Recibo ${String(recibo.ptoVenta).padStart(4, "0")}-${String(nro).padStart(8, "0")}`
 
     // Crear medios de pago
     for (const mp of mediosPago) {
@@ -141,7 +215,7 @@ export async function ejecutarCrearReciboCobranza(
         },
       })
 
-      // Para TRANSFERENCIA: crear MovimientoSinFactura INGRESO
+      // TRANSFERENCIA: crear MovimientoSinFactura INGRESO
       if (mp.tipo === "TRANSFERENCIA" && mp.cuentaId) {
         await tx.movimientoSinFactura.create({
           data: {
@@ -150,14 +224,14 @@ export async function ejecutarCrearReciboCobranza(
             categoria: "TRANSFERENCIA_RECIBIDA",
             monto: mp.monto,
             fecha: mp.fechaTransferencia ? new Date(mp.fechaTransferencia) : new Date(fecha),
-            descripcion: `Cobro recibo ${String(1).padStart(4, "0")}-${String(nro).padStart(8, "0")} — ${facturas.length} factura(s)`,
+            descripcion: `Cobro ${reciboLabel} — ${facturasAplicadas.length} factura(s)`,
             referencia: mp.referencia ?? null,
             operadorId,
           },
         })
       }
 
-      // Para ECHEQ o CHEQUE_FISICO: crear ChequeRecibido
+      // ECHEQ / CHEQUE_FISICO: crear ChequeRecibido
       if (mp.tipo === "ECHEQ" || mp.tipo === "CHEQUE_FISICO") {
         await tx.chequeRecibido.create({
           data: {
@@ -174,27 +248,69 @@ export async function ejecutarCrearReciboCobranza(
           },
         })
       }
+
+      // EFECTIVO y SALDO_CTA_CTE: solo el registro de MedioPagoRecibo (ya creado arriba)
     }
 
-    // Actualizar facturas: asignar recibo y marcar como COBRADA
-    await tx.facturaEmitida.updateMany({
-      where: { id: { in: facturaIds } },
-      data: { reciboId: recibo.id, estadoCobro: "COBRADA" },
-    })
+    // Crear FacturaEnRecibo + PagoDeEmpresa + actualizar estadoCobro por cada factura
+    for (const fa of facturasAplicadas) {
+      // Junction table
+      await tx.facturaEnRecibo.create({
+        data: {
+          reciboId: recibo.id,
+          facturaId: fa.facturaId,
+          montoAplicado: fa.montoAplicado,
+        },
+      })
 
-    // Crear PagoDeEmpresa por cada factura para impactar la CC de la empresa
-    // Distribuir el total cobrado (medios de pago) proporcionalmente entre facturas
-    const totalFacturasLocal = sumarImportes(facturas.map((f) => f.total))
-    for (const f of facturas) {
-      const proporcion = totalFacturasLocal > 0 ? f.total / totalFacturasLocal : 1 / facturas.length
-      const montoAplicado = m(totalCobrado * proporcion)
+      // PagoDeEmpresa
       await tx.pagoDeEmpresa.create({
         data: {
           empresaId,
-          facturaId: f.id,
+          facturaId: fa.facturaId,
           tipoPago: "RECIBO_COBRANZA",
-          monto: montoAplicado,
-          referencia: `Recibo ${String(recibo.ptoVenta).padStart(4, "0")}-${String(nro).padStart(8, "0")}`,
+          monto: fa.montoAplicado,
+          referencia: reciboLabel,
+          fechaPago: new Date(fecha),
+          operadorId,
+        },
+      })
+
+      // Determinar nuevo estadoCobro
+      const factura = facturas.find((f) => f.id === fa.facturaId)!
+      const totalPagadoPrevio = sumarImportes(factura.pagos.map((p) => p.monto))
+      const totalPagadoNuevo = sumarImportes([totalPagadoPrevio, fa.montoAplicado])
+      const nuevoEstado = totalPagadoNuevo >= Number(factura.total) - 0.01 ? "COBRADA" : "PARCIALMENTE_COBRADA"
+
+      await tx.facturaEmitida.update({
+        where: { id: fa.facturaId },
+        data: { estadoCobro: nuevoEstado },
+      })
+    }
+
+    // Crear faltantes de viaje
+    for (const faltante of faltantes) {
+      await tx.faltanteViaje.create({
+        data: {
+          reciboCobranzaId: recibo.id,
+          viajeId: faltante.viajeId,
+          fleteroId: faltante.fleteroId,
+          empresaId,
+          monto: faltante.monto,
+          descripcion: faltante.descripcion ?? null,
+        },
+      })
+    }
+
+    // Saldo a cuenta: si hay exceso, crear PagoDeEmpresa sin factura
+    if (saldoACuenta > 0) {
+      await tx.pagoDeEmpresa.create({
+        data: {
+          empresaId,
+          facturaId: null,
+          tipoPago: "SALDO_A_CUENTA",
+          monto: saldoACuenta,
+          referencia: `Saldo a cuenta — ${reciboLabel}`,
           fechaPago: new Date(fecha),
           operadorId,
         },
@@ -204,7 +320,7 @@ export async function ejecutarCrearReciboCobranza(
     return recibo
   })
 
-  // ─── Generar PDF y subir a R2 ─────────────────────────────────────────────
+  // ── Generar PDF y subir a R2 ─────────────────────────────────────────────
 
   try {
     const pdfBuffer = await generarPDFReciboCobranza(reciboCreado.id)
@@ -214,7 +330,6 @@ export async function ejecutarCrearReciboCobranza(
       data: { pdfS3Key: key },
     })
   } catch (e) {
-    // PDF no critico — el recibo ya fue creado
     console.error("Error generando PDF del recibo:", e)
   }
 

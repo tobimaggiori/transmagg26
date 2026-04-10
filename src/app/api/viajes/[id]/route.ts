@@ -104,7 +104,7 @@ export async function GET(
               select: {
                 id: true, estado: true, nroComprobante: true, ptoVenta: true,
                 ivaPct: true, pdfS3Key: true, tipoCbte: true, emitidaEn: true,
-                recibo: { select: { id: true, nro: true, ptoVenta: true, pdfS3Key: true, fecha: true } },
+                enRecibos: { select: { recibo: { select: { id: true, nro: true, ptoVenta: true, pdfS3Key: true, fecha: true } } } },
               },
             },
           },

@@ -270,7 +270,10 @@ function buildPDF(
     retencionSUSS: number
     empresa: { razonSocial: string; cuit: string; condicionIva: string; direccion: string | null }
     operador: { nombre: string; apellido: string }
-    facturas: { nroComprobante: string | null; tipoCbte: number; total: number; emitidaEn: Date }[]
+    facturasEnRecibo: { montoAplicado: number; factura: { nroComprobante: string | null; tipoCbte: number; total: number; emitidaEn: Date } }[]
+    faltantes: { monto: number; descripcion: string | null }[]
+    saldoACuenta: number
+    totalFaltantes: number
     mediosPago: {
       tipo: string
       monto: number
@@ -389,11 +392,11 @@ function buildPDF(
       { label: "Nro. Comprobante", width: factColWidths[2] },
       { label: "Importe", width: factColWidths[3], align: "right" as const },
     ]
-    const factRows = recibo.facturas.map((f) => [
-      fmtFecha(f.emitidaEn),
-      tipoCbteLabel(f.tipoCbte),
-      f.nroComprobante ?? "-",
-      fmt(f.total),
+    const factRows = recibo.facturasEnRecibo.map((fer) => [
+      fmtFecha(fer.factura.emitidaEn),
+      tipoCbteLabel(fer.factura.tipoCbte),
+      fer.factura.nroComprobante ?? "-",
+      fmt(fer.montoAplicado),
     ])
     const factSubtotal = ["Total Comprobantes", "", "", fmt(recibo.totalComprobantes)]
 
@@ -584,7 +587,12 @@ export async function generarPDFReciboCobranza(reciboId: string): Promise<Buffer
     include: {
       empresa: { select: { razonSocial: true, cuit: true, condicionIva: true, direccion: true } },
       operador: { select: { nombre: true, apellido: true } },
-      facturas: { select: { nroComprobante: true, tipoCbte: true, total: true, emitidaEn: true } },
+      facturasEnRecibo: {
+        include: {
+          factura: { select: { nroComprobante: true, tipoCbte: true, total: true, emitidaEn: true } },
+        },
+      },
+      faltantes: { select: { monto: true, descripcion: true } },
       mediosPago: {
         select: {
           tipo: true,
@@ -614,5 +622,6 @@ export async function generarPDFReciboCobranza(reciboId: string): Promise<Buffer
       : []
   const cuentaMap = Object.fromEntries(cuentas.map((c) => [c.id, c]))
 
-  return buildPDF(recibo, cuentaMap)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return buildPDF(recibo as any, cuentaMap)
 }

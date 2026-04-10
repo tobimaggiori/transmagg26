@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
         },
       },
       pagos: { select: { monto: true, tipoPago: true, fechaPago: true, referencia: true } },
-      recibo: { select: { id: true, nro: true, ptoVenta: true } },
+      enRecibos: { select: { recibo: { select: { id: true, nro: true, ptoVenta: true } } } },
       notasCreditoDebito: { select: { tipo: true, montoTotal: true } },
       _count: { select: { notasCreditoDebito: true } },
     },

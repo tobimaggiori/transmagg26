@@ -25,7 +25,10 @@ export async function GET(
     include: {
       empresa: { select: { razonSocial: true, cuit: true, condicionIva: true, direccion: true } },
       operador: { select: { nombre: true, apellido: true } },
-      facturas: { select: { id: true, nroComprobante: true, tipoCbte: true, total: true, emitidaEn: true } },
+      facturasEnRecibo: {
+        include: { factura: { select: { id: true, nroComprobante: true, tipoCbte: true, total: true, emitidaEn: true } } },
+      },
+      faltantes: { select: { monto: true, descripcion: true, viajeId: true } },
       mediosPago: true,
     },
   })
