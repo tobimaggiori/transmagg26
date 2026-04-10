@@ -5,7 +5,7 @@ import { formatearMoneda } from "@/lib/utils"
 import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 import type { ProvinciaArgentina } from "@/lib/provincias"
 import { calcularToneladas, calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
-import { labelCondicionIva, formatearNroComprobante } from "@/lib/liquidacion-utils"
+import { labelCondicionIva } from "@/lib/liquidacion-utils"
 import type { FleteroInfo, ViajeParaLiquidar } from "./types"
 import { hoyLocalYmd } from "@/lib/date-local"
 
