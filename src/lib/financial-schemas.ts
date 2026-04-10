@@ -318,5 +318,6 @@ export const crearNotaEmpresaSchema = z.object({
     concepto: z.string().min(1, "El concepto es obligatorio"),
     subtotal: z.number().positive("El subtotal debe ser mayor a 0"),
   })).min(1, "Se requiere al menos un ítem"),
+  viajesIds: z.array(z.string().uuid()).optional(),
   idempotencyKey: z.string().uuid().optional(),
 })

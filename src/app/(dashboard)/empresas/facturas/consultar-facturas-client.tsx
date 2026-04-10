@@ -398,6 +398,47 @@ function ModalEmitirNotaEmpresa({
   const [error, setError] = useState<string | null>(null)
   const [exito, setExito] = useState<{ cae?: string; nro?: number; ptoVenta?: number } | null>(null)
 
+  // Viajes de la factura para liberación opcional
+  type ViajeFactura = { viajeId: string; procedencia: string; destino: string; kilos: number; subtotal: number }
+  const [viajesFactura, setViajesFactura] = useState<ViajeFactura[]>([])
+  const [viajesSeleccionados, setViajesSeleccionados] = useState<Set<string>>(new Set())
+  const [cargandoViajes, setCargandoViajes] = useState(true)
+
+  useEffect(() => {
+    fetch(`/api/facturas/${factura.id}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.viajes) {
+          setViajesFactura(data.viajes.map((v: { viajeId: string; viaje?: { procedencia?: string; destino?: string }; kilos?: number; subtotal?: number }) => ({
+            viajeId: v.viajeId,
+            procedencia: v.viaje?.procedencia ?? "",
+            destino: v.viaje?.destino ?? "",
+            kilos: v.kilos ?? 0,
+            subtotal: v.subtotal ?? 0,
+          })))
+        }
+      })
+      .catch(() => {})
+      .finally(() => setCargandoViajes(false))
+  }, [factura.id])
+
+  function toggleViaje(viajeId: string) {
+    setViajesSeleccionados((prev) => {
+      const next = new Set(prev)
+      if (next.has(viajeId)) next.delete(viajeId)
+      else next.add(viajeId)
+      return next
+    })
+  }
+
+  function toggleTodosViajes() {
+    if (viajesSeleccionados.size === viajesFactura.length) {
+      setViajesSeleccionados(new Set())
+    } else {
+      setViajesSeleccionados(new Set(viajesFactura.map((v) => v.viajeId)))
+    }
+  }
+
   // Preview de totales
   const preview = useMemo(() => {
     const subtotales = items.map((i) => parseFloat(i.subtotal) || 0).filter((s) => s > 0)
@@ -443,6 +484,7 @@ function ModalEmitirNotaEmpresa({
           tipoNota,
           fechaEmision,
           items: itemsValidos,
+          viajesIds: viajesSeleccionados.size > 0 ? Array.from(viajesSeleccionados) : undefined,
           idempotencyKey: (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`),
         }),
       })
@@ -595,6 +637,65 @@ function ModalEmitirNotaEmpresa({
                 + Agregar ítem
               </button>
             </div>
+
+            {/* Viajes a liberar para refacturar (opcional) */}
+            {tipoNota === "NC" && viajesFactura.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Liberar viajes para refacturar <span className="text-muted-foreground font-normal">(opcional)</span></Label>
+                  <button
+                    onClick={toggleTodosViajes}
+                    className="text-xs text-primary hover:underline font-medium"
+                  >
+                    {viajesSeleccionados.size === viajesFactura.length ? "Deseleccionar todos" : "Seleccionar todos"}
+                  </button>
+                </div>
+                <div className="rounded-lg border max-h-40 overflow-y-auto">
+                  {cargandoViajes ? (
+                    <p className="text-xs text-muted-foreground p-3">Cargando viajes...</p>
+                  ) : (
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/60 sticky top-0">
+                        <tr>
+                          <th className="p-1.5 w-8"></th>
+                          <th className="p-1.5 text-left">Origen</th>
+                          <th className="p-1.5 text-left">Destino</th>
+                          <th className="p-1.5 text-right">Kg</th>
+                          <th className="p-1.5 text-right">Subtotal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {viajesFactura.map((v) => (
+                          <tr
+                            key={v.viajeId}
+                            className={`cursor-pointer hover:bg-muted/40 ${viajesSeleccionados.has(v.viajeId) ? "bg-primary/5" : ""}`}
+                            onClick={() => toggleViaje(v.viajeId)}
+                          >
+                            <td className="p-1.5 text-center">
+                              <input
+                                type="checkbox"
+                                checked={viajesSeleccionados.has(v.viajeId)}
+                                onChange={() => toggleViaje(v.viajeId)}
+                                className="accent-primary"
+                              />
+                            </td>
+                            <td className="p-1.5">{v.procedencia}</td>
+                            <td className="p-1.5">{v.destino}</td>
+                            <td className="p-1.5 text-right">{v.kilos?.toLocaleString("es-AR") ?? "-"}</td>
+                            <td className="p-1.5 text-right">{formatearMoneda(v.subtotal)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                {viajesSeleccionados.size > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {viajesSeleccionados.size} viaje{viajesSeleccionados.size > 1 ? "s" : ""} seleccionado{viajesSeleccionados.size > 1 ? "s" : ""} para liberar
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Preview */}
             {preview && (

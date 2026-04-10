@@ -170,96 +170,42 @@ async function crearNCEmitida(
     creadoEn,
   }
 
-  if (data.subtipo === "ANULACION_TOTAL" && factura) {
-    const nota = await prisma.$transaction(async (tx) => {
-      const nuevaNota = await tx.notaCreditoDebito.create({ data: baseData })
-
-      for (const vef of factura.viajes) {
-        await tx.viajeEnNotaCD.create({
-          data: {
-            notaId: nuevaNota.id,
-            viajeId: vef.viajeId,
-            tarifaOriginal: vef.tarifaEmpresa,
-            kilosOriginal: vef.kilos ?? null,
-            subtotalOriginal: vef.subtotal,
-          },
-        })
-        await tx.viaje.update({
-          where: { id: vef.viajeId },
-          data: { estadoFactura: EstadoFacturaViaje.PENDIENTE_FACTURAR },
-        })
-      }
-
-      // AsientoIva: NC resta del IVA ventas (base e IVA negativos)
-      await tx.asientoIva.create({
-        data: {
-          notaCreditoDebitoId: nuevaNota.id,
-          tipoReferencia: "NC_EMITIDA",
-          tipo: "VENTA",
-          baseImponible: -totales.montoNeto,
-          alicuota: data.ivaPct,
-          montoIva: -totales.montoIva,
-          periodo,
-        },
-      })
-
-      return nuevaNota
-    })
-    return { ok: true, nota }
-  }
-
-  if (data.subtipo === "ANULACION_PARCIAL" && factura) {
-    if (!data.viajesIds || data.viajesIds.length === 0) {
-      return { ok: false, status: 400, error: "Se requieren viajesIds para ANULACION_PARCIAL" }
-    }
-
-    const viajeIdsEnFactura = factura.viajes.map((v: { viajeId: string }) => v.viajeId)
-    const todosPertenecen = data.viajesIds.every((id: string) => viajeIdsEnFactura.includes(id))
+  // Validar viajesIds si se enviaron
+  const comprobante = factura ?? liquidacion
+  if (data.viajesIds && data.viajesIds.length > 0 && comprobante) {
+    const viajeIdsEnComprobante = comprobante.viajes.map((v: { viajeId: string }) => v.viajeId)
+    const todosPertenecen = data.viajesIds.every((id: string) => viajeIdsEnComprobante.includes(id))
     if (!todosPertenecen) {
-      return { ok: false, status: 400, error: "Uno o más viajes no pertenecen a la factura" }
+      return { ok: false, status: 400, error: "Uno o más viajes no pertenecen al comprobante" }
     }
-
-    const nota = await prisma.$transaction(async (tx) => {
-      const nuevaNota = await tx.notaCreditoDebito.create({ data: baseData })
-
-      for (const viajeId of data.viajesIds!) {
-        const vef = factura.viajes.find((v: { viajeId: string }) => v.viajeId === viajeId)!
-        await tx.viajeEnNotaCD.create({
-          data: {
-            notaId: nuevaNota.id,
-            viajeId,
-            tarifaOriginal: vef.tarifaEmpresa,
-            kilosOriginal: vef.kilos ?? null,
-            subtotalOriginal: vef.subtotal,
-          },
-        })
-        await tx.viaje.update({
-          where: { id: viajeId },
-          data: { estadoFactura: EstadoFacturaViaje.PENDIENTE_FACTURAR },
-        })
-      }
-
-      await tx.asientoIva.create({
-        data: {
-          notaCreditoDebitoId: nuevaNota.id,
-          tipoReferencia: "NC_EMITIDA",
-          tipo: "VENTA",
-          baseImponible: -totales.montoNeto,
-          alicuota: data.ivaPct,
-          montoIva: -totales.montoIva,
-          periodo,
-        },
-      })
-
-      return nuevaNota
-    })
-    return { ok: true, nota }
   }
 
-  // CORRECCION_IMPORTE (factura) o NC genérica sobre liquidación
   const nota = await prisma.$transaction(async (tx) => {
     const nuevaNota = await tx.notaCreditoDebito.create({ data: baseData })
 
+    // Liberar viajes seleccionados por el usuario (opcional)
+    if (data.viajesIds && data.viajesIds.length > 0 && comprobante) {
+      for (const viajeId of data.viajesIds) {
+        const vef = comprobante.viajes.find((v: { viajeId: string }) => v.viajeId === viajeId)
+        if (vef) {
+          await tx.viajeEnNotaCD.create({
+            data: {
+              notaId: nuevaNota.id,
+              viajeId,
+              tarifaOriginal: vef.tarifaEmpresa ?? vef.tarifaFletero ?? 0,
+              kilosOriginal: vef.kilos ?? null,
+              subtotalOriginal: vef.subtotal,
+            },
+          })
+          await tx.viaje.update({
+            where: { id: viajeId },
+            data: { estadoFactura: EstadoFacturaViaje.PENDIENTE_FACTURAR },
+          })
+        }
+      }
+    }
+
+    // AsientoIva: NC resta del IVA ventas (base e IVA negativos)
     await tx.asientoIva.create({
       data: {
         notaCreditoDebitoId: nuevaNota.id,
@@ -414,6 +360,7 @@ export type DatosNotaEmpresaEmitida = {
   tipoNota: "NC" | "ND"
   fechaEmision?: string
   items: Array<{ concepto: string; subtotal: number }>
+  viajesIds?: string[]
 }
 
 /**
@@ -433,13 +380,14 @@ export async function crearNotaEmpresaEmitida(
 ): Promise<ResultadoNotaCD> {
   const { facturaId, tipoNota, items } = data
 
-  // 1. Cargar factura
+  // 1. Cargar factura con viajes
   const factura = await prisma.facturaEmitida.findUnique({
     where: { id: facturaId },
     select: {
       id: true, tipoCbte: true, ptoVenta: true, nroComprobante: true,
       ivaPct: true, total: true, estadoArca: true, emitidaEn: true,
       empresa: { select: { id: true, cuit: true, condicionIva: true } },
+      viajes: { select: { viajeId: true, tarifaEmpresa: true, kilos: true, subtotal: true } },
     },
   })
   if (!factura) return { ok: false, status: 404, error: "Factura no encontrada" }
@@ -537,6 +485,28 @@ export async function crearNotaEmpresaEmitida(
           subtotal: items[i].subtotal,
         },
       })
+    }
+
+    // Liberar viajes seleccionados por el usuario (opcional)
+    if (data.viajesIds && data.viajesIds.length > 0) {
+      for (const viajeId of data.viajesIds) {
+        const vef = factura.viajes.find((v) => v.viajeId === viajeId)
+        if (vef) {
+          await tx.viajeEnNotaCD.create({
+            data: {
+              notaId: n.id,
+              viajeId,
+              tarifaOriginal: vef.tarifaEmpresa,
+              kilosOriginal: vef.kilos ?? null,
+              subtotalOriginal: vef.subtotal,
+            },
+          })
+          await tx.viaje.update({
+            where: { id: viajeId },
+            data: { estadoFactura: EstadoFacturaViaje.PENDIENTE_FACTURAR },
+          })
+        }
+      }
     }
 
     // AsientoIva: NC negativo, ND positivo
