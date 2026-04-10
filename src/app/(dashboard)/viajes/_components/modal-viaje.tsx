@@ -50,6 +50,7 @@ export function ModalViaje({
     viaje ? viaje.fechaViaje.slice(0, 10) : hoyLocalYmd()
   )
   const [remito, setRemito] = useState(viaje?.remito ?? "")
+  const [remitoS3Key, setRemitoS3Key] = useState(viaje?.remitoS3Key ?? "")
   const [tieneCupo, setTieneCupo] = useState(viaje?.tieneCupo ?? false)
   const [cupo, setCupo] = useState(viaje?.cupo ?? "")
   const [mercaderia, setMercaderia] = useState(viaje?.mercaderia ?? "")
@@ -80,17 +81,26 @@ export function ModalViaje({
   const totalCalc = kilosNum > 0 && tarifaNum > 0 ? calcularTotalViaje(kilosNum, tarifaNum) : null
 
   const esNuevo = modo === "nuevo"
+  // Al menos remito (con PDF) o CDP (con PDF) debe estar cargado
+  const tieneRemito = remito.trim() !== "" && remitoS3Key !== ""
+  const tieneCDP = nroCartaPorte.trim() !== "" && cartaPorteS3Key !== ""
+  const tieneRemitoSinPDF = remito.trim() !== "" && remitoS3Key === ""
+  const tieneCDPSinPDF = nroCartaPorte.trim() !== "" && cartaPorteS3Key === ""
+
   const puedeGuardar =
     (esCamionPropio || fleteroId) && camionId && choferId && empresaId && fechaViaje &&
     provinciaOrigen && provinciaDestino && tarifaNum > 0 &&
-    (!esNuevo || (nroCartaPorte.trim() !== "" && cartaPorteS3Key !== ""))
+    (!esNuevo || (tieneRemito || tieneCDP)) &&
+    !tieneRemitoSinPDF && !tieneCDPSinPDF
 
   const tooltipDeshabilitado = !puedeGuardar
-    ? !cartaPorteS3Key && esNuevo
-      ? "Debés subir el PDF de la carta de porte para continuar"
-      : !nroCartaPorte.trim() && esNuevo
-        ? "Ingresá el número de carta de porte"
-        : "Completá todos los campos obligatorios"
+    ? tieneRemitoSinPDF
+      ? "Debés subir el PDF del remito"
+      : tieneCDPSinPDF
+        ? "Debés subir el PDF de la carta de porte"
+        : esNuevo && !tieneRemito && !tieneCDP
+          ? "Debés cargar al menos un Nro. de Remito o Nro. de CDP con su PDF"
+          : "Completá todos los campos obligatorios"
     : undefined
 
   function handleSubmit(e: React.FormEvent) {
@@ -103,6 +113,7 @@ export function ModalViaje({
       empresaId,
       fechaViaje,
       remito: remito || undefined,
+      remitoS3Key: remitoS3Key || undefined,
       tieneCupo,
       cupo: tieneCupo ? (cupo || undefined) : null,
       mercaderia: mercaderia || undefined,
@@ -249,10 +260,6 @@ export function ModalViaje({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Remito</label>
-              <input type="text" value={remito} onChange={(e) => setRemito(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
-            </div>
-            <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">¿Lleva cupo?</label>
               <div className="flex rounded-md border overflow-hidden h-9">
                 <button
@@ -342,10 +349,39 @@ export function ModalViaje({
           {/* Carta de Porte */}
           {modo === "nuevo" && (
             <div className="space-y-3 border-t pt-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Carta de Porte</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Documentación</p>
+              <p className="text-[11px] text-muted-foreground">Debe cargar al menos Remito o Carta de Porte (con su PDF).</p>
+
+              {/* Remito */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Nro. de carta de porte *</label>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Nro. de Remito</label>
+                  <input
+                    type="text"
+                    value={remito}
+                    onChange={(e) => setRemito(e.target.value.toUpperCase())}
+                    style={{ textTransform: "uppercase" }}
+                    placeholder="Ej: 0001-00012345"
+                    className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">Debe ser único por empresa.</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">PDF del Remito {remito.trim() && "*"}</label>
+                  <UploadPDF
+                    prefijo="remitos"
+                    onUpload={(key) => setRemitoS3Key(key)}
+                    label="Subir PDF"
+                    s3Key={remitoS3Key || undefined}
+                    required={remito.trim() !== ""}
+                  />
+                </div>
+              </div>
+
+              {/* Carta de Porte */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Nro. de Carta de Porte</label>
                   <input
                     type="text"
                     value={nroCartaPorte}
@@ -356,13 +392,13 @@ export function ModalViaje({
                   <p className="text-[11px] text-muted-foreground mt-1">Debe ser único en el sistema.</p>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">PDF de la carta de porte *</label>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">PDF de la Carta de Porte {nroCartaPorte.trim() && "*"}</label>
                   <UploadPDF
                     prefijo="cartas-de-porte"
                     onUpload={(key) => setCartaPorteS3Key(key)}
                     label="Subir PDF"
                     s3Key={cartaPorteS3Key || undefined}
-                    required
+                    required={nroCartaPorte.trim() !== ""}
                   />
                 </div>
               </div>

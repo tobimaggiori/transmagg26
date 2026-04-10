@@ -38,7 +38,8 @@ const crearViajeSchema = z.object({
   choferId: z.string().uuid(),
   empresaId: z.string().uuid(),
   fechaViaje: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida (YYYY-MM-DD)"),
-  remito: z.string().min(1, "El remito es obligatorio"),
+  remito: z.string().nullable().optional(),
+  remitoS3Key: z.string().nullable().optional(),
   tieneCupo: z.boolean().default(false),
   cupo: z.string().nullable().optional(),
   mercaderia: z.string().min(1, "La mercadería es obligatoria"),
@@ -59,9 +60,25 @@ const crearViajeSchema = z.object({
   { message: "El fletero es obligatorio para viajes con transportista externo", path: ["fleteroId"] }
 ).refine(
   (data) => {
-    // Si hay nro de carta de porte, el PDF es obligatorio
-    const tieneNro = data.nroCartaPorte && data.nroCartaPorte.trim().length > 0
-    if (!tieneNro) return true
+    // Al menos remito o CDP debe estar cargado (con su PDF)
+    const tieneRemito = data.remito && data.remito.trim().length > 0
+    const tieneCDP = data.nroCartaPorte && data.nroCartaPorte.trim().length > 0
+    return tieneRemito || tieneCDP
+  },
+  { message: "Debe cargar al menos un Nro. de Remito o un Nro. de CDP", path: ["remito"] }
+).refine(
+  (data) => {
+    // Si hay remito, el PDF de remito es obligatorio
+    const tieneRemito = data.remito && data.remito.trim().length > 0
+    if (!tieneRemito) return true
+    return data.remitoS3Key != null && data.remitoS3Key.trim().length > 0
+  },
+  { message: "El PDF del remito es obligatorio cuando se indica un número de remito", path: ["remitoS3Key"] }
+).refine(
+  (data) => {
+    // Si hay CDP, el PDF de CDP es obligatorio
+    const tieneCDP = data.nroCartaPorte && data.nroCartaPorte.trim().length > 0
+    if (!tieneCDP) return true
     return data.cartaPorteS3Key != null && data.cartaPorteS3Key.trim().length > 0
   },
   { message: "El PDF de la carta de porte es obligatorio cuando se indica un número", path: ["cartaPorteS3Key"] }
@@ -182,6 +199,7 @@ export async function POST(request: NextRequest) {
     const validacion = await validarEntidadesViaje({
       esCamionPropio, fleteroId, camionId, choferId, empresaId,
       nroCartaPorte: parsed.data.nroCartaPorte,
+      remito: parsed.data.remito,
     })
     if (!validacion.ok) {
       return NextResponse.json({ error: validacion.error }, { status: validacion.status })

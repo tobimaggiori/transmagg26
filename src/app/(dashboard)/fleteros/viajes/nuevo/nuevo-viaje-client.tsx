@@ -94,6 +94,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const [empresaId, setEmpresaId] = useState("")
   const [fechaViaje, setFechaViaje] = useState(hoyLocalYmd())
   const [remito, setRemito] = useState("")
+  const [remitoS3Key, setRemitoS3Key] = useState("")
   const [cupo, setCupo] = useState("")
   const [mercaderia, setMercaderia] = useState("")
   const [procedencia, setProcedencia] = useState("")
@@ -133,12 +134,17 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const toneladas = kilosNum > 0 ? calcularToneladas(kilosNum) : null
   const totalCalc = kilosNum > 0 && tarifaNum > 0 ? calcularTotalViaje(kilosNum, tarifaNum) : null
 
+  // Al menos remito (con PDF) o CDP (con PDF)
+  const tieneRemito = remito.trim() !== "" && remitoS3Key !== ""
+  const tieneCDP = nroCartaPorte.trim() !== "" && cartaPorteS3Key !== ""
+  const tieneRemitoSinPDF = remito.trim() !== "" && remitoS3Key === ""
+  const tieneCDPSinPDF = nroCartaPorte.trim() !== "" && cartaPorteS3Key === ""
+
   const puedeGuardar =
     (esCamionPropio || fleteroId) && camionId && choferId && empresaId && fechaViaje &&
-    remito.trim() !== "" &&
+    (tieneRemito || tieneCDP) && !tieneRemitoSinPDF && !tieneCDPSinPDF &&
     provinciaOrigen && provinciaDestino && tarifaNum > 0 && kilosNum > 0 &&
-    mercaderia.trim() !== "" &&
-    (!tieneCpe || cartaPorteS3Key !== "")
+    mercaderia.trim() !== ""
 
   const fieldErrors = intentoEnviar ? {
     fleteroId: !esCamionPropio && !fleteroId ? "Campo requerido" : null,
@@ -146,7 +152,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
     camionId: !camionId ? "Campo requerido" : null,
     choferId: !choferId ? "Campo requerido" : null,
     fechaViaje: !fechaViaje ? "Campo requerido" : null,
-    remito: !remito.trim() ? "Campo requerido" : null,
+    remito: !tieneRemito && !tieneCDP ? "Debe cargar al menos Remito o CDP" : tieneRemitoSinPDF ? "Falta PDF del remito" : null,
     mercaderia: !mercaderia.trim() ? "Campo requerido" : null,
     kilos: kilosNum <= 0 ? "Campo requerido" : null,
     provinciaOrigen: !provinciaOrigen ? "Campo requerido" : null,
@@ -171,7 +177,8 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
           choferId,
           empresaId,
           fechaViaje,
-          remito: remito.trim(),
+          remito: remito.trim() || undefined,
+          remitoS3Key: remitoS3Key || undefined,
           tieneCupo,
           cupo: tieneCupo ? cupo.trim() : null,
           mercaderia: capitalizarPrimera(mercaderia.trim()),
@@ -432,11 +439,19 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
 
         {/* ════════ Fila 2: Documentación ════════ */}
         <FormSection icon={FileText} title="Documentación">
+          <p className="text-xs text-muted-foreground mb-3">Debe cargar al menos Remito o Carta de Porte (con su PDF).</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4">
             {/* Remito */}
             <div>
-              <label className={labelCls}>Remito <span className="text-error">*</span></label>
-              <input type="text" value={remito} onChange={(e) => setRemito(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} placeholder="Nro. remito" />
+              <label className={labelCls}>Remito</label>
+              <div className="flex items-start gap-2">
+                <div className="flex-1">
+                  <input type="text" value={remito} onChange={(e) => setRemito(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} placeholder="Nro. remito" />
+                </div>
+                <div className="shrink-0 pt-0.5">
+                  <UploadPDF prefijo="remitos" onUpload={(key) => setRemitoS3Key(key)} label="Subir" s3Key={remitoS3Key || undefined} />
+                </div>
+              </div>
               <FormError message={fieldErrors.remito} className="text-xs mt-1" />
             </div>
 
@@ -448,7 +463,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
 
             {/* Carta de Porte */}
             <div>
-              <label className={labelCls}>Carta de Porte <span className="text-muted-foreground font-normal">(opcional)</span></label>
+              <label className={labelCls}>Carta de Porte</label>
               <div className="flex items-start gap-2">
                 <div className="flex-1">
                   <input type="text" value={nroCartaPorte} onChange={(e) => setNroCartaPorte(e.target.value)} className={inputCls} placeholder="Nro. carta de porte" />
@@ -457,7 +472,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                   <UploadPDF prefijo="cartas-de-porte" onUpload={(key) => setCartaPorteS3Key(key)} label="Subir" s3Key={cartaPorteS3Key || undefined} />
                 </div>
               </div>
-              {tieneCpe && <FormError message={fieldErrors.cartaPorteS3Key} className="text-xs mt-1" />}
             </div>
           </div>
         </FormSection>

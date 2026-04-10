@@ -12,6 +12,7 @@ export type ViajeAPI = {
   esCamionPropio: boolean
   empresaId: string
   remito: string | null
+  remitoS3Key?: string | null
   tieneCupo: boolean | null
   cupo: string | null
   mercaderia: string | null

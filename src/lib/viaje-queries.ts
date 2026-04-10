@@ -116,6 +116,7 @@ type DatosCrearViaje = {
   choferId: string
   empresaId: string
   nroCartaPorte?: string | null
+  remito?: string | null
 }
 
 type ResultadoValidacion =
@@ -164,6 +165,15 @@ export async function validarEntidadesViaje(datos: DatosCrearViaje): Promise<Res
     const existente = await prisma.viaje.findFirst({ where: { nroCartaPorte: datos.nroCartaPorte } })
     if (existente) {
       return { ok: false, status: 409, error: `Ya existe un viaje con la carta de porte ${datos.nroCartaPorte}` }
+    }
+  }
+
+  if (datos.remito) {
+    const existente = await prisma.viaje.findFirst({
+      where: { remito: datos.remito, empresaId: datos.empresaId },
+    })
+    if (existente) {
+      return { ok: false, status: 409, error: `Ya existe un viaje con el remito ${datos.remito} para esta empresa` }
     }
   }
 
