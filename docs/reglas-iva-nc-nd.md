@@ -2,7 +2,16 @@
 
 ## Principio general
 
-Cada comprobante que Trans-Magg emite tiene un impacto específico en los libros de IVA. Las NC/ND revierten o ajustan ese impacto siguiendo las mismas reglas del comprobante original.
+El IVA de la comisión de Trans-Magg NO se registra por separado. Se tributa implícitamente en la diferencia entre la factura a empresa (IVA sobre bruto) y el LP (IVA sobre neto = bruto - comisión).
+
+Ejemplo con viaje $1.000.000 y 10% comisión:
+```
+Factura empresa: IVA sobre $1.000.000 = $210.000  (IVA Ventas)
+LP fletero:      IVA sobre $900.000   = $189.000  (IVA Compras)
+Diferencia:                             $21.000  = IVA de la comisión ($100.000 × 21%)
+```
+
+Por lo tanto, los LP y sus NC/ND solo generan asientos en IVA Compras.
 
 ---
 
@@ -10,7 +19,7 @@ Cada comprobante que Trans-Magg emite tiene un impacto específico en los libros
 
 ### Factura emitida
 - Impacta en **IVA Ventas** (débito fiscal)
-- Base imponible: neto de la factura
+- Base imponible: neto de la factura (bruto completo, sin descontar comisión)
 - IVA: sobre el neto
 
 ### NC a empresa
@@ -29,46 +38,54 @@ Cada comprobante que Trans-Magg emite tiene un impacto específico en los libros
 ## Liquidaciones a fleteros (LP)
 
 ### LP emitido
-El LP es un **comprobante híbrido** con doble impacto:
-
-| Componente | Libro IVA | Tipo | Base imponible |
-|------------|-----------|------|----------------|
-| Viajes (neto = bruto - comisión) | **IVA Compras** | Crédito fiscal | netoViajes |
-| Comisión de Trans-Magg | **IVA Ventas** | Débito fiscal | comisiónMonto |
+- Impacta **solo en IVA Compras** (crédito fiscal)
+- Base imponible: neto viajes (bruto - comisión)
+- IVA: sobre el neto
+- La comisión NO genera asiento IVA separado
 
 ### NC/ND sobre LP — Dos maneras
 
-#### Manera 1: Se ajustan viajes Y comisión
+#### Manera 1: Con comisión (anulación de viaje)
 **Checkbox "Incluir comisión en el ajuste" = tildado**
 
-Caso típico: error en el LP, anulación de un viaje completo.
+El usuario ingresa el subtotal del viaje (bruto). El sistema resta la comisión del LP antes de calcular IVA. El neto del comprobante es menor.
 
 | Impacto | Libro IVA | Efecto |
 |---------|-----------|--------|
-| Ajuste viajes | **IVA Compras** | ↓ crédito fiscal |
-| Ajuste comisión | **IVA Ventas** | ↓ débito fiscal |
+| Ajuste viajes (neto = bruto - comisión) | **IVA Compras** | ↓ crédito fiscal |
+| IVA Ventas | — | **Sin cambio** |
 
-Se revierte completamente el efecto del LP en la parte ajustada. El desglose se calcula proporcionalmente usando el `comisionPct` del LP original.
+Ejemplo: NC por viaje de $1.080.000 sobre LP con 10% comisión:
+```
+Subtotal viajes:  $1.080.000  (lo que ingresa el usuario)
+Comisión (10%):    -$108.000  (se resta automáticamente)
+Neto comprobante:   $972.000
+IVA 21%:            $204.120
+Total:            $1.176.120
 
-Ejemplo: NC por $100.000 sobre LP con 10% comisión:
-- IVA Compras: -$90.000 neto viajes, -$18.900 IVA
-- IVA Ventas: -$10.000 comisión, -$2.100 IVA
+Asiento IVA: COMPRA → base -$972.000, IVA -$204.120
+```
 
-#### Manera 2: Se ajustan SOLO viajes, NO comisión
+#### Manera 2: Sin comisión (faltante / penalización)
 **Checkbox "Incluir comisión en el ajuste" = destildado**
 
-Caso típico: faltante de mercadería, penalización al fletero.
+El usuario ingresa el monto del ajuste. No se resta comisión. La comisión de Trans-Magg queda intacta.
 
 | Impacto | Libro IVA | Efecto |
 |---------|-----------|--------|
-| Ajuste viajes | **IVA Compras** | ↓ crédito fiscal |
-| Comisión | **IVA Ventas** | **Sin cambio** |
+| Ajuste viajes (neto = bruto directo) | **IVA Compras** | ↓ crédito fiscal |
+| IVA Ventas | — | **Sin cambio** |
 
-100% del ajuste va a IVA Compras. La comisión de Trans-Magg queda intacta porque el problema es responsabilidad del fletero, no de Trans-Magg.
+Ejemplo: NC por faltante de $50.000:
+```
+Neto comprobante: $50.000
+IVA 21%:          $10.500
+Total:            $60.500
 
-Ejemplo: NC por $100.000 sobre LP sin comisión:
-- IVA Compras: -$100.000 neto, -$21.000 IVA
-- IVA Ventas: sin cambio
+Asiento IVA: COMPRA → base -$50.000, IVA -$10.500
+```
+
+**Regla**: toda NC/ND sobre LP siempre impacta solo en IVA Compras. La diferencia entre Manera 1 y 2 es solo el neto del comprobante (con o sin resta de comisión).
 
 ---
 
@@ -103,11 +120,10 @@ Ejemplo: NC por $100.000 sobre LP sin comisión:
 | Factura a empresa | ✓ Débito fiscal | — |
 | NC sobre factura empresa | ✓ Reduce débito | — |
 | ND sobre factura empresa | ✓ Aumenta débito | — |
-| LP a fletero (viajes) | — | ✓ Crédito fiscal |
-| LP a fletero (comisión) | ✓ Débito fiscal | — |
-| NC sobre LP (con comisión) | ✓ Reduce débito | ✓ Reduce crédito |
+| LP a fletero | — | ✓ Crédito fiscal |
+| NC sobre LP (con comisión) | — | ✓ Reduce crédito |
 | NC sobre LP (sin comisión) | — | ✓ Reduce crédito |
-| ND sobre LP (con comisión) | ✓ Aumenta débito | ✓ Aumenta crédito |
+| ND sobre LP (con comisión) | — | ✓ Aumenta crédito |
 | ND sobre LP (sin comisión) | — | ✓ Aumenta crédito |
 | Factura proveedor | — | ✓ Crédito fiscal |
 | NC proveedor | — | ✓ Reduce crédito |
@@ -120,27 +136,29 @@ Ejemplo: NC por $100.000 sobre LP sin comisión:
 ## Implementación en el sistema
 
 ### Modelo AsientoIva
-Cada comprobante genera uno o más registros en `AsientoIva` con:
+Cada comprobante genera un registro en `AsientoIva` con:
 - `tipo`: "VENTA" (IVA Ventas) o "COMPRA" (IVA Compras)
-- `tipoReferencia`: identifica el origen (FACTURA_EMITIDA, LIQUIDACION, LIQUIDACION_COMISION, NC_EMITIDA, ND_EMITIDA, etc.)
+- `tipoReferencia`: identifica el origen (FACTURA_EMITIDA, LIQUIDACION, NC_EMITIDA, ND_EMITIDA, etc.)
 - `baseImponible`: positivo para facturas/ND, negativo para NC
 - `alicuota`: porcentaje de IVA
 - `montoIva`: monto de IVA calculado
 - `periodo`: YYYY-MM
 
-### LP genera 2 asientos
-1. `LIQUIDACION_COMISION` tipo `VENTA` (comisión)
-2. `LIQUIDACION` tipo `COMPRA` (neto viajes)
+### LP genera 1 asiento
+- `LIQUIDACION` tipo `COMPRA` (neto viajes = bruto - comisión)
 
 ### NC/ND sobre LP
-- Con comisión: genera 2 asientos (NC_EMITIDA_COMISION tipo VENTA + NC_EMITIDA tipo COMPRA)
-- Sin comisión: genera 1 asiento (NC_EMITIDA tipo COMPRA)
+- Siempre genera 1 asiento tipo `COMPRA`
+- Con comisión: base = neto del comprobante (bruto - comisión)
+- Sin comisión: base = bruto directo
 
 ### NC/ND sobre factura
-- Siempre genera 1 asiento tipo VENTA
+- Siempre genera 1 asiento tipo `VENTA`
 
 ### Checkbox "Incluir comisión en el ajuste"
 - Campo `incluirComision` en modelo `NotaCreditoDebito`
 - Default: `true` (tildado)
-- Controla si la NC/ND sobre LP desglosa la comisión o va 100% a IVA Compras
-- Usado por el backend (asientos IVA) y el PDF (desglose visual)
+- Controla si el sistema resta la comisión del bruto antes de calcular el neto del comprobante
+- Con comisión: neto = bruto - comisión (anulación de viaje)
+- Sin comisión: neto = bruto (faltante, penalización al fletero)
+- En ambos casos solo impacta IVA Compras
