@@ -102,6 +102,8 @@ export function tipoCbteArcaParaNotaCD(tipo: string, tipoCbteOrigen: number): nu
   const MATRIZ: Record<number, { nc: number; nd: number }> = {
     1: { nc: 3, nd: 2 },
     6: { nc: 8, nd: 7 },
+    60: { nc: 3, nd: 2 },
+    61: { nc: 8, nd: 7 },
     201: { nc: 203, nd: 202 },
   }
   const entrada = MATRIZ[tipoCbteOrigen]

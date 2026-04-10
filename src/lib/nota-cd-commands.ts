@@ -102,31 +102,48 @@ async function crearNCEmitida(
   totales: TotalesNotaCD,
   operadorId: string
 ): Promise<ResultadoNotaCD> {
-  // NC/ND sobre LP bloqueada en esta etapa (arca-matriz-comprobantes.md)
-  if (data.liquidacionId) {
-    return { ok: false, status: 400, error: "La emisión de NC/ND sobre liquidaciones no está habilitada en esta etapa" }
-  }
-  if (!data.facturaId) {
-    return { ok: false, status: 400, error: "Se requiere facturaId para NC_EMITIDA" }
+  if (!data.facturaId && !data.liquidacionId) {
+    return { ok: false, status: 400, error: "Se requiere facturaId o liquidacionId para NC_EMITIDA" }
   }
 
-  const factura = await prisma.facturaEmitida.findUnique({
-    where: { id: data.facturaId },
-    include: {
-      empresa: { select: { condicionIva: true } },
-      viajes: { include: { viaje: { select: { id: true } } } },
-      notasCreditoDebito: {
-        where: { tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL" },
-        select: { id: true },
+  // Resolver comprobante origen (factura o liquidación)
+  let tipoCbteOrigen: number
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let factura: any = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let liquidacion: any = null
+
+  if (data.facturaId) {
+    factura = await prisma.facturaEmitida.findUnique({
+      where: { id: data.facturaId },
+      include: {
+        empresa: { select: { condicionIva: true } },
+        viajes: { include: { viaje: { select: { id: true } } } },
+        notasCreditoDebito: {
+          where: { tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL" },
+          select: { id: true },
+        },
       },
-    },
-  })
-  if (!factura) return { ok: false, status: 404, error: "Factura no encontrada" }
-  if (data.subtipo === "ANULACION_TOTAL" && factura.notasCreditoDebito.length > 0) {
-    return { ok: false, status: 400, error: "La factura ya tiene una NC de anulación total emitida" }
+    })
+    if (!factura) return { ok: false, status: 404, error: "Factura no encontrada" }
+    if (data.subtipo === "ANULACION_TOTAL" && factura.notasCreditoDebito.length > 0) {
+      return { ok: false, status: 400, error: "La factura ya tiene una NC de anulación total emitida" }
+    }
+    tipoCbteOrigen = factura.tipoCbte
+  } else {
+    liquidacion = await prisma.liquidacion.findUnique({
+      where: { id: data.liquidacionId },
+      include: {
+        fletero: { select: { condicionIva: true } },
+        viajes: { include: { viaje: { select: { id: true } } } },
+      },
+    })
+    if (!liquidacion) return { ok: false, status: 404, error: "Liquidación no encontrada" }
+    if (!liquidacion.tipoCbte) return { ok: false, status: 400, error: "La liquidación no tiene tipo de comprobante asignado" }
+    tipoCbteOrigen = liquidacion.tipoCbte
   }
 
-  const tipoCbte = tipoCbteArcaParaNotaCD("NC_EMITIDA", factura.tipoCbte)
+  const tipoCbte = tipoCbteArcaParaNotaCD("NC_EMITIDA", tipoCbteOrigen)
   if (!tipoCbte) return { ok: false, status: 400, error: "No se puede emitir NC para este tipo de comprobante" }
 
   const habilitados = await leerComprobantesHabilitados()
@@ -134,11 +151,14 @@ async function crearNCEmitida(
   if (errorHab) return { ok: false, status: 400, error: errorHab }
 
   const nroComprobante = await calcularProximoNroComprobanteNotaCD("NC_EMITIDA")
+  const creadoEn = data.fechaEmision ? new Date(data.fechaEmision + "T12:00:00") : new Date()
+  const periodo = creadoEn.toISOString().slice(0, 7)
 
   const baseData = {
     tipo: data.tipo,
     subtipo: data.subtipo,
-    facturaId: data.facturaId,
+    facturaId: data.facturaId ?? null,
+    liquidacionId: data.liquidacionId ?? null,
     ...totales,
     descripcion: data.descripcion,
     motivoDetalle: data.motivoDetalle ?? null,
@@ -147,10 +167,10 @@ async function crearNCEmitida(
     tipoCbte,
     arcaEstado: "PENDIENTE" as const,
     operadorId,
-    creadoEn: data.fechaEmision ? new Date(data.fechaEmision + "T12:00:00") : new Date(),
+    creadoEn,
   }
 
-  if (data.subtipo === "ANULACION_TOTAL") {
+  if (data.subtipo === "ANULACION_TOTAL" && factura) {
     const nota = await prisma.$transaction(async (tx) => {
       const nuevaNota = await tx.notaCreditoDebito.create({ data: baseData })
 
@@ -164,27 +184,37 @@ async function crearNCEmitida(
             subtotalOriginal: vef.subtotal,
           },
         })
-        // Viajes totalmente revertidos → habilitados para refacturación
         await tx.viaje.update({
           where: { id: vef.viajeId },
           data: { estadoFactura: EstadoFacturaViaje.PENDIENTE_FACTURAR },
         })
       }
 
-      // La factura original es inmutable — el efecto económico se revierte por NC.
+      // AsientoIva: NC resta del IVA ventas (base e IVA negativos)
+      await tx.asientoIva.create({
+        data: {
+          notaCreditoDebitoId: nuevaNota.id,
+          tipoReferencia: "NC_EMITIDA",
+          tipo: "VENTA",
+          baseImponible: -totales.montoNeto,
+          alicuota: data.ivaPct,
+          montoIva: -totales.montoIva,
+          periodo,
+        },
+      })
 
       return nuevaNota
     })
     return { ok: true, nota }
   }
 
-  if (data.subtipo === "ANULACION_PARCIAL") {
+  if (data.subtipo === "ANULACION_PARCIAL" && factura) {
     if (!data.viajesIds || data.viajesIds.length === 0) {
       return { ok: false, status: 400, error: "Se requieren viajesIds para ANULACION_PARCIAL" }
     }
 
-    const viajeIdsEnFactura = factura.viajes.map((v) => v.viajeId)
-    const todosPertenecen = data.viajesIds.every((id) => viajeIdsEnFactura.includes(id))
+    const viajeIdsEnFactura = factura.viajes.map((v: { viajeId: string }) => v.viajeId)
+    const todosPertenecen = data.viajesIds.every((id: string) => viajeIdsEnFactura.includes(id))
     if (!todosPertenecen) {
       return { ok: false, status: 400, error: "Uno o más viajes no pertenecen a la factura" }
     }
@@ -193,7 +223,7 @@ async function crearNCEmitida(
       const nuevaNota = await tx.notaCreditoDebito.create({ data: baseData })
 
       for (const viajeId of data.viajesIds!) {
-        const vef = factura.viajes.find((v) => v.viajeId === viajeId)!
+        const vef = factura.viajes.find((v: { viajeId: string }) => v.viajeId === viajeId)!
         await tx.viajeEnNotaCD.create({
           data: {
             notaId: nuevaNota.id,
@@ -203,27 +233,48 @@ async function crearNCEmitida(
             subtotalOriginal: vef.subtotal,
           },
         })
-        // NC parcial por viaje: el viaje seleccionado queda totalmente revertido
-        // de esta factura → habilitado para refacturación.
         await tx.viaje.update({
           where: { id: viajeId },
           data: { estadoFactura: EstadoFacturaViaje.PENDIENTE_FACTURAR },
         })
       }
 
+      await tx.asientoIva.create({
+        data: {
+          notaCreditoDebitoId: nuevaNota.id,
+          tipoReferencia: "NC_EMITIDA",
+          tipo: "VENTA",
+          baseImponible: -totales.montoNeto,
+          alicuota: data.ivaPct,
+          montoIva: -totales.montoIva,
+          periodo,
+        },
+      })
+
       return nuevaNota
     })
     return { ok: true, nota }
   }
 
-  if (data.subtipo === "CORRECCION_IMPORTE") {
-    const nota = await prisma.$transaction(async (tx) => {
-      return await tx.notaCreditoDebito.create({ data: baseData })
-    })
-    return { ok: true, nota }
-  }
+  // CORRECCION_IMPORTE (factura) o NC genérica sobre liquidación
+  const nota = await prisma.$transaction(async (tx) => {
+    const nuevaNota = await tx.notaCreditoDebito.create({ data: baseData })
 
-  return { ok: false, status: 400, error: "Subtipo NC_EMITIDA no reconocido" }
+    await tx.asientoIva.create({
+      data: {
+        notaCreditoDebitoId: nuevaNota.id,
+        tipoReferencia: "NC_EMITIDA",
+        tipo: "VENTA",
+        baseImponible: -totales.montoNeto,
+        alicuota: data.ivaPct,
+        montoIva: -totales.montoIva,
+        periodo,
+      },
+    })
+
+    return nuevaNota
+  })
+  return { ok: true, nota }
 }
 
 // ─── ND_EMITIDA ──────────────────────────────────────────────────────────────
@@ -233,21 +284,30 @@ async function crearNDEmitida(
   totales: TotalesNotaCD,
   operadorId: string
 ): Promise<ResultadoNotaCD> {
-  // ND sobre LP no operativa en esta etapa (arca-matriz-comprobantes.md)
-  if (data.liquidacionId) {
-    return { ok: false, status: 400, error: "La emisión de NC/ND sobre liquidaciones no está habilitada en esta etapa" }
-  }
-  if (!data.facturaId) {
-    return { ok: false, status: 400, error: "Se requiere facturaId para ND_EMITIDA" }
+  if (!data.facturaId && !data.liquidacionId) {
+    return { ok: false, status: 400, error: "Se requiere facturaId o liquidacionId para ND_EMITIDA" }
   }
 
-  const factura = await prisma.facturaEmitida.findUnique({
-    where: { id: data.facturaId },
-    include: { empresa: { select: { condicionIva: true } } },
-  })
-  if (!factura) return { ok: false, status: 404, error: "Factura no encontrada" }
+  let tipoCbteOrigen: number
 
-  const tipoCbte = tipoCbteArcaParaNotaCD("ND_EMITIDA", factura.tipoCbte)
+  if (data.facturaId) {
+    const factura = await prisma.facturaEmitida.findUnique({
+      where: { id: data.facturaId },
+      select: { tipoCbte: true },
+    })
+    if (!factura) return { ok: false, status: 404, error: "Factura no encontrada" }
+    tipoCbteOrigen = factura.tipoCbte
+  } else {
+    const liquidacion = await prisma.liquidacion.findUnique({
+      where: { id: data.liquidacionId },
+      select: { tipoCbte: true },
+    })
+    if (!liquidacion) return { ok: false, status: 404, error: "Liquidación no encontrada" }
+    if (!liquidacion.tipoCbte) return { ok: false, status: 400, error: "La liquidación no tiene tipo de comprobante asignado" }
+    tipoCbteOrigen = liquidacion.tipoCbte
+  }
+
+  const tipoCbte = tipoCbteArcaParaNotaCD("ND_EMITIDA", tipoCbteOrigen)
   if (!tipoCbte) return { ok: false, status: 400, error: "No se puede emitir ND para este tipo de comprobante" }
 
   const habilitados = await leerComprobantesHabilitados()
@@ -255,9 +315,11 @@ async function crearNDEmitida(
   if (errorHab) return { ok: false, status: 400, error: errorHab }
 
   const nroComprobante = await calcularProximoNroComprobanteNotaCD("ND_EMITIDA")
+  const creadoEn = data.fechaEmision ? new Date(data.fechaEmision + "T12:00:00") : new Date()
+  const periodo = creadoEn.toISOString().slice(0, 7)
 
   const nota = await prisma.$transaction(async (tx) => {
-    return await tx.notaCreditoDebito.create({
+    const nuevaNota = await tx.notaCreditoDebito.create({
       data: {
         tipo: data.tipo,
         subtipo: data.subtipo ?? null,
@@ -271,23 +333,32 @@ async function crearNDEmitida(
         tipoCbte,
         arcaEstado: "PENDIENTE",
         operadorId,
-        creadoEn: data.fechaEmision ? new Date(data.fechaEmision + "T12:00:00") : new Date(),
+        creadoEn,
       },
     })
+
+    // AsientoIva: ND suma al IVA ventas (base e IVA positivos)
+    await tx.asientoIva.create({
+      data: {
+        notaCreditoDebitoId: nuevaNota.id,
+        tipoReferencia: "ND_EMITIDA",
+        tipo: "VENTA",
+        baseImponible: totales.montoNeto,
+        alicuota: data.ivaPct,
+        montoIva: totales.montoIva,
+        periodo,
+      },
+    })
+
+    return nuevaNota
   })
   return { ok: true, nota }
 }
 
 // ─── NC_RECIBIDA ─────────────────────────────────────────────────────────────
 
-async function crearNCRecibida(
-  data: DatosNotaCD,
-): Promise<ResultadoNotaCD> {
-  // NC/ND recibidas sobre LP bloqueadas en esta etapa (arca-matriz-comprobantes.md)
-  if (data.liquidacionId) {
-    return { ok: false, status: 400, error: "La emisión de NC/ND sobre liquidaciones no está habilitada en esta etapa" }
-  }
-
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function crearNCRecibida(data: DatosNotaCD): Promise<ResultadoNotaCD> {
   return { ok: false, status: 400, error: "Subtipo NC_RECIBIDA no reconocido" }
 }
 
@@ -298,11 +369,6 @@ async function crearNDRecibida(
   totales: TotalesNotaCD,
   operadorId: string
 ): Promise<ResultadoNotaCD> {
-  // ND recibidas sobre LP bloqueadas en esta etapa (arca-matriz-comprobantes.md)
-  if (data.liquidacionId) {
-    return { ok: false, status: 400, error: "La emisión de NC/ND sobre liquidaciones no está habilitada en esta etapa" }
-  }
-
   if (data.subtipo === "CHEQUE_RECHAZADO") {
     if (!data.chequeRecibidoId) {
       return { ok: false, status: 400, error: "Se requiere chequeRecibidoId para ND_RECIBIDA/CHEQUE_RECHAZADO" }
@@ -472,6 +538,20 @@ export async function crearNotaEmpresaEmitida(
         },
       })
     }
+
+    // AsientoIva: NC negativo, ND positivo
+    const esNC = tipoNota === "NC"
+    await tx.asientoIva.create({
+      data: {
+        notaCreditoDebitoId: n.id,
+        tipoReferencia: tipo,
+        tipo: "VENTA",
+        baseImponible: esNC ? -totales.montoNeto : totales.montoNeto,
+        alicuota: factura.ivaPct,
+        montoIva: esNC ? -totales.montoIva : totales.montoIva,
+        periodo: creadoEn.toISOString().slice(0, 7),
+      },
+    })
 
     return n
   })
