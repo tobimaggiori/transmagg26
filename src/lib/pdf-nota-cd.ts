@@ -437,15 +437,48 @@ export async function generarPDFNotaCD(notaId: string): Promise<Buffer> {
     const valW = totalsW - labelW - 8
 
     // Espacio para totales
-    if (cursorY + 50 > footerLineY) {
+    const esLP = !!nota.liquidacion
+    const lineasTotales = esLP && nota.incluirComision ? 80 : 50
+    if (cursorY + lineasTotales > footerLineY) {
       doc.addPage()
       cursorY = margin + 10
     }
 
     doc.font("Helvetica").fontSize(9.5).fillColor(TEXT)
 
-    {
-      // NC/ND: siempre neto + IVA simple (sin desglose de comisión)
+    if (esLP && nota.liquidacion) {
+      const comisionPct = nota.liquidacion.comisionPct ?? 0
+
+      if (nota.incluirComision && comisionPct > 0) {
+        // NC/ND sobre LP con comisión: mostrar ajuste viajes + ajuste comisión
+        const comisionNeto = Math.round(neto * comisionPct / 100 * 100) / 100
+        const netoViajes = Math.round((neto - comisionNeto) * 100) / 100
+
+        doc.text("Ajuste viajes:", totalsLeft, cursorY, { width: labelW, align: "right" })
+        doc.text(`$ ${fmtMoneda(netoViajes)}`, valX, cursorY, { width: valW, align: "right" })
+        cursorY += 14
+
+        doc.text(`Ajuste comisión (${comisionPct}%):`, totalsLeft, cursorY, { width: labelW, align: "right" })
+        doc.text(`$ ${fmtMoneda(comisionNeto)}`, valX, cursorY, { width: valW, align: "right" })
+        cursorY += 14
+      } else {
+        // NC/ND sobre LP sin comisión: solo ajuste viajes
+        doc.text("Ajuste viajes:", totalsLeft, cursorY, { width: labelW, align: "right" })
+        doc.text(`$ ${fmtMoneda(neto)}`, valX, cursorY, { width: valW, align: "right" })
+        cursorY += 14
+      }
+
+      doc.text("Neto:", totalsLeft, cursorY, { width: labelW, align: "right" })
+      doc.text(`$ ${fmtMoneda(neto)}`, valX, cursorY, { width: valW, align: "right" })
+      cursorY += 14
+
+      if (ivaMonto > 0) {
+        doc.text("IVA:", totalsLeft, cursorY, { width: labelW, align: "right" })
+        doc.text(`$ ${fmtMoneda(ivaMonto)}`, valX, cursorY, { width: valW, align: "right" })
+        cursorY += 16
+      }
+    } else {
+      // NC/ND sobre factura: neto + IVA
       doc.text("Neto:", totalsLeft, cursorY, { width: labelW, align: "right" })
       doc.text(`$ ${fmtMoneda(neto)}`, valX, cursorY, { width: valW, align: "right" })
       cursorY += 16
