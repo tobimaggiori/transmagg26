@@ -437,41 +437,15 @@ export async function generarPDFNotaCD(notaId: string): Promise<Buffer> {
     const valW = totalsW - labelW - 8
 
     // Espacio para totales
-    const esLP = !!nota.liquidacion
-    const lineasTotales = esLP ? 90 : 50
-    if (cursorY + lineasTotales > footerLineY) {
+    if (cursorY + 50 > footerLineY) {
       doc.addPage()
       cursorY = margin + 10
     }
 
     doc.font("Helvetica").fontSize(9.5).fillColor(TEXT)
 
-    if (esLP && nota.liquidacion && nota.incluirComision) {
-      // NC/ND sobre LP con comisión: desglose comisión/viajes para que el fletero registre correctamente
-      const comisionPct = nota.liquidacion.comisionPct ?? 0
-      const ivaPct = nota.liquidacion.ivaPct ?? 21
-      const comisionNeto = Math.round(neto * comisionPct / 100 * 100) / 100
-      const netoViajes = Math.round((neto - comisionNeto) * 100) / 100
-      const ivaViajes = Math.round(netoViajes * ivaPct / 100 * 100) / 100
-      const ivaComision = Math.round(comisionNeto * ivaPct / 100 * 100) / 100
-
-      doc.text("Neto Viajes:", totalsLeft, cursorY, { width: labelW, align: "right" })
-      doc.text(`$ ${fmtMoneda(netoViajes)}`, valX, cursorY, { width: valW, align: "right" })
-      cursorY += 14
-
-      doc.text(`Comisión (${comisionPct}%):`, totalsLeft, cursorY, { width: labelW, align: "right" })
-      doc.text(`$ ${fmtMoneda(comisionNeto)}`, valX, cursorY, { width: valW, align: "right" })
-      cursorY += 14
-
-      doc.text(`IVA Viajes (${ivaPct}%):`, totalsLeft, cursorY, { width: labelW, align: "right" })
-      doc.text(`$ ${fmtMoneda(ivaViajes)}`, valX, cursorY, { width: valW, align: "right" })
-      cursorY += 14
-
-      doc.text(`IVA Comisión (${ivaPct}%):`, totalsLeft, cursorY, { width: labelW, align: "right" })
-      doc.text(`$ ${fmtMoneda(ivaComision)}`, valX, cursorY, { width: valW, align: "right" })
-      cursorY += 16
-    } else {
-      // NC/ND sobre factura: neto + IVA simple
+    {
+      // NC/ND: siempre neto + IVA simple (sin desglose de comisión)
       doc.text("Neto:", totalsLeft, cursorY, { width: labelW, align: "right" })
       doc.text(`$ ${fmtMoneda(neto)}`, valX, cursorY, { width: valW, align: "right" })
       cursorY += 16
