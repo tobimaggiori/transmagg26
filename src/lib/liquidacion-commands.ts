@@ -8,6 +8,7 @@
 
 import { prisma } from "@/lib/prisma"
 import { calcularTotalViaje, calcularLiquidacion } from "@/lib/viajes"
+import { aplicarPorcentaje } from "@/lib/money"
 import { EstadoLiquidacionDocumento, EstadoLiquidacionViaje } from "@/lib/viaje-workflow"
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
@@ -219,6 +220,36 @@ export async function ejecutarCrearLiquidacion(
     await tx.viaje.updateMany({
       where: { id: { in: viajeIds } },
       data: { estadoLiquidacion: EstadoLiquidacionViaje.LIQUIDADO },
+    })
+
+    // Asientos IVA: la LP genera 2 asientos
+    const periodo = liq.grabadaEn.toISOString().slice(0, 7)
+    const ivaComision = aplicarPorcentaje(comisionMonto, ivaPct)
+
+    // 1. IVA Ventas: la comisión de Trans-Magg (débito fiscal)
+    await tx.asientoIva.create({
+      data: {
+        liquidacionId: liq.id,
+        tipoReferencia: "LIQUIDACION_COMISION",
+        tipo: "VENTA",
+        baseImponible: comisionMonto,
+        alicuota: ivaPct,
+        montoIva: ivaComision,
+        periodo,
+      },
+    })
+
+    // 2. IVA Compras: el neto del flete (crédito fiscal)
+    await tx.asientoIva.create({
+      data: {
+        liquidacionId: liq.id,
+        tipoReferencia: "LIQUIDACION",
+        tipo: "COMPRA",
+        baseImponible: neto,
+        alicuota: ivaPct,
+        montoIva: ivaMonto,
+        periodo,
+      },
     })
 
     return liq

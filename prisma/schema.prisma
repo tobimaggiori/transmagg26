@@ -467,7 +467,7 @@ model Liquidacion {
   adelantoDescuentos   AdelantoDescuento[]
   gastoDescuentos      GastoDescuento[]
   notasCreditoDebito   NotaCreditoDebito[]
-  asientoIva           AsientoIva?
+  asientosIva          AsientoIva[]
   facturaEmitidaId     String?              @unique @map("factura_emitida_id")
   facturaEmitida       FacturaEmitida?      @relation("LiquidacionFactura", fields: [facturaEmitidaId], references: [id])
 
@@ -1149,7 +1149,7 @@ model AsientoIva {
   id               String  @id @default(uuid())
   facturaEmitidaId String? @map("factura_emitida_id")
   facturaProvId    String? @map("factura_proveedor_id")
-  liquidacionId    String? @unique @map("liquidacion_id")
+  liquidacionId    String? @map("liquidacion_id")
   notaCreditoDebitoId String? @unique @map("nota_credito_debito_id")
   tipoReferencia   String  @map("tipo_referencia")
   tipo             String

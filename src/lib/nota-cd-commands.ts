@@ -205,12 +205,13 @@ async function crearNCEmitida(
       }
     }
 
-    // AsientoIva: NC resta del IVA ventas (base e IVA negativos)
+    // AsientoIva: NC resta del IVA (negativo). Tipo según origen.
+    const tipoIva = data.liquidacionId ? "COMPRA" : "VENTA"
     await tx.asientoIva.create({
       data: {
         notaCreditoDebitoId: nuevaNota.id,
         tipoReferencia: "NC_EMITIDA",
-        tipo: "VENTA",
+        tipo: tipoIva,
         baseImponible: -totales.montoNeto,
         alicuota: data.ivaPct,
         montoIva: -totales.montoIva,
@@ -283,12 +284,13 @@ async function crearNDEmitida(
       },
     })
 
-    // AsientoIva: ND suma al IVA ventas (base e IVA positivos)
+    // AsientoIva: ND suma al IVA (positivo). Tipo según origen.
+    const tipoIva = data.liquidacionId ? "COMPRA" : "VENTA"
     await tx.asientoIva.create({
       data: {
         notaCreditoDebitoId: nuevaNota.id,
         tipoReferencia: "ND_EMITIDA",
-        tipo: "VENTA",
+        tipo: tipoIva,
         baseImponible: totales.montoNeto,
         alicuota: data.ivaPct,
         montoIva: totales.montoIva,
