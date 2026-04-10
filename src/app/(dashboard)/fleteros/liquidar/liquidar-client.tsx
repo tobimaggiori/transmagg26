@@ -49,6 +49,15 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
   const [errorGen, setErrorGen] = useState<string | null>(null)
   const [reintentableInfo, setReintentableInfo] = useState<{ documentoId: string; mensaje: string } | null>(null)
   const [reintentando, setReintentando] = useState(false)
+  const [ultimaFechaLP, setUltimaFechaLP] = useState<string | null>(null)
+
+  // Cargar última fecha de LP al montar
+  useEffect(() => {
+    fetch("/api/liquidaciones/ultima-fecha")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.fecha) setUltimaFechaLP(data.fecha) })
+      .catch(() => {})
+  }, [])
   const [fleteroInfo, setFleteroInfo] = useState<FleteroInfo | null>(null)
   const [exitoLiquidacion, setExitoLiquidacion] = useState<{ nroLP: string; id: string } | null>(null)
   const { estado: estadoPDF, abrirPDF, cerrarPDF } = usePDFViewer()
@@ -441,6 +450,7 @@ export function LiquidarClient({ rol, fleteros, fleteroIdPropio }: LiquidarClien
           error={errorGen}
           onCancelar={() => { setEnPreview(false); setErrorGen(null) }}
           onConfirmar={confirmarLiquidacion}
+          fechaEmisionDefault={ultimaFechaLP ?? undefined}
         />
       )}
 

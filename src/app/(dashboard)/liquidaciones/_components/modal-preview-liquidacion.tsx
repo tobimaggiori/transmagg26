@@ -18,6 +18,7 @@ export function ModalPreviewLiquidacion({
   error,
   onCancelar,
   onConfirmar,
+  fechaEmisionDefault,
 }: {
   fletero: FleteroInfo
   viajesIniciales: ViajeParaLiquidar[]
@@ -27,12 +28,13 @@ export function ModalPreviewLiquidacion({
   error: string | null
   onCancelar: () => void
   onConfirmar: (viajes: ViajeParaLiquidar[], comisionPct: number, ivaPct: number, metodoPago: string, fechaEmision: string) => void
+  fechaEmisionDefault?: string
 }) {
   const [viajes, setViajes] = useState<ViajeParaLiquidar[]>(viajesIniciales)
   const [comisionPct, setComisionPct] = useState(comisionPctInicial)
   const [ivaPct, setIvaPct] = useState(ivaPctInicial)
-  const [metodoPago, setMetodoPago] = useState("Transferencia Bancaria")
-  const [fechaEmision, setFechaEmision] = useState(() => hoyLocalYmd())
+  const [metodoPago, setMetodoPago] = useState("Cheque")
+  const [fechaEmision, setFechaEmision] = useState(() => fechaEmisionDefault ?? hoyLocalYmd())
 
   function actualizarCelda(id: string, campo: keyof ViajeParaLiquidar, valor: unknown) {
     setViajes((prev) => prev.map((v) => v.id === id ? { ...v, [campo]: valor } : v))
