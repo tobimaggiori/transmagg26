@@ -38,16 +38,38 @@ DescEmpresa y DescChofer se guardan como texto plano, no solo como FK. Si se mod
 
 ---
 
-## Tarifa: UNA sola tarifa por viaje
+## Tarifa: doble tarifa con un solo campo (truco operativo)
 
-**Hallazgo critico**: En el sistema viejo existe **UNA SOLA tarifa** por viaje. No hay distincion entre "tarifa empresa" y "tarifa fletero".
+En la base de datos existe **UN SOLO campo `Tarifa`** en `LiqDetViajes`. No hay campos separados para tarifa empresa y tarifa fletero. Sin embargo, en la practica se manejan **dos tarifas diferentes** mediante un truco operativo:
 
-La tarifa se ingresa al cargar el viaje y se usa para:
-1. **Calcular el SubTotal del viaje**: `(Kilos / 1000) * Tarifa`
-2. **Calcular la comision de Trans-Magg**: `SubTotal * %Comision` (el % viene del fletero)
-3. **Facturar a la empresa**: se usa el mismo SubTotal
+### Flujo real de doble tarifa
 
-La diferencia economica entre lo que se cobra a la empresa y lo que se paga al fletero se da **a traves de la comision** (porcentaje en la ficha del fletero), no a traves de tarifas diferentes.
+```
+1. Se carga el viaje con la TARIFA DEL FLETERO
+   → Liquidaciones.frm: usuario ingresa la tarifa que se le paga al fletero
+   → Se emite el LP (Liquido Producto) con esa tarifa
+
+2. Se MODIFICA la tarifa en LiqDetViajes
+   → ModificaTarifa.frm: usuario cambia la tarifa a la TARIFA DE LA EMPRESA
+   → El campo Tarifa se sobreescribe (la tarifa del fletero se pierde)
+
+3. Se factura a la empresa con la TARIFA MODIFICADA
+   → FacturarViajes.frm: lee la tarifa ya modificada de LiqDetViajes
+   → Se emite la factura con la tarifa de la empresa
+```
+
+**La tarifa del fletero se pierde al sobreescribirla.** No queda registro historico de cual era la tarifa original. La unica referencia es el comprobante LP ya emitido (EncabLProd/DetViajesLP).
+
+### Ejemplo
+
+```
+Paso 1: Viaje con tarifa fletero = $100.000/tn → se emite LP por $3.000.000 (30tn)
+Paso 2: ModificaTarifa → se cambia a $150.000/tn (tarifa empresa)
+Paso 3: Se factura a empresa → factura por $4.500.000 (30tn * $150.000)
+
+Ganancia de Trans-Magg = $4.500.000 - $3.000.000 = $1.500.000
+(Ademas de la comision porcentual que se descuenta en el LP)
+```
 
 ### Formula del SubTotal
 
@@ -56,6 +78,10 @@ SubTotal = (Kilos / 1000) * Tarifa
 ```
 
 La tarifa es **por tonelada**. Ejemplo: 30.000 kg a tarifa $150.000/tn = (30000/1000) * 150000 = $4.500.000
+
+### Nota sobre el sistema nuevo
+
+En el sistema nuevo (transmagg26) esto se resolvio correctamente con **dos campos separados**: `tarifaFletero` y `tarifaEmpresa`. Ya no hace falta sobreescribir un campo para manejar la doble tarifa.
 
 ---
 
@@ -303,7 +329,7 @@ Los descuentos de gas-oil vienen de `GasOilFleteros` (pendientes con Descontada 
 ## Particularidades importantes
 
 1. **El viaje NO es una entidad independiente** — vive dentro de LiqDetViajes
-2. **Una sola tarifa** — no hay tarifa empresa vs tarifa fletero. La diferencia se maneja con comision.
+2. **Doble tarifa con un solo campo** — se carga con tarifa fletero, se emite LP, se sobreescribe con tarifa empresa, se factura. La tarifa del fletero se pierde al modificarla. En el sistema nuevo se resolvio con dos campos separados.
 3. **Tarifa por tonelada**: `SubTotal = (Kilos / 1000) * Tarifa`
 4. **IVA fijo 21%** — no configurable
 5. **Datos desnormalizados** — DescEmpresa y DescChofer se guardan como texto
