@@ -46,7 +46,7 @@ Transmagg solo debe contemplar los siguientes comprobantes:
 
 - **60** = Cuenta de Venta y Líquido Producto A
 - **61** = Cuenta de Venta y Líquido Producto B
-- **65** = Nota de Crédito a Cuenta de Venta y Líquido Producto A
+- **90** = NC Otros Comprobantes - Documentos Exceptuados (NC sobre LP)
 
 ---
 
@@ -84,12 +84,11 @@ En la etapa actual, los comprobantes operativos son:
 
 ---
 
-## Comprobantes contemplados pero no operativos en esta etapa
+## NC sobre Liquidaciones de Producto
 
-- **65** Nota de Crédito a Cuenta de Venta y Líquido Producto A
+El código **90** (NC Otros Comprobantes - Documentos Exceptuados) se usa para emitir Notas de Crédito sobre Liquidaciones de Producto, igual que en el sistema viejo.
 
-### Regla cerrada
-Aunque el código **65** forme parte del catálogo contemplado, **por ahora NO debe quedar operativo**.
+El backend lo tiene implementado como operativo. **La activación se controla exclusivamente desde Configuración ARCA** (puntos de venta y comprobantes habilitados). Si el código 90 no está habilitado en la configuración, no se puede emitir.
 
 Eso significa:
 
@@ -201,26 +200,21 @@ Los Líquidos Productos deben emitirse únicamente como:
 
 ## Corrección de LP
 
-En esta etapa:
+La corrección de LP se realiza con NC código **90** (NC Otros Comprobantes - Documentos Exceptuados).
 
-- **no** se implementa corrección de LP con NC/ND
-- **no** se debe emitir **65**
-- **no** deben existir botones “Emitir NC” o “Emitir ND” desde Consultar LP
-- **no** deben quedar flujos “próximamente” o deshabilitados confusos
-- **no** deben quedar reglas activas de negocio para anulación/corrección de LP con notas
+La disponibilidad de este flujo se controla desde **Configuración ARCA**: si el código 90 no está habilitado en comprobantes ni tiene punto de venta asignado, no se puede emitir.
 
 ---
 
-## Regla de LP heredado
+## Códigos válidos para LP
 
-Si existe código heredado que:
+Los únicos códigos válidos para el circuito de liquidación fletero son:
 
-- trate LP con códigos distintos de **60** y **61**
-- permita corregir LP con notas
-- use mapeos incorrectos de ARCA
-- mantenga UI o API operativas para NC/ND sobre LP
+- **60** = CVLP A (base)
+- **61** = CVLP B (base)
+- **90** = NC sobre LP (nota de crédito)
 
-ese código debe corregirse, eliminarse o neutralizarse para que prevalezca esta matriz.
+Cualquier otro código para LP debe rechazarse.
 
 ---
 
@@ -254,9 +248,11 @@ Deben poder emitirse:
 - Cuenta de Venta y Líquido Producto B (61)
 
 ### Líquidos Productos → Consultar
-Debe ser solo consulta en esta etapa.
+Desde una liquidación emitida se debe poder:
 
-No debe existir emisión de NC/ND sobre LP desde aquí.
+- consultar
+- reimprimir
+- emitir NC **90** si el código está habilitado en Configuración ARCA
 
 ---
 
@@ -289,7 +285,7 @@ Ejemplo de comprobantes configurables:
 
 - 1, 2, 3
 - 6, 7, 8
-- 60, 61, 65
+- 60, 61, 90
 - 201, 202, 203
 
 ---
@@ -312,8 +308,7 @@ La API debe rechazar:
 - comprobantes deshabilitados en Configuración ARCA
 - comprobantes incompatibles con la condición fiscal del receptor
 - notas incompatibles con el comprobante origen
-- emisión de **65** en esta etapa
-- cualquier flujo activo de NC/ND sobre LP en esta etapa
+- emisión de NC/ND sobre LP si el código **90** no está habilitado en Configuración ARCA
 
 ---
 
@@ -342,11 +337,10 @@ El código enviado a ARCA debe corresponder exactamente al comprobante elegido.
 
 ### Fletero
 - **60**, **61** para LP
+- **90** para NC sobre LP
 
 ### Regla cerrada
-No deben quedar mapeos a otros códigos para LP ni para facturación general.
-
-Especialmente, no deben quedar mapeos heredados a códigos ajenos a esta matriz fiscal cerrada.
+No deben quedar mapeos a otros códigos fuera de esta matriz fiscal cerrada.
 
 ---
 
@@ -362,8 +356,8 @@ Se consideran invariantes obligatorios:
    - comprobante origen
    - configuración ARCA
 4. Las notas sobre facturas dependen siempre del tipo de comprobante original.
-5. Los LP solo se emiten como **60** o **61** en esta etapa.
-6. **65** no debe quedar operativo por ahora.
+5. Los LP base se emiten como **60** o **61**. NC sobre LP se emite como **90**.
+6. La disponibilidad de **90** se controla desde Configuración ARCA.
 7. Contabilidad / Notas C-D es solo consulta global.
 8. Backend y frontend deben validar exactamente la misma matriz.
 9. Si existe una contradicción con código heredado, prevalece este documento.
@@ -376,7 +370,7 @@ Ninguna IA debe:
 
 - proponer comprobantes fuera del catálogo cerrado
 - habilitar emisión genérica de notas incompatibles
-- reabrir corrección de LP con NC/ND en esta etapa
+- habilitar código 90 sin confirmación explícita del usuario en Configuración ARCA
 - mover la emisión principal de NC/ND a Contabilidad
 - introducir mapeos ARCA alternativos que contradigan esta matriz
 - dejar soluciones “preparadas” pero visibles en UI si no están operativas

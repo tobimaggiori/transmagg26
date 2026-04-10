@@ -167,16 +167,19 @@ export const CATALOGO_ARCA: readonly ComprobanteArca[] = [
     modulo: "fleteros/liquidar",
   },
 
-  // ── Fletero: nota contemplada pero NO operativa ──
+  // ── Fletero: NC sobre LP ──
+  // Código 90 = "Otros Comprobantes - Documentos Exceptuados - NC"
+  // Mismo código que usaba el sistema viejo para NC de LP.
+  // La activación se controla desde Configuración ARCA (puntos de venta).
   {
-    codigo: 65,
-    nombre: "Nota de Crédito a CVLP A",
+    codigo: 90,
+    nombre: "NC Otros Comprobantes - Documentos Exceptuados",
     circuito: "fletero",
     rol: "nota_credito",
-    operativo: false,
+    operativo: true,
     origenCompatible: [60],
     condicionesFiscales: ["RESPONSABLE_INSCRIPTO", "MONOTRIBUTISTA"],
-    visibleEnUI: false,
+    visibleEnUI: true,
     modulo: "fleteros/liquidaciones",
   },
 ] as const
@@ -382,7 +385,7 @@ export function claveConfigPtoVenta(tipoCbte: number): string {
     case 7: case 8: return "NOTA_CREDITO_B"
     case 60: return "LP_A"
     case 61: return "LP_B"
-    case 65: return "LP_NC_A"
+    case 90: return "LP_A"
     case 202: case 203: return "FACTURA_A"
     default: return "FACTURA_A"
   }
