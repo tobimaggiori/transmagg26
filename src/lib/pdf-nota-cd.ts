@@ -127,7 +127,8 @@ export async function generarPDFNotaCD(notaId: string): Promise<Buffer> {
       liquidacion: {
         select: {
           nroComprobante: true, ptoVenta: true, tipoCbte: true, grabadaEn: true,
-          fletero: { select: { razonSocial: true, cuit: true, direccion: true } },
+          comisionPct: true, ivaPct: true,
+          fletero: { select: { razonSocial: true, cuit: true, direccion: true, condicionIva: true } },
         },
       },
       operador: { select: { nombre: true, apellido: true } },
@@ -429,27 +430,57 @@ export async function generarPDFNotaCD(notaId: string): Promise<Buffer> {
     const ivaMonto = Number(nota.montoIva)
     const total = Number(nota.montoTotal)
 
-    const totalsW = 200
+    const totalsW = 220
     const totalsLeft = right - totalsW
-    const labelW = 100
+    const labelW = 120
     const valX = totalsLeft + labelW + 4
     const valW = totalsW - labelW - 8
 
     // Espacio para totales
-    if (cursorY + 50 > footerLineY) {
+    const esLP = !!nota.liquidacion
+    const lineasTotales = esLP ? 90 : 50
+    if (cursorY + lineasTotales > footerLineY) {
       doc.addPage()
       cursorY = margin + 10
     }
 
     doc.font("Helvetica").fontSize(9.5).fillColor(TEXT)
-    doc.text("Neto:", totalsLeft, cursorY, { width: labelW, align: "right" })
-    doc.text(`$ ${fmtMoneda(neto)}`, valX, cursorY, { width: valW, align: "right" })
-    cursorY += 16
 
-    if (ivaMonto > 0) {
-      doc.text("IVA:", totalsLeft, cursorY, { width: labelW, align: "right" })
-      doc.text(`$ ${fmtMoneda(ivaMonto)}`, valX, cursorY, { width: valW, align: "right" })
+    if (esLP && nota.liquidacion) {
+      // NC/ND sobre LP: desglose comisión/viajes para que el fletero registre correctamente
+      const comisionPct = nota.liquidacion.comisionPct ?? 0
+      const ivaPct = nota.liquidacion.ivaPct ?? 21
+      const comisionNeto = Math.round(neto * comisionPct / 100 * 100) / 100
+      const netoViajes = Math.round((neto - comisionNeto) * 100) / 100
+      const ivaViajes = Math.round(netoViajes * ivaPct / 100 * 100) / 100
+      const ivaComision = Math.round(comisionNeto * ivaPct / 100 * 100) / 100
+
+      doc.text("Neto Viajes:", totalsLeft, cursorY, { width: labelW, align: "right" })
+      doc.text(`$ ${fmtMoneda(netoViajes)}`, valX, cursorY, { width: valW, align: "right" })
+      cursorY += 14
+
+      doc.text(`Comisión (${comisionPct}%):`, totalsLeft, cursorY, { width: labelW, align: "right" })
+      doc.text(`$ ${fmtMoneda(comisionNeto)}`, valX, cursorY, { width: valW, align: "right" })
+      cursorY += 14
+
+      doc.text(`IVA Viajes (${ivaPct}%):`, totalsLeft, cursorY, { width: labelW, align: "right" })
+      doc.text(`$ ${fmtMoneda(ivaViajes)}`, valX, cursorY, { width: valW, align: "right" })
+      cursorY += 14
+
+      doc.text(`IVA Comisión (${ivaPct}%):`, totalsLeft, cursorY, { width: labelW, align: "right" })
+      doc.text(`$ ${fmtMoneda(ivaComision)}`, valX, cursorY, { width: valW, align: "right" })
       cursorY += 16
+    } else {
+      // NC/ND sobre factura: neto + IVA simple
+      doc.text("Neto:", totalsLeft, cursorY, { width: labelW, align: "right" })
+      doc.text(`$ ${fmtMoneda(neto)}`, valX, cursorY, { width: valW, align: "right" })
+      cursorY += 16
+
+      if (ivaMonto > 0) {
+        doc.text("IVA:", totalsLeft, cursorY, { width: labelW, align: "right" })
+        doc.text(`$ ${fmtMoneda(ivaMonto)}`, valX, cursorY, { width: valW, align: "right" })
+        cursorY += 16
+      }
     }
 
     // Línea separadora
