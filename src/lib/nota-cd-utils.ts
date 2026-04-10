@@ -6,7 +6,7 @@
  * en la UI y en los API routes.
  */
 
-import { calcularNetoMasIva, sumarImportes, type MonetaryInput } from "@/lib/money"
+import { calcularNetoMasIva, sumarImportes, aplicarPorcentaje, restarImportes, type MonetaryInput } from "@/lib/money"
 
 /**
  * labelTipoNotaCD: string -> string
@@ -226,4 +226,84 @@ export function calcularTotalesDesdeItems(
 ): { montoNeto: number; montoIva: number; montoTotal: number } {
   const neto = sumarImportes(items.map((i) => i.subtotal))
   return calcularTotalesNotaCD(neto, ivaPct)
+}
+
+// ─── Cálculos de NC/ND sobre LP ─────────────────────────────────────────────
+
+/**
+ * calcularTotalesNotaLP: number number number boolean -> TotalesNotaLP
+ *
+ * Dado el bruto ingresado por el usuario, el % de comisión del LP,
+ * el % de IVA y si incluye comisión, calcula los totales del comprobante
+ * y el desglose para los asientos IVA.
+ *
+ * Con comisión (incluirComision=true):
+ *   comisionMonto = bruto * comisionPct%
+ *   neto = bruto - comisionMonto
+ *   IVA = neto * ivaPct%
+ *   total = neto + IVA
+ *   Asiento IVA Ventas: base=comisionMonto, iva=comisionMonto*ivaPct%
+ *   Asiento IVA Compras: base=neto, iva=IVA
+ *
+ * Sin comisión (incluirComision=false):
+ *   neto = bruto (sin resta)
+ *   IVA = neto * ivaPct%
+ *   total = neto + IVA
+ *   Asiento IVA Compras: base=neto, iva=IVA
+ *   IVA Ventas: sin cambio
+ *
+ * Ejemplos:
+ * calcularTotalesNotaLP(1080000, 10, 21, true)
+ * // => { neto: 972000, iva: 204120, total: 1176120, comisionMonto: 108000,
+ * //      asientoVentas: { base: 108000, iva: 22680 },
+ * //      asientoCompras: { base: 972000, iva: 204120 } }
+ *
+ * calcularTotalesNotaLP(50000, 10, 21, false)
+ * // => { neto: 50000, iva: 10500, total: 60500, comisionMonto: 0,
+ * //      asientoVentas: null,
+ * //      asientoCompras: { base: 50000, iva: 10500 } }
+ */
+export function calcularTotalesNotaLP(
+  bruto: number,
+  comisionPct: number,
+  ivaPct: number,
+  incluirComision: boolean
+): {
+  neto: number
+  iva: number
+  total: number
+  comisionMonto: number
+  asientoVentas: { base: number; iva: number } | null
+  asientoCompras: { base: number; iva: number }
+} {
+  if (incluirComision && comisionPct > 0) {
+    const comisionMonto = aplicarPorcentaje(bruto, comisionPct)
+    const neto = restarImportes(bruto, comisionMonto)
+    const iva = aplicarPorcentaje(neto, ivaPct)
+    const total = sumarImportes([neto, iva])
+    const ivaComision = aplicarPorcentaje(comisionMonto, ivaPct)
+
+    return {
+      neto,
+      iva,
+      total,
+      comisionMonto,
+      asientoVentas: { base: comisionMonto, iva: ivaComision },
+      asientoCompras: { base: neto, iva },
+    }
+  }
+
+  // Sin comisión
+  const neto = bruto
+  const iva = aplicarPorcentaje(neto, ivaPct)
+  const total = sumarImportes([neto, iva])
+
+  return {
+    neto,
+    iva,
+    total,
+    comisionMonto: 0,
+    asientoVentas: null,
+    asientoCompras: { base: neto, iva },
+  }
 }

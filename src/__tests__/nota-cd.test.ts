@@ -118,8 +118,16 @@ describe("tipoCbteArcaParaNotaCD (por origen)", () => {
     expect(tipoCbteArcaParaNotaCD("ND_EMITIDA", 201)).toBe(202)
   })
 
-  it("NC sobre origen no soportado → 0", () => {
-    expect(tipoCbteArcaParaNotaCD("NC_EMITIDA", 60)).toBe(0)
+  it("NC sobre LP A (60) → 3", () => {
+    expect(tipoCbteArcaParaNotaCD("NC_EMITIDA", 60)).toBe(3)
+  })
+
+  it("NC sobre LP B (61) → 8", () => {
+    expect(tipoCbteArcaParaNotaCD("NC_EMITIDA", 61)).toBe(8)
+  })
+
+  it("NC sobre origen no soportado (99) → 0", () => {
+    expect(tipoCbteArcaParaNotaCD("NC_EMITIDA", 99)).toBe(0)
   })
 
   it("NC_RECIBIDA → 0 (no aplica)", () => {
