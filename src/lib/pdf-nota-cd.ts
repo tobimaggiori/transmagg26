@@ -446,8 +446,8 @@ export async function generarPDFNotaCD(notaId: string): Promise<Buffer> {
 
     doc.font("Helvetica").fontSize(9.5).fillColor(TEXT)
 
-    if (esLP && nota.liquidacion) {
-      // NC/ND sobre LP: desglose comisión/viajes para que el fletero registre correctamente
+    if (esLP && nota.liquidacion && nota.incluirComision) {
+      // NC/ND sobre LP con comisión: desglose comisión/viajes para que el fletero registre correctamente
       const comisionPct = nota.liquidacion.comisionPct ?? 0
       const ivaPct = nota.liquidacion.ivaPct ?? 21
       const comisionNeto = Math.round(neto * comisionPct / 100 * 100) / 100

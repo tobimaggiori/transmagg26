@@ -301,6 +301,7 @@ export const crearNotaCDSchema = z.object({
   fechaComprobanteExterno: z.string().optional(),
   emisorExterno: z.string().optional(),
   fechaEmision: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de fecha inválido (YYYY-MM-DD)").optional(),
+  incluirComision: z.boolean().optional(),
   emisionArca: z.boolean().optional(),
   idempotencyKey: z.string().uuid().optional(),
 })

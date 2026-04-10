@@ -1288,6 +1288,7 @@ model NotaCreditoDebito {
   cbteAsocNro         Int?      @map("cbte_asoc_nro")
 
   pdfS3Key            String?   @map("pdf_s3_key")
+  incluirComision     Boolean   @default(true) @map("incluir_comision")
 
   operadorId          String    @map("operador_id")
   creadoEn            DateTime  @default(now()) @map("creado_en")

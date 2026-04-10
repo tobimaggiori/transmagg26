@@ -59,6 +59,7 @@ export type DatosNotaCD = {
   nroComprobanteExterno?: string
   fechaComprobanteExterno?: string
   emisorExterno?: string
+  incluirComision?: boolean
 }
 
 // ─── Comando principal ───────────────────────────────────────────────────────
@@ -168,6 +169,7 @@ async function crearNCEmitida(
     nroComprobante,
     tipoCbte,
     arcaEstado: "PENDIENTE" as const,
+    incluirComision: data.incluirComision ?? true,
     operadorId,
     creadoEn,
   }
@@ -208,15 +210,15 @@ async function crearNCEmitida(
     }
 
     // AsientoIva para NC
-    if (liquidacion) {
-      // NC sobre LP: doble impacto (comisión en Ventas + neto en Compras)
+    const inclComision = data.incluirComision ?? true
+    if (liquidacion && inclComision) {
+      // NC sobre LP con comisión: doble impacto (comisión en Ventas + neto en Compras)
       const comisionPct = liquidacion.comisionPct ?? 0
       const comisionNeto = aplicarPorcentaje(totales.montoNeto, comisionPct)
       const netoViajes = restarImportes(totales.montoNeto, comisionNeto)
       const ivaComision = aplicarPorcentaje(comisionNeto, data.ivaPct)
       const ivaViajes = aplicarPorcentaje(netoViajes, data.ivaPct)
 
-      // 1. IVA Ventas: comisión (negativa por NC)
       await tx.asientoIva.create({
         data: {
           notaCreditoDebitoId: nuevaNota.id,
@@ -228,7 +230,6 @@ async function crearNCEmitida(
           periodo,
         },
       })
-      // 2. IVA Compras: neto viajes (negativo por NC)
       await tx.asientoIva.create({
         data: {
           notaCreditoDebitoId: nuevaNota.id,
@@ -237,6 +238,19 @@ async function crearNCEmitida(
           baseImponible: -netoViajes,
           alicuota: data.ivaPct,
           montoIva: -ivaViajes,
+          periodo,
+        },
+      })
+    } else if (liquidacion && !inclComision) {
+      // NC sobre LP sin comisión: todo va a COMPRA (100% ajuste al fletero)
+      await tx.asientoIva.create({
+        data: {
+          notaCreditoDebitoId: nuevaNota.id,
+          tipoReferencia: "NC_EMITIDA",
+          tipo: "COMPRA",
+          baseImponible: -totales.montoNeto,
+          alicuota: data.ivaPct,
+          montoIva: -totales.montoIva,
           periodo,
         },
       })
@@ -318,14 +332,16 @@ async function crearNDEmitida(
         nroComprobante,
         tipoCbte,
         arcaEstado: "PENDIENTE",
+        incluirComision: data.incluirComision ?? true,
         operadorId,
         creadoEn,
       },
     })
 
     // AsientoIva para ND
-    if (data.liquidacionId) {
-      // ND sobre LP: doble impacto (comisión en Ventas + neto en Compras)
+    const inclComision = data.incluirComision ?? true
+    if (data.liquidacionId && inclComision) {
+      // ND sobre LP con comisión: doble impacto
       const comisionNeto = aplicarPorcentaje(totales.montoNeto, comisionPctLP)
       const netoViajes = restarImportes(totales.montoNeto, comisionNeto)
       const ivaComision = aplicarPorcentaje(comisionNeto, data.ivaPct)
@@ -350,6 +366,19 @@ async function crearNDEmitida(
           baseImponible: netoViajes,
           alicuota: data.ivaPct,
           montoIva: ivaViajes,
+          periodo,
+        },
+      })
+    } else if (data.liquidacionId && !inclComision) {
+      // ND sobre LP sin comisión: todo a COMPRA
+      await tx.asientoIva.create({
+        data: {
+          notaCreditoDebitoId: nuevaNota.id,
+          tipoReferencia: "ND_EMITIDA",
+          tipo: "COMPRA",
+          baseImponible: totales.montoNeto,
+          alicuota: data.ivaPct,
+          montoIva: totales.montoIva,
           periodo,
         },
       })
