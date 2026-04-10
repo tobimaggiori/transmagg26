@@ -312,6 +312,23 @@ Desde `/contabilidad/comprobantes` se pueden listar, exportar (ZIP) y eliminar P
 | `docs/liquidacion-fletero.md` | Logica de negocio del circuito de liquidacion |
 | `docs/invariantes-y-tests.md` | Invariantes generales y escenarios de test |
 
+## Sistema viejo (referencia de logica de negocio)
+
+La carpeta `sistemaviejo/` contiene el codigo fuente del sistema anterior (Visual Basic 6) y documentacion extraida de su logica de negocio. **Cuando se mencione "sistema viejo", "comparar con el viejo", o se necesite entender la logica de negocio original, leer los `.md` de esa carpeta — NO leer los `.frm`/`.bas` directamente.**
+
+| Documento | Contenido |
+|-----------|-----------|
+| `sistemaviejo/viajes.md` | Viajes: campos, ciclo de vida, doble tarifa con un solo campo |
+| `sistemaviejo/liquidaciones-fleteros.md` | Liquidaciones: 3 pasos, comisiones, comprobante tipo 60 |
+| `sistemaviejo/facturacion-empresas.md` | Facturacion a empresas: 4 formularios, integracion AFIP |
+| `sistemaviejo/nc-nd.md` | Notas de credito y debito: emision, impacto en cta cte e IVA |
+| `sistemaviejo/tipos-comprobante.md` | Mapeo codigos internos vs codigos AFIP |
+| `sistemaviejo/recibos-cobranza.md` | Recibos: medios de pago, aplicacion contra facturas |
+| `sistemaviejo/ordenes-de-pago.md` | Ordenes de pago: 6 medios de pago, descuento de adelantos |
+| `sistemaviejo/cuentas-corrientes.md` | Cuentas corrientes: empresas (invertida vs fleteros), SaldoComp, aplicacion |
+| `sistemaviejo/adelantos.md` | Adelantos: 4 tipos, ciclo de vida, mecanismo de descuento |
+| `sistemaviejo/cheques.md` | Cheques propios y terceros: estados, transiciones, mutuos |
+
 ## Regla para desarrollo asistido por IA
 
 Instruccion reutilizable para prompts:
