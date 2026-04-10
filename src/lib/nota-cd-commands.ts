@@ -20,6 +20,7 @@ import { validarComprobanteHabilitado } from "@/lib/arca/catalogo"
 import { leerComprobantesHabilitados } from "@/lib/arca/leer-config-habilitados"
 import { cargarConfigArca } from "@/lib/arca/config"
 import { calcularSaldoPendienteFactura } from "@/lib/cuenta-corriente"
+import { aplicarPorcentaje, restarImportes } from "@/lib/money"
 import { EstadoFacturaViaje } from "@/lib/viaje-workflow"
 import { parsearFechaLocalMediodia } from "@/lib/date-local"
 
@@ -137,6 +138,7 @@ async function crearNCEmitida(
         fletero: { select: { condicionIva: true } },
         viajes: { include: { viaje: { select: { id: true } } } },
       },
+      // comisionPct se usa para desglosar el doble impacto IVA (ventas comisión + compras neto)
     })
     if (!liquidacion) return { ok: false, status: 404, error: "Liquidación no encontrada" }
     if (!liquidacion.tipoCbte) return { ok: false, status: 400, error: "La liquidación no tiene tipo de comprobante asignado" }
@@ -205,19 +207,53 @@ async function crearNCEmitida(
       }
     }
 
-    // AsientoIva: NC resta del IVA (negativo). Tipo según origen.
-    const tipoIva = data.liquidacionId ? "COMPRA" : "VENTA"
-    await tx.asientoIva.create({
-      data: {
-        notaCreditoDebitoId: nuevaNota.id,
-        tipoReferencia: "NC_EMITIDA",
-        tipo: tipoIva,
-        baseImponible: -totales.montoNeto,
-        alicuota: data.ivaPct,
-        montoIva: -totales.montoIva,
-        periodo,
-      },
-    })
+    // AsientoIva para NC
+    if (liquidacion) {
+      // NC sobre LP: doble impacto (comisión en Ventas + neto en Compras)
+      const comisionPct = liquidacion.comisionPct ?? 0
+      const comisionNeto = aplicarPorcentaje(totales.montoNeto, comisionPct)
+      const netoViajes = restarImportes(totales.montoNeto, comisionNeto)
+      const ivaComision = aplicarPorcentaje(comisionNeto, data.ivaPct)
+      const ivaViajes = aplicarPorcentaje(netoViajes, data.ivaPct)
+
+      // 1. IVA Ventas: comisión (negativa por NC)
+      await tx.asientoIva.create({
+        data: {
+          notaCreditoDebitoId: nuevaNota.id,
+          tipoReferencia: "NC_EMITIDA_COMISION",
+          tipo: "VENTA",
+          baseImponible: -comisionNeto,
+          alicuota: data.ivaPct,
+          montoIva: -ivaComision,
+          periodo,
+        },
+      })
+      // 2. IVA Compras: neto viajes (negativo por NC)
+      await tx.asientoIva.create({
+        data: {
+          notaCreditoDebitoId: nuevaNota.id,
+          tipoReferencia: "NC_EMITIDA",
+          tipo: "COMPRA",
+          baseImponible: -netoViajes,
+          alicuota: data.ivaPct,
+          montoIva: -ivaViajes,
+          periodo,
+        },
+      })
+    } else {
+      // NC sobre factura: solo IVA Ventas
+      await tx.asientoIva.create({
+        data: {
+          notaCreditoDebitoId: nuevaNota.id,
+          tipoReferencia: "NC_EMITIDA",
+          tipo: "VENTA",
+          baseImponible: -totales.montoNeto,
+          alicuota: data.ivaPct,
+          montoIva: -totales.montoIva,
+          periodo,
+        },
+      })
+    }
 
     return nuevaNota
   })
@@ -237,6 +273,8 @@ async function crearNDEmitida(
 
   let tipoCbteOrigen: number
 
+  let comisionPctLP = 0
+
   if (data.facturaId) {
     const factura = await prisma.facturaEmitida.findUnique({
       where: { id: data.facturaId },
@@ -247,11 +285,12 @@ async function crearNDEmitida(
   } else {
     const liquidacion = await prisma.liquidacion.findUnique({
       where: { id: data.liquidacionId },
-      select: { tipoCbte: true },
+      select: { tipoCbte: true, comisionPct: true },
     })
     if (!liquidacion) return { ok: false, status: 404, error: "Liquidación no encontrada" }
     if (!liquidacion.tipoCbte) return { ok: false, status: 400, error: "La liquidación no tiene tipo de comprobante asignado" }
     tipoCbteOrigen = liquidacion.tipoCbte
+    comisionPctLP = liquidacion.comisionPct ?? 0
   }
 
   const tipoCbte = tipoCbteArcaParaNotaCD("ND_EMITIDA", tipoCbteOrigen)
@@ -284,19 +323,50 @@ async function crearNDEmitida(
       },
     })
 
-    // AsientoIva: ND suma al IVA (positivo). Tipo según origen.
-    const tipoIva = data.liquidacionId ? "COMPRA" : "VENTA"
-    await tx.asientoIva.create({
-      data: {
-        notaCreditoDebitoId: nuevaNota.id,
-        tipoReferencia: "ND_EMITIDA",
-        tipo: tipoIva,
-        baseImponible: totales.montoNeto,
-        alicuota: data.ivaPct,
-        montoIva: totales.montoIva,
-        periodo,
-      },
-    })
+    // AsientoIva para ND
+    if (data.liquidacionId) {
+      // ND sobre LP: doble impacto (comisión en Ventas + neto en Compras)
+      const comisionNeto = aplicarPorcentaje(totales.montoNeto, comisionPctLP)
+      const netoViajes = restarImportes(totales.montoNeto, comisionNeto)
+      const ivaComision = aplicarPorcentaje(comisionNeto, data.ivaPct)
+      const ivaViajes = aplicarPorcentaje(netoViajes, data.ivaPct)
+
+      await tx.asientoIva.create({
+        data: {
+          notaCreditoDebitoId: nuevaNota.id,
+          tipoReferencia: "ND_EMITIDA_COMISION",
+          tipo: "VENTA",
+          baseImponible: comisionNeto,
+          alicuota: data.ivaPct,
+          montoIva: ivaComision,
+          periodo,
+        },
+      })
+      await tx.asientoIva.create({
+        data: {
+          notaCreditoDebitoId: nuevaNota.id,
+          tipoReferencia: "ND_EMITIDA",
+          tipo: "COMPRA",
+          baseImponible: netoViajes,
+          alicuota: data.ivaPct,
+          montoIva: ivaViajes,
+          periodo,
+        },
+      })
+    } else {
+      // ND sobre factura: solo IVA Ventas
+      await tx.asientoIva.create({
+        data: {
+          notaCreditoDebitoId: nuevaNota.id,
+          tipoReferencia: "ND_EMITIDA",
+          tipo: "VENTA",
+          baseImponible: totales.montoNeto,
+          alicuota: data.ivaPct,
+          montoIva: totales.montoIva,
+          periodo,
+        },
+      })
+    }
 
     return nuevaNota
   })

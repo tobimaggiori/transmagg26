@@ -1150,7 +1150,7 @@ model AsientoIva {
   facturaEmitidaId String? @map("factura_emitida_id")
   facturaProvId    String? @map("factura_proveedor_id")
   liquidacionId    String? @map("liquidacion_id")
-  notaCreditoDebitoId String? @unique @map("nota_credito_debito_id")
+  notaCreditoDebitoId String? @map("nota_credito_debito_id")
   tipoReferencia   String  @map("tipo_referencia")
   tipo             String
   baseImponible    Decimal   @map("base_imponible")
@@ -1298,7 +1298,7 @@ model NotaCreditoDebito {
   operador            Usuario           @relation("OperadorNotaCreditoDebito", fields: [operadorId], references: [id])
   viajesAfectados     ViajeEnNotaCD[]
   items               NotaCreditoDebitoItem[]
-  asientoIva          AsientoIva?
+  asientosIva         AsientoIva[]
 
   @@map("notas_credito_debito")
 }
