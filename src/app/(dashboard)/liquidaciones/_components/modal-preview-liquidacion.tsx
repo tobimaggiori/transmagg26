@@ -78,10 +78,6 @@ export function ModalPreviewLiquidacion({
               <span className="text-muted-foreground">Dirección: </span>
               <span className="font-medium">{fletero.direccion ?? "—"}</span>
             </div>
-            <div>
-              <span className="text-muted-foreground">Nº Líquido Producto: </span>
-              <span className="font-mono font-bold text-base">{formatearNroComprobante(fletero.nroProximoComprobante)}</span>
-            </div>
           </div>
         </div>
 
