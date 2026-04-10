@@ -242,25 +242,22 @@ export function calcularTotalesDesdeItems(
  *   neto = bruto - comisionMonto
  *   IVA = neto * ivaPct%
  *   total = neto + IVA
- *   Asiento IVA Ventas: base=comisionMonto, iva=comisionMonto*ivaPct%
- *   Asiento IVA Compras: base=neto, iva=IVA
+ *   Asiento IVA: solo COMPRA (base=neto, iva=IVA)
+ *   El IVA de la comisión se tributa implícitamente en la factura a empresa.
  *
  * Sin comisión (incluirComision=false):
  *   neto = bruto (sin resta)
  *   IVA = neto * ivaPct%
  *   total = neto + IVA
- *   Asiento IVA Compras: base=neto, iva=IVA
- *   IVA Ventas: sin cambio
+ *   Asiento IVA: solo COMPRA (base=neto, iva=IVA)
  *
  * Ejemplos:
  * calcularTotalesNotaLP(1080000, 10, 21, true)
  * // => { neto: 972000, iva: 204120, total: 1176120, comisionMonto: 108000,
- * //      asientoVentas: { base: 108000, iva: 22680 },
  * //      asientoCompras: { base: 972000, iva: 204120 } }
  *
  * calcularTotalesNotaLP(50000, 10, 21, false)
  * // => { neto: 50000, iva: 10500, total: 60500, comisionMonto: 0,
- * //      asientoVentas: null,
  * //      asientoCompras: { base: 50000, iva: 10500 } }
  */
 export function calcularTotalesNotaLP(
@@ -273,7 +270,6 @@ export function calcularTotalesNotaLP(
   iva: number
   total: number
   comisionMonto: number
-  asientoVentas: { base: number; iva: number } | null
   asientoCompras: { base: number; iva: number }
 } {
   if (incluirComision && comisionPct > 0) {
@@ -281,14 +277,12 @@ export function calcularTotalesNotaLP(
     const neto = restarImportes(bruto, comisionMonto)
     const iva = aplicarPorcentaje(neto, ivaPct)
     const total = sumarImportes([neto, iva])
-    const ivaComision = aplicarPorcentaje(comisionMonto, ivaPct)
 
     return {
       neto,
       iva,
       total,
       comisionMonto,
-      asientoVentas: { base: comisionMonto, iva: ivaComision },
       asientoCompras: { base: neto, iva },
     }
   }
@@ -303,7 +297,6 @@ export function calcularTotalesNotaLP(
     iva,
     total,
     comisionMonto: 0,
-    asientoVentas: null,
     asientoCompras: { base: neto, iva },
   }
 }

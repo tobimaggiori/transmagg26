@@ -4,6 +4,11 @@
  *
  * ESTOS TESTS SON INVARIANTES DE NEGOCIO. No modificar sin aprobación explícita.
  * Protegen la lógica fiscal de NC/ND que replica el comportamiento del sistema viejo.
+ *
+ * Regla clave: NC/ND sobre LP solo impactan IVA COMPRAS.
+ * El IVA de la comisión se tributa implícitamente en la diferencia entre
+ * la factura a empresa (IVA sobre bruto) y el LP (IVA sobre neto=bruto-comisión).
+ * No se registra por separado.
  */
 
 import {
@@ -32,7 +37,7 @@ describe("tipoCbteArcaParaNotaCD — LP como origen", () => {
   })
 })
 
-// ─── NC sobre factura a empresa (IVA simple) ────────────────────────────────
+// ─── NC sobre factura a empresa (IVA simple → IVA Ventas) ───────────────────
 
 describe("calcularTotalesNotaCD — NC/ND sobre factura empresa", () => {
   it("NC $100.000 con 21% IVA → neto 100000, iva 21000, total 121000", () => {
@@ -62,12 +67,7 @@ describe("calcularTotalesNotaLP — con comisión (Manera 1)", () => {
     expect(result.iva).toBe(204120)
     expect(result.total).toBe(1176120)
 
-    // Asiento IVA Ventas: comisión (débito fiscal)
-    expect(result.asientoVentas).not.toBeNull()
-    expect(result.asientoVentas!.base).toBe(108000)
-    expect(result.asientoVentas!.iva).toBe(22680)
-
-    // Asiento IVA Compras: neto viajes (crédito fiscal)
+    // Solo IVA Compras (neto viajes)
     expect(result.asientoCompras.base).toBe(972000)
     expect(result.asientoCompras.iva).toBe(204120)
   })
@@ -80,14 +80,11 @@ describe("calcularTotalesNotaLP — con comisión (Manera 1)", () => {
     expect(result.iva).toBe(89250)
     expect(result.total).toBe(514250)
 
-    expect(result.asientoVentas!.base).toBe(75000)
-    expect(result.asientoVentas!.iva).toBe(15750)
-
     expect(result.asientoCompras.base).toBe(425000)
     expect(result.asientoCompras.iva).toBe(89250)
   })
 
-  it("Con 0% comisión y comisión incluida → todo a IVA Compras, sin IVA Ventas", () => {
+  it("Con 0% comisión → neto = bruto, todo a IVA Compras", () => {
     const result = calcularTotalesNotaLP(100000, 0, 21, true)
 
     expect(result.comisionMonto).toBe(0)
@@ -95,21 +92,13 @@ describe("calcularTotalesNotaLP — con comisión (Manera 1)", () => {
     expect(result.iva).toBe(21000)
     expect(result.total).toBe(121000)
 
-    // Sin comisión → no hay asiento ventas
-    expect(result.asientoVentas).toBeNull()
-
     expect(result.asientoCompras.base).toBe(100000)
     expect(result.asientoCompras.iva).toBe(21000)
   })
 
   it("Verificar que comisión + neto = bruto original", () => {
     const result = calcularTotalesNotaLP(1000000, 12, 21, true)
-
-    // Invariante: comisión + neto = bruto
     expect(result.comisionMonto + result.neto).toBe(1000000)
-
-    // Invariante: asientoVentas.base + asientoCompras.base = bruto
-    expect(result.asientoVentas!.base + result.asientoCompras.base).toBe(1000000)
   })
 })
 
@@ -125,8 +114,7 @@ describe("calcularTotalesNotaLP — sin comisión (Manera 2)", () => {
     expect(result.iva).toBe(10500)
     expect(result.total).toBe(60500)
 
-    // Solo IVA Compras, sin IVA Ventas
-    expect(result.asientoVentas).toBeNull()
+    // Solo IVA Compras
     expect(result.asientoCompras.base).toBe(50000)
     expect(result.asientoCompras.iva).toBe(10500)
   })
@@ -139,22 +127,29 @@ describe("calcularTotalesNotaLP — sin comisión (Manera 2)", () => {
     expect(result.iva).toBe(42000)
     expect(result.total).toBe(242000)
 
-    expect(result.asientoVentas).toBeNull()
     expect(result.asientoCompras.base).toBe(200000)
     expect(result.asientoCompras.iva).toBe(42000)
   })
+})
 
-  it("Sin comisión: IVA Ventas NUNCA cambia, independientemente del comisionPct del LP", () => {
-    // Aunque el LP tenga 20% de comisión, si el checkbox está destildado no se toca IVA Ventas
-    const result = calcularTotalesNotaLP(100000, 20, 21, false)
-    expect(result.asientoVentas).toBeNull()
-    expect(result.asientoCompras.base).toBe(100000)
+// ─── Regla clave: NC/ND sobre LP NUNCA impactan IVA Ventas ─────────────────
+
+describe("NC/ND sobre LP — NUNCA impactan IVA Ventas", () => {
+  it("Con comisión: no hay asientoVentas", () => {
+    const result = calcularTotalesNotaLP(1000000, 10, 21, true)
+    // La función ya no devuelve asientoVentas
+    expect("asientoVentas" in result).toBe(false)
+  })
+
+  it("Sin comisión: no hay asientoVentas", () => {
+    const result = calcularTotalesNotaLP(1000000, 10, 21, false)
+    expect("asientoVentas" in result).toBe(false)
   })
 })
 
 // ─── Comparación Manera 1 vs Manera 2 ──────────────────────────────────────
 
-describe("Manera 1 vs Manera 2 — mismo bruto, diferente impacto", () => {
+describe("Manera 1 vs Manera 2 — mismo bruto, diferente neto", () => {
   const bruto = 1000000
   const comisionPct = 10
   const ivaPct = 21
@@ -163,25 +158,17 @@ describe("Manera 1 vs Manera 2 — mismo bruto, diferente impacto", () => {
     const conComision = calcularTotalesNotaLP(bruto, comisionPct, ivaPct, true)
     const sinComision = calcularTotalesNotaLP(bruto, comisionPct, ivaPct, false)
 
-    // Con comisión: neto = 900000 (se restó 100000)
     expect(conComision.neto).toBe(900000)
-    // Sin comisión: neto = 1000000 (bruto directo)
     expect(sinComision.neto).toBe(1000000)
-
-    // Totales distintos por la diferencia de base IVA
     expect(conComision.total).toBeLessThan(sinComision.total)
   })
 
-  it("Con comisión: impacta ambos libros IVA", () => {
-    const result = calcularTotalesNotaLP(bruto, comisionPct, ivaPct, true)
-    expect(result.asientoVentas).not.toBeNull()
-    expect(result.asientoCompras.base).toBe(900000)
-  })
+  it("Ambas solo impactan IVA Compras pero con diferente base", () => {
+    const conComision = calcularTotalesNotaLP(bruto, comisionPct, ivaPct, true)
+    const sinComision = calcularTotalesNotaLP(bruto, comisionPct, ivaPct, false)
 
-  it("Sin comisión: impacta solo IVA Compras", () => {
-    const result = calcularTotalesNotaLP(bruto, comisionPct, ivaPct, false)
-    expect(result.asientoVentas).toBeNull()
-    expect(result.asientoCompras.base).toBe(1000000)
+    expect(conComision.asientoCompras.base).toBe(900000)
+    expect(sinComision.asientoCompras.base).toBe(1000000)
   })
 })
 
@@ -201,15 +188,13 @@ describe("Casos borde NC/ND LP", () => {
     expect(result.neto).toBe(90000)
     expect(result.iva).toBe(0)
     expect(result.total).toBe(90000)
-    expect(result.asientoVentas!.iva).toBe(0)
     expect(result.asientoCompras.iva).toBe(0)
   })
 
-  it("Comisión 100% → todo a IVA Ventas, neto viajes = 0", () => {
+  it("Comisión 100% → neto = 0, IVA Compras base = 0", () => {
     const result = calcularTotalesNotaLP(100000, 100, 21, true)
     expect(result.comisionMonto).toBe(100000)
     expect(result.neto).toBe(0)
-    expect(result.asientoVentas!.base).toBe(100000)
     expect(result.asientoCompras.base).toBe(0)
   })
 })

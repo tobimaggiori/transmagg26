@@ -234,46 +234,18 @@ async function crearNCEmitida(
     }
 
     // AsientoIva para NC
-    if (liquidacion && inclComision) {
-      // NC sobre LP con comisión: doble impacto (comisión en Ventas + neto en Compras)
-      const comisionPct = liquidacion.comisionPct ?? 0
-      const comisionNeto = aplicarPorcentaje(totales.montoNeto, comisionPct)
-      const netoViajes = restarImportes(totales.montoNeto, comisionNeto)
-      const ivaComision = aplicarPorcentaje(comisionNeto, data.ivaPct)
-      const ivaViajes = aplicarPorcentaje(netoViajes, data.ivaPct)
-
-      await tx.asientoIva.create({
-        data: {
-          notaCreditoDebitoId: nuevaNota.id,
-          tipoReferencia: "NC_EMITIDA_COMISION",
-          tipo: "VENTA",
-          baseImponible: -comisionNeto,
-          alicuota: data.ivaPct,
-          montoIva: -ivaComision,
-          periodo,
-        },
-      })
+    // NC sobre LP: solo IVA Compras (el IVA de la comisión se tributa implícitamente
+    // en la diferencia entre factura empresa y LP, no se registra por separado)
+    // Los totalesEfectivos ya tienen el neto correcto (con o sin comisión restada)
+    if (liquidacion) {
       await tx.asientoIva.create({
         data: {
           notaCreditoDebitoId: nuevaNota.id,
           tipoReferencia: "NC_EMITIDA",
           tipo: "COMPRA",
-          baseImponible: -netoViajes,
+          baseImponible: -totalesEfectivos.montoNeto,
           alicuota: data.ivaPct,
-          montoIva: -ivaViajes,
-          periodo,
-        },
-      })
-    } else if (liquidacion && !inclComision) {
-      // NC sobre LP sin comisión: todo va a COMPRA (100% ajuste al fletero)
-      await tx.asientoIva.create({
-        data: {
-          notaCreditoDebitoId: nuevaNota.id,
-          tipoReferencia: "NC_EMITIDA",
-          tipo: "COMPRA",
-          baseImponible: -totales.montoNeto,
-          alicuota: data.ivaPct,
-          montoIva: -totales.montoIva,
+          montoIva: -totalesEfectivos.montoIva,
           periodo,
         },
       })
@@ -376,45 +348,16 @@ async function crearNDEmitida(
     })
 
     // AsientoIva para ND
-    if (data.liquidacionId && inclComision) {
-      // ND sobre LP con comisión: doble impacto
-      const comisionNeto = aplicarPorcentaje(totales.montoNeto, comisionPctLP)
-      const netoViajes = restarImportes(totales.montoNeto, comisionNeto)
-      const ivaComision = aplicarPorcentaje(comisionNeto, data.ivaPct)
-      const ivaViajes = aplicarPorcentaje(netoViajes, data.ivaPct)
-
-      await tx.asientoIva.create({
-        data: {
-          notaCreditoDebitoId: nuevaNota.id,
-          tipoReferencia: "ND_EMITIDA_COMISION",
-          tipo: "VENTA",
-          baseImponible: comisionNeto,
-          alicuota: data.ivaPct,
-          montoIva: ivaComision,
-          periodo,
-        },
-      })
+    // ND sobre LP: solo IVA Compras (misma lógica que NC)
+    if (data.liquidacionId) {
       await tx.asientoIva.create({
         data: {
           notaCreditoDebitoId: nuevaNota.id,
           tipoReferencia: "ND_EMITIDA",
           tipo: "COMPRA",
-          baseImponible: netoViajes,
+          baseImponible: totalesEfectivos.montoNeto,
           alicuota: data.ivaPct,
-          montoIva: ivaViajes,
-          periodo,
-        },
-      })
-    } else if (data.liquidacionId && !inclComision) {
-      // ND sobre LP sin comisión: todo a COMPRA
-      await tx.asientoIva.create({
-        data: {
-          notaCreditoDebitoId: nuevaNota.id,
-          tipoReferencia: "ND_EMITIDA",
-          tipo: "COMPRA",
-          baseImponible: totales.montoNeto,
-          alicuota: data.ivaPct,
-          montoIva: totales.montoIva,
+          montoIva: totalesEfectivos.montoIva,
           periodo,
         },
       })
