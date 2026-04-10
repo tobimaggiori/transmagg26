@@ -21,7 +21,7 @@ import { leerComprobantesHabilitados } from "@/lib/arca/leer-config-habilitados"
 import { cargarConfigArca } from "@/lib/arca/config"
 import { calcularSaldoPendienteFactura } from "@/lib/cuenta-corriente"
 import { aplicarPorcentaje, restarImportes } from "@/lib/money"
-import { EstadoFacturaViaje } from "@/lib/viaje-workflow"
+import { EstadoFacturaViaje, EstadoLiquidacionViaje } from "@/lib/viaje-workflow"
 import { parsearFechaLocalMediodia } from "@/lib/date-local"
 
 // ─── Próximo nro comprobante (server-only, usa prisma) ──────────────────────
@@ -201,10 +201,19 @@ async function crearNCEmitida(
               subtotalOriginal: vef.subtotal,
             },
           })
-          await tx.viaje.update({
-            where: { id: viajeId },
-            data: { estadoFactura: EstadoFacturaViaje.PENDIENTE_FACTURAR },
-          })
+          if (liquidacion) {
+            // NC sobre LP: liberar viaje para reliquidar
+            await tx.viaje.update({
+              where: { id: viajeId },
+              data: { estadoLiquidacion: EstadoLiquidacionViaje.PENDIENTE_LIQUIDAR },
+            })
+          } else {
+            // NC sobre factura: liberar viaje para refacturar
+            await tx.viaje.update({
+              where: { id: viajeId },
+              data: { estadoFactura: EstadoFacturaViaje.PENDIENTE_FACTURAR },
+            })
+          }
         }
       }
     }
