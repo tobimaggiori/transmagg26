@@ -157,12 +157,27 @@ async function crearNCEmitida(
   const creadoEn = data.fechaEmision ? new Date(data.fechaEmision + "T12:00:00") : new Date()
   const periodo = creadoEn.toISOString().slice(0, 7)
 
+  // Si es LP con comisión, recalcular totales: restar comisión del bruto
+  const inclComision = data.incluirComision ?? true
+  let totalesEfectivos = totales
+  if (liquidacion && inclComision) {
+    const comisionPct = liquidacion.comisionPct ?? 0
+    const comisionMonto = aplicarPorcentaje(totales.montoNeto, comisionPct)
+    const netoReal = restarImportes(totales.montoNeto, comisionMonto)
+    const ivaReal = aplicarPorcentaje(netoReal, data.ivaPct)
+    totalesEfectivos = {
+      montoNeto: netoReal,
+      montoIva: ivaReal,
+      montoTotal: netoReal + ivaReal,
+    }
+  }
+
   const baseData = {
     tipo: data.tipo,
     subtipo: data.subtipo,
     facturaId: data.facturaId ?? null,
     liquidacionId: data.liquidacionId ?? null,
-    ...totales,
+    ...totalesEfectivos,
     descripcion: data.descripcion,
     motivoDetalle: data.motivoDetalle ?? null,
     estado: "EMITIDA" as const,
@@ -219,7 +234,6 @@ async function crearNCEmitida(
     }
 
     // AsientoIva para NC
-    const inclComision = data.incluirComision ?? true
     if (liquidacion && inclComision) {
       // NC sobre LP con comisión: doble impacto (comisión en Ventas + neto en Compras)
       const comisionPct = liquidacion.comisionPct ?? 0
@@ -327,6 +341,20 @@ async function crearNDEmitida(
   const creadoEn = data.fechaEmision ? new Date(data.fechaEmision + "T12:00:00") : new Date()
   const periodo = creadoEn.toISOString().slice(0, 7)
 
+  // Si es LP con comisión, recalcular totales
+  const inclComision = data.incluirComision ?? true
+  let totalesEfectivos = totales
+  if (data.liquidacionId && inclComision && comisionPctLP > 0) {
+    const comisionMonto = aplicarPorcentaje(totales.montoNeto, comisionPctLP)
+    const netoReal = restarImportes(totales.montoNeto, comisionMonto)
+    const ivaReal = aplicarPorcentaje(netoReal, data.ivaPct)
+    totalesEfectivos = {
+      montoNeto: netoReal,
+      montoIva: ivaReal,
+      montoTotal: netoReal + ivaReal,
+    }
+  }
+
   const nota = await prisma.$transaction(async (tx) => {
     const nuevaNota = await tx.notaCreditoDebito.create({
       data: {
@@ -334,21 +362,20 @@ async function crearNDEmitida(
         subtipo: data.subtipo ?? null,
         facturaId: data.facturaId ?? null,
         liquidacionId: data.liquidacionId ?? null,
-        ...totales,
+        ...totalesEfectivos,
         descripcion: data.descripcion,
         motivoDetalle: data.motivoDetalle ?? null,
         estado: "EMITIDA",
         nroComprobante,
         tipoCbte,
         arcaEstado: "PENDIENTE",
-        incluirComision: data.incluirComision ?? true,
+        incluirComision: inclComision,
         operadorId,
         creadoEn,
       },
     })
 
     // AsientoIva para ND
-    const inclComision = data.incluirComision ?? true
     if (data.liquidacionId && inclComision) {
       // ND sobre LP con comisión: doble impacto
       const comisionNeto = aplicarPorcentaje(totales.montoNeto, comisionPctLP)

@@ -334,11 +334,22 @@ function ModalEmitirNotaLP({
   const preview = useMemo(() => {
     const subtotales = items.map((i) => parseFloat(i.subtotal) || 0).filter((s) => s > 0)
     if (subtotales.length === 0) return null
-    const neto = sumarImportes(subtotales)
-    const result = calcularNetoMasIva(neto, ivaPct)
+    const bruto = sumarImportes(subtotales)
+    const comisionPct = liq.comisionPct ?? 0
 
-    return { neto: result.neto, iva: result.iva, total: result.total }
-  }, [items, ivaPct])
+    if (incluirComision && comisionPct > 0) {
+      // Con comisión: restar comisión del bruto antes de calcular IVA
+      const comisionMonto = Math.round(bruto * comisionPct / 100 * 100) / 100
+      const neto = Math.round((bruto - comisionMonto) * 100) / 100
+      const iva = Math.round(neto * ivaPct / 100 * 100) / 100
+      const total = Math.round((neto + iva) * 100) / 100
+      return { bruto, comisionMonto, neto, iva, total, conComision: true }
+    }
+
+    // Sin comisión: bruto = neto
+    const result = calcularNetoMasIva(bruto, ivaPct)
+    return { bruto, comisionMonto: 0, neto: result.neto, iva: result.iva, total: result.total, conComision: false }
+  }, [items, ivaPct, incluirComision, liq.comisionPct])
 
   function toggleViaje(viajeId: string) {
     setViajesSeleccionados((prev) => {
@@ -549,7 +560,15 @@ function ModalEmitirNotaLP({
             {/* Preview */}
             {preview && (
               <div className="bg-muted/40 rounded-lg p-3 space-y-1 text-sm">
-                <div className="flex justify-between"><span>Neto</span><span>{formatearMoneda(preview.neto)}</span></div>
+                {preview.conComision ? (
+                  <>
+                    <div className="flex justify-between"><span>Subtotal viajes</span><span>{formatearMoneda(preview.bruto)}</span></div>
+                    <div className="flex justify-between text-muted-foreground"><span>Comisión ({liq.comisionPct}%)</span><span>- {formatearMoneda(preview.comisionMonto)}</span></div>
+                    <div className="flex justify-between"><span>Neto</span><span>{formatearMoneda(preview.neto)}</span></div>
+                  </>
+                ) : (
+                  <div className="flex justify-between"><span>Neto</span><span>{formatearMoneda(preview.neto)}</span></div>
+                )}
                 <div className="flex justify-between"><span>IVA ({ivaPct}%)</span><span>+ {formatearMoneda(preview.iva)}</span></div>
                 <div className="flex justify-between font-bold text-base border-t pt-1"><span>Total</span><span>{formatearMoneda(preview.total)}</span></div>
               </div>
