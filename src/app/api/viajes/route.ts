@@ -209,6 +209,14 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // Si el usuario cambió el % de comisión, actualizar el default del fletero
+    if (fleteroId && parsed.data.comisionPct != null) {
+      await prisma.fletero.update({
+        where: { id: fleteroId },
+        data: { comisionDefault: parsed.data.comisionPct },
+      }).catch(() => {}) // no fallar si no se puede actualizar
+    }
+
     return NextResponse.json(viaje, { status: 201 })
   } catch (error) {
     console.error("[POST /api/viajes]", error)
