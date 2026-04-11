@@ -11,6 +11,14 @@ import { UploadPDF } from "@/components/upload-pdf"
 import type { ViajeAPI, Fletero, Empresa, Camion, Chofer } from "./types"
 import { hoyLocalYmd } from "@/lib/date-local"
 
+function capitalizarPalabras(texto: string): string {
+  return texto.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function capitalizarPrimera(texto: string): string {
+  return texto.charAt(0).toUpperCase() + texto.slice(1).toLowerCase()
+}
+
 /**
  * ModalViaje: props -> JSX.Element
  *
@@ -116,10 +124,10 @@ export function ModalViaje({
       remitoS3Key: remitoS3Key || undefined,
       tieneCupo,
       cupo: tieneCupo ? (cupo || undefined) : null,
-      mercaderia: mercaderia || undefined,
-      procedencia: procedencia || undefined,
+      mercaderia: mercaderia ? capitalizarPrimera(mercaderia.trim()) : undefined,
+      procedencia: procedencia ? capitalizarPalabras(procedencia.trim()) : undefined,
       provinciaOrigen: provinciaOrigen || undefined,
-      destino: destino || undefined,
+      destino: destino ? capitalizarPalabras(destino.trim()) : undefined,
       provinciaDestino: provinciaDestino || undefined,
       kilos: kilosNum > 0 ? kilosNum : undefined,
       tarifa: tarifaNum > 0 ? tarifaNum : undefined,
@@ -292,7 +300,7 @@ export function ModalViaje({
 
           <div>
             <label className="text-xs font-medium text-muted-foreground block mb-1">Mercadería</label>
-            <input type="text" value={mercaderia} onChange={(e) => setMercaderia(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className="w-full h-9 rounded-md border bg-background px-2 text-sm" />
+            <input type="text" value={mercaderia} onChange={(e) => setMercaderia(e.target.value)} onBlur={() => mercaderia && setMercaderia(capitalizarPrimera(mercaderia))} className="w-full h-9 rounded-md border bg-background px-2 text-sm" placeholder="Tipo de carga" />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

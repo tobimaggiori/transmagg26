@@ -25,11 +25,11 @@ interface NuevoViajeClientProps {
 }
 
 function capitalizarPalabras(texto: string): string {
-  return texto.replace(/\b\w/g, (c) => c.toUpperCase())
+  return texto.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 function capitalizarPrimera(texto: string): string {
-  return texto.charAt(0).toUpperCase() + texto.slice(1)
+  return texto.charAt(0).toUpperCase() + texto.slice(1).toLowerCase()
 }
 
 // ─── Sección visual reutilizable ─────────────────────────────────────────────
