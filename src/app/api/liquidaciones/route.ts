@@ -38,6 +38,7 @@ const viajeEnLiqSchema = z.object({
   provinciaDestino: z.string().nullable().optional(),
   kilos: z.number().positive("Kilos debe ser mayor a 0"),
   tarifaFletero: z.number().positive("La tarifa del fletero debe ser mayor a 0"),
+  tarifaEmpresa: z.number().positive("La tarifa de empresa debe ser mayor a 0").optional(),
 })
 
 const crearLiquidacionSchema = z.object({
@@ -99,7 +100,7 @@ export async function GET(request: NextRequest) {
           choferId: true, chofer: { select: { nombre: true, apellido: true } },
           remito: true, tieneCupo: true, cupo: true, mercaderia: true,
           procedencia: true, provinciaOrigen: true, destino: true,
-          provinciaDestino: true, kilos: true, tarifa: true,
+          provinciaDestino: true, kilos: true, tarifa: true, tarifaEmpresa: true,
           nroCartaPorte: true, estadoLiquidacion: true, estadoFactura: true,
         },
         orderBy: { fechaViaje: "desc" },
@@ -175,7 +176,51 @@ export async function GET(request: NextRequest) {
       total: v.kilos != null ? calcularTotalViaje(v.kilos, v.tarifa) : null,
     }))
 
-    return NextResponse.json({ viajesPendientes, liquidaciones, fletero: fleteroData, nroProximoComprobante, gastosPendientes })
+    // Buscar liquidaciones con faltantes pendientes (ND_RECIBIDA/FALTANTE sin NC emitida al fletero)
+    const liqIds = liquidaciones.map((l) => l.id)
+    const faltantesPorLiq: Record<string, Array<{ viajeId: string; montoTotal: number; descripcion: string | null; empresa: string }>> = {}
+    if (liqIds.length > 0) {
+      const faltantes = await prisma.viajeEnNotaCD.findMany({
+        where: {
+          nota: { tipo: "ND_RECIBIDA", subtipo: "FALTANTE" },
+          viaje: {
+            enLiquidaciones: { some: { liquidacionId: { in: liqIds } } },
+          },
+        },
+        select: {
+          viajeId: true,
+          nota: {
+            select: {
+              montoTotal: true,
+              descripcion: true,
+              factura: { select: { empresa: { select: { razonSocial: true } } } },
+            },
+          },
+          viaje: {
+            select: {
+              enLiquidaciones: {
+                where: { liquidacionId: { in: liqIds } },
+                select: { liquidacionId: true },
+              },
+            },
+          },
+        },
+      })
+      for (const f of faltantes) {
+        for (const vl of f.viaje.enLiquidaciones) {
+          const liqId = vl.liquidacionId
+          if (!faltantesPorLiq[liqId]) faltantesPorLiq[liqId] = []
+          faltantesPorLiq[liqId].push({
+            viajeId: f.viajeId,
+            montoTotal: Number(f.nota.montoTotal),
+            descripcion: f.nota.descripcion,
+            empresa: f.nota.factura?.empresa?.razonSocial ?? "—",
+          })
+        }
+      }
+    }
+
+    return NextResponse.json({ viajesPendientes, liquidaciones, fletero: fleteroData, nroProximoComprobante, gastosPendientes, faltantesPorLiq })
   } catch (error) {
     console.error("[GET /api/liquidaciones]", error)
     return NextResponse.json(

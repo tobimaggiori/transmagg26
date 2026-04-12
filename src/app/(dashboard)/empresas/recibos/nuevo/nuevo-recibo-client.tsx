@@ -4,7 +4,7 @@
  * Propósito: Formulario multi-paso para crear un Recibo de Cobranza.
  *
  * Paso 1: Seleccionar empresa + facturas con monto editable (aplicación parcial)
- * Paso 2: Retenciones, medios de pago (incl. efectivo y saldo cta cte) y faltantes
+ * Paso 2: Retenciones y medios de pago (incl. efectivo y saldo cta cte)
  * Paso 3: Confirmar y emitir
  * Paso 4 (éxito): Ver PDF / Enviar por mail / Nuevo recibo
  */
@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { sumarImportes, restarImportes, parsearImporte } from "@/lib/money"
+import { sumarImportes, parsearImporte } from "@/lib/money"
 import { hoyLocalYmd } from "@/lib/date-local"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -35,6 +35,12 @@ interface ViajeEnFactura {
   kilos: number | null
 }
 
+interface NotaCDResumen {
+  tipo: string   // NC_EMITIDA | NC_RECIBIDA | ND_EMITIDA | ND_RECIBIDA
+  montoTotal: number
+  nro: string | null
+}
+
 interface FacturaPendiente {
   id: string
   nroComprobante: string | null
@@ -45,6 +51,7 @@ interface FacturaPendiente {
   ivaMonto: number
   estadoCobro: string
   saldoPendiente: number
+  notasCD?: NotaCDResumen[]
   viajes: ViajeEnFactura[]
 }
 
@@ -58,13 +65,6 @@ interface MedioPago {
   bancoEmisor?: string
   fechaEmision?: string
   fechaPago?: string
-}
-
-interface FaltanteItem {
-  viajeId: string
-  fleteroId: string
-  monto: string
-  descripcion: string
 }
 
 interface NuevoReciboClientProps { empresas: Empresa[]; cuentas: Cuenta[] }
@@ -82,6 +82,16 @@ function tipoCbteLabel(t: number) {
   if (t === 6) return "Fact. B"
   if (t === 201) return "Fact. A MiPyme"
   return `Cbte ${t}`
+}
+
+function tipoNotaCDLabel(t: string) {
+  const map: Record<string, string> = {
+    NC_EMITIDA: "NC emitida",
+    NC_RECIBIDA: "NC recibida",
+    ND_EMITIDA: "ND emitida",
+    ND_RECIBIDA: "ND recibida",
+  }
+  return map[t] ?? t
 }
 
 function tipoMedioLabel(t: string) {
@@ -117,7 +127,6 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
   const [medios, setMedios] = useState<MedioPago[]>([
     { tipo: "TRANSFERENCIA", monto: "", cuentaId: "", fechaTransferencia: hoyLocalYmd(), referencia: "" },
   ])
-  const [faltantes, setFaltantes] = useState<FaltanteItem[]>([])
   const [saldoAFavorDisponible, setSaldoAFavorDisponible] = useState(0)
 
   // Paso 3 / resultado
@@ -174,25 +183,22 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
     )
   }, [seleccionadas, importes])
 
+  const totalOriginalFacturas = useMemo(() => {
+    return sumarImportes(
+      facturas.filter((f) => seleccionadas.has(f.id)).map((f) => f.total)
+    )
+  }, [facturas, seleccionadas])
+
   const retGananciasNum = parsearImporte(retGanancias)
   const retIIBBNum = parsearImporte(retIIBB)
   const retSUSSNum = parsearImporte(retSUSS)
   const totalRetenciones = sumarImportes([retGananciasNum, retIIBBNum, retSUSSNum])
   const totalMedios = sumarImportes(medios.map((m) => parsearImporte(m.monto)))
-  const totalFaltantes = sumarImportes(faltantes.map((f) => parsearImporte(f.monto)))
 
-  const montoCubrir = restarImportes(totalAplicado, totalFaltantes)
+  const montoCubrir = totalAplicado
   const montoProvisto = sumarImportes([totalMedios, totalRetenciones])
   const saldoACuenta = Math.max(0, montoProvisto - montoCubrir)
   const balanceOk = montoProvisto >= montoCubrir - 0.01
-
-  // ─── Viajes disponibles para faltantes ────────────────────────────────────
-
-  const viajesDisponibles = useMemo(() => {
-    return facturas
-      .filter((f) => seleccionadas.has(f.id))
-      .flatMap((f) => f.viajes.map((v) => ({ ...v, facturaId: f.id })))
-  }, [facturas, seleccionadas])
 
   // ─── Funciones de UI ──────────────────────────────────────────────────────
 
@@ -233,20 +239,6 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
     setMedios(medios.map((m, idx) => (idx === i ? { ...m, [campo]: valor } : m)))
   }
 
-  function agregarFaltante() {
-    setFaltantes([...faltantes, { viajeId: "", fleteroId: "", monto: "", descripcion: "" }])
-  }
-  function quitarFaltante(i: number) { setFaltantes(faltantes.filter((_, idx) => idx !== i)) }
-  function actualizarFaltante(i: number, campo: keyof FaltanteItem, valor: string) {
-    const nuevos = [...faltantes]
-    nuevos[i] = { ...nuevos[i], [campo]: valor }
-    if (campo === "viajeId") {
-      const viaje = viajesDisponibles.find((v) => v.viajeId === valor)
-      if (viaje) nuevos[i].fleteroId = viaje.fleteroId
-    }
-    setFaltantes(nuevos)
-  }
-
   // ─── Envío ────────────────────────────────────────────────────────────────
 
   async function handleEmitir() {
@@ -257,15 +249,6 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
         facturaId: id,
         montoAplicado: parsearImporte(importes[id] ?? "0"),
       }))
-
-      const faltantesValidos = faltantes
-        .filter((f) => f.viajeId && parsearImporte(f.monto) > 0)
-        .map((f) => ({
-          viajeId: f.viajeId,
-          fleteroId: f.fleteroId,
-          monto: parsearImporte(f.monto),
-          descripcion: f.descripcion || undefined,
-        }))
 
       const body = {
         empresaId,
@@ -284,7 +267,7 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
         retencionGanancias: retGananciasNum,
         retencionIIBB: retIIBBNum,
         retencionSUSS: retSUSSNum,
-        faltantes: faltantesValidos,
+        faltantes: [],
         fecha,
       }
 
@@ -359,7 +342,7 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
     setEmpresaId(""); setFacturas([]); setSeleccionadas(new Set()); setImportes({})
     setRetGanancias(""); setRetIIBB(""); setRetSUSS("")
     setMedios([{ tipo: "TRANSFERENCIA", monto: "", cuentaId: "", fechaTransferencia: hoyLocalYmd() }])
-    setFaltantes([]); setFecha(hoyLocalYmd()); setReciboCreado(null); setError(null)
+    setFecha(hoyLocalYmd()); setReciboCreado(null); setError(null)
     setContactosEmail([]); setMostrarEnvioMail(false); setResultadoMail(null); setEmailSeleccionado("")
     setSaldoAFavorDisponible(0); setPaso(1)
   }
@@ -416,8 +399,10 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
                     <tbody>
                       {facturas.map((f) => {
                         const sel = seleccionadas.has(f.id)
+                        const notas = f.notasCD ?? []
+                        const tieneNotas = notas.length > 0
                         return (
-                          <tr key={f.id} className="border-b hover:bg-muted/40">
+                          <tr key={f.id} className={`border-b hover:bg-muted/40 ${tieneNotas && sel ? "border-b-0" : ""}`}>
                             <td className="py-2 pr-2">
                               <input type="checkbox" checked={sel} onChange={() => toggleFactura(f.id)} />
                             </td>
@@ -447,6 +432,44 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
                           </tr>
                         )
                       })}
+                      {/* Desglose NC/ND de facturas seleccionadas que tengan notas */}
+                      {(() => {
+                        const facturasConNotas = facturas.filter(
+                          (f) => seleccionadas.has(f.id) && f.notasCD && f.notasCD.length > 0
+                        )
+                        if (facturasConNotas.length === 0) return null
+                        return (
+                          <tr>
+                            <td colSpan={7} className="p-0">
+                              <div className="bg-muted/30 border-t border-b px-4 py-2 space-y-2">
+                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notas de Crédito / Débito asociadas</p>
+                                {facturasConNotas.map((f) => (
+                                  <div key={f.id} className="space-y-0.5">
+                                    {facturasConNotas.length > 1 && (
+                                      <p className="text-xs text-muted-foreground">Factura {f.nroComprobante ?? f.id.slice(0, 8)}:</p>
+                                    )}
+                                    {f.notasCD!.map((n, i) => {
+                                      const esNC = n.tipo === "NC_EMITIDA" || n.tipo === "NC_RECIBIDA"
+                                      return (
+                                        <div key={i} className="flex justify-between items-center text-xs">
+                                          <span>
+                                            <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${esNC ? "bg-green-500" : "bg-amber-500"}`} />
+                                            {tipoNotaCDLabel(n.tipo)}
+                                            {n.nro && <span className="font-mono ml-1">{n.nro}</span>}
+                                          </span>
+                                          <span className={`font-mono font-medium ${esNC ? "text-green-700" : "text-amber-700"}`}>
+                                            {esNC ? "−" : "+"} {fmt(n.montoTotal)}
+                                          </span>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })()}
                     </tbody>
                     <tfoot>
                       <tr>
@@ -480,12 +503,49 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Panel izquierdo */}
           <Card>
-            <CardHeader><CardTitle className="text-base">Resumen, retenciones y faltantes</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">Resumen y retenciones</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Total aplicado ({seleccionadas.size} fact.):</span>
+                <span className="text-muted-foreground">Total original ({seleccionadas.size} fact.):</span>
+                <span className="font-mono">{fmt(totalOriginalFacturas)}</span>
+              </div>
+
+              {/* Desglose NC/ND */}
+              {(() => {
+                const facturasConNotas = facturas.filter(
+                  (f) => seleccionadas.has(f.id) && f.notasCD && f.notasCD.length > 0
+                )
+                const notas = facturasConNotas.flatMap((f) =>
+                  f.notasCD!.map((n) => ({ ...n, factNro: f.nroComprobante }))
+                )
+                if (notas.length === 0) return null
+                return (
+                  <div className="rounded-lg border bg-muted/30 p-3 space-y-1">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Notas de Crédito / Débito incluidas en saldo</p>
+                    {notas.map((n, i) => {
+                      const esNC = n.tipo === "NC_EMITIDA" || n.tipo === "NC_RECIBIDA"
+                      return (
+                        <div key={i} className="flex justify-between items-center text-xs">
+                          <span>
+                            <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${esNC ? "bg-green-500" : "bg-amber-500"}`} />
+                            {tipoNotaCDLabel(n.tipo)}
+                            {n.nro && <span className="font-mono ml-1">{n.nro}</span>}
+                          </span>
+                          <span className={`font-mono font-medium ${esNC ? "text-green-700" : "text-amber-700"}`}>
+                            {esNC ? "−" : "+"} {fmt(n.montoTotal)}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+
+              <div className="flex justify-between text-sm font-semibold">
+                <span className="text-muted-foreground">Total aplicado:</span>
                 <span className="font-bold font-mono">{fmt(totalAplicado)}</span>
               </div>
+
               <hr />
 
               <p className="text-sm font-semibold">Retenciones</p>
@@ -502,47 +562,11 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
                 ))}
               </div>
 
-              {/* Faltantes */}
-              <hr />
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold">Faltantes</p>
-                  <Button variant="outline" size="sm" onClick={agregarFaltante} disabled={viajesDisponibles.length === 0}>+ Agregar</Button>
-                </div>
-                {faltantes.map((f, i) => (
-                  <div key={i} className="border rounded-md p-2 space-y-1 relative">
-                    <button onClick={() => quitarFaltante(i)} className="absolute top-1 right-1 text-muted-foreground hover:text-destructive text-xs">✕</button>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <Label className="text-xs">Viaje</Label>
-                        <select value={f.viajeId} onChange={(e) => actualizarFaltante(i, "viajeId", e.target.value)} className="h-7 w-full rounded-md border bg-background px-1 text-xs">
-                          <option value="">Seleccionar...</option>
-                          {viajesDisponibles.map((v) => (
-                            <option key={v.viajeId} value={v.viajeId}>
-                              {v.procedencia ?? "?"} → {v.destino ?? "?"} ({v.kilos?.toLocaleString("es-AR") ?? "?"} kg)
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <Label className="text-xs">Monto</Label>
-                        <Input type="number" min="0.01" step="0.01" value={f.monto} onChange={(e) => actualizarFaltante(i, "monto", e.target.value)} placeholder="0.00" className="h-7 text-xs" />
-                      </div>
-                    </div>
-                    <div>
-                      <Label className="text-xs">Descripción</Label>
-                      <Input value={f.descripcion} onChange={(e) => actualizarFaltante(i, "descripcion", e.target.value)} placeholder="Faltante de mercadería..." className="h-7 text-xs" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-
               <hr />
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">Total retenciones:</span><span className="font-mono">{fmt(totalRetenciones)}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Total faltantes:</span><span className="font-mono">{fmt(totalFaltantes)}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Total medios de pago:</span><span className="font-mono">{fmt(totalMedios)}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">A cubrir (aplicado - faltantes):</span><span className="font-mono">{fmt(montoCubrir)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">A cubrir:</span><span className="font-mono">{fmt(montoCubrir)}</span></div>
                 {saldoACuenta > 0 && (
                   <div className="flex justify-between text-blue-600"><span>Saldo a cuenta:</span><span className="font-mono">{fmt(saldoACuenta)}</span></div>
                 )}
@@ -684,23 +708,6 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
               )
             })}
             <div className="flex justify-between font-bold"><span>Total aplicado:</span><span className="font-mono">{fmt(totalAplicado)}</span></div>
-
-            {totalFaltantes > 0 && (
-              <>
-                <hr />
-                <p className="font-semibold">Faltantes:</p>
-                {faltantes.filter((f) => parsearImporte(f.monto) > 0).map((f, i) => {
-                  const v = viajesDisponibles.find((v) => v.viajeId === f.viajeId)
-                  return (
-                    <div key={i} className="flex justify-between">
-                      <span className="text-muted-foreground">{v ? `${v.procedencia} → ${v.destino}` : "Viaje"}: {f.descripcion || "Faltante"}</span>
-                      <span className="font-mono">{fmt(parsearImporte(f.monto))}</span>
-                    </div>
-                  )
-                })}
-                <div className="flex justify-between font-bold"><span>Total faltantes:</span><span className="font-mono">{fmt(totalFaltantes)}</span></div>
-              </>
-            )}
 
             {totalRetenciones > 0 && (
               <>

@@ -322,3 +322,26 @@ export const crearNotaEmpresaSchema = z.object({
   viajesIds: z.array(z.string().uuid()).optional(),
   idempotencyKey: z.string().uuid().optional(),
 })
+
+/**
+ * Schema para registrar una ND recibida de una empresa por faltante de mercadería.
+ * El operador ingresa los datos del comprobante externo, selecciona viajes afectados
+ * y carga el detalle del faltante (descripción, kilos, neto, IVA).
+ * No pasa por ARCA (es un documento de terceros).
+ *
+ * Ejemplos:
+ * crearNDRecibidaFaltanteSchema.parse({ facturaId: "uuid", nroComprobanteExterno: "0001-00000123",
+ *   fechaComprobanteExterno: "2026-04-10", viajesIds: ["uuid1"], descripcion: "Faltante 500kg soja",
+ *   kilosFaltante: 500, montoNeto: 50000, ivaPct: 21 })
+ * // => datos válidos
+ */
+export const crearNDRecibidaFaltanteSchema = z.object({
+  facturaId: z.string().uuid("Factura inválida"),
+  nroComprobanteExterno: z.string().min(1, "El nro de comprobante es obligatorio"),
+  fechaComprobanteExterno: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de fecha inválido (YYYY-MM-DD)"),
+  viajesIds: z.array(z.string().uuid()).min(1, "Seleccione al menos un viaje"),
+  descripcion: z.string().min(1, "La descripción es obligatoria"),
+  kilosFaltante: z.number().min(0, "Los kilos deben ser >= 0"),
+  montoNeto: z.number().positive("El monto neto debe ser mayor a 0"),
+  ivaPct: z.number().min(0).max(100),
+})

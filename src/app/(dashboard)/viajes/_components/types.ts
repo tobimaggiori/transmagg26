@@ -1,5 +1,3 @@
-import type { Rol } from "@/types"
-
 export type Fletero = { id: string; razonSocial: string; cuit: string; comisionDefault?: number }
 export type Empresa = { id: string; razonSocial: string; cuit: string }
 export type Camion = { id: string; patenteChasis: string; fleteroId: string | null; esPropio?: boolean; polizaVigente?: boolean; choferActualId?: string | null }
@@ -39,17 +37,4 @@ export type ViajeAPI = {
   camionId: string
   choferId: string
   historialCambios?: string | null
-}
-
-export type ViajesClientProps = {
-  rol: Rol
-  fleteros: Fletero[]
-  empresas: Empresa[]
-  camiones: Camion[]
-  choferes: Chofer[]
-  fleteroIdPropio: string | null
-  empresaIdPropio: string | null
-  initialFleteroId: string | null
-  initialEmpresaId: string | null
-  autoOpenModal?: boolean
 }

@@ -222,7 +222,7 @@ function ModalDetalleLP({
 // ─── Tabla ────────────────────────────────────────────────────────────────────
 
 function TablaLiquidaciones({
-  liquidaciones, fleteros, mostrarFletero, onAbrirPDF, onVerDetalle, onReintentarArca, autorizandoArcaId, onEmitirNota,
+  liquidaciones, fleteros, mostrarFletero, onAbrirPDF, onVerDetalle, onReintentarArca, autorizandoArcaId, onEmitirNota, faltantesPorLiq,
 }: {
   liquidaciones: Liquidacion[]; fleteros: Fletero[]; mostrarFletero: boolean
   onAbrirPDF: (params: { url: string; titulo: string } | { fetchUrl: string; titulo: string }) => void
@@ -230,6 +230,7 @@ function TablaLiquidaciones({
   onReintentarArca?: (id: string) => void
   autorizandoArcaId?: string | null
   onEmitirNota?: (liq: Liquidacion) => void
+  faltantesPorLiq?: Record<string, Array<{ viajeId: string; montoTotal: number; descripcion: string | null; empresa: string }>>
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border">
@@ -279,6 +280,11 @@ function TablaLiquidaciones({
                 </td>
                 {onEmitirNota && (
                   <td className="px-3 py-2 text-center">
+                    {faltantesPorLiq && faltantesPorLiq[liq.id] && (
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-warning-soft text-warning mr-1" title={faltantesPorLiq[liq.id].map((f) => `${f.empresa}: ${f.descripcion ?? "Faltante"}`).join("; ")}>
+                        Faltante
+                      </span>
+                    )}
                     {liq.arcaEstado === "AUTORIZADA" && (
                       <button type="button" onClick={() => onEmitirNota(liq)} className="h-7 px-3 rounded border text-xs font-medium hover:bg-accent text-primary">Emitir</button>
                     )}
@@ -316,9 +322,10 @@ function TablaLiquidaciones({
 type ItemNota = { concepto: string; subtotal: string }
 
 function ModalEmitirNotaLP({
-  liq, onClose, onEmitida,
+  liq, onClose, onEmitida, faltantes,
 }: {
   liq: Liquidacion; onClose: () => void; onEmitida: () => void
+  faltantes?: Array<{ viajeId: string; montoTotal: number; descripcion: string | null; empresa: string }>
 }) {
   const [tipoNota, setTipoNota] = useState<"NC" | "ND">("NC")
   const [incluirComision, setIncluirComision] = useState(true)
@@ -435,6 +442,18 @@ function ModalEmitirNotaLP({
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-xl leading-none">&times;</button>
         </div>
+
+        {/* Banner faltantes pendientes */}
+        {faltantes && faltantes.length > 0 && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
+            <p className="font-semibold text-amber-800 mb-1">Faltantes pendientes de descontar</p>
+            {faltantes.map((f, i) => (
+              <p key={i} className="text-amber-700 text-xs">
+                {f.empresa}: {f.descripcion ?? "Faltante de mercadería"} — {formatearMoneda(f.montoTotal)}
+              </p>
+            ))}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm bg-muted/40 rounded-lg p-3">
           <span className="text-muted-foreground">Fletero</span>
@@ -601,6 +620,7 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
 
   const [fleteroId, setFleteroId] = useState<string>(fleteroIdPropio ?? "")
   const [liquidaciones, setLiquidaciones] = useState<Liquidacion[]>([])
+  const [faltantesPorLiq, setFaltantesPorLiq] = useState<Record<string, Array<{ viajeId: string; montoTotal: number; descripcion: string | null; empresa: string }>>>({})
   const [cargando, setCargando] = useState(false)
   const [liquidacionDetalle, setLiquidacionDetalle] = useState<Liquidacion | null>(null)
   const [liquidacionNota, setLiquidacionNota] = useState<Liquidacion | null>(null)
@@ -625,6 +645,7 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
       if (res.ok) {
         const data = await res.json()
         setLiquidaciones(data.liquidaciones ?? [])
+        setFaltantesPorLiq(data.faltantesPorLiq ?? {})
       }
     } finally {
       setCargando(false)
@@ -754,6 +775,7 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
           onReintentarArca={reintentarArcaLP}
           autorizandoArcaId={autorizandoArcaId}
           onEmitirNota={esInterno ? (liq) => setLiquidacionNota(liq) : undefined}
+          faltantesPorLiq={faltantesPorLiq}
         />
       )}
 
@@ -768,6 +790,7 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
           liq={liquidacionNota}
           onClose={() => setLiquidacionNota(null)}
           onEmitida={() => { setLiquidacionNota(null); cargarDatos() }}
+          faltantes={faltantesPorLiq[liquidacionNota.id]}
         />
       )}
 

@@ -26,6 +26,7 @@ type ViajeEnLiqInput = {
   provinciaDestino?: string | null
   kilos: number
   tarifaFletero: number
+  tarifaEmpresa?: number
 }
 
 export type DatosCrearLiquidacion = {
@@ -154,7 +155,7 @@ export async function ejecutarCrearLiquidacion(
         if (!chofer) throw new Error(`Chofer inválido para el viaje ${viaje.viajeId}`)
       }
 
-      // Actualizar viaje con datos editados
+      // Actualizar viaje con datos editados (incluye tarifas)
       await tx.viaje.update({
         where: { id: viaje.viajeId },
         data: {
@@ -169,6 +170,8 @@ export async function ejecutarCrearLiquidacion(
           destino: viaje.destino ?? null,
           provinciaDestino: viaje.provinciaDestino ?? null,
           kilos: viaje.kilos,
+          tarifa: viaje.tarifaFletero,
+          ...(viaje.tarifaEmpresa != null ? { tarifaEmpresa: viaje.tarifaEmpresa } : {}),
         },
       })
 

@@ -6,9 +6,8 @@
 
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Truck } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -40,6 +39,14 @@ export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch("/api/logo")
+      .then((res) => (res.ok ? res.blob() : null))
+      .then((blob) => { if (blob) setLogoUrl(URL.createObjectURL(blob)) })
+      .catch(() => {})
+  }, [])
 
   /**
    * Maneja el envío del formulario de email.
@@ -76,17 +83,15 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4">
+    <div className="flex min-h-screen items-center justify-center bg-white px-4">
       <div className="w-full max-w-sm">
-        {/* Logo y título */}
-        <div className="mb-8 flex flex-col items-center gap-2 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Truck className="h-6 w-6" />
-          </div>
-          <h1 className="text-2xl font-bold">transmagg</h1>
-          <p className="text-sm text-muted-foreground">
-            Sistema de Gestión de Transporte
-          </p>
+        {/* Logo */}
+        <div className="mb-6 flex justify-center">
+          {logoUrl ? (
+            <img src={logoUrl} alt="Trans-Magg S.R.L." className="max-h-14" />
+          ) : (
+            <h1 className="text-2xl font-bold">Trans-Magg S.R.L.</h1>
+          )}
         </div>
 
         <Card>

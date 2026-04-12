@@ -64,6 +64,7 @@ export function labelSubtipoNotaCD(subtipo: string): string {
     PENALIDAD: "Penalidad al cliente",
     CORRECCION_ADMINISTRATIVA: "Corrección administrativa",
     CHEQUE_RECHAZADO: "Cheque rechazado",
+    FALTANTE: "Faltante de mercadería",
   }
   return mapa[subtipo] ?? subtipo
 }

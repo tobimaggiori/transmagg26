@@ -20,13 +20,28 @@ export default async function FleterosLiquidarPage() {
 
   const esInterno = esRolInterno(rol)
 
-  const fleteros = esInterno
-    ? await prisma.fletero.findMany({
-        where: { activo: true },
-        select: { id: true, razonSocial: true, cuit: true, comisionDefault: true },
-        orderBy: { razonSocial: "asc" },
-      })
-    : []
+  const [fleteros, empresas, camiones, choferes] = await Promise.all([
+    prisma.fletero.findMany({
+      where: { activo: true },
+      select: { id: true, razonSocial: true, cuit: true, comisionDefault: true },
+      orderBy: { razonSocial: "asc" },
+    }),
+    prisma.empresa.findMany({
+      where: { activa: true },
+      select: { id: true, razonSocial: true, cuit: true },
+      orderBy: { razonSocial: "asc" },
+    }),
+    prisma.camion.findMany({
+      where: { activo: true },
+      select: { id: true, patenteChasis: true, fleteroId: true, esPropio: true },
+      orderBy: { patenteChasis: "asc" },
+    }),
+    prisma.usuario.findMany({
+      where: { rol: "CHOFER", activo: true },
+      select: { id: true, nombre: true, apellido: true, fleteroId: true },
+      orderBy: { apellido: "asc" },
+    }),
+  ])
 
   let fleteroIdPropio: string | null = null
   if (rol === "FLETERO") {
@@ -36,7 +51,10 @@ export default async function FleterosLiquidarPage() {
   return (
     <LiquidarClient
       rol={rol}
-      fleteros={fleteros}
+      fleteros={esInterno ? fleteros : []}
+      empresas={empresas}
+      camiones={camiones}
+      choferes={choferes}
       fleteroIdPropio={fleteroIdPropio}
     />
   )

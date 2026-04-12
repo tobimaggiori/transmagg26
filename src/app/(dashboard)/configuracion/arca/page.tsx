@@ -23,7 +23,7 @@ export default async function ArcaPage() {
     const arcaConfigRaw = await prisma.configuracionArca.findFirst()
     if (arcaConfigRaw) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { certificadoB64, certificadoPass, logoComprobanteB64, logoArcaB64, ...safe } = arcaConfigRaw
+      const { certificadoB64, certificadoPass, logoComprobanteB64, logoArcaB64, logoComprobanteR2Key, logoArcaR2Key, ...safe } = arcaConfigRaw
       const puntosVenta: Record<string, string> = {}
       try {
         const raw = JSON.parse(safe.puntosVenta) as Record<string, unknown>
@@ -45,8 +45,8 @@ export default async function ArcaPage() {
         comprobantesHabilitados,
         cbuMiPymes: safe.cbuMiPymes,
         activa: safe.activa,
-        tieneLogoComprobante: !!logoComprobanteB64,
-        tieneLogoArca: !!logoArcaB64,
+        tieneLogoComprobante: !!(logoComprobanteR2Key || logoComprobanteB64),
+        tieneLogoArca: !!(logoArcaR2Key || logoArcaB64),
         actualizadoEn: safe.actualizadoEn.toISOString(),
         actualizadoPor: safe.actualizadoPor,
       }

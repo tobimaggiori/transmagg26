@@ -4,7 +4,7 @@
  */
 
 import type { Metadata } from "next"
-import { Inter } from "next/font/google"
+import { Inter, JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 
 const inter = Inter({
@@ -12,9 +12,10 @@ const inter = Inter({
   subsets: ["latin"],
 })
 
-// Aliases for compat with existing Tailwind/CSS vars
-const geistSans = inter
-const geistMono = { variable: "--font-mono" }
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-mono",
+  subsets: ["latin"],
+})
 
 export const metadata: Metadata = {
   title: "Transmagg - Sistema de Gestión de Transporte",
@@ -37,7 +38,7 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
       >
         {children}
       </body>

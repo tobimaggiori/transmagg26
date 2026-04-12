@@ -39,7 +39,15 @@ export async function GET(req: NextRequest) {
       ivaMonto: true,
       estadoCobro: true,
       pagos: { select: { monto: true } },
-      notasCreditoDebito: { select: { tipo: true, montoTotal: true } },
+      notasCreditoDebito: {
+        select: {
+          tipo: true,
+          montoTotal: true,
+          nroComprobante: true,
+          ptoVenta: true,
+          nroComprobanteExterno: true,
+        },
+      },
       viajes: {
         select: {
           viajeId: true,
@@ -86,6 +94,13 @@ export async function GET(req: NextRequest) {
       ivaMonto: f.ivaMonto,
       estadoCobro: f.estadoCobro,
       saldoPendiente,
+      notasCD: f.notasCreditoDebito.map((n) => ({
+        tipo: n.tipo,
+        montoTotal: n.montoTotal,
+        nro: n.nroComprobante
+          ? `${String(n.ptoVenta ?? 1).padStart(4, "0")}-${String(n.nroComprobante).padStart(8, "0")}`
+          : n.nroComprobanteExterno ?? null,
+      })),
       viajes: f.viajes
         .filter((v) => v.viaje.fleteroId) // Solo viajes con fletero para faltantes
         .map((v) => ({

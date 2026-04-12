@@ -11,7 +11,7 @@ import { randomUUID } from "crypto"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
-import { crearNotaCDSchema, crearNotaEmpresaSchema } from "@/lib/financial-schemas"
+import { crearNotaCDSchema, crearNotaEmpresaSchema, crearNDRecibidaFaltanteSchema } from "@/lib/financial-schemas"
 import { resolverOperadorId } from "@/lib/session-utils"
 import { ejecutarCrearNotaCD } from "@/lib/nota-cd-commands"
 import { emitirNotaCDDirecta, emitirNotaEmpresaDirecta } from "@/lib/emision-directa"
@@ -142,6 +142,27 @@ export async function POST(request: NextRequest) {
         }, { status: resultado.status })
       }
       return NextResponse.json(resultado, { status: 201 })
+    }
+
+    // ── Flujo ND recibida por faltante ──
+    const parsedFaltante = crearNDRecibidaFaltanteSchema.safeParse(body)
+    if (parsedFaltante.success) {
+      const d = parsedFaltante.data
+      const resultado = await ejecutarCrearNotaCD({
+        tipo: "ND_RECIBIDA",
+        subtipo: "FALTANTE",
+        facturaId: d.facturaId,
+        montoNeto: d.montoNeto,
+        ivaPct: d.ivaPct,
+        descripcion: d.descripcion,
+        viajesIds: d.viajesIds,
+        nroComprobanteExterno: d.nroComprobanteExterno,
+        fechaComprobanteExterno: d.fechaComprobanteExterno,
+      }, operadorId)
+      if (!resultado.ok) {
+        return NextResponse.json({ error: resultado.error }, { status: resultado.status })
+      }
+      return NextResponse.json(resultado.nota, { status: 201 })
     }
 
     // ── Flujo legacy: subtipo-based ──

@@ -430,6 +430,83 @@ async function crearNDRecibida(
     return { ok: true, nota }
   }
 
+  if (data.subtipo === "FALTANTE") {
+    if (!data.facturaId) {
+      return { ok: false, status: 400, error: "Se requiere facturaId para ND_RECIBIDA/FALTANTE" }
+    }
+
+    const factura = await prisma.facturaEmitida.findUnique({
+      where: { id: data.facturaId },
+      include: {
+        empresa: { select: { razonSocial: true } },
+        viajes: { select: { viajeId: true, tarifaEmpresa: true, subtotal: true, kilos: true } },
+      },
+    })
+    if (!factura) return { ok: false, status: 404, error: "Factura no encontrada" }
+    if (factura.estadoArca !== "AUTORIZADA") {
+      return { ok: false, status: 422, error: "La factura debe estar autorizada en ARCA" }
+    }
+
+    const viajesIds = data.viajesIds ?? []
+    const viajeIdsEnFactura = new Set(factura.viajes.map((v) => v.viajeId))
+    const viajesInvalidos = viajesIds.filter((id) => !viajeIdsEnFactura.has(id))
+    if (viajesInvalidos.length > 0) {
+      return { ok: false, status: 400, error: `Viaje(s) no pertenecen a la factura: ${viajesInvalidos.join(", ")}` }
+    }
+
+    const nota = await prisma.$transaction(async (tx) => {
+      const created = await tx.notaCreditoDebito.create({
+        data: {
+          tipo: "ND_RECIBIDA",
+          subtipo: "FALTANTE",
+          facturaId: data.facturaId,
+          nroComprobanteExterno: data.nroComprobanteExterno ?? null,
+          fechaComprobanteExterno: data.fechaComprobanteExterno
+            ? new Date(data.fechaComprobanteExterno)
+            : null,
+          emisorExterno: factura.empresa.razonSocial,
+          ...totales,
+          descripcion: data.descripcion,
+          motivoDetalle: data.motivoDetalle ?? null,
+          estado: "REGISTRADA",
+          operadorId,
+        },
+      })
+
+      // Vincular viajes afectados
+      for (const vId of viajesIds) {
+        const snap = factura.viajes.find((v) => v.viajeId === vId)!
+        await tx.viajeEnNotaCD.create({
+          data: {
+            notaId: created.id,
+            viajeId: vId,
+            tarifaOriginal: snap.tarifaEmpresa,
+            kilosOriginal: snap.kilos,
+            subtotalOriginal: snap.subtotal,
+          },
+        })
+      }
+
+      // Asiento IVA: ND recibida reduce el neto de venta (negativo en ventas)
+      await tx.asientoIva.create({
+        data: {
+          tipo: "VENTA",
+          tipoReferencia: "ND_RECIBIDA",
+          notaCreditoDebitoId: created.id,
+          facturaEmitidaId: data.facturaId,
+          baseImponible: -totales.montoNeto,
+          alicuota: data.ivaPct,
+          montoIva: -totales.montoIva,
+          periodo: new Date().toISOString().slice(0, 7),
+        },
+      })
+
+      return created
+    })
+
+    return { ok: true, nota }
+  }
+
   return { ok: false, status: 400, error: "Subtipo ND_RECIBIDA no reconocido" }
 }
 

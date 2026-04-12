@@ -1,7 +1,7 @@
 # CLAUDE.md — Trans-Magg S.R.L.
 
 Sistema de gestión operativa y financiera para transporte de cargas.
-Next.js 14 + TypeScript + Prisma 7 + SQLite/Turso + pdfkit.
+Next.js 14 + TypeScript + Prisma 7 + PostgreSQL + pdfkit.
 
 ## Reglas críticas
 
@@ -84,7 +84,7 @@ No cerrar una tarea solo con explicación. Siempre que corresponda: modificar el
 
 ### Stack
 - **Framework**: Next.js 14 App Router (SSR)
-- **DB**: Prisma 7 + @prisma/adapter-libsql (SQLite dev / Turso prod)
+- **DB**: Prisma 7 + PostgreSQL
 - **Auth**: NextAuth v5 con OTP passwordless
 - **UI**: shadcn/ui + Tailwind CSS
 - **PDFs**: pdfkit (NO puppeteer, NO headless browser)

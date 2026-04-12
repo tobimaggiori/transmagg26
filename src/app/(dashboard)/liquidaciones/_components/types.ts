@@ -32,10 +32,13 @@ export type ViajeParaLiquidar = {
   provinciaDestino: string | null
   kilos: number | null
   tarifaFletero: number
+  tarifaEmpresa: number
   estadoFactura: string
+  nroCartaPorte?: string | null
   // editados localmente
   kilosEdit?: number
   tarifaEdit?: number
+  tarifaEmpresaEdit?: number
   fechaEdit?: string
   remitoEdit?: string
   tieneCupoEdit?: boolean

@@ -279,6 +279,35 @@ describe("POST /api/notas-credito-debito — NC/ND recibidas sin ARCA", () => {
     expect(mockEmitirNotaCDDirecta).not.toHaveBeenCalled()
     expect(mockEjecutarCrearNotaCD).toHaveBeenCalled()
   })
+
+  it("ND_RECIBIDA/FALTANTE → flujo faltante, sin ARCA", async () => {
+    const bodyFaltante = {
+      facturaId: "a0000000-0000-4000-8000-000000000060",
+      nroComprobanteExterno: "0001-00000123",
+      fechaComprobanteExterno: "2026-04-10",
+      viajesIds: ["a0000000-0000-4000-8000-000000000070"],
+      descripcion: "Faltante 500kg soja",
+      kilosFaltante: 500,
+      montoNeto: 50000,
+      ivaPct: 21,
+    }
+    mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-faltante" } })
+
+    const res = await postNotaCD(jsonReq("http://localhost/api/notas-credito-debito", bodyFaltante))
+
+    expect(res.status).toBe(201)
+    expect(mockEmitirNotaCDDirecta).not.toHaveBeenCalled()
+    expect(mockEjecutarCrearNotaCD).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tipo: "ND_RECIBIDA",
+        subtipo: "FALTANTE",
+        facturaId: "a0000000-0000-4000-8000-000000000060",
+        montoNeto: 50000,
+        ivaPct: 21,
+      }),
+      expect.any(String),
+    )
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════

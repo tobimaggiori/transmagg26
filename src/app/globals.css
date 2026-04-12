@@ -1,62 +1,132 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+/* ── Source paths (relative to this CSS file) ────────────────── */
+@source "../../src/**/*.{js,ts,jsx,tsx,mdx}";
+
+/* ── Dark mode via class ──────────────────────────────────────── */
+@variant dark (&:where(.dark, .dark *));
+
+/* ── Custom utilities ─────────────────────────────────────────── */
+@utility text-balance {
+  text-wrap: balance;
 }
 
+/* ── Theme ────────────────────────────────────────────────────── */
+@theme {
+  /* Colors */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-soft: var(--success-soft);
+
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-soft: var(--warning-soft);
+
+  --color-error: var(--error);
+  --color-error-soft: var(--error-soft);
+
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Charts */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* Border radius */
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  /* Font families — next/font sets --font-sans and --font-mono on <body> via CSS classes.
+     Tailwind v4 uses --font-sans by default for font-family, no override needed. */
+}
+
+/* ── Base layer ───────────────────────────────────────────────── */
 @layer base {
-  .theme {
-    --font-heading: var(--font-sans);
-    --font-sans: var(--font-sans);
-  }
   :root {
     /* ── Superficies ──────────────────────────────────────────── */
-    --background: oklch(0.98 0.003 260);          /* #F7F9FC — fondo app neutro */
-    --foreground: oklch(0.22 0.02 260);          /* #182033 — texto principal */
-    --card: oklch(1 0 0);                        /* #FFFFFF — card/superficie */
+    --background: oklch(0.98 0.003 260);
+    --foreground: oklch(0.22 0.02 260);
+    --card: oklch(1 0 0);
     --card-foreground: oklch(0.22 0.02 260);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.22 0.02 260);
 
     /* ── Primario — azul profesional ─────────────────────────── */
-    --primary: oklch(0.55 0.19 264);             /* #3867F4 */
-    --primary-foreground: oklch(0.99 0 0);       /* blanco */
+    --primary: oklch(0.55 0.19 264);
+    --primary-foreground: oklch(0.99 0 0);
 
     /* ── Secundario ──────────────────────────────────────────── */
-    --secondary: oklch(0.96 0.005 265);          /* gris muy claro azulado */
+    --secondary: oklch(0.96 0.005 265);
     --secondary-foreground: oklch(0.30 0.03 260);
 
     /* ── Muted ───────────────────────────────────────────────── */
     --muted: oklch(0.96 0.005 265);
-    --muted-foreground: oklch(0.50 0.03 260);    /* #5C6785 — texto secundario */
+    --muted-foreground: oklch(0.50 0.03 260);
 
     /* ── Accent ──────────────────────────────────────────────── */
-    --accent: oklch(0.95 0.03 264);              /* #EAF0FF — azul suave */
+    --accent: oklch(0.95 0.03 264);
     --accent-foreground: oklch(0.40 0.15 264);
 
     /* ── Destructive ─────────────────────────────────────────── */
-    --destructive: oklch(0.55 0.22 25);          /* #D14343 */
+    --destructive: oklch(0.55 0.22 25);
 
     /* ── Bordes e inputs ─────────────────────────────────────── */
-    --border: oklch(0.91 0.02 260);              /* #DCE3F0 — borde suave */
+    --border: oklch(0.91 0.02 260);
     --input: oklch(0.91 0.02 260);
-    --ring: oklch(0.55 0.19 264);                /* match primary */
+    --ring: oklch(0.55 0.19 264);
 
     /* ── Estados semánticos ───────────────────────────────────── */
-    --success: oklch(0.63 0.17 160);             /* #22A06B */
+    --success: oklch(0.63 0.17 160);
     --success-foreground: oklch(0.99 0 0);
-    --success-soft: oklch(0.95 0.04 160);        /* #E9F8F1 */
-    --warning: oklch(0.72 0.15 80);              /* #D89B1C */
+    --success-soft: oklch(0.95 0.04 160);
+    --warning: oklch(0.72 0.15 80);
     --warning-foreground: oklch(0.25 0.05 80);
-    --warning-soft: oklch(0.97 0.03 80);         /* #FFF6DD */
-    --error: oklch(0.55 0.22 25);                /* #D14343 */
-    --error-soft: oklch(0.95 0.04 25);           /* #FDECEC */
-    --info: oklch(0.60 0.19 260);                /* #2D7FF9 */
-    --info-soft: oklch(0.95 0.03 260);           /* #EAF3FF */
+    --warning-soft: oklch(0.97 0.03 80);
+    --error: oklch(0.55 0.22 25);
+    --error-soft: oklch(0.95 0.04 25);
+    --info: oklch(0.60 0.19 260);
+    --info-soft: oklch(0.95 0.03 260);
 
     /* ── Charts ──────────────────────────────────────────────── */
     --chart-1: oklch(0.55 0.19 264);
@@ -69,12 +139,12 @@
     --radius: 0.5rem;
 
     /* ── Sidebar — azul oscuro profundo ──────────────────────── */
-    --sidebar: oklch(0.24 0.045 255);            /* #13294B — fondo */
-    --sidebar-foreground: oklch(0.92 0 0);       /* texto principal — blanco suave */
-    --sidebar-muted: oklch(0.70 0 0);            /* texto secundario — gris claro */
-    --sidebar-primary: oklch(0.65 0.17 264);     /* azul claro para activos */
+    --sidebar: oklch(0.24 0.045 255);
+    --sidebar-foreground: oklch(0.92 0 0);
+    --sidebar-muted: oklch(0.70 0 0);
+    --sidebar-primary: oklch(0.65 0.17 264);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.33 0.04 255);      /* hover bg — visible sobre sidebar */
+    --sidebar-accent: oklch(0.33 0.04 255);
     --sidebar-accent-foreground: oklch(0.95 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.65 0.17 264);
@@ -125,14 +195,14 @@
   }
 
   * {
-    @apply border-border;
+    border-color: var(--border);
     outline-color: color-mix(in oklch, var(--ring) 50%, transparent);
   }
   body {
-    @apply bg-background text-foreground;
+    background-color: var(--background);
+    color: var(--foreground);
   }
   html {
     font-size: 16px;
-    @apply font-sans antialiased;
   }
 }
