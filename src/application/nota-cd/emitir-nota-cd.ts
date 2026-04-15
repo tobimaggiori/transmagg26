@@ -15,7 +15,7 @@ import { ejecutarCrearNotaCD } from "@/lib/nota-cd-commands"
 import { emitirNotaCDDirecta, emitirNotaEmpresaDirecta } from "@/lib/emision-directa"
 import { validarFechaEmisionArca } from "@/lib/fecha-emision"
 import type { DatosNotaCD, DatosNotaEmpresaEmitida } from "@/lib/nota-cd-commands"
-import type { UseCaseResult, UseCaseError } from "@/lib/use-case-result"
+import type { UseCaseResult } from "@/lib/use-case-result"
 
 // Re-exportar para que consumidores existentes no se rompan
 export type { UseCaseResult, UseCaseError } from "@/lib/use-case-result"
