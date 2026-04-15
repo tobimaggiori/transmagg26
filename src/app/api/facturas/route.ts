@@ -9,13 +9,11 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import { randomUUID } from "crypto"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno, esRolEmpresa } from "@/lib/permissions"
 import { resolverOperadorId, resolverEmpresaIdPorEmail } from "@/lib/session-utils"
-import { emitirFacturaDirecta } from "@/lib/emision-directa"
-import { validarFechaEmisionArca } from "@/lib/fecha-emision"
+import { emitirFactura } from "@/application/factura/emitir-factura"
 import type { Rol } from "@/types"
 
 // ─── Validación ──────────────────────────────────────────────────────────────
@@ -134,26 +132,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    if (parsed.data.fechaEmision) {
-      const validacion = validarFechaEmisionArca(parsed.data.fechaEmision)
-      if (!validacion.ok) {
-        return NextResponse.json({ error: validacion.error }, { status: 422 })
-      }
-    }
-
-    // Emisión directa: crear + autorizar ARCA en un solo flujo atómico.
-    // Si ARCA devuelve CAE → EMITIDA. Si ARCA falla → no queda comprobante.
-    const idempotencyKey = parsed.data.idempotencyKey ?? randomUUID()
-    const resultado = await emitirFacturaDirecta(parsed.data, operadorId, idempotencyKey)
-    if (!resultado.ok) {
-      return NextResponse.json({
-        error: resultado.error,
-        code: resultado.code,
-        reintentable: resultado.reintentable,
-        documentoId: resultado.documentoId,
-      }, { status: resultado.status })
-    }
-    return NextResponse.json(resultado, { status: 201 })
+    const resultado = await emitirFactura({ data: parsed.data, operadorId })
+    return NextResponse.json(resultado.body, { status: resultado.status })
   } catch (error) {
     console.error("[POST /api/facturas]", error)
     return NextResponse.json(

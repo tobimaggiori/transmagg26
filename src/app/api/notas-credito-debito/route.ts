@@ -7,15 +7,12 @@
  */
 
 import { NextRequest, NextResponse } from "next/server"
-import { randomUUID } from "crypto"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
 import { crearNotaCDSchema, crearNotaEmpresaSchema, crearNDRecibidaFaltanteSchema } from "@/lib/financial-schemas"
 import { resolverOperadorId } from "@/lib/session-utils"
-import { ejecutarCrearNotaCD } from "@/lib/nota-cd-commands"
-import { emitirNotaCDDirecta, emitirNotaEmpresaDirecta } from "@/lib/emision-directa"
-import { validarFechaEmisionArca } from "@/lib/fecha-emision"
+import { emitirNotaCD } from "@/application/nota-cd/emitir-nota-cd"
 import type { Rol } from "@/types"
 
 /**
@@ -118,51 +115,30 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Sesión inválida. Cerrá sesión y volvé a ingresar." }, { status: 401 })
   }
 
-  // Validación
+  // Parseo y despacho al caso de uso
   try {
     const body = await request.json()
 
     // ── Flujo items-based: NC/ND empresa contextual ──
     const parsedEmpresa = crearNotaEmpresaSchema.safeParse(body)
     if (parsedEmpresa.success) {
-      if (parsedEmpresa.data.fechaEmision) {
-        const validacion = validarFechaEmisionArca(parsedEmpresa.data.fechaEmision)
-        if (!validacion.ok) {
-          return NextResponse.json({ error: validacion.error }, { status: 422 })
-        }
-      }
-      const idempotencyKey = parsedEmpresa.data.idempotencyKey ?? randomUUID()
-      const resultado = await emitirNotaEmpresaDirecta(parsedEmpresa.data, operadorId, idempotencyKey)
-      if (!resultado.ok) {
-        return NextResponse.json({
-          error: resultado.error,
-          code: resultado.code,
-          reintentable: resultado.reintentable,
-          documentoId: resultado.documentoId,
-        }, { status: resultado.status })
-      }
-      return NextResponse.json(resultado, { status: 201 })
+      const resultado = await emitirNotaCD({
+        flujo: "empresa",
+        data: parsedEmpresa.data,
+        operadorId,
+      })
+      return NextResponse.json(resultado.body, { status: resultado.status })
     }
 
     // ── Flujo ND recibida por faltante ──
     const parsedFaltante = crearNDRecibidaFaltanteSchema.safeParse(body)
     if (parsedFaltante.success) {
-      const d = parsedFaltante.data
-      const resultado = await ejecutarCrearNotaCD({
-        tipo: "ND_RECIBIDA",
-        subtipo: "FALTANTE",
-        facturaId: d.facturaId,
-        montoNeto: d.montoNeto,
-        ivaPct: d.ivaPct,
-        descripcion: d.descripcion,
-        viajesIds: d.viajesIds,
-        nroComprobanteExterno: d.nroComprobanteExterno,
-        fechaComprobanteExterno: d.fechaComprobanteExterno,
-      }, operadorId)
-      if (!resultado.ok) {
-        return NextResponse.json({ error: resultado.error }, { status: resultado.status })
-      }
-      return NextResponse.json(resultado.nota, { status: 201 })
+      const resultado = await emitirNotaCD({
+        flujo: "nd-recibida-faltante",
+        data: parsedFaltante.data,
+        operadorId,
+      })
+      return NextResponse.json(resultado.body, { status: resultado.status })
     }
 
     // ── Flujo legacy: subtipo-based ──
@@ -171,37 +147,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const esEmitida = parsed.data.tipo === "NC_EMITIDA" || parsed.data.tipo === "ND_EMITIDA"
-
-    if (parsed.data.fechaEmision && esEmitida) {
-      const validacion = validarFechaEmisionArca(parsed.data.fechaEmision)
-      if (!validacion.ok) {
-        return NextResponse.json({ error: validacion.error }, { status: 422 })
-      }
-    }
-
-    if (esEmitida) {
-      const idempotencyKey = parsed.data.idempotencyKey ?? randomUUID()
-      const resultado = await emitirNotaCDDirecta(parsed.data, operadorId, idempotencyKey)
-      if (!resultado.ok) {
-        return NextResponse.json({
-          error: resultado.error,
-          code: resultado.code,
-          reintentable: resultado.reintentable,
-          documentoId: resultado.documentoId,
-        }, { status: resultado.status })
-      }
-      return NextResponse.json(resultado, { status: 201 })
-    }
-
-    // NC/ND recibidas: flujo clásico (sin ARCA, son documentos externos)
-    const resultado = await ejecutarCrearNotaCD(parsed.data, operadorId)
-
-    if (!resultado.ok) {
-      return NextResponse.json({ error: resultado.error }, { status: resultado.status })
-    }
-
-    return NextResponse.json(resultado.nota, { status: 201 })
+    const resultado = await emitirNotaCD({
+      flujo: "legacy",
+      data: parsed.data,
+      operadorId,
+    })
+    return NextResponse.json(resultado.body, { status: resultado.status })
   } catch (error) {
     console.error("[POST /api/notas-credito-debito]", error)
     return NextResponse.json(

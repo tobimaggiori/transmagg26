@@ -10,8 +10,10 @@ const mockTx = {
   liquidacion: { findUnique: jest.fn(), update: jest.fn() },
   chequeRecibido: { findUnique: jest.fn(), update: jest.fn() },
   notaCreditoDebito: { create: jest.fn(), findFirst: jest.fn() },
+  notaCreditoDebitoItem: { create: jest.fn() },
   viajeEnNotaCD: { create: jest.fn() },
   viaje: { update: jest.fn(), updateMany: jest.fn() },
+  asientoIva: { create: jest.fn() },
 }
 const mockPrisma = {
   ...mockTx,
@@ -19,14 +21,8 @@ const mockPrisma = {
 }
 
 jest.mock("@/lib/prisma", () => ({ prisma: mockPrisma }))
-jest.mock("@/lib/nota-cd-utils", () => ({
-  calcularTotalesNotaCD: (neto: number, iva: number) => ({
-    montoNeto: neto,
-    montoIva: neto * iva / 100,
-    montoTotal: neto * (1 + iva / 100),
-  }),
-  tipoCbteArcaParaNotaCD: jest.fn().mockReturnValue(3),
-}))
+// nota-cd-utils NO se mockea: calcularTotalesNotaCD, calcularTotalesNotaLP y
+// tipoCbteArcaParaNotaCD son funciones puras que deben ejecutarse reales.
 jest.mock("@/lib/arca/leer-config-habilitados", () => ({
   leerComprobantesHabilitados: jest.fn().mockResolvedValue([1, 2, 3, 6, 7, 8, 60, 61, 201, 202, 203]),
 }))
@@ -43,10 +39,12 @@ beforeEach(() => {
   mockTx.viajeEnNotaCD.create.mockResolvedValue({})
   mockTx.viaje.update.mockResolvedValue({})
   mockTx.viaje.updateMany.mockResolvedValue({ count: 1 })
+  mockTx.asientoIva.create.mockResolvedValue({ id: "aiva-1" })
 })
 
 const FACTURA_MOCK = {
   id: "fact-1",
+  tipoCbte: 1, // Factura A (RI) — tipoCbteArcaParaNotaCD("NC_EMITIDA", 1) → 3, ("ND_EMITIDA", 1) → 2
   estado: "EMITIDA",
   empresa: { condicionIva: "RESPONSABLE_INSCRIPTO" },
   viajes: [
@@ -59,7 +57,10 @@ const FACTURA_MOCK = {
 // ─── NC_EMITIDA / ANULACION_TOTAL ───────────────────────────────────────────
 
 describe("NC_EMITIDA / ANULACION_TOTAL", () => {
-  it("libera todos los viajes a PENDIENTE_FACTURAR", async () => {
+  // ANULACION_TOTAL libera automáticamente TODOS los viajes del comprobante origen.
+  // No depende de viajesIds — los obtiene de la relación viajes del comprobante.
+
+  it("libera TODOS los viajes del comprobante automáticamente (sin viajesIds)", async () => {
     mockPrisma.facturaEmitida.findUnique.mockResolvedValue(FACTURA_MOCK)
 
     const r = await ejecutarCrearNotaCD({
@@ -69,11 +70,13 @@ describe("NC_EMITIDA / ANULACION_TOTAL", () => {
       montoNeto: 2500,
       ivaPct: 21,
       descripcion: "Anulación total",
+      // viajesIds NO enviado — debe liberar todos igualmente
     }, "op1")
 
     expect(r.ok).toBe(true)
 
-    // Viajes deben pasar a PENDIENTE_FACTURAR
+    // Ambos viajes deben pasar a PENDIENTE_FACTURAR
+    expect(mockTx.viaje.update).toHaveBeenCalledTimes(2)
     expect(mockTx.viaje.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "v1" },
@@ -100,11 +103,10 @@ describe("NC_EMITIDA / ANULACION_TOTAL", () => {
       descripcion: "Anulación total",
     }, "op1")
 
-    // facturaEmitida.update NO debe haberse llamado con estado ANULADA
     expect(mockPrisma.facturaEmitida.update).not.toHaveBeenCalled()
   })
 
-  it("crea snapshots ViajeEnNotaCD para todos los viajes", async () => {
+  it("crea snapshots ViajeEnNotaCD para TODOS los viajes del comprobante", async () => {
     mockPrisma.facturaEmitida.findUnique.mockResolvedValue(FACTURA_MOCK)
 
     await ejecutarCrearNotaCD({
@@ -116,7 +118,27 @@ describe("NC_EMITIDA / ANULACION_TOTAL", () => {
       descripcion: "Anulación total",
     }, "op1")
 
+    // 2 viajes en FACTURA_MOCK → 2 snapshots
     expect(mockPrisma.viajeEnNotaCD.create).toHaveBeenCalledTimes(2)
+  })
+
+  it("ignora viajesIds parciales — siempre libera todos", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue(FACTURA_MOCK)
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_EMITIDA",
+      subtipo: "ANULACION_TOTAL",
+      facturaId: "fact-1",
+      montoNeto: 2500,
+      ivaPct: 21,
+      descripcion: "Anulación total con viajesIds parcial",
+      viajesIds: ["v1"], // solo v1, pero ANULACION_TOTAL debe liberar ambos
+    }, "op1")
+
+    expect(r.ok).toBe(true)
+    // Ambos viajes liberados, no solo v1
+    expect(mockTx.viaje.update).toHaveBeenCalledTimes(2)
+    expect(mockTx.viajeEnNotaCD.create).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -169,6 +191,41 @@ describe("NC_EMITIDA / ANULACION_PARCIAL", () => {
   })
 })
 
+// ─── NC_EMITIDA sobre factura — totales con IVA real ────────────────────────
+
+describe("NC_EMITIDA sobre factura — totales reales (calcularTotalesNotaCD)", () => {
+  it("nota y asiento IVA usan totales calculados por money.ts", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue(FACTURA_MOCK)
+
+    await ejecutarCrearNotaCD({
+      tipo: "NC_EMITIDA",
+      subtipo: "CORRECCION_IMPORTE",
+      facturaId: "fact-1",
+      montoNeto: 1000,
+      ivaPct: 21,
+      descripcion: "Corrección",
+    }, "op1")
+
+    // Nota creada con totales de calcularTotalesNotaCD(1000, 21)
+    const notaData = mockTx.notaCreditoDebito.create.mock.calls[0][0].data
+    expect(notaData.montoNeto).toBe(1000)
+    expect(notaData.montoIva).toBe(210)
+    expect(notaData.montoTotal).toBe(1210)
+
+    // Asiento IVA Ventas negativo (NC reduce ventas)
+    expect(mockTx.asientoIva.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tipo: "VENTA",
+          tipoReferencia: "NC_EMITIDA",
+          baseImponible: -1000,
+          montoIva: -210,
+        }),
+      })
+    )
+  })
+})
+
 // ─── NC_EMITIDA / CORRECCION_IMPORTE ────────────────────────────────────────
 
 describe("NC_EMITIDA / CORRECCION_IMPORTE", () => {
@@ -214,10 +271,27 @@ describe("ND_EMITIDA", () => {
   })
 })
 
-// ─── NC/ND sobre LP bloqueadas (arca-matriz-comprobantes.md) ────────────────
+// ─── NC/ND sobre LP ────────────────────────────────────────────────────────
 
-describe("NC/ND sobre LP rechazadas en esta etapa", () => {
-  it("NC_EMITIDA sobre liquidación → rechazada", async () => {
+const LIQUIDACION_MOCK = {
+  id: "liq-1",
+  tipoCbte: 60,
+  comisionPct: 10,
+  ivaPct: 21,
+  fletero: { condicionIva: "RESPONSABLE_INSCRIPTO" },
+  viajes: [
+    { viajeId: "v1", tarifaFletero: 50, kilos: 30000, subtotal: 1500, viaje: { id: "v1" } },
+  ],
+}
+
+describe("NC/ND emitidas sobre LP", () => {
+  // LIQUIDACION_MOCK tiene comisionPct=10. calcularTotalesNotaLP aplica la comisión real.
+  // NC bruto=1200, comision=120, neto=1080, iva=226.8, total=1306.8
+  // ND bruto=500, comision=50, neto=450, iva=94.5, total=544.5
+
+  it("NC_EMITIDA sobre LP: totales con comisión real y asiento IVA Compras", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQUIDACION_MOCK)
+
     const r = await ejecutarCrearNotaCD({
       tipo: "NC_EMITIDA",
       subtipo: "ANULACION_TOTAL",
@@ -225,27 +299,101 @@ describe("NC/ND sobre LP rechazadas en esta etapa", () => {
       montoNeto: 1200,
       ivaPct: 21,
       descripcion: "Anulación LP",
+      viajesIds: ["v1"],
     }, "op1")
 
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain("no está habilitada")
+    expect(r.ok).toBe(true)
+
+    // Nota creada con totales ajustados por comisión (calcularTotalesNotaLP real)
+    const notaData = mockTx.notaCreditoDebito.create.mock.calls[0][0].data
+    expect(notaData.montoNeto).toBe(1080)   // 1200 - 10% comisión
+    expect(notaData.montoIva).toBe(226.8)   // 1080 * 21%
+    expect(notaData.montoTotal).toBe(1306.8) // 1080 + 226.8
+
+    // Asiento IVA Compras con base negativa (NC reduce)
+    expect(mockTx.asientoIva.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tipo: "COMPRA",
+          tipoReferencia: "NC_EMITIDA",
+          baseImponible: -1080,
+          montoIva: -226.8,
+        }),
+      })
+    )
+
+    // Viaje liberado a PENDIENTE_LIQUIDAR
+    expect(mockTx.viaje.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "v1" },
+        data: { estadoLiquidacion: "PENDIENTE_LIQUIDAR" },
+      })
+    )
   })
 
-  it("ND_EMITIDA sobre liquidación → rechazada", async () => {
+  it("ND_EMITIDA sobre LP: totales con comisión real y asiento IVA Compras positivo", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue(LIQUIDACION_MOCK)
+
     const r = await ejecutarCrearNotaCD({
       tipo: "ND_EMITIDA",
-      subtipo: "AJUSTE_LIQUIDACION",
+      subtipo: "DIFERENCIA_TARIFA",
       liquidacionId: "liq-1",
       montoNeto: 500,
       ivaPct: 21,
       descripcion: "Ajuste LP",
     }, "op1")
 
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain("no está habilitada")
+    expect(r.ok).toBe(true)
+
+    // Nota creada con totales ajustados por comisión
+    const notaData = mockTx.notaCreditoDebito.create.mock.calls[0][0].data
+    expect(notaData.montoNeto).toBe(450)   // 500 - 10% comisión
+    expect(notaData.montoIva).toBe(94.5)   // 450 * 21%
+    expect(notaData.montoTotal).toBe(544.5) // 450 + 94.5
+
+    // Asiento IVA Compras positivo (ND aumenta)
+    expect(mockTx.asientoIva.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tipo: "COMPRA",
+          tipoReferencia: "ND_EMITIDA",
+          baseImponible: 450,
+          montoIva: 94.5,
+        }),
+      })
+    )
+
+    // ND NO libera viajes
+    expect(mockTx.viaje.update).not.toHaveBeenCalled()
   })
 
-  it("NC_RECIBIDA sobre liquidación → rechazada", async () => {
+  it("NC_EMITIDA sobre LP sin comisión: neto = bruto original", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue({
+      ...LIQUIDACION_MOCK,
+      comisionPct: 0,
+    })
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_EMITIDA",
+      subtipo: "CORRECCION_IMPORTE",
+      liquidacionId: "liq-1",
+      montoNeto: 800,
+      ivaPct: 21,
+      descripcion: "Corrección sin comisión",
+    }, "op1")
+
+    expect(r.ok).toBe(true)
+
+    // Sin comisión, neto queda igual al bruto original
+    const notaData = mockTx.notaCreditoDebito.create.mock.calls[0][0].data
+    expect(notaData.montoNeto).toBe(800)
+    expect(notaData.montoIva).toBe(168)   // 800 * 21%
+    expect(notaData.montoTotal).toBe(968)  // 800 + 168
+  })
+})
+
+describe("NC/ND recibidas sobre LP — no soportadas", () => {
+  it("NC_RECIBIDA → rechazada (subtipo no reconocido)", async () => {
     const r = await ejecutarCrearNotaCD({
       tipo: "NC_RECIBIDA",
       subtipo: "ANULACION_LIQUIDACION",
@@ -258,10 +406,10 @@ describe("NC/ND sobre LP rechazadas en esta etapa", () => {
     }, "op1")
 
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain("no está habilitada")
+    if (!r.ok) expect(r.error).toContain("NC_RECIBIDA no reconocido")
   })
 
-  it("ND_RECIBIDA sobre liquidación → rechazada", async () => {
+  it("ND_RECIBIDA con subtipo no soportado → rechazada", async () => {
     const r = await ejecutarCrearNotaCD({
       tipo: "ND_RECIBIDA",
       subtipo: "AJUSTE_LIQUIDACION",
@@ -272,7 +420,7 @@ describe("NC/ND sobre LP rechazadas en esta etapa", () => {
     }, "op1")
 
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain("no está habilitada")
+    if (!r.ok) expect(r.error).toContain("ND_RECIBIDA no reconocido")
   })
 })
 
@@ -323,7 +471,7 @@ describe("validaciones NC/ND", () => {
   })
 })
 
-// (NC/ND sobre LP bloqueadas en esta etapa — tests de rechazo arriba)
+// (NC/ND emitidas sobre LP soportadas — NC/ND recibidas no soportadas)
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONGELADO: semántica NC parcial — reversión por viaje vs corrección de importe
@@ -389,7 +537,7 @@ describe("CONGELADO: NC parcial empresa — corrección de importe", () => {
   })
 })
 
-// (NC/ND parcial LP: tests de operación eliminados — bloqueado en esta etapa)
+// (NC/ND sobre LP: tests de operación en describe "NC/ND emitidas sobre LP" arriba)
 
 describe("CONGELADO: ND no libera viajes", () => {
   it("ND_EMITIDA sobre factura no cambia estados de viaje", async () => {
@@ -414,6 +562,70 @@ describe("CONGELADO: preservación de historial documental", () => {
     }, "op1")
 
     expect(mockPrisma.facturaEmitida.update).not.toHaveBeenCalled()
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ANULACION_TOTAL — auto-liberación de viajes (invariante del sistema)
+// ANULACION_TOTAL siempre libera TODOS los viajes del comprobante origen,
+// independientemente de si el caller pasa viajesIds o no.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("ANULACION_TOTAL — auto-liberación completa", () => {
+  it("sin viajesIds: libera todos los viajes del comprobante", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue(FACTURA_MOCK)
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_EMITIDA",
+      subtipo: "ANULACION_TOTAL",
+      facturaId: "fact-1",
+      montoNeto: 2500,
+      ivaPct: 21,
+      descripcion: "Anulación total sin viajesIds",
+    }, "op1")
+
+    expect(r.ok).toBe(true)
+    expect(mockTx.notaCreditoDebito.create).toHaveBeenCalledTimes(1)
+    expect(mockTx.viaje.update).toHaveBeenCalledTimes(2)
+    expect(mockTx.viajeEnNotaCD.create).toHaveBeenCalledTimes(2)
+    expect(mockTx.asientoIva.create).toHaveBeenCalledTimes(1)
+  })
+
+  it("con viajesIds vacío: igual libera todos los viajes", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue(FACTURA_MOCK)
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_EMITIDA",
+      subtipo: "ANULACION_TOTAL",
+      facturaId: "fact-1",
+      montoNeto: 2500,
+      ivaPct: 21,
+      descripcion: "Anulación total viajesIds vacío",
+      viajesIds: [],
+    }, "op1")
+
+    expect(r.ok).toBe(true)
+    expect(mockTx.viaje.update).toHaveBeenCalledTimes(2)
+    expect(mockTx.viajeEnNotaCD.create).toHaveBeenCalledTimes(2)
+  })
+
+  it("con viajesIds parcial: igual libera todos (ignora viajesIds)", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue(FACTURA_MOCK)
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_EMITIDA",
+      subtipo: "ANULACION_TOTAL",
+      facturaId: "fact-1",
+      montoNeto: 2500,
+      ivaPct: 21,
+      descripcion: "Anulación total con viajesIds parcial",
+      viajesIds: ["v1"],
+    }, "op1")
+
+    expect(r.ok).toBe(true)
+    // Ambos viajes liberados, no solo v1
+    expect(mockTx.viaje.update).toHaveBeenCalledTimes(2)
+    expect(mockTx.viajeEnNotaCD.create).toHaveBeenCalledTimes(2)
   })
 })
 

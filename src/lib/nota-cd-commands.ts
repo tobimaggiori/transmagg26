@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma"
 import {
   calcularTotalesNotaCD,
   calcularTotalesDesdeItems,
+  calcularTotalesNotaLP,
   tipoCbteArcaParaNotaCD,
   resolverTipoCbteNotaEmpresa,
   resolverPuntoVentaNotaEmpresa,
@@ -20,7 +21,6 @@ import { validarComprobanteHabilitado } from "@/lib/arca/catalogo"
 import { leerComprobantesHabilitados } from "@/lib/arca/leer-config-habilitados"
 import { cargarConfigArca } from "@/lib/arca/config"
 import { calcularSaldoPendienteFactura } from "@/lib/cuenta-corriente"
-import { aplicarPorcentaje, restarImportes } from "@/lib/money"
 import { EstadoFacturaViaje, EstadoLiquidacionViaje } from "@/lib/viaje-workflow"
 import { parsearFechaLocalMediodia } from "@/lib/date-local"
 
@@ -153,22 +153,25 @@ async function crearNCEmitida(
   const errorHab = validarComprobanteHabilitado(tipoCbte, habilitados)
   if (errorHab) return { ok: false, status: 400, error: errorHab }
 
+  // Validar que ANULACION_PARCIAL tenga viajes indicados
+  if (data.subtipo === "ANULACION_PARCIAL" && (!data.viajesIds || data.viajesIds.length === 0)) {
+    return { ok: false, status: 400, error: "Anulación parcial requiere indicar los viajes a anular" }
+  }
+
   const nroComprobante = await calcularProximoNroComprobanteNotaCD("NC_EMITIDA")
   const creadoEn = data.fechaEmision ? new Date(data.fechaEmision + "T12:00:00") : new Date()
   const periodo = creadoEn.toISOString().slice(0, 7)
 
-  // Si es LP con comisión, recalcular totales: restar comisión del bruto
+  // Si es LP con comisión, recalcular totales usando calcularTotalesNotaLP
   const inclComision = data.incluirComision ?? true
   let totalesEfectivos = totales
   if (liquidacion && inclComision) {
     const comisionPct = liquidacion.comisionPct ?? 0
-    const comisionMonto = aplicarPorcentaje(totales.montoNeto, comisionPct)
-    const netoReal = restarImportes(totales.montoNeto, comisionMonto)
-    const ivaReal = aplicarPorcentaje(netoReal, data.ivaPct)
+    const calc = calcularTotalesNotaLP(totales.montoNeto, comisionPct, data.ivaPct, true)
     totalesEfectivos = {
-      montoNeto: netoReal,
-      montoIva: ivaReal,
-      montoTotal: netoReal + ivaReal,
+      montoNeto: calc.neto,
+      montoIva: calc.iva,
+      montoTotal: calc.total,
     }
   }
 
@@ -189,11 +192,20 @@ async function crearNCEmitida(
     creadoEn,
   }
 
-  // Validar viajesIds si se enviaron
+  // Resolver viajes a liberar según subtipo
   const comprobante = factura ?? liquidacion
-  if (data.viajesIds && data.viajesIds.length > 0 && comprobante) {
+  const esAnulacionTotal = data.subtipo === "ANULACION_TOTAL"
+
+  // ANULACION_TOTAL: libera TODOS los viajes del comprobante origen (ignora viajesIds).
+  // Otros subtipos: usan viajesIds explícitos del caller.
+  const viajesALiberar: string[] = esAnulacionTotal
+    ? comprobante.viajes.map((v: { viajeId: string }) => v.viajeId)
+    : (data.viajesIds ?? [])
+
+  // Validar viajesIds si se enviaron (solo para subtipos que no son ANULACION_TOTAL)
+  if (!esAnulacionTotal && viajesALiberar.length > 0 && comprobante) {
     const viajeIdsEnComprobante = comprobante.viajes.map((v: { viajeId: string }) => v.viajeId)
-    const todosPertenecen = data.viajesIds.every((id: string) => viajeIdsEnComprobante.includes(id))
+    const todosPertenecen = viajesALiberar.every((id: string) => viajeIdsEnComprobante.includes(id))
     if (!todosPertenecen) {
       return { ok: false, status: 400, error: "Uno o más viajes no pertenecen al comprobante" }
     }
@@ -202,9 +214,9 @@ async function crearNCEmitida(
   const nota = await prisma.$transaction(async (tx) => {
     const nuevaNota = await tx.notaCreditoDebito.create({ data: baseData })
 
-    // Liberar viajes seleccionados por el usuario (opcional)
-    if (data.viajesIds && data.viajesIds.length > 0 && comprobante) {
-      for (const viajeId of data.viajesIds) {
+    // Liberar viajes y crear snapshots
+    if (viajesALiberar.length > 0 && comprobante) {
+      for (const viajeId of viajesALiberar) {
         const vef = comprobante.viajes.find((v: { viajeId: string }) => v.viajeId === viajeId)
         if (vef) {
           await tx.viajeEnNotaCD.create({
@@ -313,17 +325,15 @@ async function crearNDEmitida(
   const creadoEn = data.fechaEmision ? new Date(data.fechaEmision + "T12:00:00") : new Date()
   const periodo = creadoEn.toISOString().slice(0, 7)
 
-  // Si es LP con comisión, recalcular totales
+  // Si es LP con comisión, recalcular totales usando calcularTotalesNotaLP
   const inclComision = data.incluirComision ?? true
   let totalesEfectivos = totales
   if (data.liquidacionId && inclComision && comisionPctLP > 0) {
-    const comisionMonto = aplicarPorcentaje(totales.montoNeto, comisionPctLP)
-    const netoReal = restarImportes(totales.montoNeto, comisionMonto)
-    const ivaReal = aplicarPorcentaje(netoReal, data.ivaPct)
+    const calc = calcularTotalesNotaLP(totales.montoNeto, comisionPctLP, data.ivaPct, true)
     totalesEfectivos = {
-      montoNeto: netoReal,
-      montoIva: ivaReal,
-      montoTotal: netoReal + ivaReal,
+      montoNeto: calc.neto,
+      montoIva: calc.iva,
+      montoTotal: calc.total,
     }
   }
 

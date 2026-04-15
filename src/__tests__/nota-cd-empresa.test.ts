@@ -46,7 +46,7 @@ describe("resolverTipoCbteNotaEmpresa", () => {
   })
 
   it("origen no compatible => 0", () => {
-    expect(resolverTipoCbteNotaEmpresa({ tipoNota: "NC", tipoCbteOrigen: 60 })).toBe(0)
+    expect(resolverTipoCbteNotaEmpresa({ tipoNota: "NC", tipoCbteOrigen: 99 })).toBe(0)
   })
 })
 
@@ -163,6 +163,9 @@ describe("calcularTotalesDesdeItems", () => {
 const mockTx = {
   notaCreditoDebito: { create: jest.fn(), findFirst: jest.fn() },
   notaCreditoDebitoItem: { create: jest.fn() },
+  viajeEnNotaCD: { create: jest.fn() },
+  viaje: { update: jest.fn() },
+  asientoIva: { create: jest.fn() },
 }
 const mockPrisma = {
   facturaEmitida: { findUnique: jest.fn() },
@@ -208,6 +211,7 @@ describe("crearNotaEmpresaEmitida: regla de saldo", () => {
     mockTx.notaCreditoDebito.findFirst.mockResolvedValue(null)
     mockTx.notaCreditoDebito.create.mockResolvedValue({ id: "nota-1" })
     mockTx.notaCreditoDebitoItem.create.mockResolvedValue({ id: "item-1" })
+    mockTx.asientoIva.create.mockResolvedValue({ id: "aiva-1" })
   })
 
   it("NC permitida si saldo > 0", async () => {
@@ -260,6 +264,7 @@ describe("crearNotaEmpresaEmitida: persistencia", () => {
     mockTx.notaCreditoDebito.findFirst.mockResolvedValue(null)
     mockTx.notaCreditoDebito.create.mockResolvedValue({ id: "nota-1" })
     mockTx.notaCreditoDebitoItem.create.mockResolvedValue({ id: "item-1" })
+    mockTx.asientoIva.create.mockResolvedValue({ id: "aiva-1" })
     ;(calcularSaldoPendienteFactura as jest.Mock).mockResolvedValue(50000)
   })
 
@@ -380,6 +385,7 @@ describe("crearNotaEmpresaEmitida: inmutabilidad de factura", () => {
     mockTx.notaCreditoDebito.findFirst.mockResolvedValue(null)
     mockTx.notaCreditoDebito.create.mockResolvedValue({ id: "nota-1" })
     mockTx.notaCreditoDebitoItem.create.mockResolvedValue({ id: "item-1" })
+    mockTx.asientoIva.create.mockResolvedValue({ id: "aiva-1" })
   })
 
   it("emitir NC no modifica FacturaEmitida.montoTotal ni montoNeto", async () => {

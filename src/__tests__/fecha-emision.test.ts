@@ -341,13 +341,21 @@ describe("Rutas canónicas de liquidaciones", () => {
 
 describe("Cadena fechaEmision: API route → commands → persistencia → ARCA", () => {
   it("API route de facturas valida y propaga fechaEmision al command", () => {
-    // Verificamos que el route handler valida fechaEmision con validarFechaEmisionArca
+    // La route delega al caso de uso emitirFactura, que valida fechaEmision con validarFechaEmisionArca
     const routeContent = fs.readFileSync(
       path.resolve(__dirname, "../app/api/facturas/route.ts"),
       "utf-8"
     )
-    expect(routeContent).toContain("validarFechaEmisionArca")
+    expect(routeContent).toContain("emitirFactura")
     expect(routeContent).toContain("fechaEmision")
+
+    // El caso de uso contiene la validación ARCA
+    const useCaseContent = fs.readFileSync(
+      path.resolve(__dirname, "../application/factura/emitir-factura.ts"),
+      "utf-8"
+    )
+    expect(useCaseContent).toContain("validarFechaEmisionArca")
+    expect(useCaseContent).toContain("fechaEmision")
   })
 
   it("API route de liquidaciones valida y propaga fechaEmision al command", () => {
