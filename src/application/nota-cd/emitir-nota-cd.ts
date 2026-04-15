@@ -11,6 +11,7 @@
  */
 
 import { randomUUID } from "crypto"
+import { prisma } from "@/lib/prisma"
 import { ejecutarCrearNotaCD } from "@/lib/nota-cd-commands"
 import { emitirNotaCDDirecta, emitirNotaEmpresaDirecta } from "@/lib/emision-directa"
 import { validarFechaEmisionArca } from "@/lib/fecha-emision"
@@ -31,6 +32,7 @@ export type DatosNDRecibidaFaltante = {
   viajesIds?: string[]
   nroComprobanteExterno?: string
   fechaComprobanteExterno?: string
+  pdfS3Key?: string
 }
 
 /** Flujo items-based: NC/ND empresa contextual */
@@ -152,6 +154,15 @@ async function flujoNDRecibidaFaltante(input: EmitirNDRecibidaFaltanteInput): Pr
 
   if (!resultado.ok) {
     return { ok: false, status: resultado.status, body: { error: resultado.error } }
+  }
+
+  // Guardar pdfS3Key si el caller subió un PDF (obligatorio para recibidas)
+  if (data.pdfS3Key) {
+    const nota = resultado.nota as { id: string }
+    await prisma.notaCreditoDebito.update({
+      where: { id: nota.id },
+      data: { pdfS3Key: data.pdfS3Key },
+    })
   }
 
   return { ok: true, status: 201, body: resultado.nota }

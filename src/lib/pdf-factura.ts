@@ -391,9 +391,10 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
     }
 
     const clientBoxPadX = 12
-    const clientBoxPadY = 14
+    const clientBoxPadTop = 12
+    const clientBoxPadBottom = 6
     const clientLineH = 20
-    const clientBoxH = clientBoxPadY * 2 + clientLines.length * clientLineH
+    const clientBoxH = clientBoxPadTop + clientLines.length * clientLineH + clientBoxPadBottom
 
     doc.save()
     doc.fillColor(BG_LIGHT)
@@ -402,7 +403,7 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
     doc.roundedRect(left, cursorY, contentW, clientBoxH, 8).stroke()
     doc.restore()
 
-    let clientY = cursorY + clientBoxPadY
+    let clientY = cursorY + clientBoxPadTop
     for (const line of clientLines) {
       line.icon(doc, left + clientBoxPadX, clientY + 1)
       let textX = left + clientBoxPadX + 14

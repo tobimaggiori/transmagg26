@@ -13,6 +13,7 @@ import { calcularNetoMasIva } from "@/lib/money"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { UploadPDF } from "@/components/upload-pdf"
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────���──
 
@@ -59,6 +60,9 @@ export function ModalIngresarNDFaltante({
   const [nroND, setNroND] = useState("")
   const [viajesSeleccionados, setViajesSeleccionados] = useState<Set<string>>(new Set())
 
+  // PDF obligatorio
+  const [pdfS3Key, setPdfS3Key] = useState<string | null>(null)
+
   // Paso 2
   const [descripcion, setDescripcion] = useState("")
   const [kilosFaltante, setKilosFaltante] = useState("")
@@ -87,7 +91,7 @@ export function ModalIngresarNDFaltante({
   }
 
   function puedeContinuar(): boolean {
-    return fecha.trim() !== "" && nroND.trim() !== "" && viajesSeleccionados.size > 0
+    return fecha.trim() !== "" && nroND.trim() !== "" && viajesSeleccionados.size > 0 && pdfS3Key !== null
   }
 
   function continuar() {
@@ -115,6 +119,7 @@ export function ModalIngresarNDFaltante({
           kilosFaltante: parseFloat(kilosFaltante) || 0,
           montoNeto: neto,
           ivaPct,
+          pdfS3Key,
         }),
       })
 
@@ -163,6 +168,20 @@ export function ModalIngresarNDFaltante({
               <Input value={nroND} onChange={(e) => setNroND(e.target.value)} placeholder="0001-00000001" />
             ) : (
               <p className="text-sm font-medium">{nroND}</p>
+            )}
+          </div>
+          <div className="col-span-2">
+            <Label className="text-xs text-muted-foreground">PDF del comprobante <span className="text-red-500">*</span></Label>
+            {paso === "encabezado" ? (
+              <UploadPDF
+                prefijo="facturas-emitidas"
+                onUpload={(key) => setPdfS3Key(key)}
+                label="Subir PDF de la ND"
+                s3Key={pdfS3Key ?? undefined}
+                required
+              />
+            ) : (
+              <p className="text-sm font-medium text-green-700">PDF cargado</p>
             )}
           </div>
         </div>

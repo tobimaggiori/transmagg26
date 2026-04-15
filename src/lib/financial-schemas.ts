@@ -344,4 +344,5 @@ export const crearNDRecibidaFaltanteSchema = z.object({
   kilosFaltante: z.number().min(0, "Los kilos deben ser >= 0"),
   montoNeto: z.number().positive("El monto neto debe ser mayor a 0"),
   ivaPct: z.number().min(0).max(100),
+  pdfS3Key: z.string().min(1, "El PDF del comprobante es obligatorio"),
 })

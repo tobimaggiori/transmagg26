@@ -36,6 +36,10 @@ export async function GET(
   let key = nota.pdfS3Key
 
   if (!key) {
+    // Las notas recibidas no tienen PDF generado — solo PDF subido por el usuario
+    if (nota.tipo === "NC_RECIBIDA" || nota.tipo === "ND_RECIBIDA") {
+      return NextResponse.json({ error: "Esta nota no tiene PDF cargado" }, { status: 404 })
+    }
     try {
       const buf = await generarPDFNotaCD(nota.id)
       const prefijo = nota.tipo === "NC_EMITIDA" ? "NC" : nota.tipo === "ND_EMITIDA" ? "ND" : "NOTA"

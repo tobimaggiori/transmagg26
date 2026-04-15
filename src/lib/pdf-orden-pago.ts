@@ -787,16 +787,17 @@ export async function generarPDFOrdenPago(ordenPagoId: string): Promise<Buffer> 
   // ─── 3. DATOS DEL DESTINATARIO ──────────────────────────────────────
 
   const clientBoxPadX = 12
-  const clientBoxPadY = 10
+  const clientBoxPadTop = 8
+  const clientBoxPadBottom = 4
   const clientLineH = 16
-  const clientBoxH = clientBoxPadY * 2 + clientLineH * 3
+  const clientBoxH = clientBoxPadTop + clientLineH * 3 + clientBoxPadBottom
 
   doc.save()
   doc.fillColor(BG_LIGHT)
   doc.roundedRect(LEFT, cursorY, CONTENT_W, clientBoxH, 6).fill()
   doc.restore()
 
-  let cLineY = cursorY + clientBoxPadY
+  let cLineY = cursorY + clientBoxPadTop
   const labelX = LEFT + clientBoxPadX
   const valueX = LEFT + clientBoxPadX + 60
   const col2LabelX = LEFT + CONTENT_W * 0.55

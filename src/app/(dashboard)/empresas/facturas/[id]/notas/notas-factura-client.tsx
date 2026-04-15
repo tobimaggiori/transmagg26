@@ -181,7 +181,20 @@ export function NotasFacturaClient({ facturaId }: { facturaId: string }) {
                           </span>
                           {n.subtipo && <span className="ml-1 text-muted-foreground">{labelSubtipoNotaCD(n.subtipo)}</span>}
                         </td>
-                        <td className="px-2 py-1.5 font-mono">{formatNroComprobante(n.ptoVenta, n.nroComprobante)}</td>
+                        <td className="px-2 py-1.5 font-mono">
+                          {n.arcaEstado === "AUTORIZADA" ? (
+                            <Link
+                              href={`/comprobantes/visor?tipo=nota-cd&id=${n.id}&titulo=${encodeURIComponent(
+                                `${n.tipo === "NC_EMITIDA" ? "NC" : "ND"} ${formatNroComprobante(n.ptoVenta, n.nroComprobante)}`
+                              )}`}
+                              className="text-primary hover:underline"
+                            >
+                              {formatNroComprobante(n.ptoVenta, n.nroComprobante)}
+                            </Link>
+                          ) : (
+                            formatNroComprobante(n.ptoVenta, n.nroComprobante)
+                          )}
+                        </td>
                         <td className="px-2 py-1.5">{formatearFecha(n.creadoEn)}</td>
                         <td className="px-2 py-1.5 text-right font-medium">{formatearMoneda(n.montoTotal)}</td>
                         <td className="px-2 py-1.5 text-center">
@@ -233,7 +246,20 @@ export function NotasFacturaClient({ facturaId }: { facturaId: string }) {
                           </span>
                           {n.subtipo && <span className="ml-1 text-muted-foreground">{labelSubtipoNotaCD(n.subtipo)}</span>}
                         </td>
-                        <td className="px-2 py-1.5 font-mono">{n.nroComprobanteExterno ?? "—"}</td>
+                        <td className="px-2 py-1.5 font-mono">
+                          {n.pdfS3Key && n.nroComprobanteExterno ? (
+                            <Link
+                              href={`/comprobantes/visor?tipo=nota-cd&id=${n.id}&titulo=${encodeURIComponent(
+                                `${n.tipo === "NC_RECIBIDA" ? "NC" : "ND"} Recibida ${n.nroComprobanteExterno}`
+                              )}`}
+                              className="text-primary hover:underline"
+                            >
+                              {n.nroComprobanteExterno}
+                            </Link>
+                          ) : (
+                            n.nroComprobanteExterno ?? "—"
+                          )}
+                        </td>
                         <td className="px-2 py-1.5">{n.fechaComprobanteExterno ? formatearFecha(n.fechaComprobanteExterno) : formatearFecha(n.creadoEn)}</td>
                         <td className="px-2 py-1.5 text-right font-medium">{formatearMoneda(n.montoTotal)}</td>
                         <td className="px-2 py-1.5 text-center">

@@ -294,10 +294,11 @@ export async function generarPDFNotaCD(notaId: string): Promise<Buffer> {
     // ─── 3. SECCIÓN RECEPTOR ──────────────────────────────────────────
 
     const clientBoxPadX = 12
-    const clientBoxPadY = 14
+    const clientBoxPadTop = 12
+    const clientBoxPadBottom = 6
     const clientLineH = 20
     const clientLineCount = 3 + (receptor.direccion ? 1 : 0)
-    const clientBoxH = clientBoxPadY * 2 + clientLineCount * clientLineH
+    const clientBoxH = clientBoxPadTop + clientLineCount * clientLineH + clientBoxPadBottom
 
     doc.save()
     doc.fillColor(BG_LIGHT)
@@ -306,7 +307,7 @@ export async function generarPDFNotaCD(notaId: string): Promise<Buffer> {
     doc.roundedRect(left, cursorY, contentW, clientBoxH, 8).stroke()
     doc.restore()
 
-    let clientY = cursorY + clientBoxPadY
+    let clientY = cursorY + clientBoxPadTop
     const clientTextX = left + clientBoxPadX
 
     // Razón social

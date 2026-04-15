@@ -43,7 +43,7 @@ jest.mock("@/lib/prisma", () => ({
     liquidacion: { findMany: jest.fn().mockResolvedValue([]) },
     fletero: { findUnique: jest.fn() },
     gastoFletero: { findMany: jest.fn().mockResolvedValue([]) },
-    notaCreditoDebito: { findMany: jest.fn().mockResolvedValue([]) },
+    notaCreditoDebito: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}) },
   },
 }))
 
@@ -290,6 +290,7 @@ describe("POST /api/notas-credito-debito — NC/ND recibidas sin ARCA", () => {
       kilosFaltante: 500,
       montoNeto: 50000,
       ivaPct: 21,
+      pdfS3Key: "facturas-emitidas/2026/04/test-nd-faltante.pdf",
     }
     mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-faltante" } })
 
