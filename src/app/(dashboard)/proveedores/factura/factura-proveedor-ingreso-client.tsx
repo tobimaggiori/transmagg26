@@ -257,9 +257,6 @@ export function FacturaProveedorIngresoClient({
     setNroComprobante("")
     setFechaComprobante("")
     setConcepto("")
-    setPercepcionIIBB("")
-    setPercepcionIVA("")
-    setPercepcionGanancias("")
     setItems([nuevoItem()])
     setPercepcionesExtra([])
     setPdfS3Key("")
@@ -636,10 +633,10 @@ export function FacturaProveedorIngresoClient({
                 </button>
               </div>
             ))}
-            {totalPercepcionesExtra > 0 && (
+            {totalPercepciones > 0 && (
               <div className="flex justify-end gap-8 text-sm font-medium border-t pt-2">
                 <span>Total percepciones/impuestos adicionales</span>
-                <span className="w-28 text-right">{formatearMoneda(totalPercepcionesExtra)}</span>
+                <span className="w-28 text-right">{formatearMoneda(totalPercepciones)}</span>
               </div>
             )}
           </CardContent>
