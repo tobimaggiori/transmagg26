@@ -80,17 +80,17 @@ function nuevaPercepcion(): PercepcionForm {
 const TIPOS_CBTE = ["A", "B", "C", "M", "X", "LIQ_PROD"] as const
 const TIPOS_CON_IVA = new Set(["A", "M", "LIQ_PROD"])
 const CONCEPTOS = [
-  "COMBUSTIBLE",
-  "PEAJES",
-  "SEGUROS",
-  "MANTENIMIENTO",
   "ALQUILERES",
-  "SERVICIOS_PROFESIONALES",
-  "IMPUESTOS_TASAS",
-  "COMUNICACIONES",
-  "MATERIALES",
-  "GASTOS_ADMINISTRATIVOS",
-  "OTROS",
+  "COMBUSTIBLE",
+  "COMPRA_DE_ACTIVOS",
+  "GASTOS_DE_LIBRERIA",
+  "GASTOS_DE_OFICINA",
+  "GASTOS_DE_REPRESENTACION",
+  "HONORARIOS_PROFESIONALES",
+  "INTERNET_Y_COMUNICACIONES",
+  "MANTENIMIENTO",
+  "NEUMATICOS",
+  "PEAJES",
 ] as const
 
 const REQUIERE_CUENTA = new Set(["TRANSFERENCIA", "CHEQUE_PROPIO"])
@@ -150,9 +150,6 @@ export function FacturaProveedorIngresoClient({
   const [nroComprobante, setNroComprobante] = useState("")
   const [fechaComprobante, setFechaComprobante] = useState("")
   const [concepto, setConcepto] = useState("")
-  const [percepcionIIBB, setPercepcionIIBB] = useState("")
-  const [percepcionIVA, setPercepcionIVA] = useState("")
-  const [percepcionGanancias, setPercepcionGanancias] = useState("")
 
   // ── Ítems ─────────────────────────────────────────────────────────────────
   const [items, setItems] = useState<ItemForm[]>([nuevoItem()])
@@ -188,12 +185,7 @@ export function FacturaProveedorIngresoClient({
   const itemsCalc = items.map((item) => calcularItem(item, discriminaIVA))
   const totalNeto = sumarImportes(itemsCalc.map(i => i.subtotalNeto))
   const totalIva = sumarImportes(itemsCalc.map(i => i.montoIva))
-  const percIIBBNum = parsearImporte(percepcionIIBB)
-  const percIVANum = parsearImporte(percepcionIVA)
-  const percGananciasNum = parsearImporte(percepcionGanancias)
-  const totalPercepcionesLegacy = sumarImportes([percIIBBNum, percIVANum, percGananciasNum])
-  const totalPercepcionesExtra = sumarImportes(percepcionesExtra.map(p => parsearImporte(p.monto)))
-  const totalPercepciones = sumarImportes([totalPercepcionesLegacy, totalPercepcionesExtra])
+  const totalPercepciones = sumarImportes(percepcionesExtra.map(p => parsearImporte(p.monto)))
   const totalFinal = sumarImportes([totalNeto, totalIva, totalPercepciones])
 
   const pagoMontoNum = parsearImporte(pagoMonto)
@@ -334,9 +326,6 @@ export function FacturaProveedorIngresoClient({
           nroComprobante: nroComprobante.trim(),
           fechaComprobante,
           concepto: concepto || undefined,
-          percepcionIIBB: percIIBBNum > 0 ? percIIBBNum : undefined,
-          percepcionIVA: percIVANum > 0 ? percIVANum : undefined,
-          percepcionGanancias: percGananciasNum > 0 ? percGananciasNum : undefined,
           pdfS3Key,
           items: itemsPayload,
           percepciones: percepcionesExtra
@@ -467,49 +456,6 @@ export function FacturaProveedorIngresoClient({
               </div>
             </div>
 
-            {discriminaIVA && (
-              <div>
-                <p className="text-sm font-medium mb-2">Percepciones (opcional)</p>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="percIIBB">Perc. IIBB</Label>
-                    <Input
-                      id="percIIBB"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={percepcionIIBB}
-                      onChange={(e) => setPercepcionIIBB(e.target.value)}
-                      placeholder="0.00"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="percIVA">Perc. IVA</Label>
-                    <Input
-                      id="percIVA"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={percepcionIVA}
-                      onChange={(e) => setPercepcionIVA(e.target.value)}
-                      placeholder="0.00"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="percGanancias">Perc. Ganancias</Label>
-                    <Input
-                      id="percGanancias"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={percepcionGanancias}
-                      onChange={(e) => setPercepcionGanancias(e.target.value)}
-                      placeholder="0.00"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
           </CardContent>
         </Card>
 
