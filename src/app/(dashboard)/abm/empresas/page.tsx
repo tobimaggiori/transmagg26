@@ -14,7 +14,7 @@ export default async function EmpresasPage() {
 
   const empresas = await prisma.empresa.findMany({
     select: {
-      id: true, razonSocial: true, cuit: true, condicionIva: true, direccion: true, activa: true,
+      id: true, razonSocial: true, cuit: true, condicionIva: true, direccion: true, padronFce: true, activa: true,
       _count: { select: { viajes: true, facturasEmitidas: true } },
       contactosEmail: {
         where: { activo: true },

@@ -36,14 +36,20 @@ export default async function EmpresasFacturarPage() {
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
   if (!esRolInterno(rol)) redirect("/dashboard")
 
-  const [empresas, comprobantesHabilitados] = await Promise.all([
+  const [empresas, comprobantesHabilitados, configArca] = await Promise.all([
     prisma.empresa.findMany({
       where: { activa: true },
-      select: { id: true, razonSocial: true, cuit: true, condicionIva: true },
+      select: { id: true, razonSocial: true, cuit: true, condicionIva: true, padronFce: true },
       orderBy: { razonSocial: "asc" },
     }),
     leerComprobantesHabilitados(),
+    prisma.configuracionArca.findUnique({
+      where: { id: "unico" },
+      select: { montoMinimoFce: true },
+    }),
   ])
 
-  return <FacturarEmpresaClient empresas={empresas} comprobantesHabilitados={comprobantesHabilitados} />
+  const montoMinimoFce = configArca?.montoMinimoFce != null ? Number(configArca.montoMinimoFce) : null
+
+  return <FacturarEmpresaClient empresas={empresas} comprobantesHabilitados={comprobantesHabilitados} montoMinimoFce={montoMinimoFce} />
 }

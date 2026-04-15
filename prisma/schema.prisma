@@ -147,6 +147,7 @@ model Empresa {
   cuit         String  @unique
   condicionIva String  @map("condicion_iva")
   direccion    String?
+  padronFce    Boolean @default(false) @map("padron_fce")
   activa       Boolean @default(true)
 
   empresaUsuarios  EmpresaUsuario[]
@@ -1520,6 +1521,7 @@ model ConfiguracionArca {
   puntosVenta              String   @default("{}") @map("puntos_venta")
   comprobantesHabilitados  String   @default("[]") @map("comprobantes_habilitados")
   cbuMiPymes               String?  @map("cbu_mi_pymes")
+  montoMinimoFce           Decimal? @map("monto_minimo_fce") @db.Decimal(15, 2)
   activa                   Boolean  @default(false)
   logoComprobanteB64       String?  @map("logo_comprobante_b64")
   logoArcaB64              String?  @map("logo_arca_b64")

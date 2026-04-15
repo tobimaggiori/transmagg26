@@ -41,8 +41,9 @@ type ViajeParaFacturar = {
 // ---- Props ----
 
 type FacturarEmpresaClientProps = {
-  empresas: Array<{ id: string; razonSocial: string; cuit: string; condicionIva: string }>
+  empresas: Array<{ id: string; razonSocial: string; cuit: string; condicionIva: string; padronFce: boolean }>
   comprobantesHabilitados: number[]
+  montoMinimoFce: number | null
 }
 
 // ---- Helpers ----
@@ -76,7 +77,7 @@ export function TipoCbteBadge({ tipoCbte, modalidad }: { tipoCbte: number; modal
  * selector de empresa con SearchCombobox, tabla de viajes pendientes con checkboxes,
  * edición inline de kilos y tarifa empresa, preview con neto/IVA/total, y confirmación.
  */
-export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: FacturarEmpresaClientProps) {
+export function FacturarEmpresaClient({ empresas, comprobantesHabilitados, montoMinimoFce }: FacturarEmpresaClientProps) {
   const [empresaId, setEmpresaId] = useState("")
   const [viajes, setViajes] = useState<ViajeParaFacturar[]>([])
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
@@ -92,9 +93,11 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
   const [facturaEmitida, setFacturaEmitida] = useState<{
     id: string; tipoCbte: number; ptoVenta: number; nroComprobante: string;
     cae: string; caeVto: string; neto: number; ivaMonto: number; total: number; emitidaEn: string;
+    observaciones: string | null;
   } | null>(null)
   const [reintentableInfo, setReintentableInfo] = useState<{ documentoId: string; mensaje: string } | null>(null)
   const [reintentando, setReintentando] = useState(false)
+  const [avisoFce, setAvisoFce] = useState<string | null>(null)
 
   const cargarDatos = useCallback(async () => {
     if (!empresaId) return
@@ -116,11 +119,14 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
 
   const empresaSeleccionada = empresas.find((e) => e.id === empresaId)
 
-  // Códigos disponibles según condición fiscal + config ARCA
+  // Códigos disponibles según condición fiscal + config ARCA + padrón FCE
   const codigosDisponibles = useMemo(
-    () => empresaSeleccionada
-      ? facturasEmpresaDisponibles(empresaSeleccionada.condicionIva, comprobantesHabilitados)
-      : [],
+    () => {
+      if (!empresaSeleccionada) return []
+      const codigos = facturasEmpresaDisponibles(empresaSeleccionada.condicionIva, comprobantesHabilitados)
+      if (!empresaSeleccionada.padronFce) return codigos.filter((c) => c !== 201)
+      return codigos
+    },
     [empresaSeleccionada, comprobantesHabilitados]
   )
 
@@ -205,6 +211,21 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
 
   async function confirmarFactura() {
     if (!empresaId || seleccionados.size === 0 || !tipoCbteEfectivo) return
+
+    // Validar monto mínimo FCE: solo para empresas con padrón FCE
+    if (empresaSeleccionada?.padronFce && montoMinimoFce != null && montoMinimoFce > 0 && preview) {
+      // Factura A común con monto >= mínimo → debe emitir MiPyME
+      if (tipoCbteEfectivo === 1 && preview.total >= montoMinimoFce) {
+        setAvisoFce("Por el monto a facturar debe emitir Factura A MiPyME.")
+        return
+      }
+      // FCE MiPyME con monto < mínimo → debe emitir Factura A común
+      if (tipoCbteEfectivo === 201 && preview.total < montoMinimoFce) {
+        setAvisoFce("Por el monto a facturar corresponde emitir Factura A.")
+        return
+      }
+    }
+
     setGenerando(true)
     setErrorGen(null)
     try {
@@ -273,6 +294,7 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
         ivaMonto: Number(doc.ivaMonto),
         total: Number(doc.total),
         emitidaEn: doc.emitidaEn,
+        observaciones: data.arca?.observaciones ?? null,
       })
       cargarDatos()
     } finally {
@@ -325,6 +347,7 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
         ivaMonto: Number(doc.ivaMonto),
         total: Number(doc.total),
         emitidaEn: doc.emitidaEn,
+        observaciones: data.arca?.observaciones ?? null,
       })
       cargarDatos()
     } catch (err) {
@@ -500,6 +523,12 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
               <span className="text-muted-foreground">Total</span>
               <span className="font-semibold">{Number(facturaEmitida.total).toLocaleString("es-AR", { style: "currency", currency: "ARS" })}</span>
             </div>
+            {facturaEmitida.observaciones && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+                <p className="text-xs font-medium text-amber-800">Observaciones ARCA</p>
+                <p className="text-xs text-amber-700 mt-0.5">{facturaEmitida.observaciones}</p>
+              </div>
+            )}
             <div className="flex gap-3 pt-2">
               <a
                 href={`/comprobantes/visor?tipo=factura&id=${facturaEmitida.id}&titulo=${encodeURIComponent(`Factura ${facturaEmitida.tipoCbte === 1 ? "A" : facturaEmitida.tipoCbte === 6 ? "B" : "A MiPyme"} ${String(facturaEmitida.ptoVenta).padStart(4, "0")}-${String(parseInt(facturaEmitida.nroComprobante) || 0).padStart(8, "0")}`)}`}
@@ -763,6 +792,32 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados }: Fac
             </div>
           )}
         </>
+      )}
+
+      {/* Modal aviso monto mínimo FCE */}
+      {avisoFce && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-background rounded-lg border shadow-lg max-w-md w-full mx-4 p-6 space-y-4">
+            <div className="flex items-center gap-2 text-amber-600">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86l-8.4 14.31A1.75 1.75 0 003.38 21h17.24a1.75 1.75 0 001.49-2.83l-8.4-14.31a1.75 1.75 0 00-2.98 0z" />
+              </svg>
+              <p className="text-base font-semibold">Atención</p>
+            </div>
+            <p className="text-sm">{avisoFce}</p>
+            <p className="text-xs text-muted-foreground">
+              Cambiá el tipo de comprobante y volvé a emitir.
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setAvisoFce(null)}
+                className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

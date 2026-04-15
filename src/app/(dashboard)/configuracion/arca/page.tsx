@@ -15,7 +15,8 @@ export default async function ArcaPage() {
   let arcaConfig: {
     id: string; cuit: string; razonSocial: string; tieneCertificado: boolean;
     modo: string; puntosVenta: Record<string, string>; comprobantesHabilitados: number[];
-    cbuMiPymes: string | null; activa: boolean; tieneLogoComprobante: boolean; tieneLogoArca: boolean;
+    cbuMiPymes: string | null; montoMinimoFce: number | null; activa: boolean;
+    tieneLogoComprobante: boolean; tieneLogoArca: boolean;
     actualizadoEn: string; actualizadoPor: string | null;
   } | null = null
 
@@ -44,6 +45,7 @@ export default async function ArcaPage() {
         puntosVenta,
         comprobantesHabilitados,
         cbuMiPymes: safe.cbuMiPymes,
+        montoMinimoFce: safe.montoMinimoFce != null ? Number(safe.montoMinimoFce) : null,
         activa: safe.activa,
         tieneLogoComprobante: !!(logoComprobanteR2Key || logoComprobanteB64),
         tieneLogoArca: !!(logoArcaR2Key || logoArcaB64),

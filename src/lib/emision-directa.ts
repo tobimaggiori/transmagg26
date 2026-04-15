@@ -247,7 +247,7 @@ export async function emitirNotaCDDirecta(
     return {
       ok: true,
       documento: resultado.nota,
-      arca: { ok: true, cae: "", caeVto: new Date(), nroComprobante: 0, ptoVenta: 0, tipoCbte: 0, qrData: "" },
+      arca: { ok: true, cae: "", caeVto: new Date(), nroComprobante: 0, ptoVenta: 0, tipoCbte: 0, qrData: "", observaciones: null },
     }
   }
 

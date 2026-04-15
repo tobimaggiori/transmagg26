@@ -16,6 +16,7 @@ const crearEmpresaSchema = z.object({
   cuit: z.string().regex(/^\d{11}$/, "CUIT debe tener 11 dígitos"),
   condicionIva: z.string().min(1),
   direccion: z.string().optional(),
+  padronFce: z.boolean().optional(),
 })
 
 /**

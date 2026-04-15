@@ -165,6 +165,7 @@ export interface AutorizarComprobanteResult {
   ptoVenta: number
   tipoCbte: number
   qrData: string
+  observaciones: string | null
 }
 
 /** Resultado de un rechazo por ARCA. */

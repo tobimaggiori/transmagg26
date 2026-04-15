@@ -71,7 +71,7 @@ export default async function AbmPage({
     tabValido === "empresas"
       ? prisma.empresa.findMany({
           select: {
-            id: true, razonSocial: true, cuit: true, condicionIva: true, direccion: true, activa: true,
+            id: true, razonSocial: true, cuit: true, condicionIva: true, direccion: true, padronFce: true, activa: true,
             _count: { select: { viajes: true, facturasEmitidas: true } },
             contactosEmail: {
               where: { activo: true },
@@ -203,6 +203,7 @@ export default async function AbmPage({
           tieneCertificado: !!certificadoB64,
           tieneLogoComprobante: !!logoComprobanteB64,
           tieneLogoArca: !!logoArcaB64,
+          montoMinimoFce: safe.montoMinimoFce != null ? Number(safe.montoMinimoFce) : null,
           actualizadoEn: safe.actualizadoEn.toISOString(),
           puntosVenta: (() => {
             try {

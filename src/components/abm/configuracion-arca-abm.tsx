@@ -45,6 +45,7 @@ interface ConfigProp {
   puntosVenta: Record<string, string>
   comprobantesHabilitados: number[]
   cbuMiPymes: string | null
+  montoMinimoFce: number | null
   activa: boolean
   tieneLogoComprobante: boolean
   tieneLogoArca: boolean
@@ -164,6 +165,7 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
 
   // MiPyME
   const [cbuMiPymes, setCbuMiPymes] = useState(config?.cbuMiPymes ?? "")
+  const [montoMinimoFce, setMontoMinimoFce] = useState(config?.montoMinimoFce?.toString() ?? "")
 
   // Diagnóstico
   const [diag, setDiag] = useState<DiagnosticoData | null>(null)
@@ -734,14 +736,27 @@ export function ConfiguracionArcaAbm({ config: initialConfig }: { config: Config
         )}
 
         {tab === "mipyme" && (
-          <div className="rounded-lg border p-5 space-y-3 max-w-lg">
+          <div className="rounded-lg border p-5 space-y-4 max-w-lg">
             <p className="text-sm font-semibold">Configuración MiPyMEs</p>
             <p className="text-xs text-muted-foreground">CBU de Transmagg donde se acreditan los pagos de FCE MiPyME (tipo 201). Solo requerido si se emiten facturas MiPyME.</p>
             <div>
               <Label className="text-xs">CBU (22 dígitos)</Label>
               <Input value={cbuMiPymes} onChange={(e) => setCbuMiPymes(e.target.value.replace(/\D/g, "").slice(0, 22))} className="h-8 text-sm mt-0.5" placeholder="0000000000000000000000" />
             </div>
-            <Button size="sm" onClick={() => patch({ cbuMiPymes: cbuMiPymes || null }, "mipymes")} disabled={saving === "mipymes"}>
+            <div>
+              <Label className="text-xs">Monto mínimo FCE</Label>
+              <p className="text-xs text-muted-foreground mb-1">Para empresas con padrón FCE: si el total iguala o supera este monto se debe emitir Factura A MiPyME; si es inferior se debe emitir Factura A.</p>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={montoMinimoFce}
+                onChange={(e) => setMontoMinimoFce(e.target.value)}
+                className="h-8 text-sm mt-0.5"
+                placeholder="0.00"
+              />
+            </div>
+            <Button size="sm" onClick={() => { const monto = parseFloat(montoMinimoFce); patch({ cbuMiPymes: cbuMiPymes || null, montoMinimoFce: !isNaN(monto) && monto >= 0 ? monto : null }, "mipymes") }} disabled={saving === "mipymes"}>
               {saving === "mipymes" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
               Guardar
             </Button>

@@ -647,6 +647,7 @@ async function _autorizarSimulado(
     ptoVenta: input.ptoVenta,
     tipoCbte: input.tipoCbte,
     qrData,
+    observaciones: null,
   }
 }
 
@@ -781,6 +782,7 @@ async function _autorizarComprobante(
     ptoVenta: input.ptoVenta,
     tipoCbte: input.tipoCbte,
     qrData,
+    observaciones: observaciones || null,
   }
 }
 
@@ -888,6 +890,7 @@ function resultadoDesdeRegistro(reg: RegistroAutorizado): AutorizarComprobanteRe
     ptoVenta: reg.ptoVenta ?? 1,
     tipoCbte: reg.tipoCbte ?? 0,
     qrData: reg.qrData ?? "",
+    observaciones: null,
   }
 }
 
@@ -900,5 +903,6 @@ function resultadoDesdeFactura(fac: FacturaAutorizada): AutorizarComprobanteResu
     ptoVenta: fac.ptoVenta ?? 1,
     tipoCbte: fac.tipoCbte,
     qrData: fac.qrData ?? "",
+    observaciones: null,
   }
 }

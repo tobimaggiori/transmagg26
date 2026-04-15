@@ -22,6 +22,7 @@ const patchSchema = z.object({
   puntosVenta: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
   comprobantesHabilitados: z.array(z.number().int()).optional(),
   cbuMiPymes: z.string().nullable().optional(),
+  montoMinimoFce: z.number().min(0).nullable().optional(),
   activa: z.boolean().optional(),
   logoComprobanteB64: z.string().nullable().optional(),
   logoArcaB64: z.string().nullable().optional(),
@@ -84,7 +85,7 @@ const CONFIG_SELECT = {
   id: true, cuit: true, razonSocial: true,
   certificadoB64: true, certificadoPass: true,
   modo: true, puntosVenta: true, comprobantesHabilitados: true,
-  cbuMiPymes: true, activa: true,
+  cbuMiPymes: true, montoMinimoFce: true, activa: true,
   actualizadoEn: true, actualizadoPor: true,
 } as const
 
@@ -238,6 +239,7 @@ function serializarConfig(row: Record<string, any>) {
     })(),
     comprobantesHabilitados: parsearComprobantesHabilitados(row.comprobantesHabilitados),
     cbuMiPymes: row.cbuMiPymes,
+    montoMinimoFce: row.montoMinimoFce ?? null,
     activa: row.activa,
     tieneLogoComprobante: !!(row.logoComprobanteR2Key || row.logoComprobanteB64),
     tieneLogoArca: !!(row.logoArcaR2Key || row.logoArcaB64),

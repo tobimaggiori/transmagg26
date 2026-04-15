@@ -31,6 +31,7 @@ export interface EmpresaAbm {
   cuit: string
   condicionIva: string
   direccion: string | null
+  padronFce: boolean
   activa: boolean
   puedeEliminar: boolean
   contactosEmail: ContactoEmailItem[]
@@ -61,6 +62,7 @@ function EmpresaFormModal({
     cuit: empresa?.cuit ?? "",
     condicionIva: empresa?.condicionIva ?? "RESPONSABLE_INSCRIPTO",
     direccion: empresa?.direccion ?? "",
+    padronFce: empresa?.padronFce ?? false,
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -114,6 +116,18 @@ function EmpresaFormModal({
         <Label htmlFor="direccion">Dirección</Label>
         <Input id="direccion" name="direccion" value={form.direccion} onChange={handleChange} disabled={loading} />
       </div>
+      <label htmlFor="padronFce" className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          id="padronFce"
+          checked={form.padronFce}
+          onChange={(e) => setForm((prev) => ({ ...prev, padronFce: e.target.checked }))}
+          disabled={loading}
+          className="h-4 w-4 rounded border-input accent-primary"
+        />
+        <span className="text-sm">Padrón FCE</span>
+        <span className="text-xs text-muted-foreground">— Habilita factura de crédito electrónica MiPyME</span>
+      </label>
       <FormError message={error} />
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onSuccess} disabled={loading}>Cancelar</Button>

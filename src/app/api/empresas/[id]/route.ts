@@ -15,6 +15,7 @@ const actualizarSchema = z.object({
   razonSocial: z.string().min(1).optional(),
   condicionIva: z.string().min(1).optional(),
   direccion: z.string().optional(),
+  padronFce: z.boolean().optional(),
   activa: z.boolean().optional(),
 })
 
