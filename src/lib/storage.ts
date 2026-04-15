@@ -103,7 +103,7 @@ export async function subirPDF(
       Body: buffer,
       ContentType: "application/pdf",
       ContentDisposition: nombreArchivo
-        ? `inline; filename="${nombreArchivo}"`
+        ? `inline; filename="${nombreArchivo.replace(/[^\x20-\x7E]/g, "_")}"`
         : "inline",
     })
   )
