@@ -122,7 +122,9 @@ export async function ejecutarCrearLiquidacion(
     return { ok: false, status: 400, error: "Se requiere al menos un viaje para crear la liquidación" }
   }
 
-  // Validar fletero
+  // Validar fletero — fuera de tx porque verifica configuración estática (activo).
+  // La invariante de estado de viajes (PENDIENTE_LIQUIDAR → LIQUIDADO) se protege
+  // dentro de la tx, que ya filtra por fleteroId.
   const fletero = await prisma.fletero.findFirst({ where: { id: fleteroId, activo: true } })
   if (!fletero) return { ok: false, status: 404, error: "Fletero no encontrado" }
 

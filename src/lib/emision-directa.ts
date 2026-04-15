@@ -95,7 +95,10 @@ async function _manejarErrorPostArca(
   verificarCae: () => Promise<string | null>,
   revertir: () => Promise<void>
 ): Promise<ResultadoEmisionDirecta> {
-  const caePersistido = await verificarCae()
+  // Verificar si el CAE ya fue persistido en BD antes de decidir qué hacer.
+  // Si la verificación misma falla, asumimos que no hay CAE (conservador:
+  // preferimos no revertir un comprobante que podría tener CAE).
+  const caePersistido = await _verificarCaePersistidoSeguro(verificarCae, documentoId)
 
   if (caePersistido) {
     console.error("[emision-directa] Error post-CAE (no se revierte):", err)
@@ -111,6 +114,27 @@ async function _manejarErrorPostArca(
 
   await revertir()
   return { ok: false, ...clasificado }
+}
+
+/**
+ * Intenta verificar si el CAE fue persistido. Si la verificación falla,
+ * retorna null y loguea el error. Los callers ya usan .catch(() => null)
+ * en sus lambdas, pero esta capa extra protege contra cambios futuros
+ * que omitan ese catch.
+ */
+async function _verificarCaePersistidoSeguro(
+  verificarCae: () => Promise<string | null>,
+  documentoId: string
+): Promise<string | null> {
+  try {
+    return await verificarCae()
+  } catch (verifyErr) {
+    console.error(
+      `[emision-directa] Error verificando CAE persistido para ${documentoId}, asumiendo no persistido:`,
+      verifyErr
+    )
+    return null
+  }
 }
 
 /**

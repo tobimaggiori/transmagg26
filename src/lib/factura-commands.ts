@@ -80,7 +80,9 @@ export async function ejecutarCrearFactura(
     return { ok: false, status: 400, error: "Se requiere al menos un viaje para crear la factura" }
   }
 
-  // Validar empresa
+  // Validar empresa — fuera de tx porque verifica configuración estática (condicionIva, activa)
+  // que no participa en la carrera crítica de viajes. La invariante de estado de viajes
+  // (PENDIENTE_FACTURAR → FACTURADO) se protege dentro de la tx.
   const empresa = await prisma.empresa.findFirst({ where: { id: empresaId, activa: true } })
   if (!empresa) return { ok: false, status: 404, error: "Empresa no encontrada" }
 

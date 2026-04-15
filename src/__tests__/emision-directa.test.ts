@@ -730,3 +730,85 @@ describe("emitirNotaEmpresaDirecta", () => {
     expect(mockPrisma.notaCreditoDebito.delete).not.toHaveBeenCalled()
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// _manejarErrorPostArca — branches de decisión
+// Testea indirectamente los 4 branches a través de emitirFacturaDirecta:
+// 1. CAE persistido → POST_CAE_PDF_ERROR (no revertir)
+// 2. Error reintentable sin CAE → conservar documento
+// 3. Error no reintentable sin CAE → revertir
+// 4. Error durante verificación de CAE → trata como sin CAE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("_manejarErrorPostArca — branches de decisión", () => {
+  const facturaData = { empresaId: "e1", viajeIds: ["v1"], tipoCbte: 1, ivaPct: 21 }
+
+  it("branch 1: CAE persistido → POST_CAE_PDF_ERROR, no revierte", async () => {
+    mockEjecutarCrearFactura.mockResolvedValue({ ok: true, factura: { id: "fact-1" } })
+    mockAutorizarFacturaArca.mockRejectedValue(new Error("PDF gen failed"))
+    // verificarCae encuentra CAE persistido
+    mockTx.facturaEmitida.findUnique.mockResolvedValueOnce({
+      cae: "74120000000001",
+      estadoArca: "AUTORIZADA",
+    })
+
+    const r = await emitirFacturaDirecta(facturaData, "op1", "key-1")
+
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.code).toBe("POST_CAE_PDF_ERROR")
+    expect(r.error).toContain("74120000000001")
+    expect(r.documentoId).toBe("fact-1")
+    // NO revierte
+    expect(mockTx.facturaEmitida.delete).not.toHaveBeenCalled()
+  })
+
+  it("branch 2: error reintentable sin CAE → conserva documento", async () => {
+    mockEjecutarCrearFactura.mockResolvedValue({ ok: true, factura: { id: "fact-1" } })
+    mockAutorizarFacturaArca.mockRejectedValue(new WsaaError("ECONNREFUSED"))
+
+    const r = await emitirFacturaDirecta(facturaData, "op1", "key-1")
+
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reintentable).toBe(true)
+    expect(r.documentoId).toBe("fact-1")
+    expect(mockTx.facturaEmitida.delete).not.toHaveBeenCalled()
+  })
+
+  it("branch 3: error no reintentable sin CAE → revierte todo", async () => {
+    mockEjecutarCrearFactura.mockResolvedValue({ ok: true, factura: { id: "fact-1" } })
+    mockAutorizarFacturaArca.mockRejectedValue(new ArcaRechazoError("CUIT inválido"))
+
+    const r = await emitirFacturaDirecta(facturaData, "op1", "key-1")
+
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reintentable).toBe(false)
+    expect(r.code).toBe("ARCA_RECHAZO")
+    // Revierte
+    expect(mockTx.facturaEmitida.delete).toHaveBeenCalledWith({ where: { id: "fact-1" } })
+    expect(mockTx.viaje.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["v1"] } },
+      data: { estadoFactura: "PENDIENTE_FACTURAR" },
+    })
+  })
+
+  it("branch 4: error durante verificación de CAE → trata como sin CAE, clasifica y actúa", async () => {
+    mockEjecutarCrearFactura.mockResolvedValue({ ok: true, factura: { id: "fact-1" } })
+    // Error no reintentable para que entre al branch de reversión
+    mockAutorizarFacturaArca.mockRejectedValue(new ArcaRechazoError("Datos inválidos"))
+    // Forzar que verificarCae lance excepción (la primera llamada a findUnique es para verificarCae)
+    mockTx.facturaEmitida.findUnique
+      .mockRejectedValueOnce(new Error("DB connection lost during CAE check"))
+
+    const r = await emitirFacturaDirecta(facturaData, "op1", "key-1")
+
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    // No se cuelga ni crashea — trata como sin CAE y revierte
+    expect(r.code).toBe("ARCA_RECHAZO")
+    expect(r.reintentable).toBe(false)
+    expect(mockTx.facturaEmitida.delete).toHaveBeenCalled()
+  })
+})

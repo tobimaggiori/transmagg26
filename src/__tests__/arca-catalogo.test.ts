@@ -33,10 +33,10 @@ import {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe("catálogo cerrado ARCA", () => {
-  it("contiene exactamente los 12 códigos del catálogo", () => {
-    expect(CODIGOS_CATALOGO.size).toBe(12)
+  it("contiene exactamente los 11 códigos del catálogo", () => {
+    expect(CODIGOS_CATALOGO.size).toBe(11)
     expect(Array.from(CODIGOS_CATALOGO).sort((a, b) => a - b)).toEqual(
-      [1, 2, 3, 6, 7, 8, 60, 61, 65, 201, 202, 203]
+      [1, 2, 3, 6, 7, 8, 60, 61, 201, 202, 203]
     )
   })
 
@@ -44,12 +44,12 @@ describe("catálogo cerrado ARCA", () => {
     expect(esCodValido(1)).toBe(true)
     expect(esCodValido(60)).toBe(true)
     expect(esCodValido(201)).toBe(true)
-    expect(esCodValido(65)).toBe(true) // contemplado aunque no operativo
   })
 
   it("rechaza códigos fuera del catálogo", () => {
     expect(esCodValido(4)).toBe(false)
     expect(esCodValido(5)).toBe(false)
+    expect(esCodValido(65)).toBe(false) // eliminado del catálogo
     expect(esCodValido(186)).toBe(false) // legacy LP — PROHIBIDO
     expect(esCodValido(187)).toBe(false) // legacy LP — PROHIBIDO
     expect(esCodValido(0)).toBe(false)
@@ -62,21 +62,16 @@ describe("catálogo cerrado ARCA", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe("operatividad actual", () => {
-  it("65 pertenece al catálogo pero NO está operativo", () => {
-    expect(esCodValido(65)).toBe(true)
+  it("65 no pertenece al catálogo (eliminado)", () => {
+    expect(esCodValido(65)).toBe(false)
     expect(esCodOperativo(65)).toBe(false)
+    expect(buscarComprobante(65)).toBeUndefined()
   })
 
-  it("todos los demás códigos están operativos", () => {
+  it("todos los códigos del catálogo están operativos", () => {
     for (const cod of [1, 2, 3, 6, 7, 8, 60, 61, 201, 202, 203]) {
       expect(esCodOperativo(cod)).toBe(true)
     }
-  })
-
-  it("buscarComprobante(65) tiene operativo=false y visibleEnUI=false", () => {
-    const c65 = buscarComprobante(65)!
-    expect(c65.operativo).toBe(false)
-    expect(c65.visibleEnUI).toBe(false)
   })
 })
 
@@ -152,7 +147,7 @@ describe("matriz cerrada de notas empresa", () => {
     expect(validarNotaContraOrigen(999, 1)).not.toBeNull()
   })
 
-  it("validarNotaContraOrigen rechaza 65 (no operativo)", () => {
+  it("validarNotaContraOrigen rechaza 65 (no está en catálogo)", () => {
     expect(validarNotaContraOrigen(65, 60)).not.toBeNull()
   })
 })
@@ -186,9 +181,12 @@ describe("LP restringido", () => {
     expect(CODIGOS_LP_BASE.has(65)).toBe(false)
   })
 
-  it("no hay notas compatibles con LP en esta etapa", () => {
-    expect(notasCompatibles(60)).toEqual([])
-    expect(notasCompatibles(61)).toEqual([])
+  it("notas compatibles con LP 60 son ND A (2) y NC A (3)", () => {
+    expect(notasCompatibles(60).sort()).toEqual([2, 3])
+  })
+
+  it("notas compatibles con LP 61 son ND B (7) y NC B (8)", () => {
+    expect(notasCompatibles(61).sort()).toEqual([7, 8])
   })
 })
 
@@ -299,9 +297,9 @@ describe("validarComprobanteHabilitado", () => {
     expect(validarComprobanteHabilitado(7, habilitados)).toContain("no está habilitado")
   })
 
-  it("65 configurable pero no operativo → rechazado por operatividad", () => {
+  it("65 fuera del catálogo → rechazado", () => {
     const habConc65 = [...habilitados, 65]
-    expect(validarComprobanteHabilitado(65, habConc65)).toContain("no está operativo")
+    expect(validarComprobanteHabilitado(65, habConc65)).toContain("no pertenece al catálogo")
   })
 
   it("código fuera del catálogo → rechazado", () => {
@@ -336,25 +334,23 @@ describe("REGRESIÓN: garantías del catálogo cerrado", () => {
     expect(esCodOperativo(187)).toBe(false)
   })
 
-  it("65 existe en catálogo pero no es operativo ni visible", () => {
-    expect(esCodValido(65)).toBe(true)
+  it("65 no existe en el catálogo (eliminado)", () => {
+    expect(esCodValido(65)).toBe(false)
     expect(esCodOperativo(65)).toBe(false)
-    const c = buscarComprobante(65)!
-    expect(c.visibleEnUI).toBe(false)
-    expect(c.operativo).toBe(false)
+    expect(buscarComprobante(65)).toBeUndefined()
   })
 
-  it("no hay notas operativas para LP (60/61)", () => {
-    expect(notasCompatibles(60)).toEqual([])
-    expect(notasCompatibles(61)).toEqual([])
+  it("notas operativas para LP 60 son 2 y 3, para LP 61 son 7 y 8", () => {
+    expect(notasCompatibles(60).sort()).toEqual([2, 3])
+    expect(notasCompatibles(61).sort()).toEqual([7, 8])
   })
 
-  it("65 no puede validarse como habilitado aunque lo configuren", () => {
-    expect(validarComprobanteHabilitado(65, [65])).toContain("no está operativo")
+  it("65 no puede validarse como habilitado (fuera del catálogo)", () => {
+    expect(validarComprobanteHabilitado(65, [65])).toContain("no pertenece al catálogo")
   })
 
-  it("solo existen 12 códigos en el catálogo — ni más ni menos", () => {
-    expect(CATALOGO_ARCA.length).toBe(12)
+  it("solo existen 11 códigos en el catálogo — ni más ni menos", () => {
+    expect(CATALOGO_ARCA.length).toBe(11)
   })
 
   it("tipoCbteLiquidacion nunca devuelve 186 ni 187", () => {

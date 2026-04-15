@@ -184,17 +184,17 @@ describe("notas emitidas — derivación y habilitados", () => {
   // "validarNotaContraOrigen rechaza combinaciones cruzadas"
 
   it("NC emitida sobre factura con tipoCbte sin nota compatible → rechazada", async () => {
-    // Factura con tipoCbte 60 (LP): tipoCbteArcaParaNotaCD("NC_EMITIDA", 60) → 0
+    // Factura con tipoCbte 999 (inexistente): tipoCbteArcaParaNotaCD("NC_EMITIDA", 999) → 0
     mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
-      id: "fact-lp", tipoCbte: 60,
+      id: "fact-inv", tipoCbte: 999,
       empresa: { condicionIva: "RESPONSABLE_INSCRIPTO" },
       viajes: [],
       notasCreditoDebito: [],
     })
 
     const r = await ejecutarCrearNotaCD({
-      tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL", facturaId: "fact-lp",
-      montoNeto: 1000, ivaPct: 21, descripcion: "NC sobre LP",
+      tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL", facturaId: "fact-inv",
+      montoNeto: 1000, ivaPct: 21, descripcion: "NC sobre comprobante sin nota compatible",
     }, "op1")
 
     expect(r.ok).toBe(false)

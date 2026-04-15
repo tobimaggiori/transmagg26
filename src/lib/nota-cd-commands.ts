@@ -205,13 +205,23 @@ async function crearNCEmitida(
 
   // ANULACION_TOTAL: libera TODOS los viajes del comprobante origen (ignora viajesIds).
   // Otros subtipos: usan viajesIds explícitos del caller.
-  const viajesALiberar: string[] = esAnulacionTotal
-    ? comprobante.viajes.map((v: { viajeId: string }) => v.viajeId)
-    : (data.viajesIds ?? [])
+  let viajesALiberar: string[]
+  if (esAnulacionTotal) {
+    const ids = obtenerViajeIdsDeComprobanteOrigen(comprobante)
+    if (ids === null) {
+      return { ok: false, status: 500, error: "Error interno: el comprobante origen no incluye los viajes necesarios para procesar la anulación total" }
+    }
+    viajesALiberar = ids
+  } else {
+    viajesALiberar = data.viajesIds ?? []
+  }
 
   // Validar viajesIds si se enviaron (solo para subtipos que no son ANULACION_TOTAL)
   if (!esAnulacionTotal && viajesALiberar.length > 0 && comprobante) {
-    const viajeIdsEnComprobante = comprobante.viajes.map((v: { viajeId: string }) => v.viajeId)
+    const viajeIdsEnComprobante = obtenerViajeIdsDeComprobanteOrigen(comprobante)
+    if (viajeIdsEnComprobante === null) {
+      return { ok: false, status: 500, error: "Error interno: el comprobante origen no incluye los viajes necesarios para validar la anulación parcial" }
+    }
     const todosPertenecen = viajesALiberar.every((id: string) => viajeIdsEnComprobante.includes(id))
     if (!todosPertenecen) {
       return { ok: false, status: 400, error: "Uno o más viajes no pertenecen al comprobante" }
@@ -525,6 +535,34 @@ async function crearNDRecibida(
   }
 
   return { ok: false, status: 400, error: "Subtipo ND_RECIBIDA no reconocido" }
+}
+
+// ─── Helpers internos ────────────────────────────────────────────────────────
+
+/**
+ * obtenerViajeIdsDeComprobanteOrigen: ComprobanteConViajes -> string[] | null
+ *
+ * Extrae los IDs de viajes de un comprobante origen (factura o liquidación).
+ * ANULACION_TOTAL necesita TODOS los viajes del comprobante, que vienen de la
+ * relación `viajes` cargada en la query con include. Esta función hace explícita
+ * esa dependencia y retorna null si la relación no está disponible.
+ *
+ * Retorna null (no throw) porque la ausencia de la relación es un error interno
+ * del backend (query incompleta), no un error de validación del usuario.
+ * El caller debe tratar null como status 500.
+ *
+ * Ejemplos:
+ * obtenerViajeIdsDeComprobanteOrigen({ viajes: [{ viajeId: "v1" }, { viajeId: "v2" }] })
+ *   // => ["v1", "v2"]
+ * obtenerViajeIdsDeComprobanteOrigen({ viajes: undefined })
+ *   // => null
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function obtenerViajeIdsDeComprobanteOrigen(comprobante: any): string[] | null {
+  if (!comprobante?.viajes || !Array.isArray(comprobante.viajes)) {
+    return null
+  }
+  return comprobante.viajes.map((v: { viajeId: string }) => v.viajeId)
 }
 
 // ─── Flujo items-based para NC/ND sobre facturas empresa ────────────────────

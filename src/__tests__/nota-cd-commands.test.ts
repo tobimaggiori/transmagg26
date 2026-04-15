@@ -739,3 +739,74 @@ describe("invariantes: NC ANULACION_TOTAL duplicada", () => {
     expect(r.ok).toBe(true)
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ANULACION_TOTAL — robustez: falla explícita si relación viajes no cargada
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("ANULACION_TOTAL — error interno si relación viajes no cargada", () => {
+  it("retorna status 500 si comprobante no tiene relación viajes (error interno, no del usuario)", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
+      ...FACTURA_MOCK,
+      viajes: undefined, // relación no cargada — bug del backend, no del usuario
+    })
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_EMITIDA",
+      subtipo: "ANULACION_TOTAL",
+      facturaId: "fact-1",
+      montoNeto: 2500,
+      ivaPct: 21,
+      descripcion: "Anulación total",
+    }, "op1")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.status).toBe(500)
+      expect(r.error).toContain("Error interno")
+      expect(r.error).toContain("anulación total")
+    }
+  })
+
+  it("retorna status 500 si viajes es null en vez de array", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
+      ...FACTURA_MOCK,
+      viajes: null,
+    })
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_EMITIDA",
+      subtipo: "ANULACION_TOTAL",
+      facturaId: "fact-1",
+      montoNeto: 2500,
+      ivaPct: 21,
+      descripcion: "Anulación total",
+    }, "op1")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.status).toBe(500)
+      expect(r.error).toContain("Error interno")
+    }
+  })
+
+  it("funciona con array vacío (comprobante sin viajes — caso borde)", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
+      ...FACTURA_MOCK,
+      viajes: [], // relación cargada pero sin viajes
+    })
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_EMITIDA",
+      subtipo: "ANULACION_TOTAL",
+      facturaId: "fact-1",
+      montoNeto: 2500,
+      ivaPct: 21,
+      descripcion: "Anulación total sin viajes",
+    }, "op1")
+
+    // No falla, simplemente no libera ningún viaje
+    expect(r.ok).toBe(true)
+    expect(mockTx.viaje.update).not.toHaveBeenCalled()
+  })
+})
