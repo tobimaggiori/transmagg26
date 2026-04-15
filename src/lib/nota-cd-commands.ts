@@ -138,11 +138,18 @@ async function crearNCEmitida(
       include: {
         fletero: { select: { condicionIva: true } },
         viajes: { include: { viaje: { select: { id: true } } } },
+        notasCreditoDebito: {
+          where: { tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL" },
+          select: { id: true },
+        },
       },
       // comisionPct se usa para desglosar el doble impacto IVA (ventas comisión + compras neto)
     })
     if (!liquidacion) return { ok: false, status: 404, error: "Liquidación no encontrada" }
     if (!liquidacion.tipoCbte) return { ok: false, status: 400, error: "La liquidación no tiene tipo de comprobante asignado" }
+    if (data.subtipo === "ANULACION_TOTAL" && liquidacion.notasCreditoDebito.length > 0) {
+      return { ok: false, status: 400, error: "La liquidación ya tiene una NC de anulación total emitida" }
+    }
     tipoCbteOrigen = liquidacion.tipoCbte
   }
 

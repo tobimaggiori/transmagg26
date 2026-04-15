@@ -9,6 +9,7 @@
 const mockEjecutarCrearFactura = jest.fn()
 const mockEjecutarCrearLiquidacion = jest.fn()
 const mockEjecutarCrearNotaCD = jest.fn()
+const mockCrearNotaEmpresaEmitida = jest.fn()
 const mockAutorizarFacturaArca = jest.fn()
 const mockAutorizarLiquidacionArca = jest.fn()
 const mockAutorizarNotaCDArca = jest.fn()
@@ -36,6 +37,7 @@ jest.mock("@/lib/liquidacion-commands", () => ({
 }))
 jest.mock("@/lib/nota-cd-commands", () => ({
   ejecutarCrearNotaCD: mockEjecutarCrearNotaCD,
+  crearNotaEmpresaEmitida: mockCrearNotaEmpresaEmitida,
 }))
 jest.mock("@/lib/arca/service", () => ({
   autorizarFacturaArca: mockAutorizarFacturaArca,
@@ -48,6 +50,7 @@ import {
   emitirFacturaDirecta,
   emitirLiquidacionDirecta,
   emitirNotaCDDirecta,
+  emitirNotaEmpresaDirecta,
 } from "@/lib/emision-directa"
 import { ArcaRechazoError, WsaaError } from "@/lib/arca/errors"
 
@@ -64,7 +67,7 @@ beforeEach(() => {
   mockTx.liquidacion.findUnique.mockResolvedValue({ id: "liq-1" })
   mockTx.notaCreditoDebito.delete.mockResolvedValue({})
   mockTx.notaCreditoDebito.update.mockResolvedValue({ id: "nota-1", estado: "EMITIDA" })
-  mockTx.notaCreditoDebito.findUnique.mockResolvedValue(null)
+  mockTx.notaCreditoDebito.findUnique.mockResolvedValue({ id: "nota-1", estado: "EMITIDA" })
   mockTx.viaje.updateMany.mockResolvedValue({ count: 1 })
 })
 
@@ -490,5 +493,240 @@ describe("rollback ARCA FAIL — limpieza completa de efectos", () => {
 
     // La compensación usa $transaction
     expect(mockPrisma.$transaction).toHaveBeenCalled()
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Post-CAE read failures
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("post-CAE read failures", () => {
+  it("factura: ARCA OK pero falla relectura → POST_CAE_READ_ERROR con documentoId", async () => {
+    mockEjecutarCrearFactura.mockResolvedValue({ ok: true, factura: { id: "fact-1" } })
+    mockAutorizarFacturaArca.mockResolvedValue(ARCA_RESULT)
+    // Re-lectura falla
+    mockTx.facturaEmitida.findUnique.mockRejectedValueOnce(new Error("DB connection lost"))
+
+    const r = await emitirFacturaDirecta(
+      { empresaId: "e1", viajeIds: ["v1"], tipoCbte: 1, ivaPct: 21 },
+      "op1", "key-1"
+    )
+
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.status).toBe(500)
+    expect(r.code).toBe("POST_CAE_READ_ERROR")
+    expect(r.documentoId).toBe("fact-1")
+    expect(r.error).toContain("autorizado por ARCA")
+    expect(r.error).toContain(ARCA_RESULT.cae)
+    // NO debe haber revertido (CAE ya otorgado)
+    expect(mockTx.facturaEmitida.delete).not.toHaveBeenCalled()
+  })
+
+  it("liquidación: ARCA OK pero falla relectura → POST_CAE_READ_ERROR con documentoId", async () => {
+    mockEjecutarCrearLiquidacion.mockResolvedValue({ ok: true, liquidacion: { id: "liq-1" } })
+    mockAutorizarLiquidacionArca.mockResolvedValue(ARCA_RESULT)
+    mockTx.liquidacion.findUnique.mockRejectedValueOnce(new Error("DB timeout"))
+
+    const r = await emitirLiquidacionDirecta(
+      { fleteroId: "f1", comisionPct: 5, ivaPct: 21, viajes: [{ viajeId: "v1", fechaViaje: "2026-01-01", kilos: 30000, tarifaFletero: 40 }] },
+      "op1", "key-1"
+    )
+
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.status).toBe(500)
+    expect(r.code).toBe("POST_CAE_READ_ERROR")
+    expect(r.documentoId).toBe("liq-1")
+    expect(r.error).toContain(ARCA_RESULT.cae)
+    expect(mockTx.liquidacion.delete).not.toHaveBeenCalled()
+  })
+
+  it("nota emitida: ARCA OK pero falla relectura → POST_CAE_READ_ERROR", async () => {
+    mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-1" } })
+    mockAutorizarNotaCDArca.mockResolvedValue(ARCA_RESULT)
+    mockTx.notaCreditoDebito.findUnique.mockRejectedValueOnce(new Error("DB error"))
+
+    const r = await emitirNotaCDDirecta({
+      tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL",
+      facturaId: "fact-1", montoNeto: 1000, ivaPct: 21, descripcion: "test",
+    }, "op1", "key-1")
+
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.code).toBe("POST_CAE_READ_ERROR")
+    expect(r.documentoId).toBe("nota-1")
+    expect(r.error).toContain(ARCA_RESULT.cae)
+    expect(mockTx.notaCreditoDebito.delete).not.toHaveBeenCalled()
+  })
+
+  it("nota empresa: ARCA OK pero falla relectura → POST_CAE_READ_ERROR", async () => {
+    mockCrearNotaEmpresaEmitida.mockResolvedValue({ ok: true, nota: { id: "nota-emp-1" } })
+    mockAutorizarNotaCDArca.mockResolvedValue(ARCA_RESULT)
+    mockTx.notaCreditoDebito.findUnique.mockRejectedValueOnce(new Error("DB error"))
+
+    const r = await emitirNotaEmpresaDirecta({
+      facturaId: "f-1", tipoNota: "NC",
+      items: [{ concepto: "Test", subtotal: 1000 }],
+    }, "op1", "key-1")
+
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.code).toBe("POST_CAE_READ_ERROR")
+    expect(r.documentoId).toBe("nota-emp-1")
+    expect(r.error).toContain(ARCA_RESULT.cae)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Post-CAE success: documento re-leído
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("success post-CAE devuelve documento re-leído", () => {
+  const NOTA_RELEIDA = {
+    id: "nota-1",
+    estado: "EMITIDA",
+    cae: "74120000000001",
+    arcaEstado: "AUTORIZADA",
+    qrData: "https://qr.example.com",
+  }
+
+  it("factura: documento es el re-leído (no el original del command)", async () => {
+    mockEjecutarCrearFactura.mockResolvedValue({ ok: true, factura: { id: "fact-1" } })
+    mockAutorizarFacturaArca.mockResolvedValue(ARCA_RESULT)
+    const FACTURA_RELEIDA = { id: "fact-1", estado: "EMITIDA", cae: "74120000000001", nroComprobante: "42" }
+    mockTx.facturaEmitida.findUnique.mockResolvedValueOnce(FACTURA_RELEIDA)
+
+    const r = await emitirFacturaDirecta(
+      { empresaId: "e1", viajeIds: ["v1"], tipoCbte: 1, ivaPct: 21 },
+      "op1", "key-1"
+    )
+
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.documento).toBe(FACTURA_RELEIDA)
+    expect((r.documento as { cae: string }).cae).toBe("74120000000001")
+  })
+
+  it("liquidación: documento es el re-leído", async () => {
+    mockEjecutarCrearLiquidacion.mockResolvedValue({ ok: true, liquidacion: { id: "liq-1" } })
+    mockAutorizarLiquidacionArca.mockResolvedValue(ARCA_RESULT)
+    const LIQ_RELEIDA = { id: "liq-1", cae: "74120000000001", arcaEstado: "AUTORIZADA" }
+    mockTx.liquidacion.findUnique.mockResolvedValueOnce(LIQ_RELEIDA)
+
+    const r = await emitirLiquidacionDirecta(
+      { fleteroId: "f1", comisionPct: 5, ivaPct: 21, viajes: [{ viajeId: "v1", fechaViaje: "2026-01-01", kilos: 30000, tarifaFletero: 40 }] },
+      "op1", "key-1"
+    )
+
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.documento).toBe(LIQ_RELEIDA)
+  })
+
+  it("nota emitida: documento es el re-leído (no el { id } original)", async () => {
+    mockEjecutarCrearNotaCD.mockResolvedValue({ ok: true, nota: { id: "nota-1" } })
+    mockAutorizarNotaCDArca.mockResolvedValue(ARCA_RESULT)
+    mockTx.notaCreditoDebito.findUnique.mockResolvedValueOnce(NOTA_RELEIDA)
+
+    const r = await emitirNotaCDDirecta({
+      tipo: "NC_EMITIDA", subtipo: "ANULACION_TOTAL",
+      facturaId: "fact-1", montoNeto: 1000, ivaPct: 21, descripcion: "test",
+    }, "op1", "key-1")
+
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.documento).toBe(NOTA_RELEIDA)
+    // Debe tener campos post-ARCA, no solo { id }
+    expect((r.documento as { cae: string }).cae).toBe("74120000000001")
+  })
+
+  it("nota empresa: documento es el re-leído", async () => {
+    mockCrearNotaEmpresaEmitida.mockResolvedValue({ ok: true, nota: { id: "nota-emp-1" } })
+    mockAutorizarNotaCDArca.mockResolvedValue(ARCA_RESULT)
+    const NOTA_EMP_RELEIDA = { ...NOTA_RELEIDA, id: "nota-emp-1" }
+    mockTx.notaCreditoDebito.findUnique.mockResolvedValueOnce(NOTA_EMP_RELEIDA)
+
+    const r = await emitirNotaEmpresaDirecta({
+      facturaId: "f-1", tipoNota: "NC",
+      items: [{ concepto: "Test", subtotal: 1000 }],
+    }, "op1", "key-1")
+
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.documento).toBe(NOTA_EMP_RELEIDA)
+    expect((r.documento as { cae: string }).cae).toBe("74120000000001")
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Nota empresa: flujos adicionales
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("emitirNotaEmpresaDirecta", () => {
+  it("creación falla → error sin intentar ARCA", async () => {
+    mockCrearNotaEmpresaEmitida.mockResolvedValue({ ok: false, status: 422, error: "saldo insuficiente" })
+
+    const r = await emitirNotaEmpresaDirecta({
+      facturaId: "f-1", tipoNota: "NC",
+      items: [{ concepto: "Test", subtotal: 1000 }],
+    }, "op1", "key-1")
+
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.code).toBe("ERROR_CREAR_COMPROBANTE")
+    expect(mockAutorizarNotaCDArca).not.toHaveBeenCalled()
+  })
+
+  it("ARCA FAIL permanente → revierte nota", async () => {
+    mockCrearNotaEmpresaEmitida.mockResolvedValue({ ok: true, nota: { id: "nota-emp-1" } })
+    mockAutorizarNotaCDArca.mockRejectedValue(new ArcaRechazoError("Error ARCA"))
+
+    const r = await emitirNotaEmpresaDirecta({
+      facturaId: "f-1", tipoNota: "NC",
+      items: [{ concepto: "Test", subtotal: 1000 }],
+    }, "op1", "key-1")
+
+    expect(r.ok).toBe(false)
+    // Nota debe haberse borrado
+    expect(mockPrisma.notaCreditoDebito.delete).toHaveBeenCalledWith({ where: { id: "nota-emp-1" } })
+  })
+
+  it("ARCA FAIL transitorio → conserva nota para reintento", async () => {
+    mockCrearNotaEmpresaEmitida.mockResolvedValue({ ok: true, nota: { id: "nota-emp-1" } })
+    mockAutorizarNotaCDArca.mockRejectedValue(new WsaaError("ECONNREFUSED"))
+
+    const r = await emitirNotaEmpresaDirecta({
+      facturaId: "f-1", tipoNota: "NC",
+      items: [{ concepto: "Test", subtotal: 1000 }],
+    }, "op1", "key-1")
+
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reintentable).toBe(true)
+    expect(r.documentoId).toBe("nota-emp-1")
+    expect(mockPrisma.notaCreditoDebito.delete).not.toHaveBeenCalled()
+  })
+
+  it("CAE ya persistido pero error posterior → POST_CAE_PDF_ERROR sin revertir", async () => {
+    mockCrearNotaEmpresaEmitida.mockResolvedValue({ ok: true, nota: { id: "nota-emp-1" } })
+    mockAutorizarNotaCDArca.mockRejectedValue(new Error("PDF generation failed"))
+    // Simular que el CAE ya se persistió
+    mockTx.notaCreditoDebito.findUnique.mockResolvedValueOnce({
+      cae: "74120000000001",
+      arcaEstado: "AUTORIZADA",
+    })
+
+    const r = await emitirNotaEmpresaDirecta({
+      facturaId: "f-1", tipoNota: "NC",
+      items: [{ concepto: "Test", subtotal: 1000 }],
+    }, "op1", "key-1")
+
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.code).toBe("POST_CAE_PDF_ERROR")
+    expect(r.documentoId).toBe("nota-emp-1")
+    expect(r.error).toContain("74120000000001")
+    expect(mockPrisma.notaCreditoDebito.delete).not.toHaveBeenCalled()
   })
 })

@@ -133,11 +133,10 @@ const mockTx = {
   asientoIva: { create: jest.fn() },
   viajeEnFactura: { create: jest.fn() },
   asientoIibb: { create: jest.fn() },
-  viaje: { updateMany: jest.fn() },
+  viaje: { findMany: jest.fn(), updateMany: jest.fn() },
 }
 const mockPrisma = {
   empresa: { findFirst: jest.fn() },
-  viaje: { findMany: jest.fn() },
   $transaction: jest.fn((cb: (tx: typeof mockTx) => Promise<unknown>) => cb(mockTx)),
 }
 
@@ -205,7 +204,7 @@ describe("ejecutarCrearFactura: validación mezcla camión propio/fletero", () =
 
   // Test 8: mezcla => error
   it("rechaza mezcla de viajes propios + fletero", async () => {
-    mockPrisma.viaje.findMany.mockResolvedValue([
+    mockTx.viaje.findMany.mockResolvedValue([
       mkViaje({ id: "v-1", esCamionPropio: true, fleteroId: null }),
       mkViaje({ id: "v-2", esCamionPropio: false, fleteroId: "f-1" }),
     ])
@@ -229,7 +228,7 @@ describe("ejecutarCrearFactura: validación mezcla camión propio/fletero", () =
       mkViaje({ id: "v-1", esCamionPropio: true, fleteroId: null }),
       mkViaje({ id: "v-2", esCamionPropio: true, fleteroId: null }),
     ]
-    mockPrisma.viaje.findMany.mockResolvedValue(viajesPropio)
+    mockTx.viaje.findMany.mockResolvedValue(viajesPropio)
     mockTx.facturaEmitida.create.mockResolvedValue({ id: "fact-1" })
     mockTx.viajeEnFactura.create.mockResolvedValue({ id: "vef-1" })
     mockTx.asientoIva.create.mockResolvedValue({ id: "aiva-1" })
@@ -257,7 +256,7 @@ describe("ejecutarCrearFactura: validación mezcla camión propio/fletero", () =
       mkViaje({ id: "v-1", esCamionPropio: false }),
       mkViaje({ id: "v-2", esCamionPropio: false }),
     ]
-    mockPrisma.viaje.findMany.mockResolvedValue(viajesFletero)
+    mockTx.viaje.findMany.mockResolvedValue(viajesFletero)
     mockTx.facturaEmitida.create.mockResolvedValue({ id: "fact-1" })
     mockTx.viajeEnFactura.create.mockResolvedValue({ id: "vef-1" })
     mockTx.asientoIva.create.mockResolvedValue({ id: "aiva-1" })
@@ -285,7 +284,7 @@ describe("ejecutarCrearFactura: validación mezcla camión propio/fletero", () =
       ...EMPRESA_RI,
       condicionIva: "CONSUMIDOR_FINAL",
     })
-    mockPrisma.viaje.findMany.mockResolvedValue([
+    mockTx.viaje.findMany.mockResolvedValue([
       mkViaje({ id: "v-1", esCamionPropio: true, fleteroId: null }),
     ])
     mockTx.facturaEmitida.create.mockResolvedValue({ id: "fact-1" })

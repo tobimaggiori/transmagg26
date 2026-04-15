@@ -15,29 +15,10 @@ import { ejecutarCrearNotaCD } from "@/lib/nota-cd-commands"
 import { emitirNotaCDDirecta, emitirNotaEmpresaDirecta } from "@/lib/emision-directa"
 import { validarFechaEmisionArca } from "@/lib/fecha-emision"
 import type { DatosNotaCD, DatosNotaEmpresaEmitida } from "@/lib/nota-cd-commands"
+import type { UseCaseResult, UseCaseError } from "@/lib/use-case-result"
 
-// ─── Tipos genéricos de caso de uso ─────────────────────────────────────────
-// Reutilizables para futuros casos de uso (facturas, liquidaciones).
-
-/** Error estructurado de un caso de uso. */
-export type UseCaseError = {
-  error: string
-  code?: string
-  reintentable?: boolean
-  documentoId?: string
-}
-
-/**
- * Resultado genérico de un caso de uso.
- * T es el tipo del body en caso de éxito (default unknown).
- *
- * El unknown en T viene de que los commands (nota-cd-commands, emision-directa)
- * retornan nota/documento como unknown. Eliminar ese unknown requiere tipar
- * los resultados de commands — ese es el paso siguiente, no de esta capa.
- */
-export type UseCaseResult<T = unknown> =
-  | { ok: true; status: number; body: T }
-  | { ok: false; status: number; body: UseCaseError }
+// Re-exportar para que consumidores existentes no se rompan
+export type { UseCaseResult, UseCaseError } from "@/lib/use-case-result"
 
 // ─── Tipos de entrada (union discriminada por flujo) ────────────────────────
 

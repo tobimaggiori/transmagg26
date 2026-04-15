@@ -282,6 +282,7 @@ const LIQUIDACION_MOCK = {
   viajes: [
     { viajeId: "v1", tarifaFletero: 50, kilos: 30000, subtotal: 1500, viaje: { id: "v1" } },
   ],
+  notasCreditoDebito: [],
 }
 
 describe("NC/ND emitidas sobre LP", () => {
@@ -664,5 +665,77 @@ describe("validación comprobantesHabilitados pre-DB", () => {
       expect(r.error).toContain("no está habilitado")
     }
     expect(mockTx.notaCreditoDebito.create).not.toHaveBeenCalled()
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Invariantes de dominio
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("invariantes: NC ANULACION_TOTAL duplicada", () => {
+  it("rechaza NC ANULACION_TOTAL si la factura ya tiene una NC total emitida", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
+      ...FACTURA_MOCK,
+      notasCreditoDebito: [{ id: "nc-previa" }],
+    })
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_EMITIDA",
+      subtipo: "ANULACION_TOTAL",
+      facturaId: "fact-1",
+      montoNeto: 2500,
+      ivaPct: 21,
+      descripcion: "Segundo intento de anulación total",
+    }, "op1")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.status).toBe(400)
+      expect(r.error).toContain("ya tiene una NC de anulación total")
+    }
+    expect(mockTx.notaCreditoDebito.create).not.toHaveBeenCalled()
+  })
+
+  it("rechaza NC ANULACION_TOTAL si la liquidación ya tiene una NC total emitida", async () => {
+    mockPrisma.liquidacion.findUnique.mockResolvedValue({
+      ...LIQUIDACION_MOCK,
+      notasCreditoDebito: [{ id: "nc-previa-lp" }],
+    })
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_EMITIDA",
+      subtipo: "ANULACION_TOTAL",
+      liquidacionId: "liq-1",
+      montoNeto: 1200,
+      ivaPct: 21,
+      descripcion: "Segundo intento de anulación total LP",
+    }, "op1")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.status).toBe(400)
+      expect(r.error).toContain("ya tiene una NC de anulación total")
+    }
+    expect(mockTx.notaCreditoDebito.create).not.toHaveBeenCalled()
+  })
+
+  it("permite NC ANULACION_PARCIAL aunque ya exista NC total (son independientes)", async () => {
+    mockPrisma.facturaEmitida.findUnique.mockResolvedValue({
+      ...FACTURA_MOCK,
+      notasCreditoDebito: [{ id: "nc-total-previa" }],
+    })
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_EMITIDA",
+      subtipo: "ANULACION_PARCIAL",
+      facturaId: "fact-1",
+      montoNeto: 500,
+      ivaPct: 21,
+      descripcion: "Parcial después de total",
+      viajesIds: ["v1"],
+    }, "op1")
+
+    // La validación de ANULACION_TOTAL solo aplica a ANULACION_TOTAL
+    expect(r.ok).toBe(true)
   })
 })

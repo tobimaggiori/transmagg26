@@ -59,6 +59,78 @@ export function clasificarError(err: unknown): { status: number; error: string; 
   }
 }
 
+// ─── Helpers internos post-CAE ──────────────────────────────────────────────
+
+function _respuestaPostCaeReadError(cae: string, documentoId: string): ResultadoEmisionDirecta {
+  return {
+    ok: false,
+    status: 500,
+    error: `El comprobante fue autorizado por ARCA (CAE: ${cae}) pero falló al releer los datos. Contacte soporte.`,
+    code: "POST_CAE_READ_ERROR",
+    reintentable: false,
+    documentoId,
+  }
+}
+
+function _respuestaPostCaePdfError(cae: string, documentoId: string): ResultadoEmisionDirecta {
+  return {
+    ok: false,
+    status: 500,
+    error: `El comprobante fue autorizado por ARCA (CAE: ${cae}) pero falló al generar el PDF. El comprobante quedó emitido. Contacte soporte.`,
+    code: "POST_CAE_PDF_ERROR",
+    reintentable: false,
+    documentoId,
+  }
+}
+
+/**
+ * Maneja errores post-autorización ARCA con semántica uniforme:
+ * 1. Si el CAE ya fue persistido → POST_CAE_PDF_ERROR (no revertir)
+ * 2. Si el error es transitorio → conservar comprobante para reintento
+ * 3. Si el error es permanente → revertir todo
+ */
+async function _manejarErrorPostArca(
+  err: unknown,
+  documentoId: string,
+  verificarCae: () => Promise<string | null>,
+  revertir: () => Promise<void>
+): Promise<ResultadoEmisionDirecta> {
+  const caePersistido = await verificarCae()
+
+  if (caePersistido) {
+    console.error("[emision-directa] Error post-CAE (no se revierte):", err)
+    return _respuestaPostCaePdfError(caePersistido, documentoId)
+  }
+
+  const clasificado = clasificarError(err)
+
+  if (clasificado.reintentable) {
+    console.error("[emision-directa] Error transitorio ARCA, comprobante conservado:", err)
+    return { ok: false, ...clasificado, documentoId }
+  }
+
+  await revertir()
+  return { ok: false, ...clasificado }
+}
+
+/**
+ * Re-lee un documento post-CAE para devolver el estado final (con CAE, QR, etc.).
+ * Si la relectura falla, devuelve POST_CAE_READ_ERROR (el CAE ya fue persistido).
+ */
+async function _releerPostCae(
+  readFn: () => Promise<unknown>,
+  cae: string,
+  documentoId: string
+): Promise<ResultadoEmisionDirecta | { ok: true; documento: unknown }> {
+  try {
+    const documento = await readFn()
+    return { ok: true, documento }
+  } catch (readErr) {
+    console.error("[emision-directa] Error re-leyendo post-CAE (CAE ya persistido):", readErr)
+    return _respuestaPostCaeReadError(cae, documentoId)
+  }
+}
+
 // ─── Factura ────────────────────────────────────────────────────────────────
 
 export async function emitirFacturaDirecta(
@@ -74,52 +146,21 @@ export async function emitirFacturaDirecta(
   try {
     const arca = await autorizarFacturaArca(factura.id, idempotencyKey)
 
-    let facturaFinal
-    try {
-      facturaFinal = await prisma.facturaEmitida.findUnique({ where: { id: factura.id } })
-    } catch (readErr) {
-      console.error("[emision-directa] Error re-leyendo factura post-CAE (CAE ya persistido):", readErr)
-      return {
-        ok: false,
-        status: 500,
-        error: `El comprobante fue autorizado por ARCA (CAE: ${arca.cae}) pero falló al releer los datos. Contacte soporte.`,
-        code: "POST_CAE_READ_ERROR",
-        reintentable: false,
-        documentoId: factura.id,
-      }
-    }
-
-    return { ok: true, documento: facturaFinal, arca }
+    const relectura = await _releerPostCae(
+      () => prisma.facturaEmitida.findUnique({ where: { id: factura.id } }),
+      arca.cae, factura.id
+    )
+    if (!relectura.ok) return relectura
+    return { ok: true, documento: relectura.documento, arca }
   } catch (err) {
-    // Verificar si el CAE ya fue obtenido
-    const facturaActual = await prisma.facturaEmitida.findUnique({
-      where: { id: factura.id },
-      select: { cae: true, estadoArca: true },
-    }).catch(() => null)
-
-    if (facturaActual?.cae && facturaActual.estadoArca === "AUTORIZADA") {
-      console.error("[emision-directa] Error post-CAE (no se revierte):", err)
-      return {
-        ok: false,
-        status: 500,
-        error: `El comprobante fue autorizado por ARCA (CAE: ${facturaActual.cae}) pero falló al generar el PDF. El comprobante quedó emitido. Contacte soporte.`,
-        code: "POST_CAE_PDF_ERROR",
-        reintentable: false,
-        documentoId: factura.id,
-      }
-    }
-
-    const clasificado = clasificarError(err)
-
-    if (clasificado.reintentable) {
-      // ARCA caído / error transitorio → conservar comprobante para reintentar
-      console.error("[emision-directa] Error transitorio ARCA, comprobante conservado:", err)
-      return { ok: false, ...clasificado, documentoId: factura.id }
-    }
-
-    // Error permanente → revertir todo
-    await _revertirFactura(factura.id, data.viajeIds)
-    return { ok: false, ...clasificado }
+    return _manejarErrorPostArca(
+      err, factura.id,
+      () => prisma.facturaEmitida.findUnique({
+        where: { id: factura.id },
+        select: { cae: true, estadoArca: true },
+      }).then(f => f?.cae && f.estadoArca === "AUTORIZADA" ? f.cae : null).catch(() => null),
+      () => _revertirFactura(factura.id, data.viajeIds)
+    )
   }
 }
 
@@ -162,49 +203,21 @@ export async function emitirLiquidacionDirecta(
   try {
     const arca = await autorizarLiquidacionArca(liquidacion.id, idempotencyKey)
 
-    let liqFinal
-    try {
-      liqFinal = await prisma.liquidacion.findUnique({ where: { id: liquidacion.id } })
-    } catch (readErr) {
-      console.error("[emision-directa] Error re-leyendo liquidación post-CAE:", readErr)
-      return {
-        ok: false,
-        status: 500,
-        error: `El comprobante fue autorizado por ARCA (CAE: ${arca.cae}) pero falló al releer los datos. Contacte soporte.`,
-        code: "POST_CAE_READ_ERROR",
-        reintentable: false,
-        documentoId: liquidacion.id,
-      }
-    }
-
-    return { ok: true, documento: liqFinal, arca }
+    const relectura = await _releerPostCae(
+      () => prisma.liquidacion.findUnique({ where: { id: liquidacion.id } }),
+      arca.cae, liquidacion.id
+    )
+    if (!relectura.ok) return relectura
+    return { ok: true, documento: relectura.documento, arca }
   } catch (err) {
-    const liqActual = await prisma.liquidacion.findUnique({
-      where: { id: liquidacion.id },
-      select: { cae: true, arcaEstado: true },
-    }).catch(() => null)
-
-    if (liqActual?.cae && liqActual.arcaEstado === "AUTORIZADA") {
-      console.error("[emision-directa] Error post-CAE liquidación (no se revierte):", err)
-      return {
-        ok: false,
-        status: 500,
-        error: `El comprobante fue autorizado por ARCA (CAE: ${liqActual.cae}) pero falló al generar el PDF. El comprobante quedó emitido. Contacte soporte.`,
-        code: "POST_CAE_PDF_ERROR",
-        reintentable: false,
-        documentoId: liquidacion.id,
-      }
-    }
-
-    const clasificado = clasificarError(err)
-
-    if (clasificado.reintentable) {
-      console.error("[emision-directa] Error transitorio ARCA liquidación, conservada:", err)
-      return { ok: false, ...clasificado, documentoId: liquidacion.id }
-    }
-
-    await _revertirLiquidacion(liquidacion.id, data.viajes.map((v) => v.viajeId))
-    return { ok: false, ...clasificado }
+    return _manejarErrorPostArca(
+      err, liquidacion.id,
+      () => prisma.liquidacion.findUnique({
+        where: { id: liquidacion.id },
+        select: { cae: true, arcaEstado: true },
+      }).then(l => l?.cae && l.arcaEstado === "AUTORIZADA" ? l.cae : null).catch(() => null),
+      () => _revertirLiquidacion(liquidacion.id, data.viajes.map((v) => v.viajeId))
+    )
   }
 }
 
@@ -258,34 +271,22 @@ export async function emitirNotaCDDirecta(
 
   try {
     const arca = await autorizarNotaCDArca(nota.id, idempotencyKey)
-    return { ok: true, documento: nota, arca }
+
+    const relectura = await _releerPostCae(
+      () => prisma.notaCreditoDebito.findUnique({ where: { id: nota.id } }),
+      arca.cae, nota.id
+    )
+    if (!relectura.ok) return relectura
+    return { ok: true, documento: relectura.documento, arca }
   } catch (err) {
-    const notaActual = await prisma.notaCreditoDebito.findUnique({
-      where: { id: nota.id },
-      select: { cae: true, arcaEstado: true },
-    }).catch(() => null)
-
-    if (notaActual?.cae && notaActual.arcaEstado === "AUTORIZADA") {
-      console.error("[emision-directa] Error post-CAE nota CD (no se revierte):", err)
-      return {
-        ok: false,
-        status: 500,
-        error: `El comprobante fue autorizado por ARCA (CAE: ${notaActual.cae}) pero falló al generar el PDF. El comprobante quedó emitido. Contacte soporte.`,
-        code: "POST_CAE_PDF_ERROR",
-        reintentable: false,
-        documentoId: nota.id,
-      }
-    }
-
-    const clasificado = clasificarError(err)
-
-    if (clasificado.reintentable) {
-      console.error("[emision-directa] Error transitorio ARCA nota CD, conservada:", err)
-      return { ok: false, ...clasificado, documentoId: nota.id }
-    }
-
-    await _revertirNotaCD(nota.id, data)
-    return { ok: false, ...clasificado }
+    return _manejarErrorPostArca(
+      err, nota.id,
+      () => prisma.notaCreditoDebito.findUnique({
+        where: { id: nota.id },
+        select: { cae: true, arcaEstado: true },
+      }).then(n => n?.cae && n.arcaEstado === "AUTORIZADA" ? n.cae : null).catch(() => null),
+      () => _revertirNotaCD(nota.id, data)
+    )
   }
 }
 
@@ -311,37 +312,27 @@ export async function emitirNotaEmpresaDirecta(
 
   try {
     const arca = await autorizarNotaCDArca(nota.id, idempotencyKey)
-    return { ok: true, documento: nota, arca }
-  } catch (err) {
-    const notaActual = await prisma.notaCreditoDebito.findUnique({
-      where: { id: nota.id },
-      select: { cae: true, arcaEstado: true },
-    }).catch(() => null)
 
-    if (notaActual?.cae && notaActual.arcaEstado === "AUTORIZADA") {
-      console.error("[emision-directa] Error post-CAE nota empresa (no se revierte):", err)
-      return {
-        ok: false,
-        status: 500,
-        error: `El comprobante fue autorizado por ARCA (CAE: ${notaActual.cae}) pero falló al generar el PDF. El comprobante quedó emitido.`,
-        code: "POST_CAE_PDF_ERROR",
-        reintentable: false,
-        documentoId: nota.id,
-      }
-    }
-
-    const clasificado = clasificarError(err)
-
-    if (clasificado.reintentable) {
-      console.error("[emision-directa] Error transitorio ARCA nota empresa, conservada:", err)
-      return { ok: false, ...clasificado, documentoId: nota.id }
-    }
-
-    // Revertir: borrar nota (cascade borra ítems). No hay viajes que revertir.
-    await prisma.notaCreditoDebito.delete({ where: { id: nota.id } }).catch((e) =>
-      console.error("[emision-directa] Error revirtiendo nota empresa:", e)
+    const relectura = await _releerPostCae(
+      () => prisma.notaCreditoDebito.findUnique({ where: { id: nota.id } }),
+      arca.cae, nota.id
     )
-    return { ok: false, ...clasificado }
+    if (!relectura.ok) return relectura
+    return { ok: true, documento: relectura.documento, arca }
+  } catch (err) {
+    return _manejarErrorPostArca(
+      err, nota.id,
+      () => prisma.notaCreditoDebito.findUnique({
+        where: { id: nota.id },
+        select: { cae: true, arcaEstado: true },
+      }).then(n => n?.cae && n.arcaEstado === "AUTORIZADA" ? n.cae : null).catch(() => null),
+      async () => {
+        // Revertir: borrar nota (cascade borra ítems). No hay viajes que revertir.
+        await prisma.notaCreditoDebito.delete({ where: { id: nota.id } }).catch((e) =>
+          console.error("[emision-directa] Error revirtiendo nota empresa:", e)
+        )
+      }
+    )
   }
 }
 

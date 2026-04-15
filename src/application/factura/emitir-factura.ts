@@ -14,7 +14,7 @@ import { randomUUID } from "crypto"
 import { emitirFacturaDirecta } from "@/lib/emision-directa"
 import { validarFechaEmisionArca } from "@/lib/fecha-emision"
 import type { DatosCrearFactura } from "@/lib/factura-commands"
-import type { UseCaseResult, UseCaseError } from "@/application/nota-cd/emitir-nota-cd"
+import type { UseCaseResult } from "@/lib/use-case-result"
 
 // ─── Tipos de entrada ───────────────────────────────────────────────────────
 
