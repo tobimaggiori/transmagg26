@@ -1,23 +1,23 @@
 "use client"
 
 /**
- * Propósito: Componente de consulta de Líquidos Producto.
- * Filtros por fletero, estado y período → tabla con columnas exactas.
- * Modal de detalle de viajes solo lectura.
+ * Propósito: Componente cliente para consultar el historial de Líquidos Producto emitidos.
+ * Filtros por fletero, nro comprobante, fechas. Tabla con totales.
+ * Análogo a consultar-facturas-client.tsx.
  */
 
-import React, { useState, useCallback, useEffect, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
+import Link from "next/link"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
-import { calcularNetoMasIva, sumarImportes } from "@/lib/money"
+import { sumarImportes, restarImportes, calcularNetoMasIva } from "@/lib/money"
 import { formatearNroComprobante } from "@/lib/liquidacion-utils"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { PDFViewer } from "@/components/ui/pdf-viewer"
-import { usePDFViewer } from "@/hooks/use-pdf-viewer"
-import { Check, ChevronsUpDown } from "lucide-react"
-import { cn } from "@/lib/utils"
-import type { Rol } from "@/types"
+import { SearchCombobox } from "@/components/ui/search-combobox"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Card, CardContent } from "@/components/ui/card"
 import { hoyLocalYmd } from "@/lib/date-local"
+import type { Rol } from "@/types"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -75,74 +75,29 @@ function formatCuit(cuit: string): string {
   return `${clean.slice(0, 2)}-${clean.slice(2, 10)}-${clean.slice(10)}`
 }
 
-function resolverEstadoLP(liq: Liquidacion): "EMITIDO" | "PAGADO" {
-  const tienePagoConfirmado = liq.pagos.some((p) => !p.anulado && p.ordenPago)
-  return tienePagoConfirmado ? "PAGADO" : "EMITIDO"
+function formatNroLP(ptoVenta: number | null, nroComprobante: number | null): string {
+  if (!nroComprobante) return "—"
+  return `${String(ptoVenta ?? 1).padStart(4, "0")}-${formatearNroComprobante(nroComprobante)}`
 }
 
-// ─── Combobox Fletero ────────────────────────────────────────────────────────
+function primerDiaMesActual(): string {
+  const hoy = new Date()
+  return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-01`
+}
 
-function ComboboxFletero({ fleteros, value, onChange }: { fleteros: Fletero[]; value: string; onChange: (v: string) => void }) {
-  const [open, setOpen] = useState(false)
-  const [busqueda, setBusqueda] = useState("")
-
-  const filtrados = useMemo(() => {
-    if (!busqueda) return fleteros
-    const q = busqueda.toLowerCase()
-    const qDigits = busqueda.replace(/\D/g, "")
-    return fleteros.filter(
-      (f) => f.razonSocial.toLowerCase().includes(q) || (qDigits && f.cuit.replace(/\D/g, "").includes(qDigits))
-    )
-  }, [fleteros, busqueda])
-
-  const seleccionado = fleteros.find((f) => f.id === value)
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        className="flex h-9 w-full items-center justify-between rounded-md border bg-background px-2 text-sm"
-      >
-        <span className="truncate">{seleccionado ? seleccionado.razonSocial : "Todos los fleteros"}</span>
-        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-      </PopoverTrigger>
-      <PopoverContent className="w-[320px] p-0" align="start">
-        <Command shouldFilter={false}>
-          <CommandInput placeholder="Buscar por razón social o CUIT..." value={busqueda} onValueChange={setBusqueda} />
-          <CommandList>
-            <CommandEmpty>No se encontraron fleteros.</CommandEmpty>
-            <CommandGroup>
-              <CommandItem onSelect={() => { onChange(""); setOpen(false); setBusqueda("") }}>
-                <Check className={cn("mr-2 h-4 w-4", value === "" ? "opacity-100" : "opacity-0")} />
-                Todos los fleteros
-              </CommandItem>
-              {filtrados.map((f) => (
-                <CommandItem key={f.id} value={f.id} onSelect={() => { onChange(f.id); setOpen(false); setBusqueda("") }}>
-                  <Check className={cn("mr-2 h-4 w-4", value === f.id ? "opacity-100" : "opacity-0")} />
-                  <div>
-                    <p className="font-medium">{f.razonSocial}</p>
-                    <p className="text-xs text-muted-foreground">CUIT: {formatCuit(f.cuit)}</p>
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  )
+function calcularSaldoLP(liq: Liquidacion): number {
+  const totalPagado = sumarImportes(liq.pagos.filter((p) => !p.anulado).map((p) => p.monto))
+  return Math.max(0, restarImportes(liq.total, totalPagado))
 }
 
 // ─── Modal detalle LP ────────────────────────────────────────────────────────
 
 function ModalDetalleLP({
-  liq, onCerrar, onAbrirPDF,
+  liq, onCerrar,
 }: {
   liq: Liquidacion; onCerrar: () => void
-  onAbrirPDF: (params: { s3Key: string; titulo: string }) => void
 }) {
-  const nroLP = liq.nroComprobante
-    ? `${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${formatearNroComprobante(liq.nroComprobante)}`
-    : "Sin nro"
+  const nroLP = formatNroLP(liq.ptoVenta, liq.nroComprobante)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -177,15 +132,7 @@ function ModalDetalleLP({
                 {liq.viajes.map((v, i) => (
                   <tr key={v.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                     <td className="px-3 py-2 whitespace-nowrap">{formatearFecha(new Date(v.fechaViaje))}</td>
-                    <td className="px-3 py-2">
-                      {v.viaje?.nroCartaPorte ? (
-                        v.viaje.cartaPorteS3Key ? (
-                          <button type="button" onClick={() => onAbrirPDF({ s3Key: v.viaje!.cartaPorteS3Key!, titulo: `Carta de Porte — ${v.viaje!.nroCartaPorte}` })} className="text-primary hover:underline font-medium">
-                            {v.viaje.nroCartaPorte}
-                          </button>
-                        ) : v.viaje.nroCartaPorte
-                      ) : <span className="text-muted-foreground">N/A</span>}
-                    </td>
+                    <td className="px-3 py-2">{v.viaje?.nroCartaPorte ?? <span className="text-muted-foreground">N/A</span>}</td>
                     <td className="px-3 py-2">{v.remito ?? "—"}</td>
                     <td className="px-3 py-2">{v.cupo ?? "—"}</td>
                     <td className="px-3 py-2">{v.mercaderia ?? "—"}</td>
@@ -219,104 +166,6 @@ function ModalDetalleLP({
   )
 }
 
-// ─── Tabla ────────────────────────────────────────────────────────────────────
-
-function TablaLiquidaciones({
-  liquidaciones, fleteros, mostrarFletero, onAbrirPDF, onVerDetalle, onReintentarArca, autorizandoArcaId, onEmitirNota, faltantesPorLiq,
-}: {
-  liquidaciones: Liquidacion[]; fleteros: Fletero[]; mostrarFletero: boolean
-  onAbrirPDF: (params: { url: string; titulo: string } | { fetchUrl: string; titulo: string }) => void
-  onVerDetalle: (liq: Liquidacion) => void
-  onReintentarArca?: (id: string) => void
-  autorizandoArcaId?: string | null
-  onEmitirNota?: (liq: Liquidacion) => void
-  faltantesPorLiq?: Record<string, Array<{ viajeId: string; montoTotal: number; descripcion: string | null; empresa: string }>>
-}) {
-  return (
-    <div className="overflow-x-auto rounded-lg border">
-      <table className="w-full text-sm">
-        <thead className="bg-slate-50">
-          <tr className="uppercase text-xs font-semibold">
-            <th className="px-3 py-2 text-left">Fecha</th>
-            <th className="px-3 py-2 text-left">Nro</th>
-            {mostrarFletero && <th className="px-3 py-2 text-left">Fletero</th>}
-            <th className="px-3 py-2 text-left">OP Nro</th>
-            {onEmitirNota && <th className="px-3 py-2 text-center">NC/ND</th>}
-            <th className="px-3 py-2 text-center">Detalle</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y">
-          {liquidaciones.map((liq) => {
-            const nroLP = liq.nroComprobante
-              ? `${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${formatearNroComprobante(liq.nroComprobante)}`
-              : null
-            const op = liq.pagos.find((p) => !p.anulado && p.ordenPago)?.ordenPago
-            const fletero = fleteros.find((f) => f.id === liq.fleteroId)
-            const cuit = liq.fletero.cuit ?? fletero?.cuit ?? ""
-            return (
-              <tr key={liq.id} className="hover:bg-muted/30">
-                <td className="px-3 py-2 whitespace-nowrap">{formatearFecha(new Date(liq.grabadaEn))}</td>
-                <td className="px-3 py-2 font-mono text-xs">
-                  {nroLP ? (
-                    <button type="button" onClick={() => onAbrirPDF({ fetchUrl: `/api/liquidaciones/${liq.id}/pdf`, titulo: `LP ${nroLP} — ${liq.fletero.razonSocial}` })} className="text-primary hover:underline font-medium">
-                      {nroLP}
-                    </button>
-                  ) : <span className="text-muted-foreground">Sin nro</span>}
-                </td>
-                {mostrarFletero && (
-                  <td className="px-3 py-2">
-                    <p className="font-medium">{liq.fletero.razonSocial}</p>
-                    {cuit && <p className="text-xs text-muted-foreground">{formatCuit(cuit)}</p>}
-                  </td>
-                )}
-                <td className="px-3 py-2 font-mono text-xs">
-                  {op ? (
-                    <button type="button" onClick={() => onAbrirPDF({ url: `/api/ordenes-pago/${op.id}/pdf`, titulo: `OP Nro ${op.nro}-${op.anio}` })} className="text-primary hover:underline font-medium">
-                      {op.nro}-{op.anio}
-                    </button>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
-                  )}
-                </td>
-                {onEmitirNota && (
-                  <td className="px-3 py-2 text-center">
-                    {faltantesPorLiq && faltantesPorLiq[liq.id] && (
-                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-warning-soft text-warning mr-1" title={faltantesPorLiq[liq.id].map((f) => `${f.empresa}: ${f.descripcion ?? "Faltante"}`).join("; ")}>
-                        Faltante
-                      </span>
-                    )}
-                    {liq.arcaEstado === "AUTORIZADA" && (
-                      <button type="button" onClick={() => onEmitirNota(liq)} className="h-7 px-3 rounded border text-xs font-medium hover:bg-accent text-primary">Emitir</button>
-                    )}
-                  </td>
-                )}
-                <td className="px-3 py-2 text-center">
-                  <button type="button" onClick={() => onVerDetalle(liq)} className="h-7 px-3 rounded border text-xs font-medium hover:bg-accent">Ver</button>
-                  {onReintentarArca && (liq.arcaEstado === "PENDIENTE" || liq.arcaEstado === "RECHAZADA") && (
-                    <span className="inline-flex items-center gap-1 ml-1">
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${liq.arcaEstado === "PENDIENTE" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
-                        {liq.arcaEstado === "PENDIENTE" ? "Pendiente ARCA" : "Rechazada"}
-                      </span>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onReintentarArca(liq.id) }}
-                        disabled={autorizandoArcaId === liq.id}
-                        className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
-                        title="Reintentar autorización ARCA"
-                      >
-                        {autorizandoArcaId === liq.id ? "..." : "↻"}
-                      </button>
-                    </span>
-                  )}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
 // ─── Modal emitir NC/ND sobre LP ─────────────────────────────────────────────
 
 type ItemNota = { concepto: string; subtotal: string }
@@ -345,7 +194,6 @@ function ModalEmitirNotaLP({
     const comisionPct = liq.comisionPct ?? 0
 
     if (incluirComision && comisionPct > 0) {
-      // Con comisión: restar comisión del bruto antes de calcular IVA
       const comisionMonto = Math.round(bruto * comisionPct / 100 * 100) / 100
       const neto = Math.round((bruto - comisionMonto) * 100) / 100
       const iva = Math.round(neto * ivaPct / 100 * 100) / 100
@@ -353,7 +201,6 @@ function ModalEmitirNotaLP({
       return { bruto, comisionMonto, neto, iva, total, conComision: true }
     }
 
-    // Sin comisión: bruto = neto
     const result = calcularNetoMasIva(bruto, ivaPct)
     return { bruto, comisionMonto: 0, neto: result.neto, iva: result.iva, total: result.total, conComision: false }
   }, [items, ivaPct, incluirComision, liq.comisionPct])
@@ -427,9 +274,7 @@ function ModalEmitirNotaLP({
     }
   }
 
-  const nroLP = liq.nroComprobante
-    ? `${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${formatearNroComprobante(liq.nroComprobante)}`
-    : "Sin nro"
+  const nroLP = formatNroLP(liq.ptoVenta, liq.nroComprobante)
   const labelTipo = tipoNota === "NC" ? "Nota de Crédito" : "Nota de Débito"
 
   return (
@@ -443,7 +288,6 @@ function ModalEmitirNotaLP({
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-xl leading-none">&times;</button>
         </div>
 
-        {/* Banner faltantes pendientes */}
         {faltantes && faltantes.length > 0 && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
             <p className="font-semibold text-amber-800 mb-1">Faltantes pendientes de descontar</p>
@@ -477,7 +321,6 @@ function ModalEmitirNotaLP({
           </div>
         ) : (
           <>
-            {/* Tipo de nota */}
             <div>
               <label className="text-sm font-medium">Tipo de nota</label>
               <div className="flex gap-4 mt-1">
@@ -492,21 +335,14 @@ function ModalEmitirNotaLP({
               </div>
             </div>
 
-            {/* Incluir comisión */}
             <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={incluirComision}
-                onChange={(e) => setIncluirComision(e.target.checked)}
-                className="accent-primary"
-              />
+              <input type="checkbox" checked={incluirComision} onChange={(e) => setIncluirComision(e.target.checked)} className="accent-primary" />
               <span>Incluir comisión en el ajuste</span>
               <span className="text-xs text-muted-foreground">
                 ({incluirComision ? `se desglosa con ${liq.comisionPct}% de comisión` : "100% del ajuste va al fletero"})
               </span>
             </label>
 
-            {/* Fecha */}
             <div>
               <label className="text-sm font-medium">Fecha de emisión</label>
               <input
@@ -516,7 +352,6 @@ function ModalEmitirNotaLP({
               />
             </div>
 
-            {/* Items */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Ítems</label>
               {items.map((item, idx) => (
@@ -537,7 +372,6 @@ function ModalEmitirNotaLP({
               <button onClick={() => setItems([...items, { concepto: "", subtotal: "" }])} className="text-xs text-primary hover:underline font-medium">+ Agregar ítem</button>
             </div>
 
-            {/* Viajes a liberar */}
             {tipoNota === "NC" && liq.viajes.length > 0 && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -576,7 +410,6 @@ function ModalEmitirNotaLP({
               </div>
             )}
 
-            {/* Preview */}
             {preview && (
               <div className="bg-muted/40 rounded-lg p-3 space-y-1 text-sm">
                 {preview.conComision ? (
@@ -610,34 +443,26 @@ function ModalEmitirNotaLP({
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-const hoy = new Date()
-const hace30 = new Date(hoy)
-hace30.setDate(hace30.getDate() - 30)
-
 export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarLPClientProps) {
   const esInterno = rol === "ADMIN_TRANSMAGG" || rol === "OPERADOR_TRANSMAGG"
-  const { estado: estadoPDF, abrirPDF, cerrarPDF } = usePDFViewer()
 
-  const [fleteroId, setFleteroId] = useState<string>(fleteroIdPropio ?? "")
+  const [filtroFleteroId, setFiltroFleteroId] = useState<string>(fleteroIdPropio ?? "")
+  const [filtroNroLP, setFiltroNroLP] = useState<string>("")
+  const [filtroDesde, setFiltroDesde] = useState<string>(primerDiaMesActual())
+  const [filtroHasta, setFiltroHasta] = useState<string>(hoyLocalYmd())
   const [liquidaciones, setLiquidaciones] = useState<Liquidacion[]>([])
   const [faltantesPorLiq, setFaltantesPorLiq] = useState<Record<string, Array<{ viajeId: string; montoTotal: number; descripcion: string | null; empresa: string }>>>({})
-  const [cargando, setCargando] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [autorizandoArcaId, setAutorizandoArcaId] = useState<string | null>(null)
   const [liquidacionDetalle, setLiquidacionDetalle] = useState<Liquidacion | null>(null)
   const [liquidacionNota, setLiquidacionNota] = useState<Liquidacion | null>(null)
-  const [autorizandoArcaId, setAutorizandoArcaId] = useState<string | null>(null)
 
-  // Filtros con defaults
-  const [filtroEstado, setFiltroEstado] = useState<string>("EMITIDO")
-  const [filtroDesde, setFiltroDesde] = useState<string>(hoyLocalYmd(hace30))
-  const [filtroHasta, setFiltroHasta] = useState<string>(hoyLocalYmd(hoy))
-  const [filtroNroLP, setFiltroNroLP] = useState<string>("")
+  const fleteroSeleccionado = fleteros.find((f) => f.id === filtroFleteroId)
+  const mostrarColumnaFletero = !filtroFleteroId
 
-  const fleteroSeleccionado = fleteros.find((f) => f.id === fleteroId)
-  const mostrarFletero = !fleteroId
-
-  const cargarDatos = useCallback(async () => {
-    const idAUsar = fleteroId || fleteroIdPropio
-    setCargando(true)
+  const handleBuscar = useCallback(async () => {
+    const idAUsar = filtroFleteroId || fleteroIdPropio
+    setLoading(true)
     try {
       const params = new URLSearchParams()
       if (idAUsar) params.set("fleteroId", idAUsar)
@@ -648,43 +473,37 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
         setFaltantesPorLiq(data.faltantesPorLiq ?? {})
       }
     } finally {
-      setCargando(false)
+      setLoading(false)
     }
-  }, [fleteroId, fleteroIdPropio])
+  }, [filtroFleteroId, fleteroIdPropio])
 
   useEffect(() => {
-    cargarDatos()
-  }, [cargarDatos])
+    void handleBuscar()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  async function reintentarArcaLP(liqId: string) {
+  async function reintentarArca(liqId: string) {
     setAutorizandoArcaId(liqId)
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 45000)
     try {
       const res = await fetch(`/api/liquidaciones/${liqId}/autorizar-arca`, { method: "POST", signal: controller.signal })
       clearTimeout(timeoutId)
-      if (res.ok) cargarDatos()
+      if (res.ok) handleBuscar()
     } catch { clearTimeout(timeoutId) }
     finally { setAutorizandoArcaId(null) }
   }
 
+  // Filtrado client-side (la API ya filtra por fletero)
   const liquidacionesFiltradas = liquidaciones.filter((liq) => {
-    if (filtroEstado) {
-      const estadoSem = resolverEstadoLP(liq)
-      if (estadoSem !== filtroEstado) return false
-    }
-    if (filtroDesde) {
-      const fecha = new Date(liq.grabadaEn)
-      if (fecha < new Date(filtroDesde)) return false
-    }
+    if (filtroDesde && new Date(liq.grabadaEn) < new Date(filtroDesde)) return false
     if (filtroHasta) {
-      const fecha = new Date(liq.grabadaEn)
       const hasta = new Date(filtroHasta)
       hasta.setHours(23, 59, 59)
-      if (fecha > hasta) return false
+      if (new Date(liq.grabadaEn) > hasta) return false
     }
     if (filtroNroLP && liq.nroComprobante) {
-      const nroFormateado = `${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${formatearNroComprobante(liq.nroComprobante)}`
+      const nroFormateado = formatNroLP(liq.ptoVenta, liq.nroComprobante)
       if (!nroFormateado.includes(filtroNroLP)) return false
     } else if (filtroNroLP && !liq.nroComprobante) {
       return false
@@ -692,96 +511,172 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
     return true
   })
 
-  const labelCls = "text-xs font-medium text-gray-800"
+  const fleterosItems = [
+    { id: "", label: "Todos los fleteros" },
+    ...fleteros.map((f) => ({ id: f.id, label: f.razonSocial, sublabel: formatCuit(f.cuit) })),
+  ]
+
+  // Columnas: Fecha, Nº Comprobante, [Fletero], Total, Saldo, OP, NC/ND
+  const colCount = mostrarColumnaFletero ? 7 : 6
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Consultar Liq. Prod.</h2>
-        <p className="text-muted-foreground">
-          {rol === "FLETERO" ? "Tus liquidaciones de viajes" : "Historial de Líquidos Producto emitidos"}
-        </p>
-      </div>
+    <div className="space-y-5">
+      <h1 className="text-[34px] font-bold tracking-tight text-foreground leading-tight">Consultar Líquidos Producto</h1>
 
       {/* Filtros */}
-      <div className="flex flex-wrap gap-4 p-4 bg-muted/40 rounded-lg border">
-        {esInterno && (
-          <div className="flex flex-col gap-1 min-w-[220px]">
-            <label className={labelCls}>Fletero</label>
-            <ComboboxFletero fleteros={fleteros} value={fleteroId} onChange={setFleteroId} />
+      <Card>
+        <CardContent className="pt-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 items-end">
+            {esInterno && (
+              <div className="lg:col-span-2">
+                <Label>Fletero</Label>
+                <SearchCombobox
+                  items={fleterosItems}
+                  value={filtroFleteroId}
+                  onChange={(v) => { setFiltroFleteroId(v); }}
+                  placeholder="Todos los fleteros"
+                />
+              </div>
+            )}
+            <div>
+              <Label>Nº Comprobante</Label>
+              <Input
+                value={filtroNroLP}
+                onChange={(e) => setFiltroNroLP(e.target.value)}
+                placeholder="0001-00000001"
+              />
+            </div>
+            <div>
+              <Label>Desde</Label>
+              <Input type="date" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} />
+            </div>
+            <div>
+              <Label>Hasta</Label>
+              <Input type="date" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} />
+            </div>
+            <div className="flex items-end">
+              <Button onClick={() => void handleBuscar()} disabled={loading} className="w-full">
+                {loading ? "Buscando..." : "Buscar"}
+              </Button>
+            </div>
           </div>
-        )}
-        <div className="flex flex-col gap-1 min-w-[160px]">
-          <label className={labelCls}>Nro LP</label>
-          <input
-            type="text"
-            value={filtroNroLP}
-            onChange={(e) => setFiltroNroLP(e.target.value)}
-            placeholder="Ej: 0001-00000010"
-            className="h-9 rounded-md border bg-background px-2 text-sm text-gray-900"
-          />
-        </div>
-        <div className="flex flex-col gap-1 min-w-[140px]">
-          <label className={labelCls}>Estado</label>
-          <select
-            value={filtroEstado}
-            onChange={(e) => setFiltroEstado(e.target.value)}
-            className="h-9 rounded-md border bg-background px-2 text-sm text-gray-900"
-          >
-            <option value="">Todos</option>
-            <option value="EMITIDO">Emitido</option>
-            <option value="PAGADO">Pagado</option>
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelCls}>Desde</label>
-          <input type="date" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} className="h-9 rounded-md border bg-background px-2 text-sm text-gray-900" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelCls}>Hasta</label>
-          <input type="date" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} className="h-9 rounded-md border bg-background px-2 text-sm text-gray-900" />
-        </div>
-        {(filtroEstado || filtroDesde || filtroHasta || filtroNroLP) && (
-          <div className="flex items-end">
-            <button
-              onClick={() => { setFiltroEstado(""); setFiltroDesde(""); setFiltroHasta(""); setFiltroNroLP("") }}
-              className="h-9 px-3 rounded-md border text-sm font-medium hover:bg-accent text-muted-foreground"
-            >
-              Limpiar filtros
-            </button>
-          </div>
-        )}
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Encabezado contextual */}
       {fleteroSeleccionado && (
-        <p className="text-sm font-medium text-gray-700">
-          Historial de Líquidos Productos emitidos a {fleteroSeleccionado.razonSocial} (CUIT: {formatCuit(fleteroSeleccionado.cuit)})
+        <p className="text-[15px] font-medium text-foreground">
+          Historial de Líquidos Producto emitidos a {fleteroSeleccionado.razonSocial} — {formatCuit(fleteroSeleccionado.cuit)}
         </p>
       )}
 
       {/* Tabla */}
-      {cargando ? (
-        <div className="text-center py-10 text-muted-foreground">Cargando...</div>
-      ) : liquidacionesFiltradas.length === 0 ? (
-        <div className="text-center py-10 text-muted-foreground">Sin liquidaciones para los filtros seleccionados.</div>
-      ) : (
-        <TablaLiquidaciones
-          liquidaciones={liquidacionesFiltradas}
-          fleteros={fleteros}
-          mostrarFletero={mostrarFletero}
-          onAbrirPDF={(params) => abrirPDF(params)}
-          onVerDetalle={(liq) => setLiquidacionDetalle(liq)}
-          onReintentarArca={reintentarArcaLP}
-          autorizandoArcaId={autorizandoArcaId}
-          onEmitirNota={esInterno ? (liq) => setLiquidacionNota(liq) : undefined}
-          faltantesPorLiq={faltantesPorLiq}
-        />
-      )}
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="px-3 py-3 text-left">Fecha</th>
+                  <th className="px-3 py-3 text-left">Nº Comprobante</th>
+                  {mostrarColumnaFletero && <th className="px-3 py-3 text-left">Fletero</th>}
+                  <th className="px-3 py-3 text-right font-semibold">Total</th>
+                  <th className="px-3 py-3 text-right">Saldo</th>
+                  <th className="px-3 py-3 text-left">OP</th>
+                  <th className="px-3 py-3 text-center">NC/ND</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td colSpan={colCount} className="px-3 py-8 text-center text-muted-foreground">Buscando...</td>
+                  </tr>
+                ) : liquidacionesFiltradas.length === 0 ? (
+                  <tr>
+                    <td colSpan={colCount} className="px-3 py-8 text-center text-muted-foreground">Sin resultados</td>
+                  </tr>
+                ) : (
+                  liquidacionesFiltradas.map((liq) => {
+                    const nroLP = formatNroLP(liq.ptoVenta, liq.nroComprobante)
+                    const op = liq.pagos.find((p) => !p.anulado && p.ordenPago)?.ordenPago
+                    const saldo = calcularSaldoLP(liq)
+                    return (
+                      <tr key={liq.id} className="border-b hover:bg-muted/30 cursor-pointer" onClick={() => setLiquidacionDetalle(liq)}>
+                        <td className="px-3 py-2">{formatearFecha(liq.grabadaEn)}</td>
+                        <td className="px-3 py-2 font-mono text-sm" onClick={(e) => e.stopPropagation()}>
+                          {liq.arcaEstado === "AUTORIZADA" && liq.nroComprobante ? (
+                            <Link
+                              href={`/comprobantes/visor?tipo=liquidacion&id=${liq.id}&titulo=${encodeURIComponent(
+                                `LP ${nroLP} — ${liq.fletero.razonSocial}`
+                              )}`}
+                              className="text-primary hover:underline"
+                            >
+                              {nroLP}
+                            </Link>
+                          ) : (
+                            <span>
+                              {nroLP}
+                              {(liq.arcaEstado === "PENDIENTE" || liq.arcaEstado === "RECHAZADA") && (
+                                <span className="inline-flex items-center gap-1 ml-2">
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${liq.arcaEstado === "PENDIENTE" ? "bg-warning-soft text-warning" : "bg-error-soft text-error"}`}>
+                                    {liq.arcaEstado === "PENDIENTE" ? "Pend. ARCA" : "Rechazada"}
+                                  </span>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); reintentarArca(liq.id) }}
+                                    disabled={autorizandoArcaId === liq.id}
+                                    className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-warning text-warning-foreground hover:bg-warning/80 disabled:opacity-50"
+                                    title="Reintentar autorización ARCA"
+                                  >
+                                    {autorizandoArcaId === liq.id ? "..." : "↻"}
+                                  </button>
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </td>
+                        {mostrarColumnaFletero && <td className="px-3 py-2 max-w-[160px] truncate">{liq.fletero.razonSocial}</td>}
+                        <td className="px-3 py-2 text-right font-semibold">{formatearMoneda(liq.total)}</td>
+                        <td className="px-3 py-2 text-right text-muted-foreground">
+                          {saldo > 0 ? formatearMoneda(saldo) : <span className="text-success">Saldada</span>}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-sm">
+                          {op ? `${op.nro}-${op.anio}` : ""}
+                        </td>
+                        <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                          {faltantesPorLiq[liq.id] && (
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-warning-soft text-warning mr-1" title={faltantesPorLiq[liq.id].map((f) => `${f.empresa}: ${f.descripcion ?? "Faltante"}`).join("; ")}>
+                              Faltante
+                            </span>
+                          )}
+                          {esInterno && liq.arcaEstado === "AUTORIZADA" && (
+                            <button type="button" onClick={() => setLiquidacionNota(liq)} className="text-xs text-primary hover:text-primary/80 hover:underline font-medium">
+                              Emitir
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+              {liquidacionesFiltradas.length > 0 && (
+                <tfoot>
+                  <tr className="bg-muted font-semibold border-t-2">
+                    <td colSpan={mostrarColumnaFletero ? 3 : 2} className="px-3 py-3 text-right text-sm">Totales ({liquidacionesFiltradas.length})</td>
+                    <td className="px-3 py-3 text-right">{formatearMoneda(sumarImportes(liquidacionesFiltradas.map(l => l.total)))}</td>
+                    <td className="px-3 py-3 text-right text-muted-foreground">{formatearMoneda(sumarImportes(liquidacionesFiltradas.map(l => calcularSaldoLP(l))))}</td>
+                    <td colSpan={2}></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Modal detalle */}
       {liquidacionDetalle && (
-        <ModalDetalleLP liq={liquidacionDetalle} onCerrar={() => setLiquidacionDetalle(null)} onAbrirPDF={(params) => abrirPDF(params)} />
+        <ModalDetalleLP liq={liquidacionDetalle} onCerrar={() => setLiquidacionDetalle(null)} />
       )}
 
       {/* Modal emitir NC/ND */}
@@ -789,12 +684,10 @@ export function ConsultarLPClient({ rol, fleteros, fleteroIdPropio }: ConsultarL
         <ModalEmitirNotaLP
           liq={liquidacionNota}
           onClose={() => setLiquidacionNota(null)}
-          onEmitida={() => { setLiquidacionNota(null); cargarDatos() }}
+          onEmitida={() => { setLiquidacionNota(null); handleBuscar() }}
           faltantes={faltantesPorLiq[liquidacionNota.id]}
         />
       )}
-
-      <PDFViewer {...estadoPDF} onClose={cerrarPDF} />
     </div>
   )
 }
