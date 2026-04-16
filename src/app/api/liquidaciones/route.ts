@@ -109,6 +109,7 @@ export async function GET(request: NextRequest) {
       prisma.liquidacion.findMany({
         where: whereLiquidaciones,
         include: {
+          _count: { select: { notasCreditoDebito: true } },
           fletero: { select: { razonSocial: true, cuit: true } },
           viajes: {
             include: {
