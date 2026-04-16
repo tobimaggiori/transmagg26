@@ -32,6 +32,10 @@ la regla "una sola fuente por concepto".
 2. [negocio/ordenes-pago.md](./negocio/ordenes-pago.md) — flujo de creación,
    distribución, invariante.
 
+### Si vas a tocar viajes / cupo / agrupamiento en PDFs
+1. [negocio/cupo.md](./negocio/cupo.md) — sistema completo de cupo:
+   campos lockeados, validaciones, edición en bloque, agrupamiento.
+
 ### Si sos un agente IA
 1. [../CLAUDE.md](../CLAUDE.md) — contrato operativo (lo principal).
 2. Lo de arriba según la tarea.
@@ -64,7 +68,8 @@ docs/
 │   ├── cuenta-corriente.md      Modelo unificado de saldoPendiente
 │   ├── adelantos.md             Tipos + cheques + descuentos en OP
 │   ├── ordenes-pago.md          OP: aplicaciones + medios + invariante
-│   └── cheques.md               Cartera propia/tercero (esqueleto)
+│   ├── cheques.md               Cartera propia/tercero (esqueleto)
+│   └── cupo.md                  Sistema de cupo (hermanos, lock, bulk, agrupamiento)
 └── reglas-fiscales/
     └── nc-nd-iva.md             IVA en NC/ND (Manera 1 / Manera 2)
 ```

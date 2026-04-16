@@ -29,6 +29,14 @@ Generación, fusión y servido de PDFs en Transmagg.
 | `pdf-common.ts` | Helpers compartidos (datos del emisor, logos) |
 | `pdf-merge.ts` | **Fusión** de PDFs |
 
+## Agrupamiento de viajes por cupo
+
+Los PDFs de **factura** y **LP** colapsan los viajes hermanos del mismo
+cupo en un único renglón (kilos sumados, subtotal sumado, remitos
+formateados con prefijo común). Detalle del flujo y la helper
+[`agruparViajesPorCupo`](../../src/lib/viaje-cupo.ts) en
+[../negocio/cupo.md](../negocio/cupo.md).
+
 ## Estética
 
 Comprobantes fiscales (factura, LP, NC/ND) usan el diseño oficial ARCA. Ver

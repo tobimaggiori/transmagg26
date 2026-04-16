@@ -5,6 +5,8 @@
 > - Catálogo de comprobantes: [../arca/matriz.md](../arca/matriz.md)
 > - IVA en NC/ND: [../reglas-fiscales/nc-nd-iva.md](../reglas-fiscales/nc-nd-iva.md)
 > - Cuenta corriente y saldo pendiente: [./cuenta-corriente.md](./cuenta-corriente.md)
+> - Viajes con cupo (auto-selección de hermanos al facturar, validación
+>   de tarifa, agrupamiento en el PDF): [./cupo.md](./cupo.md)
 >
 > **Inconsistencia conocida**: este doc describe estados derivados de viaje
 > (`PENDIENTE_FACTURACION`, `FACTURADO_VIGENTE`, `FACTURADO_AJUSTADO_PARCIAL`)

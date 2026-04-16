@@ -51,6 +51,7 @@ o actualizar tests, correr verificación final.
 | Órdenes de pago | [`docs/negocio/ordenes-pago.md`](./docs/negocio/ordenes-pago.md) |
 | Adelantos a fleteros | [`docs/negocio/adelantos.md`](./docs/negocio/adelantos.md) |
 | Cheques (propios o tercero) | [`docs/negocio/cheques.md`](./docs/negocio/cheques.md) |
+| Viajes con cupo / hermanos | [`docs/negocio/cupo.md`](./docs/negocio/cupo.md) |
 | Liquidación o facturación | [`docs/negocio/liquidacion.md`](./docs/negocio/liquidacion.md) o [`docs/negocio/facturacion.md`](./docs/negocio/facturacion.md) |
 | PDFs (generar o fusionar) | [`docs/arquitectura/pdfs.md`](./docs/arquitectura/pdfs.md) |
 | Subida o descarga R2 | [`docs/arquitectura/storage-r2.md`](./docs/arquitectura/storage-r2.md) |

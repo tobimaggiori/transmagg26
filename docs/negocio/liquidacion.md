@@ -9,6 +9,8 @@
 >   [./cuenta-corriente.md](./cuenta-corriente.md) +
 >   [./ordenes-pago.md](./ordenes-pago.md)
 > - Adelantos y gastos descontables en OP: [./adelantos.md](./adelantos.md)
+> - Viajes con cupo (auto-selección de hermanos al liquidar, validación
+>   de tarifa, agrupamiento en el PDF): [./cupo.md](./cupo.md)
 >
 > **Inconsistencia conocida**: este doc describe estados derivados de viaje
 > (`PENDIENTE_LIQUIDACION`, `LIQUIDADO_VIGENTE`, `LIQUIDADO_AJUSTADO_PARCIAL`)

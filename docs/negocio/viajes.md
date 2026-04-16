@@ -76,6 +76,14 @@ Campos `tieneCpe`, `nroCartaPorte`, `cartaPorteS3Key`. El PDF se sube a R2
 con prefijo `cartas-de-porte`. Para viajes que la requieren, es información
 fiscalmente relevante.
 
+## Cupo
+
+Un viaje puede pertenecer a un **cupo** (acuerdo comercial con la empresa).
+Viajes hermanos del mismo cupo comparten un set de campos lockeados
+(mercadería, ruta, tarifa, fletero/camión/chofer) y solo varían en kilos,
+remito, CDP y fecha. Detalle completo del flujo (lookup, validaciones,
+edición en bloque, agrupamiento en PDFs) en [cupo.md](./cupo.md).
+
 ## Camión propio
 
 Cuando `esCamionPropio = true`, `fleteroId = null`. El viaje no genera
