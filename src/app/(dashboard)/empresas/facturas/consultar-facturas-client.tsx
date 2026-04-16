@@ -83,22 +83,6 @@ function labelTipoCbte(tipoCbte: number, modalidad?: string | null): string {
   return `Cbte ${tipoCbte}`
 }
 
-function EstadoBadge({ estado }: { estado: string }) {
-  const estilos: Record<string, string> = {
-    EMITIDA: "bg-info-soft text-info",
-    PARCIALMENTE_COBRADA: "bg-warning-soft text-warning",
-    COBRADA: "bg-success-soft text-success",
-  }
-  const labels: Record<string, string> = {
-    PARCIALMENTE_COBRADA: "Parcial",
-  }
-  return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilos[estado] ?? "bg-secondary text-muted-foreground"}`}>
-      {labels[estado] ?? estado}
-    </span>
-  )
-}
-
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientProps) {
@@ -150,28 +134,13 @@ export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientPro
     finally { setAutorizandoArcaId(null) }
   }
 
-  async function abrirPDF(facturaId: string) {
-    try {
-      const res = await fetch(`/api/facturas/${facturaId}/pdf`)
-      if (!res.ok) return
-      const contentType = res.headers.get("content-type") ?? ""
-      if (contentType.includes("application/pdf")) {
-        const blob = await res.blob()
-        window.open(URL.createObjectURL(blob), "_blank")
-      } else {
-        const data = await res.json()
-        if (data.url) window.open(data.url, "_blank")
-      }
-    } catch { /* ignore */ }
-  }
-
   const empresasItems = [
     { id: "", label: "Todas las empresas" },
     ...empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: formatearCuit(e.cuit) })),
   ]
 
-  // Columnas: Fecha, Tipo, Nº, [Empresa], Total, Saldo, Estado, Recibo, NC/ND, Ver PDF
-  const colCount = mostrarColumnaEmpresa ? 10 : 9
+  // Columnas: Fecha, Tipo, Nº, [Empresa], Total, Saldo, Recibo, NC/ND
+  const colCount = mostrarColumnaEmpresa ? 8 : 7
 
   /**
    * calcularSaldoVigente: FacturaRow -> number
@@ -261,10 +230,8 @@ export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientPro
                   {mostrarColumnaEmpresa && <th className="px-3 py-3 text-left">Empresa</th>}
                   <th className="px-3 py-3 text-right font-semibold">Total</th>
                   <th className="px-3 py-3 text-right">Saldo</th>
-                  <th className="px-3 py-3 text-center">Estado</th>
                   <th className="px-3 py-3 text-left">Recibo</th>
                   <th className="px-3 py-3 text-center">NC/ND</th>
-                  <th className="px-3 py-3"></th>
                 </tr>
               </thead>
               <tbody>
@@ -284,7 +251,37 @@ export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientPro
                       <tr key={fact.id} className="border-b hover:bg-muted/30">
                         <td className="px-3 py-2">{formatearFecha(fact.emitidaEn)}</td>
                         <td className="px-3 py-2 text-sm">{labelTipoCbte(fact.tipoCbte, fact.modalidadMiPymes)}</td>
-                        <td className="px-3 py-2 font-mono text-sm">{formatNroComprobante(fact.ptoVenta, fact.nroComprobante)}</td>
+                        <td className="px-3 py-2 font-mono text-sm">
+                          {fact.estadoArca === "AUTORIZADA" ? (
+                            <Link
+                              href={`/comprobantes/visor?tipo=factura&id=${fact.id}&titulo=${encodeURIComponent(
+                                `${labelTipoCbte(fact.tipoCbte, fact.modalidadMiPymes)} ${formatNroComprobante(fact.ptoVenta, fact.nroComprobante)}`
+                              )}`}
+                              className="text-primary hover:underline"
+                            >
+                              {formatNroComprobante(fact.ptoVenta, fact.nroComprobante)}
+                            </Link>
+                          ) : (
+                            <span>
+                              {formatNroComprobante(fact.ptoVenta, fact.nroComprobante)}
+                              {(fact.estadoArca === "PENDIENTE" || fact.estadoArca === "RECHAZADA") && (
+                                <span className="inline-flex items-center gap-1 ml-2">
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${fact.estadoArca === "PENDIENTE" ? "bg-warning-soft text-warning" : "bg-error-soft text-error"}`}>
+                                    {fact.estadoArca === "PENDIENTE" ? "Pend. ARCA" : "Rechazada"}
+                                  </span>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); reintentarArca(fact.id) }}
+                                    disabled={autorizandoArcaId === fact.id}
+                                    className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-warning text-warning-foreground hover:bg-warning/80 disabled:opacity-50"
+                                    title="Reintentar autorización ARCA"
+                                  >
+                                    {autorizandoArcaId === fact.id ? "..." : "↻"}
+                                  </button>
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </td>
                         {mostrarColumnaEmpresa && <td className="px-3 py-2 max-w-[160px] truncate">{fact.empresa.razonSocial}</td>}
                         <td className="px-3 py-2 text-right font-semibold">{formatearMoneda(fact.total)}</td>
                         <td className="px-3 py-2 text-right text-muted-foreground">
@@ -292,24 +289,6 @@ export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientPro
                             const saldo = calcularSaldoVigente(fact)
                             return saldo > 0 ? formatearMoneda(saldo) : <span className="text-success">Saldada</span>
                           })()}
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          <EstadoBadge estado={fact.estado} />
-                          {(fact.estadoArca === "PENDIENTE" || fact.estadoArca === "RECHAZADA") && (
-                            <span className="inline-flex items-center gap-1 ml-1">
-                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${fact.estadoArca === "PENDIENTE" ? "bg-warning-soft text-warning" : "bg-error-soft text-error"}`}>
-                                {fact.estadoArca === "PENDIENTE" ? "Pendiente ARCA" : "Rechazada ARCA"}
-                              </span>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); reintentarArca(fact.id) }}
-                                disabled={autorizandoArcaId === fact.id}
-                                className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-warning text-warning-foreground hover:bg-warning/80 disabled:opacity-50"
-                                title="Reintentar autorización ARCA"
-                              >
-                                {autorizandoArcaId === fact.id ? "..." : "↻"}
-                              </button>
-                            </span>
-                          )}
                         </td>
                         <td className="px-3 py-2 font-mono text-sm">
                           {fact.recibo ? formatNroComprobante(fact.recibo.ptoVenta, fact.recibo.nro) : ""}
@@ -327,13 +306,6 @@ export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientPro
                             </Link>
                           )}
                         </td>
-                        <td className="px-3 py-2">
-                          {fact.pdfS3Key ? (
-                            <Button size="sm" variant="outline" onClick={() => abrirPDF(fact.id)}>Ver PDF</Button>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">Sin PDF</span>
-                          )}
-                        </td>
                       </tr>
                     )
                   })
@@ -345,7 +317,7 @@ export function ConsultarFacturasClient({ empresas }: ConsultarFacturasClientPro
                     <td colSpan={mostrarColumnaEmpresa ? 4 : 3} className="px-3 py-3 text-right text-sm">Totales ({facturas.length})</td>
                     <td className="px-3 py-3 text-right">{formatearMoneda(sumarImportes(facturas.map(f => f.total)))}</td>
                     <td className="px-3 py-3 text-right text-muted-foreground">{formatearMoneda(sumarImportes(facturas.map(f => calcularSaldoVigente(f))))}</td>
-                    <td colSpan={4}></td>
+                    <td colSpan={2}></td>
                   </tr>
                 </tfoot>
               )}
