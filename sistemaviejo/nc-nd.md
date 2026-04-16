@@ -5,7 +5,7 @@
 Trans-Magg **solo emite** NC/ND. No existe funcionalidad para registrar NC/ND recibidas de terceros (empresas ni fleteros). Todas las NC/ND son comprobantes que Trans-Magg genera hacia empresas (clientes) o fleteros (transportistas).
 
 ---
-
+En 
 ## Tipos de comprobantes NC/ND
 
 | Tipo | Codigo AFIP | TipoSistema | ClaseFact | Destino | Formulario |
