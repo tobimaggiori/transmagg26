@@ -471,6 +471,7 @@ model Liquidacion {
   chequesEmitidos      ChequeEmitido[]
   adelantoDescuentos   AdelantoDescuento[]
   gastoDescuentos      GastoDescuento[]
+  ncDescuentos         NCDescuento[]
   notasCreditoDebito   NotaCreditoDebito[]
   asientosIva          AsientoIva[]
   facturaEmitidaId     String?              @unique @map("factura_emitida_id")
@@ -1307,8 +1308,22 @@ model NotaCreditoDebito {
   viajesAfectados     ViajeEnNotaCD[]
   items               NotaCreditoDebitoItem[]
   asientosIva         AsientoIva[]
+  descuentos          NCDescuento[]
 
   @@map("notas_credito_debito")
+}
+
+model NCDescuento {
+  id              String   @id @default(uuid())
+  ncId            String   @map("nc_id")
+  liquidacionId   String   @map("liquidacion_id")
+  montoDescontado Decimal  @map("monto_descontado")
+  fecha           DateTime
+
+  nc          NotaCreditoDebito @relation(fields: [ncId], references: [id], onDelete: Cascade)
+  liquidacion Liquidacion       @relation(fields: [liquidacionId], references: [id], onDelete: Cascade)
+
+  @@map("nc_descuentos")
 }
 
 model ViajeEnNotaCD {

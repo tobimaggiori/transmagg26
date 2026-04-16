@@ -74,6 +74,18 @@ export interface NCPendiente {
   liquidacion: { nroComprobante: number | null; ptoVenta: number | null } | null
 }
 
+export interface AdelantoPendiente {
+  id: string
+  tipo: "CHEQUE_PROPIO" | "CHEQUE_TERCERO" | "TRANSFERENCIA" | "EFECTIVO"
+  monto: number
+  montoDescontado: number
+  fecha: string
+  descripcion: string | null
+  comprobanteS3Key: string | null
+  nroCheque: string | null
+  bancoCheque: string | null
+}
+
 interface RegistrarPagoClientProps {
   fleteros: Fletero[]
   cuentas: CuentaBancaria[]
@@ -167,14 +179,6 @@ function ModalConfirmacionOP({
           >
             Ver PDF
           </a>
-          <a
-            href={`/api/ordenes-pago/${opId}/pdf?print=true`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-muted inline-flex items-center gap-1.5"
-          >
-            Imprimir
-          </a>
           <button
             onClick={() => setMostrarEmail((v) => !v)}
             className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-muted"
@@ -256,6 +260,7 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera, opera
   const [liquidaciones, setLiquidaciones] = useState<LiquidacionPendiente[]>([])
   const [gastosPendientes, setGastosPendientes] = useState<GastoPendiente[]>([])
   const [ncPendientes, setNCPendientes] = useState<NCPendiente[]>([])
+  const [adelantosPendientes, setAdelantosPendientes] = useState<AdelantoPendiente[]>([])
   const [saldoAFavorCC, setSaldoAFavorCC] = useState(0)
   const [loadingFletero, setLoadingFletero] = useState(false)
 
@@ -274,22 +279,25 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera, opera
     setLiquidaciones([])
     setGastosPendientes([])
     setNCPendientes([])
+    setAdelantosPendientes([])
     setSaldoAFavorCC(0)
     setSeleccionados(new Set())
     if (!id) return
 
     setLoadingFletero(true)
     try {
-      const [liqs, saldo, gastos] = await Promise.all([
+      const [liqs, saldo, gastos, adelantos] = await Promise.all([
         fetch(`/api/fleteros/${id}/liquidaciones-pendientes`).then((r) => r.ok ? r.json() : []),
         fetch(`/api/fleteros/${id}/saldo-cc`).then((r) => r.ok ? r.json() : { saldoAFavor: 0 }),
         fetch(`/api/liquidaciones?fleteroId=${id}`).then((r) => r.ok ? r.json() : { gastosPendientes: [] }),
+        fetch(`/api/fleteros/${id}/adelantos-pendientes`).then((r) => r.ok ? r.json() : []),
       ])
       setLiquidaciones(liqs)
       setSaldoAFavorCC(saldo.saldoAFavor ?? 0)
       const liqData = gastos as { gastosPendientes?: GastoPendiente[]; ncPendientesDescuento?: NCPendiente[] }
       setGastosPendientes(liqData.gastosPendientes ?? [])
       setNCPendientes(liqData.ncPendientesDescuento ?? [])
+      setAdelantosPendientes(adelantos as AdelantoPendiente[])
     } finally {
       setLoadingFletero(false)
     }
@@ -480,6 +488,7 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera, opera
           saldoAFavorCC={saldoAFavorCC}
           gastosPendientes={gastosPendientes.filter((g) => g.estado !== "DESCONTADO_TOTAL")}
           ncPendientes={ncPendientes}
+          adelantosPendientes={adelantosPendientes}
           onSuccess={onSuccess}
           onClose={() => setPagando(false)}
         />

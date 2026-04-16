@@ -138,6 +138,8 @@ export async function GET(request: NextRequest) {
               },
             },
           },
+          adelantoDescuentos: { select: { montoDescontado: true } },
+          ncDescuentos: { select: { montoDescontado: true } },
         },
         orderBy: { grabadaEn: "desc" },
         take: 100,

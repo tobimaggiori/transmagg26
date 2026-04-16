@@ -42,6 +42,7 @@ type CCData = {
   totalEmitido: number
   totalPagado: number
   saldoPendiente: number
+  creditoDisponible: number
 }
 
 type ResumenFletero = {
@@ -293,21 +294,18 @@ export function CCFleterosClient({ fleteros }: CCFleterosClientProps) {
                           {formatearFecha(liq.grabadaEn)}
                         </td>
                         <td className="px-4 py-3">
-                          {liq.pdfS3Key ? (
-                            <a
-                              href={`/api/storage/${liq.pdfS3Key}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="font-mono text-primary hover:underline inline-flex items-center gap-1"
-                            >
-                              LP {formatLP(liq.ptoVenta, liq.nroComprobante)}
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          ) : (
-                            <span className="font-mono text-muted-foreground">
-                              LP {formatLP(liq.ptoVenta, liq.nroComprobante)}
-                            </span>
-                          )}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const res = await fetch(`/api/liquidaciones/${liq.id}/pdf`)
+                              const data = await res.json()
+                              if (res.ok && data.url) window.open(data.url as string, "_blank", "noopener,noreferrer")
+                            }}
+                            className="font-mono text-primary hover:underline inline-flex items-center gap-1"
+                          >
+                            LP {formatLP(liq.ptoVenta, liq.nroComprobante)}
+                            <ExternalLink className="h-3 w-3" />
+                          </button>
                         </td>
                         <td className="px-4 py-3 text-right font-medium tabular-nums">
                           {formatearMoneda(liq.total)}
@@ -320,21 +318,15 @@ export function CCFleterosClient({ fleteros }: CCFleterosClientProps) {
                         </td>
                         <td className="px-4 py-3">
                           {liq.ordenPago ? (
-                            liq.ordenPago.pdfS3Key ? (
-                              <a
-                                href={`/api/storage/${liq.ordenPago.pdfS3Key}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-primary hover:underline inline-flex items-center gap-1 whitespace-nowrap"
-                              >
-                                OP Nro {liq.ordenPago.nro}-{liq.ordenPago.anio}
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            ) : (
-                              <span className="text-muted-foreground whitespace-nowrap">
-                                OP Nro {liq.ordenPago.nro}-{liq.ordenPago.anio}
-                              </span>
-                            )
+                            <a
+                              href={`/api/ordenes-pago/${liq.ordenPago.id}/pdf`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline inline-flex items-center gap-1 whitespace-nowrap"
+                            >
+                              OP Nro {liq.ordenPago.nro}-{liq.ordenPago.anio}
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}
@@ -362,7 +354,7 @@ export function CCFleterosClient({ fleteros }: CCFleterosClientProps) {
           </Card>
 
           {/* Totales al pie */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className={`grid gap-4 ${data.creditoDisponible > 0 ? "grid-cols-4" : "grid-cols-3"}`}>
             <div className="border rounded p-4 text-center">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Total emitido</p>
               <p className="text-xl font-bold mt-1">{formatearMoneda(data.totalEmitido)}</p>
@@ -377,6 +369,13 @@ export function CCFleterosClient({ fleteros }: CCFleterosClientProps) {
                 {formatearMoneda(data.saldoPendiente)}
               </p>
             </div>
+            {data.creditoDisponible > 0 && (
+              <div className="border border-blue-200 bg-blue-50 rounded p-4 text-center">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Crédito disponible</p>
+                <p className="text-xl font-bold mt-1 text-blue-700">{formatearMoneda(data.creditoDisponible)}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">NCs sin aplicar</p>
+              </div>
+            )}
           </div>
         </>
       )}

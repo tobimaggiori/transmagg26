@@ -123,6 +123,14 @@ const multiLPPagoSchema = z.object({
       })
     )
     .optional(),
+  adelantoDescuentos: z
+    .array(
+      z.object({
+        adelantoId: z.string().uuid(),
+        montoDescontar: z.number().positive(),
+      })
+    )
+    .optional(),
 })
 
 /**

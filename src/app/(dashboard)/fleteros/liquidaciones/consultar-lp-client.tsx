@@ -59,6 +59,9 @@ type Liquidacion = {
   fletero: { razonSocial: string; cuit?: string }
   viajes: ViajeEnLiquidacion[]
   pagos: { id: string; monto: number; tipoPago: string; fechaPago: string; anulado: boolean; ordenPago: { id: string; nro: number; anio: number; fecha: string; pdfS3Key?: string | null } | null }[]
+  gastoDescuentos?: { montoDescontado: number }[]
+  adelantoDescuentos?: { montoDescontado: number }[]
+  ncDescuentos?: { montoDescontado: number }[]
   _count: { notasCreditoDebito: number }
 }
 
@@ -87,8 +90,15 @@ function primerDiaMesActual(): string {
 }
 
 function calcularSaldoLP(liq: Liquidacion): number {
+  // Modelo unificado (cuenta-corriente.ts): saldo = total − pagos − NCs aplicadas
+  // − gastos descontados − adelantos descontados.
+  // NCs aplicadas = link table nc_descuentos por liquidacionId, NO la NC emitida sobre la LP.
   const totalPagado = sumarImportes(liq.pagos.filter((p) => !p.anulado).map((p) => p.monto))
-  return Math.max(0, restarImportes(liq.total, totalPagado))
+  const totalNC = sumarImportes((liq.ncDescuentos ?? []).map((n) => n.montoDescontado))
+  const totalGastos = sumarImportes((liq.gastoDescuentos ?? []).map((g) => g.montoDescontado))
+  const totalAdelantos = sumarImportes((liq.adelantoDescuentos ?? []).map((a) => a.montoDescontado))
+  const consumido = sumarImportes([totalPagado, totalNC, totalGastos, totalAdelantos])
+  return Math.max(0, restarImportes(liq.total, consumido))
 }
 
 // ─── Modal detalle LP ────────────────────────────────────────────────────────

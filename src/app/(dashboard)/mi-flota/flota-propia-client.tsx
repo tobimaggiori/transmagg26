@@ -730,14 +730,17 @@ function PanelCamion({
                     <div className="flex items-center gap-1 shrink-0">
                       <span className="text-green-700">Pagada</span>
                       {inf.comprobantePdfS3Key && (
-                        <a
-                          href={`/api/storage/${inf.comprobantePdfS3Key}`}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const res = await fetch(`/api/storage/signed-url?key=${encodeURIComponent(inf.comprobantePdfS3Key!)}`)
+                            const data = await res.json()
+                            if (res.ok && data.url) window.open(data.url, "_blank", "noopener,noreferrer")
+                          }}
                           className="text-primary underline"
                         >
                           Ver comp.
-                        </a>
+                        </button>
                       )}
                     </div>
                   )}

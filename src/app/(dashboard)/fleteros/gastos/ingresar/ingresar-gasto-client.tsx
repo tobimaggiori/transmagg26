@@ -159,7 +159,6 @@ export function IngresarGastoClient({ proveedores, fleteros }: IngresarGastoClie
           ) : (
             <p>{exito.descripcion} · Monto: {formatearMoneda(exito.monto!)}</p>
           )}
-          <p className="mt-1 text-xs text-green-700">La deuda del fletero queda en estado Pendiente. Podés descontarla al emitir una Liquidación.</p>
         </div>
       )}
 

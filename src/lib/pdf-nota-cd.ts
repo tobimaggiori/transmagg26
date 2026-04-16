@@ -294,11 +294,12 @@ export async function generarPDFNotaCD(notaId: string): Promise<Buffer> {
     // ─── 3. SECCIÓN RECEPTOR ──────────────────────────────────────────
 
     const clientBoxPadX = 12
-    const clientBoxPadTop = 12
-    const clientBoxPadBottom = 6
+    const clientBoxPadY = 10
     const clientLineH = 20
     const clientLineCount = 3 + (receptor.direccion ? 1 : 0)
-    const clientBoxH = clientBoxPadTop + clientLineCount * clientLineH + clientBoxPadBottom
+    const clientBoxH = clientBoxPadY * 2 + clientLineCount * clientLineH
+    const offset10 = (clientLineH - 10) / 2
+    const offset9 = (clientLineH - 9) / 2
 
     doc.save()
     doc.fillColor(BG_LIGHT)
@@ -307,31 +308,31 @@ export async function generarPDFNotaCD(notaId: string): Promise<Buffer> {
     doc.roundedRect(left, cursorY, contentW, clientBoxH, 8).stroke()
     doc.restore()
 
-    let clientY = cursorY + clientBoxPadTop
+    let clientY = cursorY + clientBoxPadY
     const clientTextX = left + clientBoxPadX
 
     // Razón social
     doc.font("Helvetica-Bold").fontSize(10).fillColor(TEXT)
-      .text("Sres: ", clientTextX, clientY + 2, { continued: true })
+      .text("Sres: ", clientTextX, clientY + offset10, { continued: true })
     doc.font("Helvetica-Bold").text(receptor.razonSocial.toUpperCase())
     clientY += clientLineH
 
     // CUIT
     doc.font("Helvetica-Bold").fontSize(9).fillColor(TEXT)
-      .text("C.U.I.T.: ", clientTextX, clientY + 2, { continued: true })
+      .text("C.U.I.T.: ", clientTextX, clientY + offset9, { continued: true })
     doc.font("Helvetica").text(fmtCuit(receptor.cuit))
     clientY += clientLineH
 
     // Condición IVA
     doc.font("Helvetica-Bold").fontSize(9).fillColor(TEXT)
-      .text("Condición IVA: ", clientTextX, clientY + 2, { continued: true })
+      .text("Condición IVA: ", clientTextX, clientY + offset9, { continued: true })
     doc.font("Helvetica").text(fmtCondicionIva(receptor.condicionIva))
     clientY += clientLineH
 
     // Dirección (opcional)
     if (receptor.direccion) {
       doc.font("Helvetica-Bold").fontSize(9).fillColor(TEXT)
-        .text("Domicilio: ", clientTextX, clientY + 2, { continued: true })
+        .text("Domicilio: ", clientTextX, clientY + offset9, { continued: true })
       doc.font("Helvetica").text(receptor.direccion)
       clientY += clientLineH
     }

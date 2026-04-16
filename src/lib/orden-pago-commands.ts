@@ -9,7 +9,7 @@
 
 import { prisma } from "@/lib/prisma"
 import { calcularSaldoCCFletero } from "@/lib/cuenta-corriente"
-import { generarHTMLOrdenPago } from "@/lib/pdf-orden-pago"
+import { generarPDFOrdenPago } from "@/lib/pdf-orden-pago"
 import { subirPDF, storageConfigurado } from "@/lib/storage"
 import { sumarImportes, restarImportes, maxMonetario, importesIguales, m } from "@/lib/money"
 
@@ -63,6 +63,11 @@ type NCDescontar = {
   montoDescontar: number
 }
 
+type AdelantoDescontar = {
+  adelantoId: string
+  montoDescontar: number
+}
+
 export type DatosCrearOrdenPago = {
   fleteroId: string
   liquidacionIds: string[]
@@ -70,11 +75,62 @@ export type DatosCrearOrdenPago = {
   fecha: string
   gastos?: GastoDescontar[]
   ncDescuentos?: NCDescontar[]
+  adelantoDescuentos?: AdelantoDescontar[]
 }
 
 type ResultadoOrdenPago =
   | { ok: true; result: { ordenPago: { id: string; nro: number; anio: number; display: string } } }
   | { ok: false; status: number; error: string }
+
+// ── Helpers puras (exportables para test) ────────────────────────────────────
+
+/**
+ * distribuirEnLPs: number Map<string,number> {id:string}[] -> Array<{liquidacionId, monto}>
+ *
+ * Distribuye un monto entre LPs en el orden recibido (oldest-first), consumiendo
+ * los saldos restantes que quedan tras los pagos. Modifica `saldosRestantes` in
+ * place: cada LP cuyo saldo se consume baja a 0. Devuelve los segmentos creados
+ * (uno por LP que recibió parte del monto).
+ *
+ * Si tras recorrer todos los LPs queda un sobrante (por desbalance de redondeo),
+ * se imputa al primer LP devuelto para no perder importe.
+ *
+ * Esta función es el corazón de la cancelación de LPs en una OP. Garantiza
+ * que pagos + descuentos cubran exactamente la suma de saldos pendientes,
+ * dejando todos los LPs en 0 si la validación previa pasó.
+ *
+ * Ejemplos:
+ * distribuirEnLPs(50, new Map([["a",30],["b",40]]), [{id:"a"},{id:"b"}])
+ *   === [{liquidacionId:"a", monto:30},{liquidacionId:"b", monto:20}]   (saldos: a=0, b=20)
+ * distribuirEnLPs(0, new Map([["a",10]]), [{id:"a"}])
+ *   === []
+ * distribuirEnLPs(100, new Map([["a",0],["b",100]]), [{id:"a"},{id:"b"}])
+ *   === [{liquidacionId:"b", monto:100}]   (a salteado por estar en 0)
+ */
+export function distribuirEnLPs(
+  monto: number,
+  saldosRestantes: Map<string, number>,
+  lpsOrdenados: { id: string }[],
+): Array<{ liquidacionId: string; monto: number }> {
+  const segments: Array<{ liquidacionId: string; monto: number }> = []
+  let restante = monto
+  for (const lp of lpsOrdenados) {
+    if (restante <= 0.009) break
+    const saldoLP = saldosRestantes.get(lp.id) ?? 0
+    if (saldoLP <= 0.009) continue
+    const usar = m(Math.min(restante, saldoLP))
+    if (usar <= 0) continue
+    segments.push({ liquidacionId: lp.id, monto: usar })
+    saldosRestantes.set(lp.id, restarImportes(saldoLP, usar))
+    restante = restarImportes(restante, usar)
+  }
+  if (restante > 0.009 && segments.length > 0) {
+    segments[0].monto = m(sumarImportes([segments[0].monto, restante]))
+  } else if (restante > 0.009) {
+    segments.push({ liquidacionId: lpsOrdenados[0].id, monto: m(restante) })
+  }
+  return segments
+}
 
 // ── Comando principal ────────────────────────────────────────────────────────
 
@@ -102,10 +158,15 @@ export async function ejecutarCrearOrdenPago(
   data: DatosCrearOrdenPago,
   operadorId: string
 ): Promise<ResultadoOrdenPago> {
-  const { fleteroId, liquidacionIds, pagos, fecha, gastos, ncDescuentos } = data
+  const { fleteroId, liquidacionIds, pagos, fecha, gastos, ncDescuentos, adelantoDescuentos } = data
 
-  if (pagos.length === 0 && (!gastos || gastos.length === 0) && (!ncDescuentos || ncDescuentos.length === 0)) {
-    return { ok: false, status: 400, error: "Debe ingresar al menos un medio de pago, gasto o NC a descontar" }
+  if (
+    pagos.length === 0 &&
+    (!gastos || gastos.length === 0) &&
+    (!ncDescuentos || ncDescuentos.length === 0) &&
+    (!adelantoDescuentos || adelantoDescuentos.length === 0)
+  ) {
+    return { ok: false, status: 400, error: "Debe ingresar al menos un medio de pago, gasto, NC o adelanto a descontar" }
   }
 
   // ── Cargar fletero ──────────────────────────────────────────────────────
@@ -157,13 +218,17 @@ export async function ejecutarCrearOrdenPago(
   const totalMediosPago = sumarImportes(pagos.map((p) => p.monto))
   const totalGastosRequest = gastos ? sumarImportes(gastos.map((g) => g.montoDescontar)) : 0
   const totalNCRequest = ncDescuentos ? sumarImportes(ncDescuentos.map((n) => n.montoDescontar)) : 0
+  const totalAdelantosRequest = adelantoDescuentos
+    ? sumarImportes(adelantoDescuentos.map((a) => a.montoDescontar))
+    : 0
 
   // ── Validar que el pago cubre exactamente el saldo total ────────────────
-  if (!importesIguales(sumarImportes([totalMediosPago, totalGastosRequest, totalNCRequest]), totalSaldoPendiente)) {
+  const totalCubierto = sumarImportes([totalMediosPago, totalGastosRequest, totalNCRequest, totalAdelantosRequest])
+  if (!importesIguales(totalCubierto, totalSaldoPendiente)) {
     return {
       ok: false,
       status: 400,
-      error: `El total de los medios de pago debe cubrir exactamente el saldo pendiente (${totalSaldoPendiente.toFixed(2)}). Diferencia: ${restarImportes(sumarImportes([totalMediosPago, totalGastosRequest]), totalSaldoPendiente).toFixed(2)}`,
+      error: `El total de los medios de pago debe cubrir exactamente el saldo pendiente (${totalSaldoPendiente.toFixed(2)}). Diferencia: ${restarImportes(totalCubierto, totalSaldoPendiente).toFixed(2)}`,
     }
   }
 
@@ -304,8 +369,13 @@ export async function ejecutarCrearOrdenPago(
       }
     }
 
-    // ── Gastos descontados -> se vinculan al primer LP (mas antiguo) ───────
-    const primerLpId = lpsOrdenados[0].id
+    // ── Distribución de descuentos entre LPs (oldest-first) ──────────────
+    // Después de los pagos, `saldosRestantes` indica cuánto falta cubrir por LP.
+    // Los descuentos (gastos, NC, adelantos) llenan esos saldos en el mismo
+    // orden cronológico, generando un registro por (descuento, LP) cuando un
+    // descuento individual cubre más de un LP.
+
+    // Gastos descontados
     if (gastos && gastos.length > 0) {
       for (const g of gastos) {
         const gasto = await tx.gastoFletero.findUnique({
@@ -319,14 +389,16 @@ export async function ejecutarCrearOrdenPago(
         const efectivoDescontar = m(Math.min(g.montoDescontar, saldoGasto))
         if (efectivoDescontar <= 0) continue
 
-        await tx.gastoDescuento.create({
-          data: {
-            gastoId: g.gastoId,
-            liquidacionId: primerLpId,
-            montoDescontado: efectivoDescontar,
-            fecha: fechaPago,
-          },
-        })
+        for (const seg of distribuirEnLPs(efectivoDescontar, saldosRestantes, lpsOrdenados)) {
+          await tx.gastoDescuento.create({
+            data: {
+              gastoId: g.gastoId,
+              liquidacionId: seg.liquidacionId,
+              montoDescontado: seg.monto,
+              fecha: fechaPago,
+            },
+          })
+        }
 
         const nuevoMontoDescontado = sumarImportes([gasto.montoDescontado, efectivoDescontar])
         const nuevoEstadoGasto =
@@ -341,7 +413,7 @@ export async function ejecutarCrearOrdenPago(
       }
     }
 
-    // ── NC descuentos ─────────────────────────────────────────────────────
+    // NC descuentos
     if (ncDescuentos && ncDescuentos.length > 0) {
       for (const ncd of ncDescuentos) {
         const nc = await tx.notaCreditoDebito.findUnique({
@@ -354,10 +426,66 @@ export async function ejecutarCrearOrdenPago(
         const efectivoDescontar = m(Math.min(ncd.montoDescontar, saldoNC))
         if (efectivoDescontar <= 0) continue
 
+        for (const seg of distribuirEnLPs(efectivoDescontar, saldosRestantes, lpsOrdenados)) {
+          await tx.nCDescuento.create({
+            data: {
+              ncId: ncd.ncId,
+              liquidacionId: seg.liquidacionId,
+              montoDescontado: seg.monto,
+              fecha: fechaPago,
+            },
+          })
+        }
+
         const nuevoMontoDescontado = sumarImportes([nc.montoDescontado, efectivoDescontar])
         await tx.notaCreditoDebito.update({
           where: { id: ncd.ncId },
           data: { montoDescontado: nuevoMontoDescontado },
+        })
+      }
+    }
+
+    // Adelanto descuentos (no-combustible)
+    if (adelantoDescuentos && adelantoDescuentos.length > 0) {
+      for (const ad of adelantoDescuentos) {
+        const adelanto = await tx.adelantoFletero.findUnique({
+          where: { id: ad.adelantoId },
+          select: {
+            id: true,
+            fleteroId: true,
+            tipo: true,
+            monto: true,
+            montoDescontado: true,
+            estado: true,
+          },
+        })
+        if (!adelanto || adelanto.fleteroId !== fleteroId) continue
+        if (adelanto.estado === "DESCONTADO_TOTAL") continue
+
+        const saldoAdelanto = restarImportes(adelanto.monto, adelanto.montoDescontado)
+        const efectivoDescontar = m(Math.min(ad.montoDescontar, saldoAdelanto))
+        if (efectivoDescontar <= 0) continue
+
+        for (const seg of distribuirEnLPs(efectivoDescontar, saldosRestantes, lpsOrdenados)) {
+          await tx.adelantoDescuento.create({
+            data: {
+              adelantoId: ad.adelantoId,
+              liquidacionId: seg.liquidacionId,
+              montoDescontado: seg.monto,
+              fecha: fechaPago,
+            },
+          })
+        }
+
+        const nuevoMontoDescontado = sumarImportes([adelanto.montoDescontado, efectivoDescontar])
+        const nuevoEstado =
+          importesIguales(nuevoMontoDescontado, adelanto.monto) || nuevoMontoDescontado > adelanto.monto
+            ? "DESCONTADO_TOTAL"
+            : "DESCONTADO_PARCIAL"
+
+        await tx.adelantoFletero.update({
+          where: { id: ad.adelantoId },
+          data: { montoDescontado: nuevoMontoDescontado, estado: nuevoEstado },
         })
       }
     }
@@ -392,12 +520,11 @@ export async function ejecutarCrearOrdenPago(
     return { ordenPagoId: op.id, nroOrdenPago: nroOP, anioOP }
   })
 
-  // ── Generar HTML y subir a R2 (no fatal si falla) ─────────────────────
+  // ── Generar PDF y subir a R2 (no fatal si falla) ──────────────────────
   if (storageConfigurado()) {
     try {
-      const html = await generarHTMLOrdenPago(ordenPagoId)
-      const buffer = Buffer.from(html, "utf-8")
-      const key = await subirPDF(buffer, "comprobantes-pago-fletero", `OP-${nroOrdenPago}-${anioOP}.html`)
+      const buffer = await generarPDFOrdenPago(ordenPagoId)
+      const key = await subirPDF(buffer, "comprobantes-pago-fletero", `OP-${nroOrdenPago}-${anioOP}.pdf`)
       await prisma.ordenPago.update({ where: { id: ordenPagoId }, data: { pdfS3Key: key } })
     } catch {
       // No bloquear la respuesta si el storage falla

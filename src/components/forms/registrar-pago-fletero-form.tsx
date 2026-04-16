@@ -69,6 +69,18 @@ type NCPendiente = {
   liquidacion: { nroComprobante: number | null; ptoVenta: number | null } | null
 }
 
+type AdelantoPendiente = {
+  id: string
+  tipo: "CHEQUE_PROPIO" | "CHEQUE_TERCERO" | "TRANSFERENCIA" | "EFECTIVO"
+  monto: number
+  montoDescontado: number
+  fecha: string
+  descripcion: string | null
+  comprobanteS3Key: string | null
+  nroCheque: string | null
+  bancoCheque: string | null
+}
+
 type Props = {
   liquidaciones: LiqItem[]
   fletero: { id: string; razonSocial: string; cuit: string }
@@ -77,6 +89,7 @@ type Props = {
   saldoAFavorCC: number
   gastosPendientes?: GastoPendiente[]
   ncPendientes?: NCPendiente[]
+  adelantosPendientes?: AdelantoPendiente[]
   onSuccess: (nroOP: string, opId: string) => void
   onClose: () => void
 }
@@ -184,6 +197,7 @@ export function RegistrarPagoFleteroModal({
   saldoAFavorCC,
   gastosPendientes = [],
   ncPendientes = [],
+  adelantosPendientes = [],
   onSuccess,
   onClose,
 }: Props) {
@@ -196,6 +210,9 @@ export function RegistrarPagoFleteroModal({
 
   const [ncSeleccionados, setNCSeleccionados] = useState<Record<string, boolean>>({})
   const [ncMontos, setNCMontos] = useState<Record<string, string>>({})
+
+  const [adelantosSeleccionados, setAdelantosSeleccionados] = useState<Record<string, boolean>>({})
+  const [adelantosMontos, setAdelantosMontos] = useState<Record<string, string>>({})
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -218,7 +235,16 @@ export function RegistrarPagoFleteroModal({
       .map(nc => parsearImporte(ncMontos[nc.id] ?? "0"))
   )
 
-  const saldoAjustado = maxMonetario(0, restarImportes(saldoPendienteTotal, sumarImportes([totalGastosDescontados, totalNCDescontados])))
+  const totalAdelantosDescontados = sumarImportes(
+    adelantosPendientes
+      .filter(a => adelantosSeleccionados[a.id])
+      .map(a => parsearImporte(adelantosMontos[a.id] ?? "0"))
+  )
+
+  const saldoAjustado = maxMonetario(
+    0,
+    restarImportes(saldoPendienteTotal, sumarImportes([totalGastosDescontados, totalNCDescontados, totalAdelantosDescontados])),
+  )
 
   const totalMedios = sumarImportes(pagos.map(p => parsearImporte(p.monto)))
   const diferencia = restarImportes(totalMedios, saldoAjustado)
@@ -241,6 +267,16 @@ export function RegistrarPagoFleteroModal({
       setNCMontos((prev) => ({ ...prev, [ncId]: String(saldoNC) }))
     } else {
       setNCMontos((prev) => ({ ...prev, [ncId]: "" }))
+    }
+  }
+
+  function toggleAdelanto(adelantoId: string, saldoAdelanto: number) {
+    const ahora = !adelantosSeleccionados[adelantoId]
+    setAdelantosSeleccionados((prev) => ({ ...prev, [adelantoId]: ahora }))
+    if (ahora) {
+      setAdelantosMontos((prev) => ({ ...prev, [adelantoId]: String(saldoAdelanto) }))
+    } else {
+      setAdelantosMontos((prev) => ({ ...prev, [adelantoId]: "" }))
     }
   }
 
@@ -296,8 +332,8 @@ export function RegistrarPagoFleteroModal({
 
   // ── Submit ───────────────────────────────────────────────────────────────────
   async function handleSubmit() {
-    if (pagos.length === 0 && totalGastosDescontados === 0 && totalNCDescontados === 0) {
-      setError("Agregá al menos un medio de pago, gasto o NC a descontar"); return
+    if (pagos.length === 0 && totalGastosDescontados === 0 && totalNCDescontados === 0 && totalAdelantosDescontados === 0) {
+      setError("Agregá al menos un medio de pago, gasto, NC o adelanto a descontar"); return
     }
     if (!importesIguales(totalMedios, saldoAjustado)) {
       setError(`El total debe cubrir exactamente el saldo (${ars(saldoAjustado)}). Diferencia: ${ars(diferencia)}`); return
@@ -348,6 +384,13 @@ export function RegistrarPagoFleteroModal({
             .filter((nc) => nc.montoDescontar > 0)
           return ncPayload.length > 0 ? ncPayload : undefined
         })(),
+        adelantoDescuentos: (() => {
+          const adPayload = adelantosPendientes
+            .filter((a) => adelantosSeleccionados[a.id])
+            .map((a) => ({ adelantoId: a.id, montoDescontar: parsearImporte(adelantosMontos[a.id] ?? "0") }))
+            .filter((a) => a.montoDescontar > 0)
+          return adPayload.length > 0 ? adPayload : undefined
+        })(),
       }
 
       const res = await fetch("/api/ordenes-pago", {
@@ -365,7 +408,7 @@ export function RegistrarPagoFleteroModal({
     }
   }
 
-  const puedeConfirmar = !loading && (pagos.length > 0 || totalGastosDescontados > 0) && !draft && Math.abs(diferencia) < 0.01
+  const puedeConfirmar = !loading && (pagos.length > 0 || totalGastosDescontados > 0 || totalNCDescontados > 0 || totalAdelantosDescontados > 0) && !draft && Math.abs(diferencia) < 0.01
 
   async function abrirPreview() {
     setError(null)
@@ -384,6 +427,81 @@ export function RegistrarPagoFleteroModal({
   }
 
   if (mostrandoPreview) {
+    // Construir lista unificada de aplicaciones (mismo orden y formato que el PDF)
+    const aplicacionesPreview: AplicacionPreview[] = []
+
+    // 1. NC aplicadas
+    for (const nc of ncPendientes) {
+      if (!ncSeleccionados[nc.id]) continue
+      const monto = parsearImporte(ncMontos[nc.id] ?? "0")
+      if (monto <= 0) continue
+      const nroNC = nc.nroComprobante
+        ? `${String(nc.ptoVenta ?? 1).padStart(4, "0")}-${String(nc.nroComprobante).padStart(8, "0")}`
+        : "s/n"
+      aplicacionesPreview.push({
+        tipo: "NC",
+        comprobante: nroNC,
+        detalle: nc.descripcion ?? nc.subtipo ?? "—",
+        monto,
+      })
+    }
+
+    // 2. Gastos descontados (Combustible / Otros)
+    for (const g of gastosPendientes) {
+      if (!gastosSeleccionados[g.id]) continue
+      const monto = parsearImporte(gastosMontos[g.id] ?? "0")
+      if (monto <= 0) continue
+      const fp = g.facturaProveedor
+      if (g.tipo === "COMBUSTIBLE") {
+        aplicacionesPreview.push({
+          tipo: "Adlto Combustible",
+          comprobante: fp ? `${fp.tipoCbte ?? ""} ${fp.nroComprobante ?? "s/n"}`.trim() : "Sin factura",
+          detalle: fp?.proveedor.razonSocial ?? g.descripcion ?? "Combustible",
+          monto,
+        })
+      } else {
+        aplicacionesPreview.push({
+          tipo: "Adlto",
+          comprobante: "--",
+          detalle: g.descripcion ?? "Gasto",
+          monto,
+        })
+      }
+    }
+
+    // 3. Adelantos descontados (Cheque / Transferencia / Efectivo)
+    for (const a of adelantosPendientes) {
+      if (!adelantosSeleccionados[a.id]) continue
+      const monto = parsearImporte(adelantosMontos[a.id] ?? "0")
+      if (monto <= 0) continue
+      if (a.tipo === "CHEQUE_PROPIO" || a.tipo === "CHEQUE_TERCERO") {
+        aplicacionesPreview.push({
+          tipo: "Adlto Cheque",
+          comprobante: a.nroCheque ? `Nº ${a.nroCheque}` : "--",
+          detalle: "Comprobante adjunto",
+          monto,
+        })
+      } else if (a.tipo === "TRANSFERENCIA") {
+        aplicacionesPreview.push({
+          tipo: "Adlto Transferencia",
+          comprobante: "--",
+          detalle: "Comprobante adjunto",
+          monto,
+        })
+      } else if (a.tipo === "EFECTIVO") {
+        aplicacionesPreview.push({
+          tipo: "Adlto Efectivo",
+          comprobante: "--",
+          detalle: a.descripcion ?? "--",
+          monto,
+        })
+      }
+    }
+
+    const totalAplicaciones = sumarImportes(aplicacionesPreview.map((a) => a.monto))
+    const totalComprobantes = sumarImportes(liquidaciones.map((l) => l.saldoPendiente))
+    const netoAPagar = restarImportes(totalComprobantes, totalAplicaciones)
+
     return (
       <PreviewOrdenPago
         nro={proximoNro}
@@ -391,17 +509,11 @@ export function RegistrarPagoFleteroModal({
         fletero={fletero}
         liquidaciones={liquidaciones}
         pagos={pagos}
-        gastosDescontados={gastosPendientes.filter((g) => gastosSeleccionados[g.id]).map((g) => ({
-          razonSocial: g.sinFactura
-            ? (g.descripcion ?? "Gasto sin factura")
-            : g.facturaProveedor?.proveedor.razonSocial ?? "—",
-          comprobante: g.sinFactura
-            ? "Sin factura"
-            : `${g.facturaProveedor?.tipoCbte ?? ""} ${g.facturaProveedor?.nroComprobante ?? "s/n"}`,
-          monto: parsearImporte(gastosMontos[g.id] ?? "0"),
-        }))}
+        aplicaciones={aplicacionesPreview}
+        totalComprobantes={totalComprobantes}
+        totalAplicaciones={totalAplicaciones}
+        netoAPagar={netoAPagar}
         totalMedios={totalMedios}
-        totalGastosDescontados={totalGastosDescontados}
         cuentasBancarias={cuentasBancarias}
         chequesEnCartera={chequesEnCartera}
         loading={loading}
@@ -465,6 +577,12 @@ export function RegistrarPagoFleteroModal({
                   <span className="text-blue-600">- {ars(totalNCDescontados)}</span>
                 </div>
               )}
+              {totalAdelantosDescontados > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Adelantos a descontar</span>
+                  <span className="text-purple-600">- {ars(totalAdelantosDescontados)}</span>
+                </div>
+              )}
               <div className="flex justify-between font-semibold border-t pt-1 mt-1">
                 <span>A cubrir</span>
                 <span>{ars(saldoAjustado)}</span>
@@ -520,6 +638,61 @@ export function RegistrarPagoFleteroModal({
                           onChange={(e) => {
                             const v = Math.min(parsearImporte(e.target.value), saldoGasto)
                             setGastosMontos((prev) => ({ ...prev, [g.id]: String(v) }))
+                          }}
+                          className="w-24 h-6 text-xs text-right px-1"
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Adelantos a descontar */}
+            {adelantosPendientes.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Adelantos a descontar
+                </p>
+                <div className="space-y-2">
+                  {adelantosPendientes.map((a) => {
+                    const saldoAdelanto = restarImportes(a.monto, a.montoDescontado)
+                    const checked = adelantosSeleccionados[a.id] ?? false
+                    const tipoLabel: Record<typeof a.tipo, string> = {
+                      CHEQUE_PROPIO: "Cheque propio",
+                      CHEQUE_TERCERO: "Cheque tercero",
+                      TRANSFERENCIA: "Transferencia",
+                      EFECTIVO: "Efectivo",
+                    }
+                    const refCheque = a.nroCheque
+                      ? `${a.bancoCheque ? a.bancoCheque + " · " : ""}Nº ${a.nroCheque}`
+                      : null
+                    return (
+                      <div key={a.id} className="flex items-start gap-2 rounded border border-purple-200 bg-purple-50/30 p-2 text-xs">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 cursor-pointer"
+                          checked={checked}
+                          onChange={() => toggleAdelanto(a.id, saldoAdelanto)}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">Adlto {tipoLabel[a.tipo]}</p>
+                          {refCheque && <p className="text-muted-foreground truncate">{refCheque}</p>}
+                          {a.descripcion && <p className="text-muted-foreground truncate">{a.descripcion}</p>}
+                          <p className="text-muted-foreground">
+                            Fecha: {a.fecha.slice(0, 10)} · Saldo: {formatearMoneda(saldoAdelanto)}
+                          </p>
+                        </div>
+                        <Input
+                          type="number"
+                          min="0"
+                          max={saldoAdelanto}
+                          step="0.01"
+                          disabled={!checked}
+                          value={adelantosMontos[a.id] ?? ""}
+                          onChange={(e) => {
+                            const v = Math.min(parsearImporte(e.target.value), saldoAdelanto)
+                            setAdelantosMontos((prev) => ({ ...prev, [a.id]: String(v) }))
                           }}
                           className="w-24 h-6 text-xs text-right px-1"
                         />
@@ -936,9 +1109,10 @@ function DraftForm({
 
 // ─── Preview de Orden de Pago ─────────────────────────────────────────────────
 
-type GastoDescontadoPreview = {
-  razonSocial: string
+type AplicacionPreview = {
+  tipo: string
   comprobante: string
+  detalle: string
   monto: number
 }
 
@@ -948,9 +1122,11 @@ function PreviewOrdenPago({
   fletero,
   liquidaciones,
   pagos,
-  gastosDescontados,
+  aplicaciones,
+  totalComprobantes,
+  totalAplicaciones,
+  netoAPagar,
   totalMedios,
-  totalGastosDescontados,
   cuentasBancarias,
   chequesEnCartera,
   loading,
@@ -962,9 +1138,11 @@ function PreviewOrdenPago({
   fletero: { id: string; razonSocial: string; cuit: string }
   liquidaciones: LiqItem[]
   pagos: PagoItem[]
-  gastosDescontados: GastoDescontadoPreview[]
+  aplicaciones: AplicacionPreview[]
+  totalComprobantes: number
+  totalAplicaciones: number
+  netoAPagar: number
   totalMedios: number
-  totalGastosDescontados: number
   cuentasBancarias: CuentaBancaria[]
   chequesEnCartera: ChequeEnCartera[]
   loading: boolean
@@ -1003,24 +1181,26 @@ function PreviewOrdenPago({
             <p className="text-xs text-muted-foreground">CUIT: {fletero.cuit}</p>
           </div>
 
-          {/* Facturas aplicadas */}
+          {/* Comprobantes Cancelados */}
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
-              Facturas Aplicadas
+              Comprobantes Cancelados
             </p>
             <div className="rounded border overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50">
                   <tr>
-                    <th className="px-3 py-1.5 text-left text-xs font-medium">LP</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-medium">Comprobante</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-medium">Nº</th>
                     <th className="px-3 py-1.5 text-right text-xs font-medium">Saldo a pagar</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {liquidaciones.map((liq) => (
                     <tr key={liq.id}>
+                      <td className="px-3 py-2 text-xs">Líquido Producto</td>
                       <td className="px-3 py-2 text-xs font-mono">
-                        LP {nroLP(liq.ptoVenta, liq.nroComprobante)}
+                        {nroLP(liq.ptoVenta, liq.nroComprobante)}
                         {liq.saldoPendiente < liq.total && (
                           <span className="ml-1 text-amber-600 font-sans">(parcial)</span>
                         )}
@@ -1031,15 +1211,68 @@ function PreviewOrdenPago({
                     </tr>
                   ))}
                 </tbody>
+                <tfoot className="bg-muted/30 font-semibold">
+                  <tr>
+                    <td className="px-3 py-1.5 text-xs" colSpan={2}>Total Comprobantes Cancelados</td>
+                    <td className="px-3 py-1.5 text-right text-xs font-mono">{ars(totalComprobantes)}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
 
-          {/* Medios de pago */}
+          {/* Aplicaciones (solo si hay alguna) */}
+          {aplicaciones.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
+                Aplicaciones
+              </p>
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="px-3 py-1.5 text-left text-xs font-medium">Tipo</th>
+                      <th className="px-3 py-1.5 text-left text-xs font-medium">Comprobante</th>
+                      <th className="px-3 py-1.5 text-left text-xs font-medium">Detalle</th>
+                      <th className="px-3 py-1.5 text-right text-xs font-medium">Importe</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {aplicaciones.map((a, i) => (
+                      <tr key={i}>
+                        <td className="px-3 py-2 text-xs">{a.tipo}</td>
+                        <td className="px-3 py-2 text-xs font-mono">{a.comprobante}</td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground">{a.detalle}</td>
+                        <td className="px-3 py-2 text-right text-xs font-mono text-orange-600">
+                          - {ars(a.monto)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-muted/30 font-semibold">
+                    <tr>
+                      <td className="px-3 py-1.5 text-xs" colSpan={3}>Total Aplicaciones</td>
+                      <td className="px-3 py-1.5 text-right text-xs font-mono text-orange-600">
+                        - {ars(totalAplicaciones)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Neto a Pagar */}
+          <div className="rounded-md border-2 border-primary/40 bg-primary/5 px-4 py-3 flex justify-between items-center">
+            <span className="text-sm font-semibold text-primary">Neto a Pagar</span>
+            <span className="text-base font-bold font-mono text-primary">{ars(netoAPagar)}</span>
+          </div>
+
+          {/* Medios de Pago */}
           {pagos.length > 0 && (
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
-                Medios de pago
+                Medios de Pago
               </p>
               <div className="rounded border overflow-hidden">
                 <table className="w-full text-sm">
@@ -1047,7 +1280,7 @@ function PreviewOrdenPago({
                     <tr>
                       <th className="px-3 py-1.5 text-left text-xs font-medium">Tipo</th>
                       <th className="px-3 py-1.5 text-left text-xs font-medium">Detalle</th>
-                      <th className="px-3 py-1.5 text-right text-xs font-medium">Monto</th>
+                      <th className="px-3 py-1.5 text-right text-xs font-medium">Importe</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -1063,61 +1296,16 @@ function PreviewOrdenPago({
                       </tr>
                     ))}
                   </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Gastos descontados */}
-          {gastosDescontados.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
-                Gastos descontados
-              </p>
-              <div className="rounded border overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50">
+                  <tfoot className="bg-muted/30 font-semibold">
                     <tr>
-                      <th className="px-3 py-1.5 text-left text-xs font-medium">Proveedor</th>
-                      <th className="px-3 py-1.5 text-left text-xs font-medium">Comprobante</th>
-                      <th className="px-3 py-1.5 text-right text-xs font-medium">Monto</th>
+                      <td className="px-3 py-1.5 text-xs" colSpan={2}>Total Medios de Pago</td>
+                      <td className="px-3 py-1.5 text-right text-xs font-mono">{ars(totalMedios)}</td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {gastosDescontados.map((g, i) => (
-                      <tr key={i}>
-                        <td className="px-3 py-2 text-xs">{g.razonSocial}</td>
-                        <td className="px-3 py-2 text-xs text-muted-foreground">{g.comprobante}</td>
-                        <td className="px-3 py-2 text-right text-xs font-mono text-orange-600">
-                          - {ars(g.monto)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
+                  </tfoot>
                 </table>
               </div>
             </div>
           )}
-
-          {/* Totales */}
-          <div className="rounded border p-3 space-y-1 text-sm">
-            {pagos.length > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Total medios de pago</span>
-                <span className="font-mono">{ars(totalMedios)}</span>
-              </div>
-            )}
-            {gastosDescontados.length > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Total gastos descontados</span>
-                <span className="font-mono text-orange-600">{ars(totalGastosDescontados)}</span>
-              </div>
-            )}
-            <div className="flex justify-between font-semibold border-t pt-1 mt-1">
-              <span>Total Orden de Pago</span>
-              <span className="font-mono">{ars(totalMedios + totalGastosDescontados)}</span>
-            </div>
-          </div>
 
           <p className="text-xs text-muted-foreground text-center">
             Revisá los datos antes de confirmar. Una vez confirmado no se puede deshacer sin anulación.

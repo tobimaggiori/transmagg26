@@ -316,10 +316,10 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
     ]
 
     const clientBoxPadX = 12
-    const clientBoxPadTop = 12
-    const clientBoxPadBottom = 6
+    const clientBoxPadY = 10
     const clientLineH = 20
-    const clientBoxH = clientBoxPadTop + clientLines.length * clientLineH + clientBoxPadBottom
+    const clientIconH = 8
+    const clientBoxH = clientBoxPadY * 2 + clientLines.length * clientLineH
 
     doc.save()
     doc.fillColor(BG_LIGHT)
@@ -328,15 +328,15 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
     doc.roundedRect(left, cursorY, contentW, clientBoxH, 8).stroke()
     doc.restore()
 
-    let clientY = cursorY + clientBoxPadTop
+    let clientY = cursorY + clientBoxPadY
     for (const line of clientLines) {
-      line.icon(doc, left + clientBoxPadX, clientY + 1)
+      line.icon(doc, left + clientBoxPadX, clientY + (clientLineH - clientIconH) / 2)
       let textX = left + clientBoxPadX + 14
       for (const part of line.parts) {
         const fontSize = line === clientLines[0] ? 10 : 9
         doc.font(part.bold ? "Helvetica-Bold" : "Helvetica").fontSize(fontSize).fillColor(TEXT)
         const w = doc.widthOfString(part.text)
-        doc.text(part.text, textX, clientY + 2, { lineBreak: false })
+        doc.text(part.text, textX, clientY + (clientLineH - fontSize) / 2, { lineBreak: false })
         textX += w
       }
       clientY += clientLineH

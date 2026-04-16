@@ -144,6 +144,9 @@ function createPrismaClient() {
       gastoDescuento: {
         montoDescontado: dn("montoDescontado"),
       },
+      nCDescuento: {
+        montoDescontado: dn("montoDescontado"),
+      },
       pagoAFletero: {
         monto: dn("monto"),
       },

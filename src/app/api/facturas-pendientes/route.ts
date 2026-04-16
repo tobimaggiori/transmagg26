@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { puedeAcceder } from "@/lib/permissions"
-import { sumarImportes } from "@/lib/money"
+import { calcularSaldoPendienteDoc } from "@/lib/cuenta-corriente"
 import type { Rol } from "@/types"
 
 export async function GET(req: NextRequest) {
@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
         select: {
           tipo: true,
           montoTotal: true,
+          montoDescontado: true,
           nroComprobante: true,
           ptoVenta: true,
           nroComprobanteExterno: true,
@@ -68,21 +69,14 @@ export async function GET(req: NextRequest) {
     orderBy: { emitidaEn: "asc" },
   })
 
-  // Calcular saldoPendiente por factura
+  // Calcular saldoPendiente por factura (modelo unificado: total − pagos − NCs aplicadas)
   const resultado = facturas.map((f) => {
-    const totalPagado = sumarImportes(f.pagos.map((p) => p.monto))
-    const ajusteNC = sumarImportes(
-      f.notasCreditoDebito
-        .filter((n) => n.tipo === "NC_EMITIDA" || n.tipo === "NC_RECIBIDA")
-        .map((n) => n.montoTotal)
-    )
-    const ajusteND = sumarImportes(
-      f.notasCreditoDebito
-        .filter((n) => n.tipo === "ND_EMITIDA" || n.tipo === "ND_RECIBIDA")
-        .map((n) => n.montoTotal)
-    )
-    const netoVigente = Math.max(0, sumarImportes([Number(f.total), ajusteND]) - ajusteNC)
-    const saldoPendiente = Math.max(0, netoVigente - totalPagado)
+    const saldoPendiente = calcularSaldoPendienteDoc(f.total, {
+      pagos: f.pagos.map((p) => p.monto),
+      ncAplicadas: f.notasCreditoDebito
+        .filter((n) => n.tipo === "NC_EMITIDA")
+        .map((n) => n.montoDescontado),
+    })
 
     return {
       id: f.id,

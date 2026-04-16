@@ -8,7 +8,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
-import { sumarImportes, restarImportes } from "@/lib/money"
+import { sumarImportes, restarImportes, maxMonetario } from "@/lib/money"
+import { calcularSaldoPendienteDoc, calcularSaldoCCFletero } from "@/lib/cuenta-corriente"
 import type { Rol } from "@/types"
 
 export async function GET(
@@ -63,6 +64,7 @@ export async function GET(
         },
         adelantoDescuentos: { select: { montoDescontado: true } },
         gastoDescuentos: { select: { montoDescontado: true } },
+        ncDescuentos: { select: { montoDescontado: true } },
       },
       orderBy: { grabadaEn: "asc" },
     })
@@ -73,6 +75,13 @@ export async function GET(
 
       const adelantosDesc = sumarImportes(liq.adelantoDescuentos.map(a => a.montoDescontado))
       const gastosDesc = sumarImportes(liq.gastoDescuentos.map(g => g.montoDescontado))
+      const ncsAplicadas = sumarImportes(liq.ncDescuentos.map(n => n.montoDescontado))
+      const saldoPendiente = calcularSaldoPendienteDoc(liq.total, {
+        pagos: liq.pagos.map(p => p.monto),
+        ncAplicadas: liq.ncDescuentos.map(n => n.montoDescontado),
+        gastos: liq.gastoDescuentos.map(g => g.montoDescontado),
+        adelantos: liq.adelantoDescuentos.map(a => a.montoDescontado),
+      })
 
       return {
         id: liq.id,
@@ -82,6 +91,8 @@ export async function GET(
         pdfS3Key: liq.pdfS3Key,
         total: liq.total,
         estado: liq.estado,
+        saldoPendiente,
+        ncsAplicadas,
         adelantosDesc,
         gastosDesc,
         ordenPago: ordenPago
@@ -97,8 +108,9 @@ export async function GET(
     })
 
     const totalEmitido = sumarImportes(rows.map(r => r.total))
-    const totalPagado = sumarImportes(rows.filter(r => r.estado === "PAGADA").map(r => r.total))
-    const saldoPendiente = restarImportes(totalEmitido, totalPagado)
+    const saldoPendiente = sumarImportes(rows.map(r => r.saldoPendiente))
+    const totalPagado = maxMonetario(0, restarImportes(totalEmitido, saldoPendiente))
+    const saldoCC = await calcularSaldoCCFletero(id)
 
     return NextResponse.json({
       fletero,
@@ -106,6 +118,7 @@ export async function GET(
       totalEmitido,
       totalPagado,
       saldoPendiente,
+      creditoDisponible: saldoCC.creditoDisponible,
     })
   } catch (error) {
     console.error("[GET /api/fleteros/[id]/cc-lps]", error)

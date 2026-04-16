@@ -70,6 +70,7 @@ export async function ejecutarAnularPagoFletero(
       cuentaId: true,
       chequeEmitidoId: true,
       chequeRecibidoId: true,
+      ordenPagoId: true,
       liquidacion: {
         select: {
           id: true,
@@ -173,6 +174,14 @@ export async function ejecutarAnularPagoFletero(
         operadorId,
       },
     })
+
+    // 7. Invalidar cache del PDF de la OP a la que pertenece este pago
+    if (pago.ordenPagoId) {
+      await tx.ordenPago.update({
+        where: { id: pago.ordenPagoId },
+        data: { pdfS3Key: null },
+      })
+    }
   })
 
   return { ok: true, nuevoEstadoLP }

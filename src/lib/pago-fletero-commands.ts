@@ -9,7 +9,7 @@
 
 import { prisma } from "@/lib/prisma"
 import { calcularSaldoCCFletero } from "@/lib/cuenta-corriente"
-import { generarHTMLOrdenPago } from "@/lib/pdf-orden-pago"
+import { generarPDFOrdenPago } from "@/lib/pdf-orden-pago"
 import { subirPDF, storageConfigurado } from "@/lib/storage"
 import { sumarImportes, restarImportes, maxMonetario, importesIguales } from "@/lib/money"
 
@@ -356,12 +356,11 @@ export async function ejecutarRegistrarPagoFletero(
     return { ordenPagoId: op.id, nroOrdenPago: nroOP, anioOP }
   })
 
-  // ── Generar HTML y subir a R2 (no fatal si falla) ────────────────────────
+  // ── Generar PDF y subir a R2 (no fatal si falla) ─────────────────────────
   if (storageConfigurado()) {
     try {
-      const html = await generarHTMLOrdenPago(ordenPagoId)
-      const buffer = Buffer.from(html, "utf-8")
-      const key = await subirPDF(buffer, "comprobantes-pago-fletero", `OP-${nroOrdenPago}-${anioOP}.html`)
+      const buffer = await generarPDFOrdenPago(ordenPagoId)
+      const key = await subirPDF(buffer, "comprobantes-pago-fletero", `OP-${nroOrdenPago}-${anioOP}.pdf`)
       await prisma.ordenPago.update({ where: { id: ordenPagoId }, data: { pdfS3Key: key } })
     } catch {
       // No bloquear la respuesta si el storage falla

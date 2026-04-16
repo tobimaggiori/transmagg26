@@ -1,24 +1,22 @@
 /**
  * GET /api/fleteros/[id]/liquidaciones-pendientes
  *
- * Devuelve las liquidaciones de un fletero con estado EMITIDA o PARCIALMENTE_PAGADA,
- * incluyendo el saldo pendiente calculado (total - suma de pagos anteriores).
+ * Devuelve las liquidaciones de un fletero con saldo pendiente > 0,
+ * usando la fórmula unificada (total − pagos − NCs aplicadas − gastos − adelantos).
  * Solo accesible para ADMIN_TRANSMAGG y OPERADOR_TRANSMAGG.
  */
 
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, notFoundResponse, serverErrorResponse } from "@/lib/financial-api"
-import { sumarImportes, restarImportes, maxMonetario } from "@/lib/money"
+import { calcularSaldoPendienteDoc } from "@/lib/cuenta-corriente"
+import { sumarImportes, esMayorQueCero } from "@/lib/money"
 
 /**
  * GET: NextRequest -> Promise<NextResponse>
  *
- * Dado el id del fletero en la ruta, devuelve sus liquidaciones pagables con saldo pendiente.
- *
- * Ejemplos:
- * GET /api/fleteros/abc/liquidaciones-pendientes
- * === [{ id, nroComprobante, total, totalPagado, saldoPendiente, grabadaEn, estado }]
+ * Devuelve [{ id, nroComprobante, total, totalPagado, saldoPendiente, grabadaEn, estado }]
+ * para LPs cuyo saldoPendiente > 0 (usando la fórmula unificada).
  */
 export async function GET(
   _request: NextRequest,
@@ -34,33 +32,37 @@ export async function GET(
     if (!fletero) return notFoundResponse("Fletero")
 
     const liquidaciones = await prisma.liquidacion.findMany({
-      where: {
-        fleteroId,
-        estado: { in: ["EMITIDA", "PARCIALMENTE_PAGADA"] },
-      },
+      where: { fleteroId },
       include: {
-        pagos: {
-          where: { anulado: false },
-          select: { monto: true },
-        },
+        pagos: { where: { anulado: false }, select: { monto: true } },
+        ncDescuentos: { select: { montoDescontado: true } },
+        gastoDescuentos: { select: { montoDescontado: true } },
+        adelantoDescuentos: { select: { montoDescontado: true } },
       },
       orderBy: { grabadaEn: "asc" },
     })
 
-    const resultado = liquidaciones.map((liq) => {
-      const totalPagado = sumarImportes(liq.pagos.map(p => p.monto))
-      const saldoPendiente = maxMonetario(0, restarImportes(liq.total, totalPagado))
-      return {
-        id: liq.id,
-        nroComprobante: liq.nroComprobante,
-        ptoVenta: liq.ptoVenta,
-        total: liq.total,
-        totalPagado,
-        saldoPendiente,
-        grabadaEn: liq.grabadaEn.toISOString(),
-        estado: liq.estado,
-      }
-    })
+    const resultado = liquidaciones
+      .map((liq) => {
+        const totalPagado = sumarImportes(liq.pagos.map((p) => p.monto))
+        const saldoPendiente = calcularSaldoPendienteDoc(liq.total, {
+          pagos: liq.pagos.map((p) => p.monto),
+          ncAplicadas: liq.ncDescuentos.map((n) => n.montoDescontado),
+          gastos: liq.gastoDescuentos.map((g) => g.montoDescontado),
+          adelantos: liq.adelantoDescuentos.map((a) => a.montoDescontado),
+        })
+        return {
+          id: liq.id,
+          nroComprobante: liq.nroComprobante,
+          ptoVenta: liq.ptoVenta,
+          total: liq.total,
+          totalPagado,
+          saldoPendiente,
+          grabadaEn: liq.grabadaEn.toISOString(),
+          estado: liq.estado,
+        }
+      })
+      .filter((liq) => esMayorQueCero(liq.saldoPendiente))
 
     return NextResponse.json(resultado)
   } catch (error) {
