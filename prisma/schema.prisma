@@ -921,6 +921,7 @@ model AdelantoFletero {
   chequeRecibidoId String?             @map("cheque_recibido_id")
   montoDescontado  Decimal               @default(0) @map("monto_descontado")
   estado           String              @default("PENDIENTE_DESCUENTO")
+  comprobanteS3Key String?             @map("comprobante_s3_key")
   operadorId       String              @map("operador_id")
   creadoEn         DateTime            @default(now()) @map("creado_en")
 

@@ -37,7 +37,7 @@ export const chequeEmitidoEstadoSchema = z.enum([
 ])
 export const endosadoATipoSchema = z.enum(["FLETERO", "PROVEEDOR", "BROKER"])
 export const tipoDocBeneficiarioSchema = z.enum(["CUIT", "CUIL", "CDI"])
-export const motivoPagoChequeSchema = z.enum(["VARIOS", "FACTURA", "ORDEN_DE_PAGO", "ALQUILER", "EXPENSAS", "SERVICIOS"])
+export const motivoPagoChequeSchema = z.enum(["VARIOS", "FACTURA", "ORDEN_DE_PAGO", "ALQUILER", "EXPENSAS", "SERVICIOS", "ADELANTO"])
 export const clausulaChequeSchema = z.enum(["A_LA_ORDEN", "NO_A_LA_ORDEN"])
 export const estadoPlanillaGaliciaSchema = z.enum(["BORRADOR", "DESCARGADA", "PROCESADA"])
 export const tipoGastoTarjetaPrepagaSchema = z.enum([
@@ -247,7 +247,18 @@ export const crearGastoTarjetaPrepagaSchema = z.object({
 
 export const actualizarGastoTarjetaPrepagaSchema = crearGastoTarjetaPrepagaSchema.partial()
 
-export const crearAdelantoFleteroSchema = z.object({
+export const chequePropioAdelantoSchema = z.object({
+  cuentaId: z.string().uuid("Cuenta (chequera) inválida"),
+  nroCheque: z.string().min(1, "El número de cheque es obligatorio"),
+  fechaEmision: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de emisión inválida"),
+  fechaPago: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de pago inválida"),
+  clausula: clausulaChequeSchema.default("NO_A_LA_ORDEN"),
+  descripcion1: z.string().max(100, "Descripción 1 admite hasta 100 caracteres").nullable().optional(),
+  descripcion2: z.string().max(50, "Descripción 2 admite hasta 50 caracteres").nullable().optional(),
+  mailBeneficiario: z.string().email("Mail inválido").max(100).nullable().optional(),
+})
+
+const adelantoFleteroBaseSchema = z.object({
   fleteroId: z.string().uuid("Fletero inválido"),
   tipo: tipoAdelantoFleteroSchema,
   monto: z.number().positive("El monto debe ser mayor a 0"),
@@ -255,11 +266,32 @@ export const crearAdelantoFleteroSchema = z.object({
   descripcion: z.string().nullable().optional(),
   chequeEmitidoId: z.string().uuid("Cheque emitido inválido").nullable().optional(),
   chequeRecibidoId: z.string().uuid("Cheque recibido inválido").nullable().optional(),
+  chequePropio: chequePropioAdelantoSchema.nullable().optional(),
+  comprobanteS3Key: z.string().nullable().optional(),
   montoDescontado: z.number().min(0).default(0),
   estado: estadoAdelantoFleteroSchema.default("PENDIENTE_DESCUENTO"),
 })
 
-export const actualizarAdelantoFleteroSchema = crearAdelantoFleteroSchema.partial()
+export const crearAdelantoFleteroSchema = adelantoFleteroBaseSchema.superRefine((data, ctx) => {
+  if (data.tipo === "CHEQUE_PROPIO") {
+    if (!data.chequePropio) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Datos del cheque propio obligatorios", path: ["chequePropio"] })
+    }
+    if (!data.comprobanteS3Key) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Comprobante de emisión obligatorio", path: ["comprobanteS3Key"] })
+    }
+  }
+  if (data.tipo === "CHEQUE_TERCERO") {
+    if (!data.chequeRecibidoId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Cheque en cartera obligatorio", path: ["chequeRecibidoId"] })
+    }
+    if (!data.comprobanteS3Key) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Comprobante de endoso obligatorio", path: ["comprobanteS3Key"] })
+    }
+  }
+})
+
+export const actualizarAdelantoFleteroSchema = adelantoFleteroBaseSchema.partial()
 
 export const crearAdelantoDescuentoSchema = z.object({
   adelantoId: z.string().uuid("Adelanto inválido"),
