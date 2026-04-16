@@ -1,131 +1,106 @@
-# Transmagg — Sistema de Gestión de Transporte
+# Trans-Magg
 
-Sistema de gestión operativa y financiera para una empresa de transporte de cargas. Desarrollado con Next.js 14 App Router, TypeScript, Prisma 7 + LibSQL/SQLite y shadcn/ui.
+Sistema de gestión operativa y financiera para empresa de transporte de cargas.
 
-## Módulos implementados
+Stack: **Next.js 14 (App Router) + TypeScript + Prisma 7 + PostgreSQL +
+NextAuth v5 + shadcn/ui + Tailwind**. Storage en **Cloudflare R2**, PDFs con
+**pdfkit + pdf-lib**, integración fiscal con **ARCA** (WSAA + WSFEv1).
 
-### Transporte y operaciones
-- **Viajes** — CRUD completo con estados de liquidación y facturación independientes, carta de porte obligatoria, cupo, provincias canónicas
-- **Fleteros** — CRUD con usuario asociado, condición IVA, gestión de flota (camiones + choferes)
-- **Flota propia** — Camiones propios de Transmagg con pólizas de seguro y alertas de vencimiento, asignación de choferes empleados
-
-### Documentos financieros
-- **Liquidaciones (LP)** — "Cuenta de Venta y Líquido Producto" con estados, numeración ARCA, asientos IIBB
-- **Facturas emitidas** — A empresas clientes, tipos A/B/C/M/X, asientos IVA e IIBB
-- **Notas de Crédito/Débito** — NC/ND emitidas y recibidas (4 tipos, 10 subtipos), integradas en CC
-- **Facturas de proveedores** — Ítems con alícuota IVA, pago integrado o diferido
-
-### Cobros y pagos
-- **Pagos a fleteros** — Multi-liquidación, multi-medio, pago parcial, historial
-- **Pagos a proveedores** — 8 tipos de pago, comprobante PDF, efectos secundarios atómicos
-- **Cheques** — ECheq emitidos + cartera recibida, endoso, descuento, broker
-- **Adelantos a fleteros** — Con descuento automático en liquidaciones
-
-### Contabilidad
-- **Cuentas bancarias** — Saldos, FCI, movimientos sin factura, resúmenes bancarios
-- **Tarjetas** — Corporativas y prepagas con control de gastos
-- **IVA** — Libro IVA Compras/Ventas con exportación PDF/Excel
-- **IIBB** — Por provincia y período con exportación
-- **Chequeras** — ECheq emitidos y cartera recibida con flujo completo
-- **Reportes** — Gastos por concepto, LP vs Facturas, Viajes sin LP, Movimientos
-
-### Configuración
-- **ABM** — Alta, baja, modificación de todas las entidades (solo ADMIN_TRANSMAGG)
-- **ARCA** — Configuración del emisor, certificado digital, puntos de venta, ambiente (homologación/producción)
-
-### Usuarios y roles
-- Autenticación passwordless con OTP por email
-- Roles: ADMIN_TRANSMAGG, OPERADOR_TRANSMAGG, FLETERO, CHOFER, ADMIN_EMPRESA, OPERADOR_EMPRESA
-- Panel personalizado para CHOFER empleado de Transmagg (solo lectura, sin tarifas)
-
----
-
-## Setup de desarrollo
+## Setup
 
 ### Requisitos
-- Node.js 20+
+- Node 20+
+- PostgreSQL local o accesible
 - npm
 
 ### Instalación
 
 ```bash
 npm install
+cp .env.example .env   # completar variables
+npx prisma db push     # aplicar schema
+npm run db:seed        # cargar datos de prueba
 ```
 
-### Variables de entorno
+### Variables de entorno mínimas
 
-Copiar `.env.example` a `.env` y completar:
+| Variable | Para qué |
+|---|---|
+| `DATABASE_URL` | PostgreSQL (`postgresql://user:pass@host:port/db`) |
+| `NEXTAUTH_SECRET` | Secret de NextAuth (cualquier string en dev) |
+| `NEXTAUTH_URL` | URL base de la app (default `http://localhost:3000`) |
+| `EMAIL_*` | SMTP para envío de OTP (Ethereal en dev, real en prod) |
+| `R2_*` | Cloudflare R2 (account, bucket, credentials) — sin esto las funciones de archivos fallan |
+| `ENCRYPTION_KEY` | Encripta certificado ARCA y firma tokens internos |
+
+### Comandos
 
 ```bash
-cp .env.example .env
+npm run dev            # dev server con hot reload
+npm run build          # build de producción (corre prisma generate)
+npm test               # Jest suite completa
+npm run lint           # ESLint
+npm run db:push        # aplica cambios de schema
+npm run db:migrate     # genera migración (dev)
+npm run db:studio      # Prisma Studio
+npm run db:seed        # carga datos de prueba
 ```
 
-Las variables mínimas para desarrollo:
-- `DATABASE_URL` — ruta al archivo SQLite (por defecto `file:./prisma/dev.db`)
-- `NEXTAUTH_SECRET` — clave secreta para NextAuth (cualquier string en desarrollo)
-- `NEXTAUTH_URL` — URL base (por defecto `http://localhost:3000`)
-- `EMAIL_*` — configuración SMTP (usar Ethereal.email para desarrollo)
+### Usuarios de prueba (seed)
 
-Las variables de R2 (Cloudflare) son necesarias para subir/bajar archivos PDF. Sin ellas el sistema funciona pero las funciones de archivos fallan.
-
-### Base de datos y seed
-
-```bash
-# Aplicar migraciones
-npx prisma migrate dev
-
-# Cargar datos de prueba
-npx ts-node --compiler-options '{"module":"CommonJS"}' prisma/seed.ts
-```
-
-Usuarios de prueba creados por el seed:
 | Email | Rol |
-|-------|-----|
-| admin@transmagg.com.ar | ADMIN_TRANSMAGG |
-| operador@transmagg.com.ar | OPERADOR_TRANSMAGG |
-| juan.perez@fletero.com | FLETERO |
-| garcia.cargas@fletero.com | FLETERO |
-| admin@alimentosdelsur.com.ar | ADMIN_EMPRESA |
-| chofer.rodriguez@transmagg.com.ar | CHOFER |
+|---|---|
+| `admin@transmagg.com.ar` | ADMIN_TRANSMAGG |
+| `operador@transmagg.com.ar` | OPERADOR_TRANSMAGG |
+| `juan.perez@fletero.com` | FLETERO |
+| `admin@alimentosdelsur.com.ar` | ADMIN_EMPRESA |
+| `chofer.rodriguez@transmagg.com.ar` | CHOFER (empleado) |
 
-El login usa OTP por email. En desarrollo, el código OTP se loguea en la consola del servidor.
+Login: ingresá email en `/login`, recibís OTP por email (en dev se loguea en
+consola si no hay SMTP).
 
-### Desarrollo
+### Producción (PM2)
 
-```bash
-npm run dev
-```
-
-### Verificación
+App corre con PM2 (`ecosystem.config.js`). Tras cambiar código:
 
 ```bash
-npm run lint       # ESLint
-npx tsc --noEmit   # TypeScript
-npm test           # Jest (251 tests)
-npm run build      # Build de producción
+npm run build && pm2 reload transmagg
 ```
 
----
+Después de rebuild + reload, hacer **hard refresh en el navegador**
+(Ctrl+Shift+R) para que descargue el bundle JS nuevo. Sin eso aparecen
+errores de Server Actions desconocidas.
 
-## Stack técnico
+## Documentación
 
-- **Framework**: Next.js 14 App Router (SSR + Server Actions)
-- **Lenguaje**: TypeScript strict
-- **Base de datos**: SQLite en desarrollo, Turso/LibSQL en producción
-- **ORM**: Prisma 7 con adaptador LibSQL
-- **UI**: shadcn/ui + Tailwind CSS
-- **Autenticación**: NextAuth v5 con OTP personalizado
-- **Almacenamiento**: Cloudflare R2 (PDFs y comprobantes)
-- **Tests**: Jest con ts-jest
-- **Excel**: exceljs
-- **Validación**: Zod
+Toda la documentación vive en [`docs/`](./docs/). Empezá por
+[`docs/README.md`](./docs/README.md) para el índice y guía de lectura.
 
----
+Para agentes IA: leer primero [`CLAUDE.md`](./CLAUDE.md).
 
-## Lo que falta
+## Estado actual
 
-Ver `PENDIENTE.md` para el detalle completo. En resumen:
+### Implementado
+- Operaciones: viajes, fleteros, flota propia, choferes, panel chofer
+- Documentos fiscales: facturas A/B/C, liquidaciones (LP), notas C/D, todo
+  con integración ARCA real (WSAA, FECAESolicitar, CAE, QR fiscal)
+- Cobros y pagos: pagos a fleteros (multi-LP, multi-medio), pagos a
+  proveedores, recibos de cobranza, cheques (propios y tercero), adelantos a
+  fleteros (incluye cheque propio/tercero como adelanto)
+- Órdenes de pago: aplicaciones (NC, gastos, adelantos), distribución
+  oldest-first entre LPs, PDF con merge de comprobantes adjuntos, cache R2
+- Cuenta corriente con modelo unificado (saldoPendiente y crédito disponible)
+- Contabilidad: libros IVA, IIBB, percepciones; movimientos sin factura;
+  exportación PDF/Excel
+- Tarjetas (corporativas y prepagas), chequeras (cartera propia y tercero),
+  planillas Galicia
+- ABM completo, configuración ARCA, RBAC con 6 roles
+- 49 test suites, ~1030 tests verdes
 
-- **Integración ARCA real**: WSAA (autenticación con certificado), FECAESolicitar (obtención de CAE), QR RG 4291
-- **Generación de PDFs**: las liquidaciones y facturas tienen preview en UI pero la generación del archivo PDF no está implementada
-- **Deploy a producción**: configurar Turso, dominio, variables de entorno de producción
+### En curso / próximo
+- Documentación de features pendientes (tarjetas, flota, panel chofer,
+  contabilidad, chequeras): scope definido pero sin doc dedicado todavía.
+  Ver [`docs/INCONSISTENCIAS-DETECTADAS.md`](./docs/INCONSISTENCIAS-DETECTADAS.md).
+- ARCA para viajes propios: punto de venta diferenciado.
+- Conciliación bancaria automática.
+- Deploy productivo (configuración de dominio, secrets, monitoreo).

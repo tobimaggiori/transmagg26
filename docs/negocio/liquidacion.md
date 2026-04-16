@@ -1,8 +1,25 @@
-# Liquidación fletero
+# Liquidación a fletero (LP)
+
+> **Nota**: este documento describe reglas de dominio y criterios operativos.
+> Para implementación técnica ver:
+> - Catálogo y emisión: [../arca/matriz.md](../arca/matriz.md) +
+>   [../arca/implementacion.md](../arca/implementacion.md)
+> - IVA en NC/ND sobre LP: [../reglas-fiscales/nc-nd-iva.md](../reglas-fiscales/nc-nd-iva.md)
+> - Cuenta corriente, saldo pendiente, descuentos en OP:
+>   [./cuenta-corriente.md](./cuenta-corriente.md) +
+>   [./ordenes-pago.md](./ordenes-pago.md)
+> - Adelantos y gastos descontables en OP: [./adelantos.md](./adelantos.md)
+>
+> **Inconsistencia conocida**: este doc describe estados derivados de viaje
+> (`PENDIENTE_LIQUIDACION`, `LIQUIDADO_VIGENTE`, `LIQUIDADO_AJUSTADO_PARCIAL`)
+> que probablemente NO estén implementados así en el código. Ver
+> [../INCONSISTENCIAS-DETECTADAS.md](../INCONSISTENCIAS-DETECTADAS.md).
 
 ## Objetivo
 
-Definir la lógica de negocio del circuito de liquidación al fletero en Transmagg, preservando la operatoria del sistema actual y separando correctamente:
+Definir la lógica de negocio del circuito de liquidación al fletero en
+Transmagg, preservando la operatoria del sistema actual y separando
+correctamente:
 
 * liquidación de viajes
 * descuentos y consumos imputables al fletero

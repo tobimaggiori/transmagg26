@@ -1,10 +1,21 @@
-# Facturación empresa
+# Facturación a empresa
+
+> **Nota**: este documento describe reglas de dominio y criterios operativos.
+> Para implementación técnica ver:
+> - Catálogo de comprobantes: [../arca/matriz.md](../arca/matriz.md)
+> - IVA en NC/ND: [../reglas-fiscales/nc-nd-iva.md](../reglas-fiscales/nc-nd-iva.md)
+> - Cuenta corriente y saldo pendiente: [./cuenta-corriente.md](./cuenta-corriente.md)
+>
+> **Inconsistencia conocida**: este doc describe estados derivados de viaje
+> (`PENDIENTE_FACTURACION`, `FACTURADO_VIGENTE`, `FACTURADO_AJUSTADO_PARCIAL`)
+> que probablemente NO estén implementados así en el código (los flags reales
+> son más simples). Ver [../INCONSISTENCIAS-DETECTADAS.md](../INCONSISTENCIAS-DETECTADAS.md).
 
 ## Objetivo
 
-Definir la lógica de negocio del circuito de facturación a empresa en Transmagg, preservando la lógica operativa del sistema actual y evitando interpretaciones destructivas del tipo “la factura desaparece”.
-
-Este documento no define implementación técnica. Define reglas de dominio y criterios operativos para luego adaptar el código del proyecto nuevo.
+Definir la lógica de negocio del circuito de facturación a empresa en
+Transmagg, preservando la lógica operativa del sistema actual y evitando
+interpretaciones destructivas del tipo "la factura desaparece".
 
 ---
 
