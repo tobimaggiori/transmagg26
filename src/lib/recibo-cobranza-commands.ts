@@ -302,6 +302,31 @@ export async function ejecutarCrearReciboCobranza(
       })
     }
 
+    // Marcar NC_EMITIDA asociadas a facturas cobradas como descontadas
+    // (la NC ya reduce el saldo de la factura — al cobrar se confirma que fue aplicada)
+    for (const fa of facturasAplicadas) {
+      const ncsFactura = facturas.find((f) => f.id === fa.facturaId)
+        ?.notasCreditoDebito.filter((n) => n.tipo === "NC_EMITIDA") ?? []
+      if (ncsFactura.length > 0) {
+        // Buscar NC con saldo sin descontar para esta factura
+        const ncsPendientes = await tx.notaCreditoDebito.findMany({
+          where: {
+            facturaId: fa.facturaId,
+            tipo: "NC_EMITIDA",
+          },
+          select: { id: true, montoTotal: true, montoDescontado: true },
+        })
+        for (const nc of ncsPendientes) {
+          if (Number(nc.montoDescontado) < Number(nc.montoTotal)) {
+            await tx.notaCreditoDebito.update({
+              where: { id: nc.id },
+              data: { montoDescontado: nc.montoTotal },
+            })
+          }
+        }
+      }
+    }
+
     // Saldo a cuenta: si hay exceso, crear PagoDeEmpresa sin factura
     if (saldoACuenta > 0) {
       await tx.pagoDeEmpresa.create({
