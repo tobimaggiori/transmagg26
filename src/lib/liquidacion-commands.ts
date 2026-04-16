@@ -128,6 +128,25 @@ export async function ejecutarCrearLiquidacion(
   const fletero = await prisma.fletero.findFirst({ where: { id: fleteroId, activo: true } })
   if (!fletero) return { ok: false, status: 404, error: "Fletero no encontrado" }
 
+  // Validar que viajes hermanos del mismo cupo tengan misma tarifa fletero.
+  // Los hermanos siempre se liquidan juntos en la misma LP, y deben acordar
+  // la tarifa para no introducir diferencias imposibles de auditar.
+  const tarifaPorCupo = new Map<string, number>()
+  for (const v of viajes) {
+    const cupoKey = v.cupo?.trim()
+    if (!cupoKey) continue
+    const previa = tarifaPorCupo.get(cupoKey)
+    if (previa === undefined) {
+      tarifaPorCupo.set(cupoKey, v.tarifaFletero)
+    } else if (v.tarifaFletero !== previa) {
+      return {
+        ok: false,
+        status: 409,
+        error: `Los viajes con cupo "${cupoKey}" tienen tarifas distintas (${previa} vs ${v.tarifaFletero}). Unificá la tarifa antes de liquidar.`,
+      }
+    }
+  }
+
   // Calcular totales (desde input del caller, no depende de DB)
   const viajeIds = viajes.map((v) => v.viajeId)
   const viajesParaCalc = viajes.map((v) => ({ kilos: v.kilos, tarifaFletero: v.tarifaFletero }))

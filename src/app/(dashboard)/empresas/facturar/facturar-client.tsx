@@ -160,17 +160,34 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados, monto
     return origenSeleccionado === (v.esCamionPropio ? "propio" : "fletero")
   }
 
-  // Toggle individual viaje
+  // Notificación visible cuando autoseleccionamos hermanos por cupo.
+  const [notifCupo, setNotifCupo] = useState<string | null>(null)
+
+  // Toggle individual viaje. Si el viaje tiene cupo, arrastra (selecciona/
+  // deselecciona) a todos los viajes pendientes de la misma empresa con
+  // ese mismo cupo — la factura debe contener al cupo completo.
   function toggleViaje(id: string) {
+    const viaje = viajes.find((v) => v.id === id)
+    const cupo = viaje?.cupo?.trim() || null
+    const idsAfectados = cupo
+      ? viajes.filter((v) => v.cupo?.trim() === cupo).map((v) => v.id)
+      : [id]
+
     setSeleccionados((prev) => {
       const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
+      const seleccionar = !next.has(id)
+      if (seleccionar) {
+        for (const aid of idsAfectados) next.add(aid)
       } else {
-        next.add(id)
+        for (const aid of idsAfectados) next.delete(aid)
       }
       return next
     })
+
+    if (cupo && idsAfectados.length > 1) {
+      setNotifCupo(`Se ${idsAfectados.length === 1 ? "seleccionó" : "auto-seleccionaron"} ${idsAfectados.length} viajes con cupo ${cupo}.`)
+      setTimeout(() => setNotifCupo(null), 4000)
+    }
   }
 
   // Toggle todos: si no hay mezcla, selecciona/deselecciona todos.
@@ -599,6 +616,12 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados, monto
               <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
                 Solo se pueden seleccionar viajes del mismo tipo ({origenSeleccionado === "propio" ? "camión propio" : "fletero"}).
                 Los viajes del otro tipo están deshabilitados.
+              </div>
+            )}
+
+            {notifCupo && (
+              <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
+                {notifCupo}
               </div>
             )}
 

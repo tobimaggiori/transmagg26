@@ -19,6 +19,7 @@ import { enriquecerViajeOperativo, ocultarTarifaOperativa } from "@/lib/viaje-se
 import { resolverOperadorId } from "@/lib/session-utils"
 import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 import { construirWhereViajes, validarEntidadesViaje } from "@/lib/viaje-queries"
+import { cargarViajeFuenteCupo, compararCamposLockeados } from "@/lib/viaje-cupo"
 import type { Rol } from "@/types"
 
 // ─── Validación ──────────────────────────────────────────────────────────────
@@ -203,6 +204,38 @@ export async function POST(request: NextRequest) {
     })
     if (!validacion.ok) {
       return NextResponse.json({ error: validacion.error }, { status: validacion.status })
+    }
+
+    // Validación de cupo: si el viaje tiene cupo y ya hay viajes hermanos
+    // pendientes en esta empresa, los campos lockeados deben coincidir.
+    if (parsed.data.tieneCupo && parsed.data.cupo) {
+      const fuente = await cargarViajeFuenteCupo(empresaId, parsed.data.cupo.trim())
+      if (fuente) {
+        const propuesto = {
+          mercaderia: parsed.data.mercaderia,
+          procedencia: parsed.data.procedencia ?? null,
+          provinciaOrigen: parsed.data.provinciaOrigen,
+          destino: parsed.data.destino ?? null,
+          provinciaDestino: parsed.data.provinciaDestino,
+          tarifa: parsed.data.tarifa,
+          comisionPct: parsed.data.comisionPct ?? null,
+          fleteroId: esCamionPropio ? null : (fleteroId ?? null),
+          camionId,
+          choferId,
+          esCamionPropio,
+          tieneCpe: parsed.data.tieneCpe,
+        }
+        const diferencias = compararCamposLockeados(fuente, propuesto)
+        if (diferencias.length > 0) {
+          return NextResponse.json(
+            {
+              error: `Cupo "${parsed.data.cupo}" ya en uso para esta empresa. Los siguientes campos no coinciden con el viaje original: ${diferencias.join(", ")}.`,
+              cupoConflicto: { cupo: parsed.data.cupo, fuenteId: fuente.id, diferencias },
+            },
+            { status: 409 },
+          )
+        }
+      }
     }
 
     const viaje = await prisma.viaje.create({

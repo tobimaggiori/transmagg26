@@ -161,6 +161,25 @@ export async function ejecutarCrearFactura(
         }
       })
 
+      // Validar que viajes hermanos del mismo cupo tengan misma tarifa
+      // efectiva. Los hermanos siempre se facturan juntos en la misma
+      // factura, y deben acordar la tarifa para no introducir diferencias
+      // imposibles de auditar.
+      const tarifaPorCupo = new Map<string, number>()
+      for (const v of viajesConEdiciones) {
+        const cupoKey = v.cupo?.trim()
+        if (!cupoKey) continue
+        const previa = tarifaPorCupo.get(cupoKey)
+        if (previa === undefined) {
+          tarifaPorCupo.set(cupoKey, Number(v.tarifaEmpresaEfectiva))
+        } else if (Number(v.tarifaEmpresaEfectiva) !== previa) {
+          throw new _ValidationError(
+            409,
+            `Los viajes con cupo "${cupoKey}" tienen tarifas distintas (${previa} vs ${Number(v.tarifaEmpresaEfectiva)}). Unificá la tarifa antes de facturar.`,
+          )
+        }
+      }
+
       const viajesParaCalc = viajesConEdiciones.map((v) => ({
         kilos: v.kilosEfectivos,
         tarifaEmpresa: v.tarifaEmpresaEfectiva,

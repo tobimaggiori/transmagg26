@@ -225,6 +225,33 @@ export function ModalDetalleViaje({
   const tieneFactura = viaje.estadoFactura === "FACTURADO"
   const cambios = hayCambios(form, viaje)
 
+  // Lookup de cupo: si este viaje comparte cupo con otros viajes pendientes
+  // de facturar de la misma empresa, los campos lockeados no se pueden
+  // editar individualmente — solo en bloque desde el sub-modal.
+  type ViajeHermano = { id: string; fechaViaje: string; remito: string | null; nroCartaPorte: string | null; kilos: number | null }
+  const [hermanos, setHermanos] = useState<ViajeHermano[]>([])
+  const [bulkEditOpen, setBulkEditOpen] = useState(false)
+
+  useEffect(() => {
+    if (!viaje.tieneCupo || !viaje.cupo || viaje.estadoFactura !== "PENDIENTE_FACTURAR") {
+      setHermanos([])
+      return
+    }
+    let cancelado = false
+    fetch(`/api/empresas/${viaje.empresaId}/viajes-cupo?cupo=${encodeURIComponent(viaje.cupo)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelado || !data || !data.existe) { setHermanos([]); return }
+        // Filtrar el viaje actual del array de hermanos (puede ser fuente o resto)
+        const todos: ViajeHermano[] = [data.fuente, ...(data.hermanos ?? [])]
+        setHermanos(todos.filter((v) => v.id !== viaje.id))
+      })
+      .catch(() => { if (!cancelado) setHermanos([]) })
+    return () => { cancelado = true }
+  }, [viaje.id, viaje.tieneCupo, viaje.cupo, viaje.empresaId, viaje.estadoFactura])
+
+  const cupoBloqueado = hermanos.length > 0
+
   const empresaCambio = form.empresaId !== viaje.empresaId
   const fleteroCambio = form.fleteroId !== (viaje.fleteroId ?? "")
   const requiereMotivo = empresaCambio || fleteroCambio
@@ -233,17 +260,26 @@ export function ModalDetalleViaje({
   const puedeEditarTodo = !tieneLP
   const puedeEditarParcial = tieneLP && !tieneFactura
 
+  // Si el viaje comparte cupo con otros pendientes, los campos lockeados solo
+  // pueden editarse en bloque desde el sub-modal (no individualmente).
   const editable: Record<string, boolean> = {
-    fleteroId: puedeEditarTodo, empresaId: puedeEditarTodo || puedeEditarParcial,
-    choferId: puedeEditarTodo, camionId: puedeEditarTodo,
-    fechaViaje: puedeEditarTodo, remito: puedeEditarTodo,
-    tieneCupo: puedeEditarTodo, cupo: puedeEditarTodo,
-    mercaderia: puedeEditarTodo,
-    procedencia: puedeEditarTodo, provinciaOrigen: puedeEditarTodo,
-    destino: puedeEditarTodo, provinciaDestino: puedeEditarTodo,
+    fleteroId: puedeEditarTodo && !cupoBloqueado,
+    empresaId: (puedeEditarTodo || puedeEditarParcial) && !cupoBloqueado,
+    choferId: puedeEditarTodo && !cupoBloqueado,
+    camionId: puedeEditarTodo && !cupoBloqueado,
+    fechaViaje: puedeEditarTodo,
+    remito: puedeEditarTodo,
+    tieneCupo: puedeEditarTodo && !cupoBloqueado,
+    cupo: puedeEditarTodo && !cupoBloqueado,
+    mercaderia: puedeEditarTodo && !cupoBloqueado,
+    procedencia: puedeEditarTodo && !cupoBloqueado,
+    provinciaOrigen: puedeEditarTodo && !cupoBloqueado,
+    destino: puedeEditarTodo && !cupoBloqueado,
+    provinciaDestino: puedeEditarTodo && !cupoBloqueado,
     kilos: puedeEditarTodo || puedeEditarParcial,
-    tarifa: puedeEditarTodo, tarifaEmpresa: puedeEditarTodo || puedeEditarParcial,
-    comisionPct: puedeEditarTodo,
+    tarifa: puedeEditarTodo && !cupoBloqueado,
+    tarifaEmpresa: (puedeEditarTodo || puedeEditarParcial) && !cupoBloqueado,
+    comisionPct: puedeEditarTodo && !cupoBloqueado,
   }
 
   const historial: EntradaHistorial[] = (() => {
@@ -364,6 +400,24 @@ export function ModalDetalleViaje({
             </div>
             <button type="button" onClick={handleIntentoCerrar} className="rounded-lg p-2 hover:bg-accent text-muted-foreground hover:text-foreground transition-colors text-xl leading-none">&times;</button>
           </div>
+
+          {/* Banner cupo bloqueado */}
+          {cupoBloqueado && (
+            <div className="bg-amber-50 border-b border-amber-200 px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
+              <div className="text-sm text-amber-900">
+                Este viaje comparte el cupo <strong>{viaje.cupo}</strong> con{" "}
+                <strong>{hermanos.length} {hermanos.length === 1 ? "viaje pendiente" : "viajes pendientes"}</strong> de facturar.
+                Solo se pueden modificar kilos, fecha, remito y carta de porte.
+              </div>
+              <button
+                type="button"
+                onClick={() => setBulkEditOpen(true)}
+                className="text-sm font-medium text-amber-900 underline whitespace-nowrap"
+              >
+                Editar campos compartidos →
+              </button>
+            </div>
+          )}
 
           {/* Scrollable body */}
           <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
@@ -668,6 +722,278 @@ export function ModalDetalleViaje({
       {mostrarConfirmarSalida && (
         <ModalConfirmarSalida onSalir={() => { setMostrarConfirmarSalida(false); onCerrar() }} onVolver={() => setMostrarConfirmarSalida(false)} />
       )}
+
+      {bulkEditOpen && cupoBloqueado && viaje.cupo && (
+        <ModalBulkEditCupo
+          empresaId={viaje.empresaId}
+          cupo={viaje.cupo}
+          empresaNombre={viaje.empresa?.razonSocial ?? "—"}
+          viajeActual={{ id: viaje.id, fechaViaje: viaje.fechaViaje, remito: viaje.remito, nroCartaPorte: viaje.nroCartaPorte, kilos: viaje.kilos }}
+          hermanos={hermanos}
+          fleteros={fleteros}
+          empresas={empresas}
+          camiones={camiones}
+          choferes={choferes}
+          valoresActuales={{
+            mercaderia: viaje.mercaderia,
+            procedencia: viaje.procedencia,
+            provinciaOrigen: viaje.provinciaOrigen,
+            destino: viaje.destino,
+            provinciaDestino: viaje.provinciaDestino,
+            tarifa: viaje.tarifa,
+            comisionPct: viaje.comisionPct,
+            fleteroId: viaje.fleteroId,
+            camionId: viaje.camionId,
+            choferId: viaje.choferId,
+          }}
+          onCancelar={() => setBulkEditOpen(false)}
+          onAplicado={() => { setBulkEditOpen(false); onGuardar() }}
+        />
+      )}
     </>
+  )
+}
+
+// ─── Sub-modal: edición en bloque de campos compartidos por cupo ─────────────
+
+function ModalBulkEditCupo({
+  empresaId,
+  cupo,
+  empresaNombre,
+  viajeActual,
+  hermanos,
+  fleteros,
+  empresas: _empresas,
+  camiones,
+  choferes,
+  valoresActuales,
+  onCancelar,
+  onAplicado,
+}: {
+  empresaId: string
+  cupo: string
+  empresaNombre: string
+  viajeActual: { id: string; fechaViaje: string; remito: string | null; nroCartaPorte: string | null; kilos: number | null }
+  hermanos: Array<{ id: string; fechaViaje: string; remito: string | null; nroCartaPorte: string | null; kilos: number | null }>
+  fleteros: Fletero[]
+  empresas: Empresa[]
+  camiones: Camion[]
+  choferes: Chofer[]
+  valoresActuales: {
+    mercaderia: string | null
+    procedencia: string | null
+    provinciaOrigen: string | null
+    destino: string | null
+    provinciaDestino: string | null
+    tarifa: number
+    comisionPct: number | null
+    fleteroId: string | null
+    camionId: string
+    choferId: string
+  }
+  onCancelar: () => void
+  onAplicado: () => void
+}) {
+  void _empresas
+  type Campo =
+    | "mercaderia" | "procedencia" | "provinciaOrigen" | "destino" | "provinciaDestino"
+    | "tarifa" | "comisionPct" | "fleteroId" | "camionId" | "choferId"
+
+  const labels: Record<Campo, string> = {
+    mercaderia: "Mercadería",
+    procedencia: "Procedencia (ciudad)",
+    provinciaOrigen: "Provincia origen",
+    destino: "Destino (ciudad)",
+    provinciaDestino: "Provincia destino",
+    tarifa: "Tarifa / ton",
+    comisionPct: "Comisión %",
+    fleteroId: "Fletero",
+    camionId: "Camión",
+    choferId: "Chofer",
+  }
+
+  const [campo, setCampo] = useState<Campo>("mercaderia")
+  const [valor, setValor] = useState<string>("")
+  const [justificacion, setJustificacion] = useState("")
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const todosLosViajes = [viajeActual, ...hermanos]
+
+  function valorActualDe(c: Campo): string {
+    const v = valoresActuales[c]
+    if (v == null) return "—"
+    return String(v)
+  }
+
+  function buildCampos(): Record<string, unknown> | null {
+    if (!valor.trim() && campo !== "comisionPct" && campo !== "procedencia" && campo !== "destino") return null
+    const v = valor.trim()
+    switch (campo) {
+      case "mercaderia": return { mercaderia: v }
+      case "procedencia": return { procedencia: v || null }
+      case "destino": return { destino: v || null }
+      case "provinciaOrigen": return { provinciaOrigen: v }
+      case "provinciaDestino": return { provinciaDestino: v }
+      case "tarifa": {
+        const n = parseFloat(v)
+        if (!Number.isFinite(n) || n <= 0) return null
+        return { tarifa: n }
+      }
+      case "comisionPct": {
+        if (v === "") return { comisionPct: null }
+        const n = parseFloat(v)
+        if (!Number.isFinite(n) || n < 0 || n > 100) return null
+        return { comisionPct: n }
+      }
+      case "fleteroId": return { fleteroId: v || null }
+      case "camionId": return { camionId: v }
+      case "choferId": return { choferId: v }
+    }
+  }
+
+  async function aplicar() {
+    setError(null)
+    const campos = buildCampos()
+    if (!campos) { setError("Ingresá un valor válido"); return }
+    if (justificacion.trim().length < 5) { setError("La justificación debe tener al menos 5 caracteres"); return }
+    setEnviando(true)
+    try {
+      const res = await fetch("/api/viajes/cupo-bulk", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empresaId, cupo, justificacion: justificacion.trim(), campos }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error ?? "Error al aplicar"); return }
+      onAplicado()
+    } catch {
+      setError("Error de red")
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  function renderEditor() {
+    if (campo === "fleteroId") {
+      return (
+        <select value={valor} onChange={(e) => setValor(e.target.value)} className="w-full h-9 rounded border border-input bg-background px-2 text-sm">
+          <option value="">— Camión propio —</option>
+          {fleteros.map((f) => <option key={f.id} value={f.id}>{f.razonSocial}</option>)}
+        </select>
+      )
+    }
+    if (campo === "camionId") {
+      return (
+        <select value={valor} onChange={(e) => setValor(e.target.value)} className="w-full h-9 rounded border border-input bg-background px-2 text-sm">
+          <option value="">Seleccionar...</option>
+          {camiones.map((c) => <option key={c.id} value={c.id}>{c.patenteChasis}</option>)}
+        </select>
+      )
+    }
+    if (campo === "choferId") {
+      return (
+        <select value={valor} onChange={(e) => setValor(e.target.value)} className="w-full h-9 rounded border border-input bg-background px-2 text-sm">
+          <option value="">Seleccionar...</option>
+          {choferes.map((c) => <option key={c.id} value={c.id}>{c.nombre} {c.apellido}</option>)}
+        </select>
+      )
+    }
+    if (campo === "provinciaOrigen" || campo === "provinciaDestino") {
+      return (
+        <select value={valor} onChange={(e) => setValor(e.target.value)} className="w-full h-9 rounded border border-input bg-background px-2 text-sm">
+          <option value="">Seleccionar...</option>
+          {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+      )
+    }
+    return (
+      <input
+        type={campo === "tarifa" || campo === "comisionPct" ? "number" : "text"}
+        step={campo === "tarifa" || campo === "comisionPct" ? "0.01" : undefined}
+        value={valor}
+        onChange={(e) => setValor(e.target.value)}
+        className="w-full h-9 rounded border border-input bg-background px-2 text-sm"
+      />
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-background rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="px-6 py-4 border-b border-border">
+          <h3 className="text-lg font-semibold">Editar campos compartidos del cupo {cupo}</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Empresa: {empresaNombre} · Afectará a {todosLosViajes.length} viajes pendientes</p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          {/* Lista de viajes afectados */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Viajes afectados</p>
+            <div className="rounded border overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/40">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left">Fecha</th>
+                    <th className="px-2 py-1.5 text-left">Remito</th>
+                    <th className="px-2 py-1.5 text-left">CDP</th>
+                    <th className="px-2 py-1.5 text-right">Kilos</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {todosLosViajes.map((v) => (
+                    <tr key={v.id}>
+                      <td className="px-2 py-1.5">{formatearFecha(new Date(v.fechaViaje))}</td>
+                      <td className="px-2 py-1.5 font-mono">{v.remito ?? "—"}</td>
+                      <td className="px-2 py-1.5 font-mono">{v.nroCartaPorte ?? "—"}</td>
+                      <td className="px-2 py-1.5 text-right">{v.kilos != null ? v.kilos.toLocaleString("es-AR") : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Selector de campo */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium block mb-1">Campo a modificar</label>
+              <select
+                value={campo}
+                onChange={(e) => { setCampo(e.target.value as Campo); setValor("") }}
+                className="w-full h-9 rounded border border-input bg-background px-2 text-sm"
+              >
+                {(Object.keys(labels) as Campo[]).map((c) => <option key={c} value={c}>{labels[c]}</option>)}
+              </select>
+              <p className="text-[11px] text-muted-foreground mt-1">Valor actual: <span className="font-mono">{valorActualDe(campo)}</span></p>
+            </div>
+            <div>
+              <label className="text-xs font-medium block mb-1">Nuevo valor</label>
+              {renderEditor()}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium block mb-1">Justificación <span className="text-error">*</span></label>
+            <textarea
+              value={justificacion}
+              onChange={(e) => setJustificacion(e.target.value)}
+              rows={2}
+              className="w-full rounded border border-input bg-background px-2 py-1.5 text-sm resize-none"
+              placeholder="Por qué se modifica este campo en todos los viajes"
+            />
+          </div>
+
+          {error && <p className="text-xs text-error">{error}</p>}
+        </div>
+
+        <div className="px-6 py-3 border-t border-border flex justify-end gap-2">
+          <button type="button" onClick={onCancelar} disabled={enviando} className="h-9 px-4 rounded border text-sm hover:bg-accent disabled:opacity-50">Cancelar</button>
+          <button type="button" onClick={aplicar} disabled={enviando} className="h-9 px-4 rounded bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
+            {enviando ? "Aplicando..." : "Aplicar a todos"}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

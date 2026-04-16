@@ -13,6 +13,7 @@ import { esRolInterno } from "@/lib/permissions"
 import { enriquecerViajeOperativo } from "@/lib/viaje-serialization"
 import { construirAvisosEdicionViaje } from "@/lib/viaje-workflow"
 import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
+import { CAMPOS_LOCKEADOS_CUPO, cargarViajeFuenteCupo, type CampoLockeadoCupo } from "@/lib/viaje-cupo"
 import type { Rol } from "@/types"
 
 function normalizarProvincia(valor: string): string {
@@ -207,6 +208,31 @@ export async function PATCH(
           { error: "El motivo del cambio de fletero es obligatorio" },
           { status: 422 }
         )
+      }
+    }
+
+    // Validación de cupo: si el viaje tiene cupo y hay viajes hermanos
+    // pendientes (otros viajes de la misma empresa con el mismo cupo en
+    // PENDIENTE_FACTURAR), no se pueden modificar campos lockeados desde
+    // este endpoint. Para eso está PATCH /api/viajes/cupo-bulk.
+    if (viaje.tieneCupo && viaje.cupo && viaje.estadoFactura === "PENDIENTE_FACTURAR") {
+      const fuente = await cargarViajeFuenteCupo(viaje.empresaId, viaje.cupo, viaje.id)
+      if (fuente) {
+        const camposIntentados: CampoLockeadoCupo[] = []
+        for (const campo of CAMPOS_LOCKEADOS_CUPO) {
+          if (parsed.data[campo as keyof typeof parsed.data] !== undefined) {
+            camposIntentados.push(campo)
+          }
+        }
+        if (camposIntentados.length > 0) {
+          return NextResponse.json(
+            {
+              error: `Este viaje comparte el cupo "${viaje.cupo}" con otros viajes pendientes de facturar. Los siguientes campos son comunes y solo pueden modificarse en bloque: ${camposIntentados.join(", ")}. Usá la edición en bloque desde la pantalla del viaje.`,
+              cupoBloqueado: { cupo: viaje.cupo, campos: camposIntentados },
+            },
+            { status: 409 },
+          )
+        }
       }
     }
 

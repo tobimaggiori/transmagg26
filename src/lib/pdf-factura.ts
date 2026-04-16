@@ -16,6 +16,7 @@ import { obtenerDatosEmisor } from "@/lib/pdf-common"
 import PDFDocument from "pdfkit"
 import QRCode from "qrcode"
 import { obtenerUrlQRFiscal } from "@/lib/arca/qr"
+import { agruparViajesPorCupo, formatearRemitosCupo } from "@/lib/viaje-cupo"
 
 // ─── Paleta ─────────────────────────────────────────────────────────────────
 
@@ -455,10 +456,27 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
 
     drawTableHeader()
 
-    for (const v of fac.viajes) {
+    // Agrupar viajes por cupo: hermanos del mismo cupo se colapsan en un
+    // único renglón con kilos sumados, subtotales sumados y remitos formateados.
+    const grupos = agruparViajesPorCupo(fac.viajes.map((v) => ({
+      fechaViaje: v.fechaViaje,
+      remito: v.remito,
+      cupo: v.cupo,
+      mercaderia: v.mercaderia,
+      procedencia: v.procedencia,
+      provinciaOrigen: v.provinciaOrigen,
+      destino: v.destino,
+      provinciaDestino: v.provinciaDestino,
+      kilos: v.kilos,
+      tarifa: Number(v.tarifaEmpresa),
+      subtotal: Number(v.subtotal),
+      nroCartaPorte: v.viaje?.nroCartaPorte ?? null,
+    })))
+
+    for (const v of grupos) {
       const hasProv = !!(v.provinciaOrigen || v.provinciaDestino)
       const rowH = hasProv ? rowHWithProv : rowHBase
-      const hasDocBadge = !!(v.remito || v.cupo || v.viaje?.nroCartaPorte)
+      const hasDocBadge = !!(v.remitos.length > 0 || v.cupo || v.cdps.length > 0)
       const neededH = rowH + (hasDocBadge ? docBadgeH : 0)
 
       // Salto de página si no cabe antes del footer
@@ -506,31 +524,46 @@ export async function generarPDFFactura(facturaId: string): Promise<Buffer> {
       doc.text(kilosText, colXs[4] + colDefs[4].w - 4 - kilosW, textY, { lineBreak: false })
 
       // Tarifa
-      doc.text(`$ ${fmtMonedaCompacta(Number(v.tarifaEmpresa))}`, colXs[5] + 4, textY, { width: colDefs[5].w - 8, align: "right" })
+      doc.text(`$ ${fmtMonedaCompacta(v.tarifa)}`, colXs[5] + 4, textY, { width: colDefs[5].w - 8, align: "right" })
 
       // SubTotal
       doc.font("Helvetica-Bold").fontSize(10).fillColor(TEXT)
-      doc.text(`$ ${fmtMonedaCompacta(Number(v.subtotal))}`, colXs[6] + 4, textY, { width: colDefs[6].w - 8, align: "right" })
+      doc.text(`$ ${fmtMonedaCompacta(v.subtotal)}`, colXs[6] + 4, textY, { width: colDefs[6].w - 8, align: "right" })
 
       cursorY += rowH
 
-      // Badge de documentación: Remito / Cupo / CDP en una línea
+      // Línea de documentación: Cupo / Remito(s) / CDP(s).
+      // Orden: Cupo → Remitos → CDPs. Etiqueta en negrita, valor regular.
+      // Si hay >1 remito (viajes hermanos del mismo cupo), se formatean
+      // con prefijo común + sufijos separados por "/" (ver formatearRemitosCupo).
       if (hasDocBadge) {
-        const parts: string[] = []
-        if (v.remito) parts.push(`Remito: ${v.remito}`)
-        if (v.cupo) parts.push(`Cupo: ${v.cupo}`)
-        if (v.viaje?.nroCartaPorte) parts.push(`CDP: ${v.viaje.nroCartaPorte}`)
-        const badgeText = parts.join("   ")
-        doc.font("Helvetica").fontSize(8.5)
-        const badgeTextW = doc.widthOfString(badgeText) + 12
-        doc.save()
-        doc.fillColor(BG_LIGHT)
-        doc.roundedRect(tableLeft + 8, cursorY, badgeTextW, 13, 4).fill()
-        doc.strokeColor(BORDER).lineWidth(0.5)
-        doc.roundedRect(tableLeft + 8, cursorY, badgeTextW, 13, 4).stroke()
-        doc.restore()
-        doc.font("Helvetica").fontSize(8.5).fillColor(TEXT)
-          .text(badgeText, tableLeft + 14, cursorY + 2)
+        type Parte = { label: string; valor: string }
+        const partes: Parte[] = []
+        if (v.cupo) partes.push({ label: "Cupo: ", valor: v.cupo })
+        if (v.remitos.length > 0) {
+          const label = v.remitos.length > 1 ? "Remitos: " : "Remito: "
+          partes.push({ label, valor: formatearRemitosCupo(v.remitos) })
+        }
+        if (v.cdps.length > 0) {
+          const label = v.cdps.length > 1 ? "CDPs: " : "CDP: "
+          partes.push({ label, valor: v.cdps.join(", ") })
+        }
+
+        const SEP = "   "
+        let textX = tableLeft + 8
+        const textY = cursorY + 2
+        for (let i = 0; i < partes.length; i++) {
+          const { label, valor } = partes[i]
+          doc.font("Helvetica-Bold").fontSize(8.5).fillColor(TEXT)
+          doc.text(label, textX, textY, { lineBreak: false })
+          textX += doc.widthOfString(label)
+          doc.font("Helvetica").fontSize(8.5).fillColor(TEXT)
+          doc.text(valor, textX, textY, { lineBreak: false })
+          textX += doc.widthOfString(valor)
+          if (i < partes.length - 1) {
+            textX += doc.widthOfString(SEP)
+          }
+        }
         cursorY += docBadgeH
       }
 

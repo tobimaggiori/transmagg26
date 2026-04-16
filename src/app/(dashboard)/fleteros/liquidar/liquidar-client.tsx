@@ -152,13 +152,33 @@ export function LiquidarClient({ rol, fleteros, empresas, camiones, choferes, fl
 
   useEffect(() => { cargarDatos() }, [cargarDatos])
 
+  // Notificación visible cuando autoseleccionamos hermanos por cupo.
+  const [notifCupo, setNotifCupo] = useState<string | null>(null)
+
+  // Toggle individual: si el viaje tiene cupo, arrastra a los hermanos
+  // (mismo cupo, mismo fletero) — la LP debe contener al cupo completo.
   function toggleSeleccion(id: string) {
+    const viaje = viajesPendientes.find((v) => v.id === id)
+    const cupo = viaje?.cupo?.trim() || null
+    const idsAfectados = cupo
+      ? viajesPendientes.filter((v) => v.cupo?.trim() === cupo).map((v) => v.id)
+      : [id]
+
     setSeleccionados((prev) => {
       const s = new Set(prev)
-      if (s.has(id)) s.delete(id)
-      else s.add(id)
+      const seleccionar = !s.has(id)
+      if (seleccionar) {
+        for (const aid of idsAfectados) s.add(aid)
+      } else {
+        for (const aid of idsAfectados) s.delete(aid)
+      }
       return s
     })
+
+    if (cupo && idsAfectados.length > 1) {
+      setNotifCupo(`Se auto-seleccionaron ${idsAfectados.length} viajes con cupo ${cupo}.`)
+      setTimeout(() => setNotifCupo(null), 4000)
+    }
   }
 
   function toggleTodos() {
@@ -410,6 +430,12 @@ export function LiquidarClient({ rol, fleteros, empresas, camiones, choferes, fl
               </button>
             )}
           </div>
+
+          {notifCupo && (
+            <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
+              {notifCupo}
+            </div>
+          )}
 
           {cargando ? (
             <div className="text-center py-6 text-muted-foreground">Cargando...</div>

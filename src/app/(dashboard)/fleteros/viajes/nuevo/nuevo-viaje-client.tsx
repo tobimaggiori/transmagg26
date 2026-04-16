@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ShieldAlert, Check, MapPin, FileText, Users, Package } from "lucide-react"
 import { formatearMoneda } from "@/lib/utils"
@@ -113,6 +113,52 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   // Inferir cupo y carta de porte por valor del campo
   const tieneCupo = cupo.trim().length > 0
   const tieneCpe = nroCartaPorte.trim().length > 0
+
+  // Lookup de cupo: si la empresa + cupo matchean un viaje pendiente, los
+  // campos lockeados se autocompletan y se deshabilitan. Solo `kilos`,
+  // `remito`/`nroCartaPorte` y `fechaViaje` siguen editables.
+  const [cupoLocked, setCupoLocked] = useState(false)
+
+  useEffect(() => {
+    const cupoTrim = cupo.trim()
+    if (!empresaId || !cupoTrim) {
+      setCupoLocked(false)
+      return
+    }
+    let cancelado = false
+    const handle = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/empresas/${empresaId}/viajes-cupo?cupo=${encodeURIComponent(cupoTrim)}`)
+        if (!res.ok || cancelado) return
+        const data = await res.json() as
+          | { existe: false }
+          | { existe: true; fuente: { mercaderia: string | null; procedencia: string | null; provinciaOrigen: string | null; destino: string | null; provinciaDestino: string | null; tarifa: number; comisionPct: number | null; fleteroId: string | null; camionId: string; choferId: string; esCamionPropio: boolean; tieneCpe: boolean } }
+        if (!data.existe) {
+          setCupoLocked(false)
+          return
+        }
+        const f = data.fuente
+        setEsCamionPropio(f.esCamionPropio)
+        setFleteroId(f.fleteroId ?? "")
+        setCamionId(f.camionId)
+        setChoferId(f.choferId)
+        setMercaderia(f.mercaderia ?? "")
+        setProcedencia(f.procedencia ?? "")
+        setProvinciaOrigen(f.provinciaOrigen ?? "")
+        setDestino(f.destino ?? "")
+        setProvinciaDestino(f.provinciaDestino ?? "")
+        setTarifaBase(String(f.tarifa))
+        setComisionPct(f.comisionPct != null ? String(f.comisionPct) : "")
+        setCupoLocked(true)
+      } catch {
+        if (!cancelado) setCupoLocked(false)
+      }
+    }, 350)
+    return () => {
+      cancelado = true
+      clearTimeout(handle)
+    }
+  }, [empresaId, cupo])
 
   const camionesDelFletero = esCamionPropio
     ? camiones.filter((c) => c.esPropio)
@@ -313,7 +359,8 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                           type="number" min="0" max="100" step="0.01"
                           value={comisionPct}
                           onChange={(e) => setComisionPct(e.target.value)}
-                          className="w-14 h-6 rounded border border-input bg-background px-1.5 text-sm text-right"
+                          className="w-14 h-6 rounded border border-input bg-background px-1.5 text-sm text-right disabled:opacity-50"
+                          disabled={cupoLocked}
                         />
                         <span>%</span>
                       </span>
@@ -329,6 +376,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                       setComisionPct(f ? String(f.comisionDefault) : "")
                     }}
                     placeholder="Buscar por nombre o CUIT..."
+                    disabled={cupoLocked}
                   />
                   <FormError message={fieldErrors.fleteroId} className="text-xs mt-1" />
                 </div>
@@ -352,12 +400,13 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                       }
                     }}
                     placeholder="Patente..."
+                    disabled={cupoLocked}
                   />
                   <FormError message={fieldErrors.camionId} className="text-xs mt-1" />
                 </div>
                 <div>
                   <label className={labelCls}>Chofer <span className="text-error">*</span></label>
-                  <SearchCombobox items={choferItems} value={choferId} onChange={setChoferId} placeholder="Nombre..." />
+                  <SearchCombobox items={choferItems} value={choferId} onChange={setChoferId} placeholder="Nombre..." disabled={cupoLocked} />
                   <FormError message={fieldErrors.choferId} className="text-xs mt-1" />
                 </div>
               </div>
@@ -381,11 +430,11 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                 <p className="text-xs font-semibold uppercase tracking-wider text-primary">Origen</p>
                 <div>
                   <label className={labelCls}>Ciudad</label>
-                  <input type="text" value={procedencia} onChange={(e) => setProcedencia(e.target.value)} onBlur={() => procedencia && setProcedencia(capitalizarPalabras(procedencia))} className={inputCls} placeholder="Ej: Rosario" />
+                  <input type="text" value={procedencia} onChange={(e) => setProcedencia(e.target.value)} onBlur={() => procedencia && setProcedencia(capitalizarPalabras(procedencia))} className={inputCls} placeholder="Ej: Rosario" disabled={cupoLocked} />
                 </div>
                 <div>
                   <label className={labelCls}>Provincia <span className="text-error">*</span></label>
-                  <SearchCombobox items={provinciaItems} value={provinciaOrigen} onChange={setProvinciaOrigen} placeholder="Buscar..." />
+                  <SearchCombobox items={provinciaItems} value={provinciaOrigen} onChange={setProvinciaOrigen} placeholder="Buscar..." disabled={cupoLocked} />
                   <FormError message={fieldErrors.provinciaOrigen} className="text-xs mt-1" />
                 </div>
               </div>
@@ -393,11 +442,11 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                 <p className="text-xs font-semibold uppercase tracking-wider text-primary">Destino</p>
                 <div>
                   <label className={labelCls}>Ciudad</label>
-                  <input type="text" value={destino} onChange={(e) => setDestino(e.target.value)} onBlur={() => destino && setDestino(capitalizarPalabras(destino))} className={inputCls} placeholder="Ej: Buenos Aires" />
+                  <input type="text" value={destino} onChange={(e) => setDestino(e.target.value)} onBlur={() => destino && setDestino(capitalizarPalabras(destino))} className={inputCls} placeholder="Ej: Buenos Aires" disabled={cupoLocked} />
                 </div>
                 <div>
                   <label className={labelCls}>Provincia <span className="text-error">*</span></label>
-                  <SearchCombobox items={provinciaItems} value={provinciaDestino} onChange={setProvinciaDestino} placeholder="Buscar..." />
+                  <SearchCombobox items={provinciaItems} value={provinciaDestino} onChange={setProvinciaDestino} placeholder="Buscar..." disabled={cupoLocked} />
                   <FormError message={fieldErrors.provinciaDestino} className="text-xs mt-1" />
                 </div>
               </div>
@@ -409,7 +458,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
             <div className="space-y-3">
               <div>
                 <label className={labelCls}>Mercadería <span className="text-error">*</span></label>
-                <input type="text" value={mercaderia} onChange={(e) => setMercaderia(e.target.value)} onBlur={() => mercaderia && setMercaderia(capitalizarPrimera(mercaderia))} className={inputCls} placeholder="Tipo de carga" />
+                <input type="text" value={mercaderia} onChange={(e) => setMercaderia(e.target.value)} onBlur={() => mercaderia && setMercaderia(capitalizarPrimera(mercaderia))} className={inputCls} placeholder="Tipo de carga" disabled={cupoLocked} />
                 <FormError message={fieldErrors.mercaderia} className="text-xs mt-1" />
               </div>
 
@@ -422,7 +471,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
                 </div>
                 <div>
                   <label className={labelCls}>Tarifa / ton <span className="text-error">*</span></label>
-                  <input type="number" value={tarifaInput} onChange={(e) => setTarifaBase(e.target.value)} min="0" step="0.01" className={inputCls} placeholder="0,00" />
+                  <input type="number" value={tarifaInput} onChange={(e) => setTarifaBase(e.target.value)} min="0" step="0.01" className={inputCls} placeholder="0,00" disabled={cupoLocked} />
                   <FormError message={fieldErrors.tarifa} className="text-xs mt-1" />
                 </div>
               </div>
