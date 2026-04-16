@@ -58,12 +58,18 @@ type GastoDescontar = {
   montoDescontar: number
 }
 
+type NCDescontar = {
+  ncId: string
+  montoDescontar: number
+}
+
 export type DatosCrearOrdenPago = {
   fleteroId: string
   liquidacionIds: string[]
   pagos: PagoFleteroItem[]
   fecha: string
   gastos?: GastoDescontar[]
+  ncDescuentos?: NCDescontar[]
 }
 
 type ResultadoOrdenPago =
@@ -96,10 +102,10 @@ export async function ejecutarCrearOrdenPago(
   data: DatosCrearOrdenPago,
   operadorId: string
 ): Promise<ResultadoOrdenPago> {
-  const { fleteroId, liquidacionIds, pagos, fecha, gastos } = data
+  const { fleteroId, liquidacionIds, pagos, fecha, gastos, ncDescuentos } = data
 
-  if (pagos.length === 0 && (!gastos || gastos.length === 0)) {
-    return { ok: false, status: 400, error: "Debe ingresar al menos un medio de pago o gasto a descontar" }
+  if (pagos.length === 0 && (!gastos || gastos.length === 0) && (!ncDescuentos || ncDescuentos.length === 0)) {
+    return { ok: false, status: 400, error: "Debe ingresar al menos un medio de pago, gasto o NC a descontar" }
   }
 
   // ── Cargar fletero ──────────────────────────────────────────────────────
@@ -150,9 +156,10 @@ export async function ejecutarCrearOrdenPago(
   const totalSaldoPendiente = sumarImportes(lpsOrdenados.map((lp) => lp.saldoPendiente))
   const totalMediosPago = sumarImportes(pagos.map((p) => p.monto))
   const totalGastosRequest = gastos ? sumarImportes(gastos.map((g) => g.montoDescontar)) : 0
+  const totalNCRequest = ncDescuentos ? sumarImportes(ncDescuentos.map((n) => n.montoDescontar)) : 0
 
   // ── Validar que el pago cubre exactamente el saldo total ────────────────
-  if (!importesIguales(sumarImportes([totalMediosPago, totalGastosRequest]), totalSaldoPendiente)) {
+  if (!importesIguales(sumarImportes([totalMediosPago, totalGastosRequest, totalNCRequest]), totalSaldoPendiente)) {
     return {
       ok: false,
       status: 400,
@@ -330,6 +337,27 @@ export async function ejecutarCrearOrdenPago(
         await tx.gastoFletero.update({
           where: { id: g.gastoId },
           data: { montoDescontado: nuevoMontoDescontado, estado: nuevoEstadoGasto },
+        })
+      }
+    }
+
+    // ── NC descuentos ─────────────────────────────────────────────────────
+    if (ncDescuentos && ncDescuentos.length > 0) {
+      for (const ncd of ncDescuentos) {
+        const nc = await tx.notaCreditoDebito.findUnique({
+          where: { id: ncd.ncId },
+          select: { id: true, montoTotal: true, montoDescontado: true, liquidacion: { select: { fleteroId: true } } },
+        })
+        if (!nc || nc.liquidacion?.fleteroId !== fleteroId) continue
+
+        const saldoNC = restarImportes(nc.montoTotal, nc.montoDescontado)
+        const efectivoDescontar = m(Math.min(ncd.montoDescontar, saldoNC))
+        if (efectivoDescontar <= 0) continue
+
+        const nuevoMontoDescontado = sumarImportes([nc.montoDescontado, efectivoDescontar])
+        await tx.notaCreditoDebito.update({
+          where: { id: ncd.ncId },
+          data: { montoDescontado: nuevoMontoDescontado },
         })
       }
     }

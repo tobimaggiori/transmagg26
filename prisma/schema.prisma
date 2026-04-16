@@ -1265,6 +1265,7 @@ model NotaCreditoDebito {
   montoNeto           Decimal     @map("monto_neto")
   montoIva            Decimal     @default(0) @map("monto_iva")
   montoTotal          Decimal     @map("monto_total")
+  montoDescontado     Decimal     @default(0) @map("monto_descontado")
 
   descripcion         String?
   motivoDetalle       String?   @map("motivo_detalle")

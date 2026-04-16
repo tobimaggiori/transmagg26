@@ -58,6 +58,17 @@ type GastoPendiente = {
   } | null
 }
 
+type NCPendiente = {
+  id: string
+  subtipo: string | null
+  montoTotal: number
+  montoDescontado: number
+  nroComprobante: number | null
+  ptoVenta: number | null
+  descripcion: string | null
+  liquidacion: { nroComprobante: number | null; ptoVenta: number | null } | null
+}
+
 type Props = {
   liquidaciones: LiqItem[]
   fletero: { id: string; razonSocial: string; cuit: string }
@@ -65,6 +76,7 @@ type Props = {
   chequesEnCartera: ChequeEnCartera[]
   saldoAFavorCC: number
   gastosPendientes?: GastoPendiente[]
+  ncPendientes?: NCPendiente[]
   onSuccess: (nroOP: string, opId: string) => void
   onClose: () => void
 }
@@ -171,6 +183,7 @@ export function RegistrarPagoFleteroModal({
   chequesEnCartera,
   saldoAFavorCC,
   gastosPendientes = [],
+  ncPendientes = [],
   onSuccess,
   onClose,
 }: Props) {
@@ -180,6 +193,9 @@ export function RegistrarPagoFleteroModal({
 
   const [gastosSeleccionados, setGastosSeleccionados] = useState<Record<string, boolean>>({})
   const [gastosMontos, setGastosMontos] = useState<Record<string, string>>({})
+
+  const [ncSeleccionados, setNCSeleccionados] = useState<Record<string, boolean>>({})
+  const [ncMontos, setNCMontos] = useState<Record<string, string>>({})
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -196,7 +212,13 @@ export function RegistrarPagoFleteroModal({
       .map(g => parsearImporte(gastosMontos[g.id] ?? "0"))
   )
 
-  const saldoAjustado = maxMonetario(0, restarImportes(saldoPendienteTotal, totalGastosDescontados))
+  const totalNCDescontados = sumarImportes(
+    ncPendientes
+      .filter(nc => ncSeleccionados[nc.id])
+      .map(nc => parsearImporte(ncMontos[nc.id] ?? "0"))
+  )
+
+  const saldoAjustado = maxMonetario(0, restarImportes(saldoPendienteTotal, sumarImportes([totalGastosDescontados, totalNCDescontados])))
 
   const totalMedios = sumarImportes(pagos.map(p => parsearImporte(p.monto)))
   const diferencia = restarImportes(totalMedios, saldoAjustado)
@@ -209,6 +231,16 @@ export function RegistrarPagoFleteroModal({
       setGastosMontos((prev) => ({ ...prev, [gastoId]: String(saldoGasto) }))
     } else {
       setGastosMontos((prev) => ({ ...prev, [gastoId]: "" }))
+    }
+  }
+
+  function toggleNC(ncId: string, saldoNC: number) {
+    const ahora = !ncSeleccionados[ncId]
+    setNCSeleccionados((prev) => ({ ...prev, [ncId]: ahora }))
+    if (ahora) {
+      setNCMontos((prev) => ({ ...prev, [ncId]: String(saldoNC) }))
+    } else {
+      setNCMontos((prev) => ({ ...prev, [ncId]: "" }))
     }
   }
 
@@ -264,8 +296,8 @@ export function RegistrarPagoFleteroModal({
 
   // ── Submit ───────────────────────────────────────────────────────────────────
   async function handleSubmit() {
-    if (pagos.length === 0 && totalGastosDescontados === 0) {
-      setError("Agregá al menos un medio de pago o gasto a descontar"); return
+    if (pagos.length === 0 && totalGastosDescontados === 0 && totalNCDescontados === 0) {
+      setError("Agregá al menos un medio de pago, gasto o NC a descontar"); return
     }
     if (!importesIguales(totalMedios, saldoAjustado)) {
       setError(`El total debe cubrir exactamente el saldo (${ars(saldoAjustado)}). Diferencia: ${ars(diferencia)}`); return
@@ -309,6 +341,13 @@ export function RegistrarPagoFleteroModal({
         }),
         fecha: today,
         gastos: gastosPayload.length > 0 ? gastosPayload : undefined,
+        ncDescuentos: (() => {
+          const ncPayload = ncPendientes
+            .filter((nc) => ncSeleccionados[nc.id])
+            .map((nc) => ({ ncId: nc.id, montoDescontar: parsearImporte(ncMontos[nc.id] ?? "0") }))
+            .filter((nc) => nc.montoDescontar > 0)
+          return ncPayload.length > 0 ? ncPayload : undefined
+        })(),
       }
 
       const res = await fetch("/api/ordenes-pago", {
@@ -420,6 +459,12 @@ export function RegistrarPagoFleteroModal({
                   <span className="text-orange-600">- {ars(totalGastosDescontados)}</span>
                 </div>
               )}
+              {totalNCDescontados > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">NC a descontar</span>
+                  <span className="text-blue-600">- {ars(totalNCDescontados)}</span>
+                </div>
+              )}
               <div className="flex justify-between font-semibold border-t pt-1 mt-1">
                 <span>A cubrir</span>
                 <span>{ars(saldoAjustado)}</span>
@@ -475,6 +520,56 @@ export function RegistrarPagoFleteroModal({
                           onChange={(e) => {
                             const v = Math.min(parsearImporte(e.target.value), saldoGasto)
                             setGastosMontos((prev) => ({ ...prev, [g.id]: String(v) }))
+                          }}
+                          className="w-24 h-6 text-xs text-right px-1"
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* NC a descontar */}
+            {ncPendientes.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  NC a descontar
+                </p>
+                <div className="space-y-2">
+                  {ncPendientes.map((nc) => {
+                    const saldoNC = restarImportes(nc.montoTotal, nc.montoDescontado)
+                    const checked = ncSeleccionados[nc.id] ?? false
+                    const lpNro = nc.liquidacion?.nroComprobante
+                      ? `${String(nc.liquidacion.ptoVenta ?? 1).padStart(4, "0")}-${String(nc.liquidacion.nroComprobante).padStart(8, "0")}`
+                      : null
+                    const ncNro = nc.nroComprobante
+                      ? `${String(nc.ptoVenta ?? 1).padStart(4, "0")}-${String(nc.nroComprobante).padStart(8, "0")}`
+                      : null
+                    return (
+                      <div key={nc.id} className="flex items-start gap-2 rounded border border-blue-200 bg-blue-50/30 p-2 text-xs">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 cursor-pointer"
+                          checked={checked}
+                          onChange={() => toggleNC(nc.id, saldoNC)}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">NC {ncNro ?? "s/n"}</p>
+                          {lpNro && <p className="text-muted-foreground">LP: {lpNro}</p>}
+                          {nc.descripcion && <p className="text-muted-foreground truncate">{nc.descripcion}</p>}
+                          <p className="text-muted-foreground">Saldo: {formatearMoneda(saldoNC)}</p>
+                        </div>
+                        <Input
+                          type="number"
+                          min="0"
+                          max={saldoNC}
+                          step="0.01"
+                          disabled={!checked}
+                          value={ncMontos[nc.id] ?? ""}
+                          onChange={(e) => {
+                            const v = Math.min(parsearImporte(e.target.value), saldoNC)
+                            setNCMontos((prev) => ({ ...prev, [nc.id]: String(v) }))
                           }}
                           className="w-24 h-6 text-xs text-right px-1"
                         />

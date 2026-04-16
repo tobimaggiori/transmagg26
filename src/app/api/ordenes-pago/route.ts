@@ -115,6 +115,14 @@ const multiLPPagoSchema = z.object({
       })
     )
     .optional(),
+  ncDescuentos: z
+    .array(
+      z.object({
+        ncId: z.string().uuid(),
+        montoDescontar: z.number().positive(),
+      })
+    )
+    .optional(),
 })
 
 /**

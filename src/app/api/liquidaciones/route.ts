@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
   if (fleteroIdReal) whereLiquidaciones.fleteroId = fleteroIdReal
 
   try {
-    const [viajesRaw, liquidaciones, fleteroData, nroProximoComprobante, gastosPendientes] = await Promise.all([
+    const [viajesRaw, liquidaciones, fleteroData, nroProximoComprobante, gastosPendientes, ncRaw] = await Promise.all([
       prisma.viaje.findMany({
         where: whereViajes,
         select: {
@@ -168,6 +168,20 @@ export async function GET(request: NextRequest) {
             orderBy: { creadoEn: "asc" },
           })
         : Promise.resolve([]),
+      fleteroIdReal
+        ? prisma.notaCreditoDebito.findMany({
+            where: {
+              tipo: "NC_EMITIDA",
+              liquidacion: { fleteroId: fleteroIdReal },
+            },
+            select: {
+              id: true, subtipo: true, montoTotal: true, montoDescontado: true,
+              nroComprobante: true, ptoVenta: true, creadoEn: true, descripcion: true,
+              liquidacion: { select: { nroComprobante: true, ptoVenta: true } },
+            },
+            orderBy: { creadoEn: "asc" },
+          })
+        : Promise.resolve([]),
     ])
 
     const viajesPendientes = viajesRaw.map((v) => ({
@@ -221,7 +235,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ viajesPendientes, liquidaciones, fletero: fleteroData, nroProximoComprobante, gastosPendientes, faltantesPorLiq })
+    const ncPendientesDescuento = ncRaw.filter((nc) => Number(nc.montoDescontado) < Number(nc.montoTotal))
+
+    return NextResponse.json({ viajesPendientes, liquidaciones, fletero: fleteroData, nroProximoComprobante, gastosPendientes, faltantesPorLiq, ncPendientesDescuento })
   } catch (error) {
     console.error("[GET /api/liquidaciones]", error)
     return NextResponse.json(

@@ -63,6 +63,17 @@ interface GastoPendiente {
   } | null
 }
 
+export interface NCPendiente {
+  id: string
+  subtipo: string | null
+  montoTotal: number
+  montoDescontado: number
+  nroComprobante: number | null
+  ptoVenta: number | null
+  descripcion: string | null
+  liquidacion: { nroComprobante: number | null; ptoVenta: number | null } | null
+}
+
 interface RegistrarPagoClientProps {
   fleteros: Fletero[]
   cuentas: CuentaBancaria[]
@@ -244,6 +255,7 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera, opera
   const [fleteroId, setFleteroId] = useState("")
   const [liquidaciones, setLiquidaciones] = useState<LiquidacionPendiente[]>([])
   const [gastosPendientes, setGastosPendientes] = useState<GastoPendiente[]>([])
+  const [ncPendientes, setNCPendientes] = useState<NCPendiente[]>([])
   const [saldoAFavorCC, setSaldoAFavorCC] = useState(0)
   const [loadingFletero, setLoadingFletero] = useState(false)
 
@@ -261,6 +273,7 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera, opera
     setFleteroId(id)
     setLiquidaciones([])
     setGastosPendientes([])
+    setNCPendientes([])
     setSaldoAFavorCC(0)
     setSeleccionados(new Set())
     if (!id) return
@@ -274,7 +287,9 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera, opera
       ])
       setLiquidaciones(liqs)
       setSaldoAFavorCC(saldo.saldoAFavor ?? 0)
-      setGastosPendientes((gastos as { gastosPendientes?: GastoPendiente[] }).gastosPendientes ?? [])
+      const liqData = gastos as { gastosPendientes?: GastoPendiente[]; ncPendientesDescuento?: NCPendiente[] }
+      setGastosPendientes(liqData.gastosPendientes ?? [])
+      setNCPendientes(liqData.ncPendientesDescuento ?? [])
     } finally {
       setLoadingFletero(false)
     }
@@ -464,6 +479,7 @@ export function RegistrarPagoClient({ fleteros, cuentas, chequesEnCartera, opera
           chequesEnCartera={chequesEnCartera}
           saldoAFavorCC={saldoAFavorCC}
           gastosPendientes={gastosPendientes.filter((g) => g.estado !== "DESCONTADO_TOTAL")}
+          ncPendientes={ncPendientes}
           onSuccess={onSuccess}
           onClose={() => setPagando(false)}
         />
