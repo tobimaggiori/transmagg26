@@ -285,10 +285,7 @@ export default async function ContabilidadIvaPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Libro IVA</h2>
-        <p className="text-muted-foreground">Libro de IVA Ventas e IVA Compras — Transmagg</p>
-      </div>
+      <h2 className="text-2xl font-bold tracking-tight">Libro de IVA Trans-Magg S.R.L.</h2>
 
       <FiltroPeriodo
         action="/contabilidad/iva"
