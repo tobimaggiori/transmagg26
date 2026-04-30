@@ -77,9 +77,9 @@ type AsientoConRelaciones = {
     facturaId: string | null
     liquidacionId: string | null
     facturaProveedorId: string | null
-    factura: { empresa: { razonSocial: string; cuit: string } } | null
-    liquidacion: { fletero: { razonSocial: string; cuit: string } } | null
-    facturaProveedor: { proveedor: { razonSocial: string; cuit: string } } | null
+    factura: { tipoCbte: number; empresa: { razonSocial: string; cuit: string } } | null
+    liquidacion: { tipoCbte: number | null; fletero: { razonSocial: string; cuit: string } } | null
+    facturaProveedor: { tipoCbte: string; proveedor: { razonSocial: string; cuit: string } } | null
   } | null
   facturaSeguro: {
     nroComprobante: string
@@ -95,6 +95,118 @@ type AsientoConRelaciones = {
 function num(v: { toString(): string } | null | undefined): number {
   if (v == null) return 0
   return Number(v.toString())
+}
+
+// ─── Mapeos de strings a códigos ARCA ────────────────────────────────────────
+
+/**
+ * inferirTipoCbteProveedor: string -> number
+ *
+ * El campo `tipoCbte` de FacturaProveedor es un string libre. En producción
+ * vienen valores variados según cómo se cargó:
+ *   "A", "B", "C", "M", "X" — letras
+ *   "001", "006", "011" — códigos zero-padded
+ *   "1", "6", "11" — códigos sin padding
+ *
+ * Este helper mapea cualquiera de esos a un código ARCA. Si no reconoce,
+ * devuelve 0 (que el caller debe tratar como "asiento descartable").
+ *
+ * Ejemplos:
+ * inferirTipoCbteProveedor("A")    === 1
+ * inferirTipoCbteProveedor("001")  === 1
+ * inferirTipoCbteProveedor("1")    === 1
+ * inferirTipoCbteProveedor("B")    === 6
+ * inferirTipoCbteProveedor("M")    === 51
+ * inferirTipoCbteProveedor("XXX")  === 0
+ */
+function inferirTipoCbteProveedor(tipoCbteRaw: string): number {
+  const v = (tipoCbteRaw ?? "").trim().toUpperCase()
+  if (!v) return 0
+  // Letras de tipo de comprobante
+  const letras: Record<string, number> = {
+    A: 1, B: 6, C: 11, M: 51, X: 0,  // X no aplica fiscalmente
+    // Notas (mismas letras pero contexto NC/ND — recibidas)
+  }
+  if (letras[v] !== undefined) return letras[v]
+  // Numérico: parseInt funciona tanto con "001" como con "1"
+  const n = parseInt(v, 10)
+  if (Number.isFinite(n) && n > 0) return n
+  return 0
+}
+
+/**
+ * parseNroComprobante: string -> number
+ *
+ * El campo `nro_comprobante` de FacturaProveedor viene con formato variado:
+ *   "0015-00011666" — formato completo PPPP-NNNNNNNN
+ *   "00011666"      — solo número con padding
+ *   "11666"         — número limpio
+ *
+ * Si tiene guión/espacio, tomamos la parte FINAL (que es el nro real);
+ * si no, parseamos todo el string.
+ *
+ * Ejemplos:
+ * parseNroComprobante("0015-00011666")   === 11666
+ * parseNroComprobante("00011666")        === 11666
+ * parseNroComprobante("11666")           === 11666
+ * parseNroComprobante("")                === 0
+ */
+function parseNroComprobante(raw: string | null | undefined): number {
+  if (!raw) return 0
+  const trim = raw.trim()
+  const partes = trim.split(/[\s\-_/]+/).filter(p => p.length > 0)
+  const ultima = partes.length > 1 ? partes[partes.length - 1] : trim
+  const n = parseInt(ultima, 10)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
+/**
+ * parsePuntoVenta: string -> number
+ *
+ * Si el campo trae "PPPP-NNNNNNNN", tomamos la PRIMERA parte (el ptoVenta).
+ * Si no, parseamos directo. Default 1.
+ *
+ * Ejemplos:
+ * parsePuntoVenta("0015")            === 15
+ * parsePuntoVenta("0015-00011666")   === 15
+ * parsePuntoVenta(null)              === 1
+ */
+function parsePuntoVenta(raw: string | null | undefined): number {
+  if (!raw) return 1
+  const trim = raw.trim()
+  const partes = trim.split(/[\s\-_/]+/).filter(p => p.length > 0)
+  const primera = partes[0] ?? trim
+  const n = parseInt(primera, 10)
+  return Number.isFinite(n) && n > 0 ? n : 1
+}
+
+/**
+ * inferirTipoCbteNotaCD: NotaCD relations -> number
+ *
+ * Cuando NotaCreditoDebito.tipoCbte es null (NC sin CAE), derivar del tipo
+ * de la nota + tipoCbte de la factura asociada usando la matriz cerrada:
+ *
+ *  Factura origen 1 (A)   → NC 3, ND 2
+ *  Factura origen 6 (B)   → NC 8, ND 7
+ *  Factura origen 201     → NC 203, ND 202
+ *  CVLP origen 60         → NC 3, ND 2
+ *  CVLP origen 61         → NC 8, ND 7
+ *
+ * Si no se puede determinar, devuelve 0.
+ */
+function inferirTipoCbteNotaCD(
+  tipoNota: string,
+  tipoCbteOrigen: number | null | undefined,
+): number {
+  if (!tipoCbteOrigen) return 0
+  const esNC = tipoNota === "NC_EMITIDA" || tipoNota === "NC_RECIBIDA"
+  const esND = tipoNota === "ND_EMITIDA" || tipoNota === "ND_RECIBIDA"
+  if (!esNC && !esND) return 0
+  // Matriz: la NC/ND usa el código de su grupo (A, B, FCE)
+  if (tipoCbteOrigen === 1 || tipoCbteOrigen === 60) return esNC ? 3 : 2
+  if (tipoCbteOrigen === 6 || tipoCbteOrigen === 61) return esNC ? 8 : 7
+  if (tipoCbteOrigen === 201) return esNC ? 203 : 202
+  return 0
 }
 
 // ─── Mapeo asiento → identidad de comprobante ────────────────────────────────
@@ -125,12 +237,13 @@ function extraerIdentidad(a: AsientoConRelaciones): IdentidadComprobante | null 
   // FACTURA_EMITIDA → usa facturaEmitida
   if (a.tipoReferencia === "FACTURA_EMITIDA" && a.facturaEmitida) {
     const f = a.facturaEmitida
-    const num = parseInt(f.nroComprobante ?? "0", 10) || 0
+    const numero = parseInt(f.nroComprobante ?? "0", 10) || 0
+    if (!f.tipoCbte || numero === 0) return null
     return {
       tipoComprobanteArca: f.tipoCbte,
       puntoVenta: f.ptoVenta ?? 1,
-      numeroDesde: num,
-      numeroHasta: num,
+      numeroDesde: numero,
+      numeroHasta: numero,
       fecha: f.emitidaEn,
       cuitContraparte: f.empresa.cuit,
       razonSocialContraparte: f.empresa.razonSocial,
@@ -147,11 +260,13 @@ function extraerIdentidad(a: AsientoConRelaciones): IdentidadComprobante | null 
   // LIQUIDACION → usa liquidacion (CVLP — siempre Compras)
   if (a.tipoReferencia === "LIQUIDACION" && a.liquidacion) {
     const l = a.liquidacion
+    const numero = l.nroComprobante ?? 0
+    if (numero === 0) return null
     return {
       tipoComprobanteArca: l.tipoCbte ?? 60,
       puntoVenta: l.ptoVenta ?? 1,
-      numeroDesde: l.nroComprobante ?? 0,
-      numeroHasta: l.nroComprobante ?? 0,
+      numeroDesde: numero,
+      numeroHasta: numero,
       fecha: l.grabadaEn,
       cuitContraparte: l.fletero.cuit,
       razonSocialContraparte: l.fletero.razonSocial,
@@ -168,22 +283,28 @@ function extraerIdentidad(a: AsientoConRelaciones): IdentidadComprobante | null 
   // FACTURA_PROVEEDOR → usa facturaProveedor
   if (a.tipoReferencia === "FACTURA_PROVEEDOR" && a.facturaProveedor) {
     const fp = a.facturaProveedor
-    // Convertir tipoCbte string ("001"|"006") a número
-    const tipoNum = parseInt(fp.tipoCbte, 10) || 0
-    const num = parseInt(fp.nroComprobante, 10) || 0
-    const ptoNum = parseInt(fp.ptoVenta ?? "1", 10) || 1
+    const tipoNum = inferirTipoCbteProveedor(fp.tipoCbte)
+    // El nroComprobante puede venir como "0015-00011666" en lugar de solo el nro
+    const numero = parseNroComprobante(fp.nroComprobante)
+    // ptoVenta también puede venir embebido en el nroComprobante
+    let ptoNum = parsePuntoVenta(fp.ptoVenta)
+    // Si ptoVenta no venía, intentar extraerlo del nroComprobante
+    if ((!fp.ptoVenta || fp.ptoVenta === "1") && fp.nroComprobante.includes("-")) {
+      ptoNum = parsePuntoVenta(fp.nroComprobante)
+    }
+    if (tipoNum === 0 || numero === 0) return null
     return {
       tipoComprobanteArca: tipoNum,
       puntoVenta: ptoNum,
-      numeroDesde: num,
-      numeroHasta: num,
+      numeroDesde: numero,
+      numeroHasta: numero,
       fecha: fp.fechaCbte,
       cuitContraparte: fp.proveedor.cuit,
       razonSocialContraparte: fp.proveedor.razonSocial,
       totalOperacion: 0,
       netoGravado: 0,
       ivaMonto: 0,
-      percepcionIibb: num,
+      percepcionIibb: 0,
       percepcionIva: 0,
       percepcionGanancias: 0,
       claveAgrupamiento: `FP:${a.facturaProvId}`,
@@ -193,14 +314,15 @@ function extraerIdentidad(a: AsientoConRelaciones): IdentidadComprobante | null 
   // FACTURA_SEGURO → usa facturaSeguro
   if (a.tipoReferencia === "FACTURA_SEGURO" && a.facturaSeguro) {
     const fs = a.facturaSeguro
-    // tipoComprobante string ("A"|"B") → ARCA 1 o 6
-    const codArca = fs.tipoComprobante === "A" ? 1 : fs.tipoComprobante === "B" ? 6 : 0
-    const num = parseInt(fs.nroComprobante, 10) || 0
+    // tipoComprobante puede ser "A", "B", "C", o variantes
+    const codArca = inferirTipoCbteProveedor(fs.tipoComprobante)
+    const numero = parseNroComprobante(fs.nroComprobante)
+    if (codArca === 0 || numero === 0) return null
     return {
       tipoComprobanteArca: codArca,
       puntoVenta: 1,
-      numeroDesde: num,
-      numeroHasta: num,
+      numeroDesde: numero,
+      numeroHasta: numero,
       fecha: fs.fecha,
       cuitContraparte: fs.aseguradora.cuit,
       razonSocialContraparte: fs.aseguradora.razonSocial,
@@ -217,8 +339,16 @@ function extraerIdentidad(a: AsientoConRelaciones): IdentidadComprobante | null 
   // NOTA C/D → tomar contraparte de la entidad relacionada
   if (a.notaCreditoDebito) {
     const nc = a.notaCreditoDebito
-    const tipoNum = nc.tipoCbte ?? 0
     const numComp = nc.nroComprobante ?? 0
+
+    // Si tipoCbte está null (NC sin CAE), derivarlo del comprobante asociado
+    let tipoNum = nc.tipoCbte ?? 0
+    if (tipoNum === 0) {
+      const tipoOrigen =
+        nc.factura?.tipoCbte ?? nc.liquidacion?.tipoCbte ?? null
+      tipoNum = inferirTipoCbteNotaCD(nc.tipo, tipoOrigen)
+    }
+
     let cuit = ""
     let razon = ""
     if (nc.factura) {
@@ -231,6 +361,9 @@ function extraerIdentidad(a: AsientoConRelaciones): IdentidadComprobante | null 
       cuit = nc.facturaProveedor.proveedor.cuit
       razon = nc.facturaProveedor.proveedor.razonSocial
     }
+
+    if (tipoNum === 0 || numComp === 0) return null
+
     return {
       tipoComprobanteArca: tipoNum,
       puntoVenta: nc.ptoVenta ?? 1,
@@ -356,9 +489,9 @@ export async function recolectarDatosIvaPeriodo(
           facturaId: true,
           liquidacionId: true,
           facturaProveedorId: true,
-          factura: { select: { empresa: { select: { razonSocial: true, cuit: true } } } },
-          liquidacion: { select: { fletero: { select: { razonSocial: true, cuit: true } } } },
-          facturaProveedor: { select: { proveedor: { select: { razonSocial: true, cuit: true } } } },
+          factura: { select: { tipoCbte: true, empresa: { select: { razonSocial: true, cuit: true } } } },
+          liquidacion: { select: { tipoCbte: true, fletero: { select: { razonSocial: true, cuit: true } } } },
+          facturaProveedor: { select: { tipoCbte: true, proveedor: { select: { razonSocial: true, cuit: true } } } },
         },
       },
       facturaSeguro: {

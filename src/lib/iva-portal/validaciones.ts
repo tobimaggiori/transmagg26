@@ -18,7 +18,6 @@ import type {
 import {
   codigoArcaSoportado,
   alicuotaSoportada,
-  etiquetaComprobanteArca,
 } from "./codigos-arca"
 import { sumarImportes, restarImportes } from "@/lib/money"
 import { normalizarCuit } from "./formatos"
@@ -56,19 +55,39 @@ export function validarCuit(cuit: string | null | undefined): boolean {
  * Valida un comprobante individual. Devuelve lista de problemas.
  * Cada item se marca como bloqueante o advertencia según el codigo.
  */
+function etiquetaCbte(c: ComprobanteIva): string {
+  // Formato amigable: "Factura A 0015-00011666"
+  const tipo = (c.tipoComprobanteArca === 1) ? "Factura A"
+    : (c.tipoComprobanteArca === 6) ? "Factura B"
+    : (c.tipoComprobanteArca === 2) ? "Nota de Débito A"
+    : (c.tipoComprobanteArca === 3) ? "Nota de Crédito A"
+    : (c.tipoComprobanteArca === 7) ? "Nota de Débito B"
+    : (c.tipoComprobanteArca === 8) ? "Nota de Crédito B"
+    : (c.tipoComprobanteArca === 60) ? "CVLP A"
+    : (c.tipoComprobanteArca === 61) ? "CVLP B"
+    : (c.tipoComprobanteArca === 201) ? "Factura MiPyMEs A"
+    : (c.tipoComprobanteArca === 202) ? "ND MiPyMEs A"
+    : (c.tipoComprobanteArca === 203) ? "NC MiPyMEs A"
+    : `Tipo ${c.tipoComprobanteArca}`
+  const ptoStr = String(c.puntoVenta).padStart(4, "0")
+  const numStr = String(c.numeroDesde).padStart(8, "0")
+  return `${tipo} ${ptoStr}-${numStr}`
+}
+
 function validarComprobante(c: ComprobanteIva): ValidacionItem[] {
   const items: ValidacionItem[] = []
+  const cbteLabel = etiquetaCbte(c)
   const ref = {
     tipoReferencia: c.tipoReferencia,
     id: c.referenciaId,
-    cbte: `${c.tipoComprobanteArca} ${c.puntoVenta}-${c.numeroDesde}`,
+    cbte: cbteLabel,
   }
 
   // Bloqueante: tipo de comprobante no soportado
   if (!codigoArcaSoportado(c.tipoComprobanteArca)) {
     items.push({
       codigo: "TIPO_COMPROBANTE_NO_SOPORTADO",
-      mensaje: `Tipo de comprobante ${c.tipoComprobanteArca} fuera de la matriz cerrada ARCA`,
+      mensaje: `El comprobante de ${c.razonSocialContraparte || "—"} tiene un tipo no reconocido por ARCA. Solo se aceptan: Factura A/B/MiPyMEs, Notas de Crédito/Débito A/B/MiPyMEs y CVLP A/B. Revisar la carga del comprobante.`,
       referencia: ref,
     })
   }
@@ -77,7 +96,7 @@ function validarComprobante(c: ComprobanteIva): ValidacionItem[] {
   if (!validarCuit(c.cuitContraparte)) {
     items.push({
       codigo: "CUIT_INVALIDO",
-      mensaje: `CUIT "${c.cuitContraparte}" no válido para ${ref.cbte}`,
+      mensaje: `${cbteLabel} — CUIT "${c.cuitContraparte || "(vacío)"}" del cliente/proveedor "${c.razonSocialContraparte || "—"}" no es válido (debe tener 11 dígitos y dígito verificador correcto). Corregir en la ficha del cliente/proveedor.`,
       referencia: ref,
     })
   }
@@ -86,7 +105,7 @@ function validarComprobante(c: ComprobanteIva): ValidacionItem[] {
   if (!c.puntoVenta || c.puntoVenta < 1) {
     items.push({
       codigo: "PUNTO_VENTA_FALTANTE",
-      mensaje: `Punto de venta inválido o faltante`,
+      mensaje: `${cbteLabel} — Falta el punto de venta. Es obligatorio para presentar a ARCA.`,
       referencia: ref,
     })
   }
@@ -95,14 +114,14 @@ function validarComprobante(c: ComprobanteIva): ValidacionItem[] {
   if (!c.numeroDesde || c.numeroDesde < 1) {
     items.push({
       codigo: "NUMERO_COMPROBANTE_FALTANTE",
-      mensaje: `Número de comprobante inválido o faltante`,
+      mensaje: `${cbteLabel} — Falta el número de comprobante. Es obligatorio para presentar a ARCA.`,
       referencia: ref,
     })
   }
 
   // Bloqueante: importes no NaN
   const camposImporte: Array<[keyof ComprobanteIva, string]> = [
-    ["totalOperacion", "Total operación"],
+    ["totalOperacion", "Total"],
     ["netoGravado", "Neto gravado"],
     ["exento", "Exento"],
     ["noGravado", "No gravado"],
@@ -112,7 +131,7 @@ function validarComprobante(c: ComprobanteIva): ValidacionItem[] {
     if (typeof v !== "number" || !Number.isFinite(v)) {
       items.push({
         codigo: "IMPORTE_INVALIDO",
-        mensaje: `${etiqueta} no es un número finito (${v})`,
+        mensaje: `${cbteLabel} — El importe "${etiqueta}" tiene un valor inválido. Revisar la carga del comprobante.`,
         referencia: ref,
       })
     }
@@ -122,13 +141,12 @@ function validarComprobante(c: ComprobanteIva): ValidacionItem[] {
   if (c.cantidadAlicuotas < 1 || c.cantidadAlicuotas > 9) {
     items.push({
       codigo: "CANTIDAD_ALICUOTAS_INVALIDA",
-      mensaje: `Cantidad de alícuotas debe estar entre 1 y 9 (es ${c.cantidadAlicuotas})`,
+      mensaje: `${cbteLabel} — Tiene ${c.cantidadAlicuotas} alícuotas declaradas. ARCA solo acepta entre 1 y 9 por comprobante.`,
       referencia: ref,
     })
   }
 
-  // Advertencia: total ≈ neto + iva + exento + no gravado + percepciones
-  // (las NC restan, las facturas suman — usamos abs para ambos casos)
+  // Advertencia: total > 0 pero bases imponibles en 0
   const totalEsperado = sumarImportes([
     c.netoGravado,
     c.exento,
@@ -140,13 +158,10 @@ function validarComprobante(c: ComprobanteIva): ValidacionItem[] {
     c.impuestosInternos,
     c.otrosTributos,
   ])
-  // El total declarado debe ser ≥ totalEsperado (porque falta sumar IVA, que va en alícuotas)
-  // Toleramos hasta $1 de diferencia por redondeo.
   if (Math.abs(restarImportes(c.totalOperacion, totalEsperado)) < 0.01 && totalEsperado === 0 && c.totalOperacion > 0) {
-    // Total > 0 pero todas las bases en 0: alarma
     items.push({
       codigo: "BASES_EN_CERO",
-      mensaje: `Total ${c.totalOperacion} pero todas las bases imponibles están en cero`,
+      mensaje: `${cbteLabel} — Total $${c.totalOperacion.toFixed(2)} pero el comprobante no tiene bases imponibles (gravado, exento, no gravado, percepciones). Revisar la carga.`,
       referencia: ref,
     })
   }
@@ -169,13 +184,13 @@ function validarAlicuotasComprobante(
   alicuotas: AlicuotaIva[],
 ): ValidacionItem[] {
   const items: ValidacionItem[] = []
+  const cbteLabel = etiquetaCbte(c)
   const ref = {
     tipoReferencia: c.tipoReferencia,
     id: c.referenciaId,
-    cbte: `${c.tipoComprobanteArca} ${c.puntoVenta}-${c.numeroDesde}`,
+    cbte: cbteLabel,
   }
 
-  // Filtrar alícuotas de este comprobante
   const alicCbte = alicuotas.filter(
     (a) =>
       a.tipoComprobanteArca === c.tipoComprobanteArca &&
@@ -183,11 +198,10 @@ function validarAlicuotasComprobante(
       a.numeroComprobante === c.numeroDesde,
   )
 
-  // Bloqueante: cantidad declarada vs real
   if (alicCbte.length === 0) {
     items.push({
       codigo: "ALICUOTAS_FALTANTES",
-      mensaje: `No hay filas de alícuota para ${ref.cbte}`,
+      mensaje: `${cbteLabel} — No tiene filas de IVA cargadas. Probablemente fue ingresado sin desglose por alícuota.`,
       referencia: ref,
     })
     return items
@@ -196,28 +210,27 @@ function validarAlicuotasComprobante(
   if (alicCbte.length !== c.cantidadAlicuotas) {
     items.push({
       codigo: "CANTIDAD_ALICUOTAS_INCONSISTENTE",
-      mensaje: `Cantidad declarada (${c.cantidadAlicuotas}) no coincide con filas (${alicCbte.length})`,
+      mensaje: `${cbteLabel} — Tiene ${alicCbte.length} alícuotas de IVA cargadas pero declaradas ${c.cantidadAlicuotas}. Si hay otro comprobante con el mismo número, las alícuotas se están mezclando.`,
       referencia: ref,
     })
   }
 
-  // Bloqueante: cada alícuota debe ser soportada
   for (const a of alicCbte) {
     if (!alicuotaSoportada(a.alicuotaPorcentaje)) {
       items.push({
         codigo: "ALICUOTA_NO_SOPORTADA",
-        mensaje: `Alícuota ${a.alicuotaPorcentaje}% no está en la matriz ARCA (3, 5, 8, 4, 5, 6, 9)`,
+        mensaje: `${cbteLabel} — La alícuota de IVA ${a.alicuotaPorcentaje}% no es válida para ARCA. Solo se aceptan 0%, 2.5%, 5%, 10.5%, 21% y 27%.`,
         referencia: ref,
       })
     }
   }
 
-  // Advertencia: suma de bases en alícuotas debe ≈ neto del cabecera
   const sumaBases = sumarImportes(alicCbte.map((a) => a.netoGravado))
-  if (Math.abs(restarImportes(sumaBases, c.netoGravado)) > 0.01) {
+  const diferencia = restarImportes(sumaBases, c.netoGravado)
+  if (Math.abs(diferencia) > 0.01) {
     items.push({
       codigo: "SUMA_BASES_INCONSISTENTE",
-      mensaje: `Suma de bases en alícuotas (${sumaBases}) no coincide con neto del comprobante (${c.netoGravado})`,
+      mensaje: `${cbteLabel} — La suma de bases imponibles por alícuota ($${sumaBases.toFixed(2)}) no coincide con el neto gravado del comprobante ($${c.netoGravado.toFixed(2)}). Diferencia: $${Math.abs(diferencia).toFixed(2)}.`,
       referencia: ref,
     })
   }
@@ -257,42 +270,85 @@ export function validarPeriodo(datos: DatosIvaPeriodo): ResultadoValidacion {
     else advertencias.push(item)
   }
 
-  // Validar ventas
-  for (const c of datos.ventas.comprobantes) {
-    for (const item of validarComprobante(c)) agregar(item)
-    for (const item of validarAlicuotasComprobante(c, datos.ventas.alicuotas)) agregar(item)
-  }
-
-  // Validar compras
-  for (const c of datos.compras.comprobantes) {
-    for (const item of validarComprobante(c)) agregar(item)
-    for (const item of validarAlicuotasComprobante(c, datos.compras.alicuotas)) agregar(item)
-  }
-
-  // Validar duplicados (mismo tipoCbte, ptoVenta, número) por libro
-  const ventasKeys = new Set<string>()
+  // PASO 1: detectar duplicados (mismo tipoCbte, ptoVenta, número).
+  // Cuando hay duplicado, los errores derivados (CANTIDAD_ALICUOTAS_INCONSISTENTE,
+  // SUMA_BASES_INCONSISTENTE) son falsos positivos — los suprimimos para no
+  // confundir al contador.
+  const ventasKeysDup = new Set<string>()
+  const comprasKeysDup = new Set<string>()
   for (const c of datos.ventas.comprobantes) {
     const key = `${c.tipoComprobanteArca}-${c.puntoVenta}-${c.numeroDesde}`
-    if (ventasKeys.has(key)) {
-      agregar({
-        codigo: "COMPROBANTE_DUPLICADO",
-        mensaje: `Comprobante duplicado en ventas: ${etiquetaComprobanteArca(c.tipoComprobanteArca)} ${key}`,
-        referencia: { tipoReferencia: c.tipoReferencia, id: c.referenciaId, cbte: key },
-      })
-    }
-    ventasKeys.add(key)
+    ventasKeysDup.add(key)
   }
-  const comprasKeys = new Set<string>()
   for (const c of datos.compras.comprobantes) {
     const key = `${c.tipoComprobanteArca}-${c.puntoVenta}-${c.numeroDesde}`
-    if (comprasKeys.has(key)) {
-      agregar({
-        codigo: "COMPROBANTE_DUPLICADO",
-        mensaje: `Comprobante duplicado en compras: ${etiquetaComprobanteArca(c.tipoComprobanteArca)} ${key}`,
-        referencia: { tipoReferencia: c.tipoReferencia, id: c.referenciaId, cbte: key },
-      })
+    comprasKeysDup.add(key)
+  }
+
+  // Map de duplicados a la lista de comprobantes que comparten la terna
+  const ventasDuplicados = new Map<string, ComprobanteIva[]>()
+  const comprasDuplicados = new Map<string, ComprobanteIva[]>()
+  for (const c of datos.ventas.comprobantes) {
+    const key = `${c.tipoComprobanteArca}-${c.puntoVenta}-${c.numeroDesde}`
+    if (!ventasDuplicados.has(key)) ventasDuplicados.set(key, [])
+    ventasDuplicados.get(key)!.push(c)
+  }
+  for (const c of datos.compras.comprobantes) {
+    const key = `${c.tipoComprobanteArca}-${c.puntoVenta}-${c.numeroDesde}`
+    if (!comprasDuplicados.has(key)) comprasDuplicados.set(key, [])
+    comprasDuplicados.get(key)!.push(c)
+  }
+
+  const ternasConDup = new Set<string>()
+  for (const [key, lista] of Array.from(ventasDuplicados)) if (lista.length > 1) ternasConDup.add("V:" + key)
+  for (const [key, lista] of Array.from(comprasDuplicados)) if (lista.length > 1) ternasConDup.add("C:" + key)
+
+  function ternaDe(c: ComprobanteIva, libro: "V" | "C"): string {
+    return `${libro}:${c.tipoComprobanteArca}-${c.puntoVenta}-${c.numeroDesde}`
+  }
+
+  // PASO 2: emitir DUPLICADO con detalle (montos y fechas de cada uno)
+  for (const [, lista] of Array.from(ventasDuplicados)) {
+    if (lista.length > 1) emitirDuplicado(lista, "Ventas")
+  }
+  for (const [, lista] of Array.from(comprasDuplicados)) {
+    if (lista.length > 1) emitirDuplicado(lista, "Compras")
+  }
+
+  function emitirDuplicado(lista: ComprobanteIva[], libro: string) {
+    const detalle = lista.map((c, i) => {
+      const fecha = c.fecha.toISOString().slice(0, 10)
+      return `(${i + 1}) ${c.razonSocialContraparte || "—"} · fecha ${fecha} · neto $${c.netoGravado.toFixed(2)} · total $${c.totalOperacion.toFixed(2)}`
+    }).join("  •  ")
+    const cbteFmt = etiquetaCbte(lista[0])
+    agregar({
+      codigo: "COMPROBANTE_DUPLICADO",
+      mensaje: `Hay ${lista.length} comprobantes en ${libro} con el mismo número fiscal: ${cbteFmt}. ARCA no permite duplicados; uno de los dos está mal cargado. Detalle: ${detalle}. Acción: revisar y eliminar/anular el comprobante incorrecto.`,
+      referencia: { tipoReferencia: lista[0].tipoReferencia, id: lista[0].referenciaId, cbte: cbteFmt },
+    })
+  }
+
+  // PASO 3: validar comprobantes/alícuotas, suprimiendo síntomas en duplicados
+  const SUPRIMIBLES = new Set([
+    "CANTIDAD_ALICUOTAS_INCONSISTENTE",
+    "SUMA_BASES_INCONSISTENTE",
+    "ALICUOTAS_FALTANTES",
+  ])
+
+  function emitirValidacionesCbte(c: ComprobanteIva, libro: "V" | "C", alicuotas: AlicuotaIva[]) {
+    const enDup = ternasConDup.has(ternaDe(c, libro))
+    for (const item of validarComprobante(c)) agregar(item)
+    for (const item of validarAlicuotasComprobante(c, alicuotas)) {
+      if (enDup && SUPRIMIBLES.has(item.codigo)) continue // suprimir síntoma
+      agregar(item)
     }
-    comprasKeys.add(key)
+  }
+
+  for (const c of datos.ventas.comprobantes) {
+    emitirValidacionesCbte(c, "V", datos.ventas.alicuotas)
+  }
+  for (const c of datos.compras.comprobantes) {
+    emitirValidacionesCbte(c, "C", datos.compras.alicuotas)
   }
 
   return { errores, advertencias }
