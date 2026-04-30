@@ -564,9 +564,19 @@ export async function recolectarDatosIvaPeriodo(
       map.set(id.claveAgrupamiento, entry)
     }
 
-    // Acumular neto e IVA por alícuota
-    const baseAsiento = num(a.baseImponible)
-    const ivaAsiento = num(a.montoIva)
+    // Acumular neto e IVA por alícuota.
+    // Para NCs los AsientoIva guardan baseImponible/montoIva negativos (para
+    // restarse del IVA del período en cálculos internos). Pero el LID ARCA
+    // espera importes POSITIVOS — el código de comprobante (3, 8, 13, 53,
+    // 113, 203) ya identifica que es crédito, ARCA aplica el signo en su
+    // motor. Si escribiéramos los componentes negativos no coincidirían con
+    // el totalOperacion (que viene de montoTotal, siempre positivo) y ARCA
+    // rechaza con "El Importe Total no coincide con la suma de los demás
+    // montos".
+    const esNotaCredito =
+      a.tipoReferencia === "NC_EMITIDA" || a.tipoReferencia === "NC_RECIBIDA"
+    const baseAsiento = esNotaCredito ? Math.abs(num(a.baseImponible)) : num(a.baseImponible)
+    const ivaAsiento = esNotaCredito ? Math.abs(num(a.montoIva)) : num(a.montoIva)
     entry.cbte.netoGravado = sumarImportes([entry.cbte.netoGravado, baseAsiento])
     entry.cbte.cantidadAlicuotas += 1
     entry.alicuotas.push({
