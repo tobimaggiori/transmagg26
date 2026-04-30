@@ -33,6 +33,11 @@ viven en [`docs/`](./docs/).
      `window.open(url, "_blank")`. El visor PDF nativo del navegador le
      da al operador opciones de guardar/imprimir/cerrar; no abrimos
      páginas intermedias ni HTML wrappers.
+   - **Estilo**: importar tamaños y colores de `src/lib/pdf-style.ts`
+     (`PDF_FONT`, `PDF_COLOR`, `PDF_MARGIN`). NO inventar números mágicos
+     de fontSize. Mínimos: TABLE_BODY 9pt, FOOTER 8pt — debajo de eso un
+     contador no puede leerlo. Si un caso particular se desvía, dejar un
+     comentario explicando la razón.
 9. **Visibilidad de tarifas** (regla de seguridad crítica):
    - `tarifa` (fletero) NUNCA visible para roles empresa o chofer.
    - `tarifaEmpresa` NUNCA visible para roles fletero o chofer.

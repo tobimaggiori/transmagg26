@@ -1,19 +1,16 @@
 /**
  * Propósito: Generación de PDFs del Libro IVA con pdfkit.
  *
- * Exporta cinco funciones puras input → Buffer:
+ * Layout: A4 LANDSCAPE para tener room cómodo en las tablas. Tipografía
+ * estándar de `src/lib/pdf-style.ts`.
  *
- *  - generarPDFLibroIva(asientos, mesAnio)
- *      Master: ambas secciones (Ventas + Compras) + posición neta. Se
- *      usa desde /api/iva/generar y /api/iva/[mesAnio]/email.
- *
- *  - generarPDFIvaVentas(asientos, periodoLabel)
- *  - generarPDFIvaCompras(asientos, periodoLabel)
- *      Una sección tabular (la que ve el operador en pantalla).
- *
- *  - generarPDFVentasPorAlicuota(asientos, periodoLabel)
- *  - generarPDFComprasPorAlicuota(asientos, periodoLabel)
- *      Agrupado por tipo de comprobante con subtotales por alícuota.
+ * Exporta:
+ *  - generarPDFLibroIva(asientos, mesAnio): master con Ventas + Compras
+ *    + posición neta. Usado por /api/iva/generar y /api/iva/[mesAnio]/email.
+ *  - generarPDFIvaVentas(asientos, periodoLabel): pestaña Ventas detallada.
+ *  - generarPDFIvaCompras(asientos, periodoLabel): pestaña Compras detallada.
+ *  - generarPDFVentasPorAlicuota(asientos, periodoLabel): agrupado.
+ *  - generarPDFComprasPorAlicuota(asientos, periodoLabel): agrupado.
  *
  * Toda la lógica de "qué empresa / cuit / tipo / número mostrar" está
  * delegada en `src/lib/iva-portal/display-asientos.ts`. Pantalla y PDF
@@ -22,6 +19,7 @@
 
 import PDFDocument from "pdfkit"
 import { sumarImportes, restarImportes, absMonetario } from "@/lib/money"
+import { PDF_FONT, PDF_COLOR, PDF_MARGIN } from "@/lib/pdf-style"
 import {
   type AsientoDisplayInput,
   datosAsientoVenta,
@@ -30,9 +28,6 @@ import {
 
 // ─── Asiento input shape ─────────────────────────────────────────────────────
 
-/**
- * AsientoPdf: AsientoDisplayInput + campos del asiento (tipo, base, alícuota, IVA).
- */
 export type AsientoPdf = AsientoDisplayInput & {
   id: string
   tipo: string
@@ -62,99 +57,103 @@ function fmtCuit(cuit: string | null | undefined): string {
 function nombreMes(mesAnio: string): string {
   const [anio, mes] = mesAnio.split("-")
   const meses = [
-    "ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO",
-    "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE",
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
   ]
   return `${meses[parseInt(mes, 10) - 1] ?? mes} ${anio}`
 }
 
-// ─── Layout shared ───────────────────────────────────────────────────────────
+// ─── Layout (A4 LANDSCAPE) ───────────────────────────────────────────────────
 
-const PAGE_MARGIN = 36
-const PAGE_WIDTH = 595 // A4 portrait width in points
-const CONTENT_WIDTH = PAGE_WIDTH - PAGE_MARGIN * 2 // 523
+const PAGE_WIDTH = 842
+const PAGE_HEIGHT = 595
+const CONTENT_WIDTH = PAGE_WIDTH - PDF_MARGIN * 2  // 770
+const PAGE_BREAK_Y = PAGE_HEIGHT - PDF_MARGIN - 30 // deja espacio para footer
 
 function header(doc: PDFKit.PDFDocument, titulo: string, subtitulo: string) {
-  doc.font("Helvetica-Bold").fontSize(13).fillColor("#000")
-    .text("Libro de IVA Trans-Magg S.R.L.", PAGE_MARGIN, PAGE_MARGIN)
-  doc.font("Helvetica").fontSize(9).fillColor("#666")
-    .text("CUIT 30-70938168-3", { continued: false })
+  doc.font("Helvetica-Bold").fontSize(PDF_FONT.TITLE).fillColor(PDF_COLOR.TEXT)
+    .text("Libro de IVA Trans-Magg S.R.L.", PDF_MARGIN, PDF_MARGIN)
+  doc.font("Helvetica").fontSize(PDF_FONT.SUBTITLE).fillColor(PDF_COLOR.TEXT_MUTED)
+    .text("CUIT 30-70938168-3")
+  doc.moveDown(0.5)
+  doc.font("Helvetica-Bold").fontSize(PDF_FONT.SECTION).fillColor(PDF_COLOR.TEXT).text(titulo)
+  doc.font("Helvetica").fontSize(PDF_FONT.CAPTION).fillColor(PDF_COLOR.TEXT_MUTED).text(subtitulo)
   doc.moveDown(0.4)
-  doc.font("Helvetica-Bold").fontSize(11).fillColor("#000").text(titulo)
-  doc.font("Helvetica").fontSize(8).fillColor("#666").text(subtitulo)
-  doc.moveDown(0.3)
-  doc.moveTo(PAGE_MARGIN, doc.y).lineTo(PAGE_WIDTH - PAGE_MARGIN, doc.y)
-    .strokeColor("#1e40af").lineWidth(1).stroke()
-  doc.moveDown(0.4)
-  doc.fillColor("#000")
+  doc.moveTo(PDF_MARGIN, doc.y).lineTo(PAGE_WIDTH - PDF_MARGIN, doc.y)
+    .strokeColor(PDF_COLOR.NAVY).lineWidth(1).stroke()
+  doc.moveDown(0.5)
+  doc.fillColor(PDF_COLOR.TEXT)
 }
 
 function footer(doc: PDFKit.PDFDocument) {
-  doc.moveDown(1)
-  doc.font("Helvetica").fontSize(7).fillColor("#999")
-    .text(`Generado el ${fmtFecha(new Date())} · Trans-Magg S.R.L.`, PAGE_MARGIN, doc.y, {
+  doc.moveDown(0.8)
+  doc.font("Helvetica").fontSize(PDF_FONT.FOOTER).fillColor(PDF_COLOR.TEXT_DIM)
+    .text(`Generado el ${fmtFecha(new Date())} · Trans-Magg S.R.L.`, PDF_MARGIN, doc.y, {
       align: "center", width: CONTENT_WIDTH,
     })
-  doc.fillColor("#000")
+  doc.fillColor(PDF_COLOR.TEXT)
 }
 
-function checkPageBreak(doc: PDFKit.PDFDocument, threshold = 770) {
+function checkPageBreak(doc: PDFKit.PDFDocument, threshold = PAGE_BREAK_Y) {
   if (doc.y > threshold) doc.addPage()
 }
 
 // ─── Tabla detalle (ventas o compras) ────────────────────────────────────────
-// Columnas: Fecha · Empresa · CUIT · Tipo cbte. · Número · Neto · IVA
-// Mismas que se ven en pantalla.
+// Columnas (770pt total): Fecha · Empresa · CUIT · Tipo cbte. · Número · Alíc · Neto · IVA
 
-const COL_DETALLE_X = [PAGE_MARGIN,  88, 230, 308, 396, 460, 510]
-const COL_DETALLE_W = [   52,       138,  78,  88,  62,  50,  49]
-const COL_DETALLE_HEAD = ["Fecha", "Empresa", "CUIT", "Tipo cbte.", "Número", "Neto Grav.", "IVA"]
-const COL_DETALLE_RIGHT_FROM = 5 // índices >= 5 alineados a la derecha
+const COL_DET_X = [PDF_MARGIN,  98,  238, 320,  450, 540, 590, 690]
+const COL_DET_W = [   58,      136,  78,  126,   86,  44,  96,  90]
+const COL_DET_HEAD = ["Fecha", "Empresa", "CUIT", "Tipo cbte.", "Número", "Alíc.", "Neto Grav.", "IVA"]
+const COL_DET_RIGHT_FROM = 5
+
+const ROW_HEIGHT = 14
+const HEADER_ROW_HEIGHT = 16
+const TOTAL_ROW_HEIGHT = 18
 
 function drawDetalleHeader(doc: PDFKit.PDFDocument) {
   checkPageBreak(doc)
   const y = doc.y
-  doc.rect(PAGE_MARGIN, y, CONTENT_WIDTH, 14).fill("#e5e7eb")
-  doc.fillColor("#000").font("Helvetica-Bold").fontSize(7)
-  for (let i = 0; i < COL_DETALLE_HEAD.length; i++) {
-    const align = i >= COL_DETALLE_RIGHT_FROM ? "right" : "left"
-    doc.text(COL_DETALLE_HEAD[i], COL_DETALLE_X[i], y + 4, {
-      width: COL_DETALLE_W[i], align, lineBreak: false,
+  doc.rect(PDF_MARGIN, y, CONTENT_WIDTH, HEADER_ROW_HEIGHT).fill(PDF_COLOR.HEADER_BG)
+  doc.fillColor(PDF_COLOR.TEXT).font("Helvetica-Bold").fontSize(PDF_FONT.TABLE_HEAD)
+  for (let i = 0; i < COL_DET_HEAD.length; i++) {
+    const align = i >= COL_DET_RIGHT_FROM ? "right" : "left"
+    doc.text(COL_DET_HEAD[i], COL_DET_X[i], y + 4, {
+      width: COL_DET_W[i], align, lineBreak: false,
     })
   }
-  doc.font("Helvetica").fontSize(7)
-  doc.y = y + 16
+  doc.font("Helvetica").fontSize(PDF_FONT.TABLE_BODY)
+  doc.y = y + HEADER_ROW_HEIGHT + 2
 }
 
 function drawDetalleRow(doc: PDFKit.PDFDocument, cells: string[]) {
   checkPageBreak(doc)
   const y = doc.y
-  doc.font("Helvetica").fontSize(7).fillColor("#000")
+  doc.font("Helvetica").fontSize(PDF_FONT.TABLE_BODY).fillColor(PDF_COLOR.TEXT)
   for (let i = 0; i < cells.length; i++) {
-    const align = i >= COL_DETALLE_RIGHT_FROM ? "right" : "left"
-    doc.text(cells[i], COL_DETALLE_X[i], y + 2, {
-      width: COL_DETALLE_W[i], align, lineBreak: false, ellipsis: true,
+    const align = i >= COL_DET_RIGHT_FROM ? "right" : "left"
+    doc.text(cells[i], COL_DET_X[i], y + 2, {
+      width: COL_DET_W[i], align, lineBreak: false, ellipsis: true,
     })
   }
-  doc.y = y + 12
+  doc.y = y + ROW_HEIGHT
 }
 
 function drawDetalleTotalsRow(doc: PDFKit.PDFDocument, totalNeto: number, totalIva: number) {
   checkPageBreak(doc)
   const y = doc.y
-  doc.rect(PAGE_MARGIN, y, CONTENT_WIDTH, 14).fill("#f3f4f6")
-  doc.fillColor("#000").font("Helvetica-Bold").fontSize(7)
-  doc.text("TOTALES DEL PERÍODO", COL_DETALLE_X[0], y + 4, {
-    width: COL_DETALLE_X[5] - COL_DETALLE_X[0] - 6, align: "right", lineBreak: false,
+  doc.rect(PDF_MARGIN, y, CONTENT_WIDTH, TOTAL_ROW_HEIGHT).fill(PDF_COLOR.TOTALS_BG)
+  doc.fillColor(PDF_COLOR.TEXT).font("Helvetica-Bold").fontSize(PDF_FONT.TABLE_TOTAL)
+  doc.text("TOTALES DEL PERÍODO", COL_DET_X[0], y + 5, {
+    width: COL_DET_X[6] - COL_DET_X[0] - 6, align: "right", lineBreak: false,
   })
-  doc.text(fmt(totalNeto), COL_DETALLE_X[5], y + 4, {
-    width: COL_DETALLE_W[5], align: "right", lineBreak: false,
+  doc.text(fmt(totalNeto), COL_DET_X[6], y + 5, {
+    width: COL_DET_W[6], align: "right", lineBreak: false,
   })
-  doc.text(fmt(totalIva), COL_DETALLE_X[6], y + 4, {
-    width: COL_DETALLE_W[6], align: "right", lineBreak: false,
+  doc.text(fmt(totalIva), COL_DET_X[7], y + 5, {
+    width: COL_DET_W[7], align: "right", lineBreak: false,
   })
-  doc.font("Helvetica").fontSize(7)
-  doc.y = y + 18
+  doc.font("Helvetica").fontSize(PDF_FONT.TABLE_BODY)
+  doc.y = y + TOTAL_ROW_HEIGHT + 4
 }
 
 function renderDetalle(
@@ -163,9 +162,9 @@ function renderDetalle(
   modo: "VENTAS" | "COMPRAS",
 ) {
   if (asientos.length === 0) {
-    doc.font("Helvetica").fontSize(8).fillColor("#888")
-      .text(`Sin asientos de IVA ${modo === "VENTAS" ? "Ventas" : "Compras"} en el período.`, PAGE_MARGIN, doc.y)
-    doc.fillColor("#000").moveDown(0.5)
+    doc.font("Helvetica").fontSize(PDF_FONT.CAPTION).fillColor(PDF_COLOR.TEXT_DIM)
+      .text(`Sin asientos de IVA ${modo === "VENTAS" ? "Ventas" : "Compras"} en el período.`, PDF_MARGIN, doc.y)
+    doc.fillColor(PDF_COLOR.TEXT).moveDown(0.5)
     return
   }
 
@@ -180,8 +179,9 @@ function renderDetalle(
       fmtCuit(d.cuit),
       d.tipoCbte,
       d.nroCbte,
+      `${a.alicuota}%`,
       fmt(a.baseImponible),
-      `${fmt(a.montoIva)} (${a.alicuota}%)`,
+      fmt(a.montoIva),
     ])
     totalNeto = sumarImportes([totalNeto, a.baseImponible])
     totalIva = sumarImportes([totalIva, a.montoIva])
@@ -190,9 +190,6 @@ function renderDetalle(
 }
 
 // ─── Tabla por alícuota ──────────────────────────────────────────────────────
-// Agrupada por tipo de comprobante. Cada grupo muestra:
-//   Alícuota | Cant. asientos | Neto | IVA  + subtotal del grupo
-// Al final, total general.
 
 function agruparPorTipoYAlicuota(
   asientos: AsientoPdf[],
@@ -222,48 +219,48 @@ function agruparPorTipoYAlicuota(
     })
 }
 
-const COL_ALIC_X = [PAGE_MARGIN, 130, 230, 380]
-const COL_ALIC_W = [   86,        96,  146, 113]
+const COL_ALIC_X = [PDF_MARGIN, 200, 360, 560]
+const COL_ALIC_W = [   140,     140, 180,  180]
 const COL_ALIC_HEAD = ["Alícuota", "Cant. asientos", "Neto Gravado", "IVA"]
 
 function drawAlicHeader(doc: PDFKit.PDFDocument) {
   checkPageBreak(doc)
   const y = doc.y
-  doc.rect(PAGE_MARGIN, y, CONTENT_WIDTH, 14).fill("#f3f4f6")
-  doc.fillColor("#000").font("Helvetica-Bold").fontSize(7)
+  doc.rect(PDF_MARGIN, y, CONTENT_WIDTH, HEADER_ROW_HEIGHT).fill(PDF_COLOR.TOTALS_BG)
+  doc.fillColor(PDF_COLOR.TEXT).font("Helvetica-Bold").fontSize(PDF_FONT.TABLE_HEAD)
   for (let i = 0; i < COL_ALIC_HEAD.length; i++) {
     const align = i >= 1 ? "right" : "left"
     doc.text(COL_ALIC_HEAD[i], COL_ALIC_X[i], y + 4, {
       width: COL_ALIC_W[i], align, lineBreak: false,
     })
   }
-  doc.font("Helvetica").fontSize(7)
-  doc.y = y + 16
+  doc.font("Helvetica").fontSize(PDF_FONT.TABLE_BODY)
+  doc.y = y + HEADER_ROW_HEIGHT + 2
 }
 
 function drawAlicRow(doc: PDFKit.PDFDocument, alicuota: number, count: number, neto: number, iva: number) {
   checkPageBreak(doc)
   const y = doc.y
-  doc.font("Helvetica").fontSize(7).fillColor("#000")
+  doc.font("Helvetica").fontSize(PDF_FONT.TABLE_BODY).fillColor(PDF_COLOR.TEXT)
   doc.text(`${alicuota}%`, COL_ALIC_X[0], y + 2, { width: COL_ALIC_W[0], lineBreak: false })
   doc.text(String(count), COL_ALIC_X[1], y + 2, { width: COL_ALIC_W[1], align: "right", lineBreak: false })
   doc.text(fmt(neto), COL_ALIC_X[2], y + 2, { width: COL_ALIC_W[2], align: "right", lineBreak: false })
   doc.text(fmt(iva), COL_ALIC_X[3], y + 2, { width: COL_ALIC_W[3], align: "right", lineBreak: false })
-  doc.y = y + 12
+  doc.y = y + ROW_HEIGHT
 }
 
 function drawAlicSubtotal(doc: PDFKit.PDFDocument, tipo: string, neto: number, iva: number) {
   checkPageBreak(doc)
   const y = doc.y
-  doc.rect(PAGE_MARGIN, y, CONTENT_WIDTH, 13).fill("#e5e7eb")
-  doc.fillColor("#000").font("Helvetica-Bold").fontSize(7)
-  doc.text(`Subtotal ${tipo}`, COL_ALIC_X[0], y + 3, {
+  doc.rect(PDF_MARGIN, y, CONTENT_WIDTH, HEADER_ROW_HEIGHT).fill(PDF_COLOR.HEADER_BG)
+  doc.fillColor(PDF_COLOR.TEXT).font("Helvetica-Bold").fontSize(PDF_FONT.TABLE_TOTAL)
+  doc.text(`Subtotal ${tipo}`, COL_ALIC_X[0], y + 4, {
     width: COL_ALIC_X[2] - COL_ALIC_X[0] - 6, align: "right", lineBreak: false,
   })
-  doc.text(fmt(neto), COL_ALIC_X[2], y + 3, { width: COL_ALIC_W[2], align: "right", lineBreak: false })
-  doc.text(fmt(iva), COL_ALIC_X[3], y + 3, { width: COL_ALIC_W[3], align: "right", lineBreak: false })
-  doc.font("Helvetica").fontSize(7)
-  doc.y = y + 16
+  doc.text(fmt(neto), COL_ALIC_X[2], y + 4, { width: COL_ALIC_W[2], align: "right", lineBreak: false })
+  doc.text(fmt(iva), COL_ALIC_X[3], y + 4, { width: COL_ALIC_W[3], align: "right", lineBreak: false })
+  doc.font("Helvetica").fontSize(PDF_FONT.TABLE_BODY)
+  doc.y = y + HEADER_ROW_HEIGHT + 4
 }
 
 function renderAlicuotaSection(
@@ -272,47 +269,47 @@ function renderAlicuotaSection(
   modo: "VENTAS" | "COMPRAS",
 ) {
   if (asientos.length === 0) {
-    doc.font("Helvetica").fontSize(8).fillColor("#888")
-      .text(`Sin asientos de IVA ${modo === "VENTAS" ? "Ventas" : "Compras"} en el período.`, PAGE_MARGIN, doc.y)
-    doc.fillColor("#000").moveDown(0.5)
+    doc.font("Helvetica").fontSize(PDF_FONT.CAPTION).fillColor(PDF_COLOR.TEXT_DIM)
+      .text(`Sin asientos de IVA ${modo === "VENTAS" ? "Ventas" : "Compras"} en el período.`, PDF_MARGIN, doc.y)
+    doc.fillColor(PDF_COLOR.TEXT).moveDown(0.5)
     return
   }
   const grupos = agruparPorTipoYAlicuota(asientos, modo)
   let totalNeto = 0
   let totalIva = 0
   for (const g of grupos) {
-    checkPageBreak(doc, 740)
-    doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#000")
-      .text(`Tipo comprobante: ${g.tipo}`, PAGE_MARGIN, doc.y)
-    doc.moveDown(0.2)
+    checkPageBreak(doc, PAGE_BREAK_Y - 60)
+    doc.font("Helvetica-Bold").fontSize(PDF_FONT.SECTION).fillColor(PDF_COLOR.TEXT)
+      .text(`Tipo comprobante: ${g.tipo}`, PDF_MARGIN, doc.y)
+    doc.moveDown(0.3)
     drawAlicHeader(doc)
     for (const fila of g.filas) {
       drawAlicRow(doc, fila.alicuota, fila.count, fila.neto, fila.iva)
     }
     drawAlicSubtotal(doc, g.tipo, g.subtotalNeto, g.subtotalIva)
-    doc.moveDown(0.4)
+    doc.moveDown(0.5)
     totalNeto = sumarImportes([totalNeto, g.subtotalNeto])
     totalIva = sumarImportes([totalIva, g.subtotalIva])
   }
   // Total general
-  checkPageBreak(doc, 750)
+  checkPageBreak(doc)
   const y = doc.y
-  doc.rect(PAGE_MARGIN, y, CONTENT_WIDTH, 16).fill("#1e40af")
-  doc.fillColor("#fff").font("Helvetica-Bold").fontSize(8.5)
+  doc.rect(PDF_MARGIN, y, CONTENT_WIDTH, TOTAL_ROW_HEIGHT + 2).fill(PDF_COLOR.NAVY)
+  doc.fillColor("#fff").font("Helvetica-Bold").fontSize(PDF_FONT.TABLE_TOTAL)
   doc.text(`TOTAL GENERAL ${modo}`, COL_ALIC_X[0] + 6, y + 5, {
     width: COL_ALIC_X[2] - COL_ALIC_X[0] - 12, lineBreak: false,
   })
   doc.text(fmt(totalNeto), COL_ALIC_X[2], y + 5, { width: COL_ALIC_W[2], align: "right", lineBreak: false })
   doc.text(fmt(totalIva), COL_ALIC_X[3], y + 5, { width: COL_ALIC_W[3], align: "right", lineBreak: false })
-  doc.fillColor("#000").font("Helvetica").fontSize(7)
-  doc.y = y + 20
+  doc.fillColor(PDF_COLOR.TEXT).font("Helvetica").fontSize(PDF_FONT.TABLE_BODY)
+  doc.y = y + TOTAL_ROW_HEIGHT + 6
 }
 
 // ─── Builder común ───────────────────────────────────────────────────────────
 
 function buildPdf(callback: (doc: PDFKit.PDFDocument) => void): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: PAGE_MARGIN, size: "A4" })
+    const doc = new PDFDocument({ margin: PDF_MARGIN, size: "A4", layout: "landscape" })
     const chunks: Buffer[] = []
     doc.on("data", (chunk: Buffer) => chunks.push(chunk))
     doc.on("end", () => resolve(Buffer.concat(chunks)))
@@ -324,15 +321,6 @@ function buildPdf(callback: (doc: PDFKit.PDFDocument) => void): Promise<Buffer> 
 
 // ─── Exports ─────────────────────────────────────────────────────────────────
 
-/**
- * generarPDFLibroIva: AsientoPdf[] string -> Promise<Buffer>
- *
- * PDF master con Ventas + Compras detallado y Posición Neta. Se usa para el
- * archivo mensual que se sube a R2 y se manda por email.
- *
- * Ejemplos:
- * generarPDFLibroIva(asientos, "2026-04") => Buffer con %PDF magic
- */
 export async function generarPDFLibroIva(
   asientos: AsientoPdf[],
   mesAnio: string,
@@ -344,47 +332,47 @@ export async function generarPDFLibroIva(
   const posicion = restarImportes(totalIvaV, totalIvaC)
 
   return buildPdf((doc) => {
-    header(doc, `Libro IVA — ${nombreMes(mesAnio)}`, `${asientos.length} asiento(s)`)
+    header(doc, `Libro IVA — ${nombreMes(mesAnio)}`, `${asientos.length} asiento(s) total`)
 
-    doc.font("Helvetica-Bold").fontSize(10).text(`IVA Ventas (${ventas.length})`, PAGE_MARGIN, doc.y)
+    doc.font("Helvetica-Bold").fontSize(PDF_FONT.SECTION).fillColor(PDF_COLOR.TEXT)
+      .text(`IVA Ventas (${ventas.length})`, PDF_MARGIN, doc.y)
     doc.moveDown(0.3)
     renderDetalle(doc, ventas, "VENTAS")
-    doc.moveDown(0.6)
+    doc.moveDown(0.7)
 
-    doc.font("Helvetica-Bold").fontSize(10).text(`IVA Compras (${compras.length})`, PAGE_MARGIN, doc.y)
+    doc.font("Helvetica-Bold").fontSize(PDF_FONT.SECTION).fillColor(PDF_COLOR.TEXT)
+      .text(`IVA Compras (${compras.length})`, PDF_MARGIN, doc.y)
     doc.moveDown(0.3)
     renderDetalle(doc, compras, "COMPRAS")
     doc.moveDown(0.8)
 
     // Posición neta
-    checkPageBreak(doc, 700)
+    checkPageBreak(doc, PAGE_BREAK_Y - 60)
     const y = doc.y
-    doc.rect(PAGE_MARGIN, y, CONTENT_WIDTH, 50).lineWidth(1.5).strokeColor("#000").stroke()
-    doc.font("Helvetica").fontSize(8).fillColor("#666")
-    doc.text("IVA VENTAS", PAGE_MARGIN + 10, y + 8)
-    doc.font("Helvetica-Bold").fontSize(11).fillColor("#000").text(fmt(totalIvaV), PAGE_MARGIN + 10, y + 22)
-    doc.font("Helvetica").fontSize(8).fillColor("#666")
-    doc.text("IVA COMPRAS", PAGE_MARGIN + 180, y + 8)
-    doc.font("Helvetica-Bold").fontSize(11).fillColor("#000").text(fmt(totalIvaC), PAGE_MARGIN + 180, y + 22)
-    doc.font("Helvetica").fontSize(8).fillColor("#666")
-    doc.text("POSICIÓN NETA", PAGE_MARGIN + 360, y + 8)
-    const posColor = posicion >= 0 ? "#dc2626" : "#16a34a"
+    doc.rect(PDF_MARGIN, y, CONTENT_WIDTH, 56).lineWidth(1.5).strokeColor(PDF_COLOR.TEXT).stroke()
+    doc.font("Helvetica").fontSize(PDF_FONT.CAPTION).fillColor(PDF_COLOR.TEXT_MUTED)
+    doc.text("IVA VENTAS", PDF_MARGIN + 16, y + 10)
+    doc.font("Helvetica-Bold").fontSize(PDF_FONT.SECTION).fillColor(PDF_COLOR.TEXT)
+      .text(fmt(totalIvaV), PDF_MARGIN + 16, y + 26)
+
+    doc.font("Helvetica").fontSize(PDF_FONT.CAPTION).fillColor(PDF_COLOR.TEXT_MUTED)
+    doc.text("IVA COMPRAS", PDF_MARGIN + 270, y + 10)
+    doc.font("Helvetica-Bold").fontSize(PDF_FONT.SECTION).fillColor(PDF_COLOR.TEXT)
+      .text(fmt(totalIvaC), PDF_MARGIN + 270, y + 26)
+
+    doc.font("Helvetica").fontSize(PDF_FONT.CAPTION).fillColor(PDF_COLOR.TEXT_MUTED)
+    doc.text("POSICIÓN NETA", PDF_MARGIN + 540, y + 10)
+    const posColor = posicion >= 0 ? PDF_COLOR.RED : PDF_COLOR.GREEN
     const posLabel = posicion >= 0 ? "A PAGAR" : "A FAVOR"
-    doc.font("Helvetica-Bold").fontSize(11).fillColor(posColor)
-    doc.text(`${fmt(absMonetario(posicion))} ${posLabel}`, PAGE_MARGIN + 360, y + 22)
-    doc.y = y + 56
-    doc.fillColor("#000")
+    doc.font("Helvetica-Bold").fontSize(PDF_FONT.SECTION).fillColor(posColor)
+      .text(`${fmt(absMonetario(posicion))} ${posLabel}`, PDF_MARGIN + 540, y + 26)
+    doc.y = y + 64
+    doc.fillColor(PDF_COLOR.TEXT)
 
     footer(doc)
   })
 }
 
-/**
- * generarPDFIvaVentas: AsientoPdf[] string -> Promise<Buffer>
- *
- * PDF tabular de IVA Ventas (la pestaña "IVA Ventas" de la pantalla).
- * Mismas columnas que la UI: Fecha · Empresa · CUIT · Tipo cbte. · Número · Neto · IVA.
- */
 export async function generarPDFIvaVentas(
   asientos: AsientoPdf[],
   periodoLabel: string,
@@ -397,9 +385,6 @@ export async function generarPDFIvaVentas(
   })
 }
 
-/**
- * generarPDFIvaCompras: AsientoPdf[] string -> Promise<Buffer>
- */
 export async function generarPDFIvaCompras(
   asientos: AsientoPdf[],
   periodoLabel: string,
@@ -412,9 +397,6 @@ export async function generarPDFIvaCompras(
   })
 }
 
-/**
- * generarPDFVentasPorAlicuota: AsientoPdf[] string -> Promise<Buffer>
- */
 export async function generarPDFVentasPorAlicuota(
   asientos: AsientoPdf[],
   periodoLabel: string,
@@ -427,9 +409,6 @@ export async function generarPDFVentasPorAlicuota(
   })
 }
 
-/**
- * generarPDFComprasPorAlicuota: AsientoPdf[] string -> Promise<Buffer>
- */
 export async function generarPDFComprasPorAlicuota(
   asientos: AsientoPdf[],
   periodoLabel: string,
