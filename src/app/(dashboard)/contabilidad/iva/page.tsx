@@ -86,6 +86,7 @@ export default async function ContabilidadIvaPage({
       facturaProveedor: {
         select: {
           nroComprobante: true,
+          ptoVenta: true,
           tipoCbte: true,
           fechaCbte: true,
           proveedor: { select: { razonSocial: true, cuit: true } },
@@ -154,11 +155,15 @@ export default async function ContabilidadIvaPage({
       }
     }
     if (a.tipoReferencia === "FACTURA_EMITIDA" && a.facturaEmitida) {
+      const nroRaw = a.facturaEmitida.nroComprobante
+      const nroCbte = nroRaw
+        ? (nroRaw.includes("-") ? nroRaw : formatNumeroFiscal(a.facturaEmitida.ptoVenta, nroRaw))
+        : "s/n"
       return {
         fecha: a.facturaEmitida.emitidaEn,
         empresa: a.facturaEmitida.empresa.razonSocial,
         tipoCbte: etiquetaComprobanteArca(a.facturaEmitida.tipoCbte),
-        nroCbte: a.facturaEmitida.nroComprobante ?? "s/n",
+        nroCbte,
         cuit: a.facturaEmitida.empresa.cuit,
       }
     }
@@ -177,21 +182,31 @@ export default async function ContabilidadIvaPage({
 
   function datosAsientoCompra(a: Asiento): DatosAsiento {
     if (a.facturaProveedor) {
+      const fp = a.facturaProveedor
+      const nroRaw = fp.nroComprobante
+      const ptoNum = fp.ptoVenta ? parseInt(fp.ptoVenta, 10) : null
+      const nroCbte = nroRaw.includes("-")
+        ? nroRaw
+        : formatNumeroFiscal(ptoNum, nroRaw)
       return {
-        fecha: a.facturaProveedor.fechaCbte,
-        empresa: a.facturaProveedor.proveedor.razonSocial,
-        tipoCbte: `Factura ${a.facturaProveedor.tipoCbte}`,
-        nroCbte: a.facturaProveedor.nroComprobante,
-        cuit: a.facturaProveedor.proveedor.cuit,
+        fecha: fp.fechaCbte,
+        empresa: fp.proveedor.razonSocial,
+        tipoCbte: `Factura ${fp.tipoCbte}`,
+        nroCbte,
+        cuit: fp.proveedor.cuit,
       }
     }
     if (a.tipoReferencia === "FACTURA_SEGURO" && a.facturaSeguro) {
+      const fs = a.facturaSeguro
+      const nroCbte = fs.nroComprobante.includes("-")
+        ? fs.nroComprobante
+        : formatNumeroFiscal(null, fs.nroComprobante)
       return {
-        fecha: a.facturaSeguro.fecha,
-        empresa: a.facturaSeguro.aseguradora.razonSocial,
-        tipoCbte: `Factura ${a.facturaSeguro.tipoComprobante}`,
-        nroCbte: a.facturaSeguro.nroComprobante,
-        cuit: a.facturaSeguro.aseguradora.cuit,
+        fecha: fs.fecha,
+        empresa: fs.aseguradora.razonSocial,
+        tipoCbte: `Factura ${fs.tipoComprobante}`,
+        nroCbte,
+        cuit: fs.aseguradora.cuit,
       }
     }
     if ((a.tipoReferencia === "NC_RECIBIDA" || a.tipoReferencia === "ND_RECIBIDA") && a.notaCreditoDebito) {

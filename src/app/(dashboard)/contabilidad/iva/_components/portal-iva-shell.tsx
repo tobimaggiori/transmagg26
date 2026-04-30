@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { FormError } from "@/components/ui/form-error"
-import { formatearFecha, formatearMoneda } from "@/lib/utils"
+import { formatearMoneda } from "@/lib/utils"
 
 const NOMBRES_MES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -282,30 +282,6 @@ export function PortalIvaShell({ mesAnioInicial }: Props) {
                 </CardContent>
               </Card>
 
-              {data.resumen && (
-                <div className="grid gap-3 md:grid-cols-4">
-                  <Card><CardContent className="pt-4">
-                    <p className="text-xs text-muted-foreground">Comprobantes ventas</p>
-                    <p className="text-2xl font-bold">{data.resumen.cantVentas}</p>
-                  </CardContent></Card>
-                  <Card><CardContent className="pt-4">
-                    <p className="text-xs text-muted-foreground">Comprobantes compras</p>
-                    <p className="text-2xl font-bold">{data.resumen.cantCompras}</p>
-                  </CardContent></Card>
-                  <Card><CardContent className="pt-4">
-                    <p className="text-xs text-muted-foreground">Ajustes aplicados</p>
-                    <p className="text-2xl font-bold">{data.resumen.cantAjustesAplicados}</p>
-                  </CardContent></Card>
-                  <Card><CardContent className="pt-4">
-                    <p className="text-xs text-muted-foreground">Última exportación</p>
-                    <p className="text-sm font-medium">
-                      {data.exportaciones[0]
-                        ? formatearFecha(new Date(data.exportaciones[0].generadoEn))
-                        : "—"}
-                    </p>
-                  </CardContent></Card>
-                </div>
-              )}
               {data.resumen && (
                 <Card>
                   <CardContent className="pt-4 grid gap-3 md:grid-cols-4 text-sm">
