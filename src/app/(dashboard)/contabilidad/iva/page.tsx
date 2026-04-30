@@ -12,6 +12,7 @@ import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
 import { sumarImportes, restarImportes } from "@/lib/money"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FiltroPeriodo } from "@/components/contabilidad/filtro-periodo"
+import { PortalIvaShell } from "./_components/portal-iva-shell"
 // LibroIvaGeneracion removed — data is shown inline, export buttons handle PDF
 import type { Rol } from "@/types"
 
@@ -212,6 +213,13 @@ export default async function ContabilidadIvaPage({
           </CardContent>
         </Card>
       </div>
+
+      {/* Portal IVA / LID ARCA — gestión de período, ajustes y exportaciones TXT */}
+      <PortalIvaShell mesAnioInicial={
+        searchParams.mes && searchParams.anio
+          ? `${searchParams.anio}-${String(searchParams.mes).padStart(2, "0")}`
+          : new Date().toISOString().slice(0, 7)
+      } />
 
       {/* Tabs nav */}
       <div className="border-b">

@@ -56,6 +56,17 @@ export const PERMISOS_SECCION: Record<string, Rol[]> = {
   contabilidad_comprobantes: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
   contabilidad_comprobantes_eliminar: ["ADMIN_TRANSMAGG"],
   "contabilidad.fci": ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  // Portal IVA / LID ARCA — permisos granulares.
+  // ADMIN_TRANSMAGG siempre tiene todo (ver tienePermiso). OPERADOR_TRANSMAGG
+  // requiere fila habilitada en PermisoUsuario por sección.
+  "contabilidad.iva": ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  "contabilidad.iva.ver": ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  "contabilidad.iva.ajustes": ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  "contabilidad.iva.generar_txt": ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  "contabilidad.iva.marcar_conciliado": ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  "contabilidad.iva.marcar_presentado": ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  "contabilidad.iva.reabrir_periodo": ["ADMIN_TRANSMAGG"],
+  "contabilidad.iva.descargar_exportacion": ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
 }
 
 /**

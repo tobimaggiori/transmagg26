@@ -103,6 +103,10 @@ model Usuario {
   librosIva                   LibroIva[]               @relation("OperadorLibroIva")
   librosIIBB                  LibroIIBB[]              @relation("OperadorLibroIIBB")
   librosPercepciones          LibroPercepciones[]      @relation("OperadorLibroPercepciones")
+  periodosIvaCerrados         PeriodoIva[]             @relation("PeriodoIvaCerradoPor")
+  ajustesIvaCreados           AjusteIvaPeriodo[]       @relation("AjusteIvaCreadoPor")
+  ajustesIvaAnulados          AjusteIvaPeriodo[]       @relation("AjusteIvaAnuladoPor")
+  exportacionesIvaArcaGeneradas ExportacionIvaArca[]   @relation("ExportacionIvaGeneradoPor")
 
   @@map("usuarios")
 }
@@ -1460,6 +1464,107 @@ model NotaCreditoDebitoItem {
   nota NotaCreditoDebito @relation(fields: [notaId], references: [id], onDelete: Cascade)
 
   @@map("notas_cd_items")
+}
+
+// ─── PORTAL IVA / LIBRO IVA DIGITAL ARCA ──────────────────────────────────────
+// Período mensual de IVA con estados, ajustes manuales y exportaciones a ARCA.
+// Estados: ABIERTO, EN_REVISION_CONTADOR, TXT_GENERADO, CONCILIADO, PRESENTADO, REABIERTO
+
+model PeriodoIva {
+  id            String    @id @default(uuid())
+  mesAnio       String    @unique @map("mes_anio")
+  estado        String    @default("ABIERTO")
+  observaciones String?
+  creadoEn      DateTime  @default(now()) @map("creado_en")
+  actualizadoEn DateTime  @updatedAt @map("actualizado_en")
+  cerradoEn     DateTime? @map("cerrado_en")
+  cerradoPorId  String?   @map("cerrado_por_id")
+
+  cerradoPor    Usuario?             @relation("PeriodoIvaCerradoPor", fields: [cerradoPorId], references: [id])
+  ajustes       AjusteIvaPeriodo[]
+  exportaciones ExportacionIvaArca[]
+
+  @@map("periodos_iva")
+}
+
+// Ajuste manual al libro IVA del período. Nunca modifica facturas con CAE;
+// solo afecta el TXT exportado y deja trazabilidad (motivo, usuario, fecha).
+// tipoAjuste: AGREGAR | MODIFICAR | EXCLUIR | REDONDEO | RECLASIFICAR
+// tipoLibro:  VENTAS | COMPRAS
+// referenciaTipo: FACTURA_EMITIDA | LIQUIDACION | FACTURA_PROVEEDOR | NOTA_CD | FACTURA_SEGURO | MANUAL
+
+model AjusteIvaPeriodo {
+  id                     String    @id @default(uuid())
+  periodoIvaId           String    @map("periodo_iva_id")
+  mesAnio                String    @map("mes_anio")
+  tipoLibro              String    @map("tipo_libro")
+  tipoAjuste             String    @map("tipo_ajuste")
+  referenciaTipo         String?   @map("referencia_tipo")
+  referenciaId           String?   @map("referencia_id")
+  tipoComprobanteArca    Int?      @map("tipo_comprobante_arca")
+  puntoVenta             Int?      @map("punto_venta")
+  numeroDesde            BigInt?   @map("numero_desde")
+  numeroHasta            BigInt?   @map("numero_hasta")
+  fechaComprobante       DateTime? @map("fecha_comprobante")
+  cuitContraparte        String?   @map("cuit_contraparte")
+  razonSocialContraparte String?   @map("razon_social_contraparte")
+  netoGravado            Decimal?  @map("neto_gravado")
+  iva                    Decimal?
+  exento                 Decimal?
+  noGravado              Decimal?  @map("no_gravado")
+  percepcionIva          Decimal?  @map("percepcion_iva")
+  percepcionIibb         Decimal?  @map("percepcion_iibb")
+  percepcionGanancias    Decimal?  @map("percepcion_ganancias")
+  total                  Decimal?
+  alicuota               Float?
+  motivo                 String
+  creadoPorId            String    @map("creado_por_id")
+  creadoEn               DateTime  @default(now()) @map("creado_en")
+  anulado                Boolean   @default(false)
+  anuladoPorId           String?   @map("anulado_por_id")
+  anuladoEn              DateTime? @map("anulado_en")
+  motivoAnulacion        String?   @map("motivo_anulacion")
+
+  periodoIva PeriodoIva @relation(fields: [periodoIvaId], references: [id], onDelete: Cascade)
+  creadoPor  Usuario    @relation("AjusteIvaCreadoPor", fields: [creadoPorId], references: [id])
+  anuladoPor Usuario?   @relation("AjusteIvaAnuladoPor", fields: [anuladoPorId], references: [id])
+
+  @@index([mesAnio])
+  @@index([tipoLibro])
+  @@index([referenciaTipo, referenciaId])
+  @@map("ajustes_iva_periodo")
+}
+
+// Exportación TXT ARCA de un período. Cada generación crea un nuevo registro
+// (no destructivo) con hashes SHA256 para trazabilidad.
+// estado: GENERADA | DESCARGADA | PRESENTADA | ANULADA
+
+model ExportacionIvaArca {
+  id                       String   @id @default(uuid())
+  periodoIvaId             String   @map("periodo_iva_id")
+  mesAnio                  String   @map("mes_anio")
+  estado                   String   @default("GENERADA")
+  zipS3Key                 String?  @map("zip_s3_key")
+  comprobantesVentasS3Key  String?  @map("comprobantes_ventas_s3_key")
+  alicuotasVentasS3Key     String?  @map("alicuotas_ventas_s3_key")
+  comprobantesComprasS3Key String?  @map("comprobantes_compras_s3_key")
+  alicuotasComprasS3Key    String?  @map("alicuotas_compras_s3_key")
+  hashZip                  String?  @map("hash_zip")
+  hashComprobantesVentas   String?  @map("hash_comprobantes_ventas")
+  hashAlicuotasVentas      String?  @map("hash_alicuotas_ventas")
+  hashComprobantesCompras  String?  @map("hash_comprobantes_compras")
+  hashAlicuotasCompras     String?  @map("hash_alicuotas_compras")
+  resumenJson              String?  @map("resumen_json")
+  validacionesJson         String?  @map("validaciones_json")
+  generadoPorId            String   @map("generado_por_id")
+  generadoEn               DateTime @default(now()) @map("generado_en")
+  observaciones            String?
+
+  periodoIva  PeriodoIva @relation(fields: [periodoIvaId], references: [id], onDelete: Cascade)
+  generadoPor Usuario    @relation("ExportacionIvaGeneradoPor", fields: [generadoPorId], references: [id])
+
+  @@index([mesAnio])
+  @@map("exportaciones_iva_arca")
 }
 
 // ─── NEXTAUTH ─────────────────────────────────────────────────────────────────
