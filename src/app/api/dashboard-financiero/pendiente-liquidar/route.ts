@@ -29,9 +29,9 @@ export async function GET() {
     type ViajeEntry = {
       id: string
       fechaViaje: string
-      nroCartaPorte: string | null
-      cartaPorteS3Key: string | null
-      tieneCpe: boolean
+      nroCtg: string | null
+      ctgS3Key: string | null
+      tieneCtg: boolean
       remito: string | null
       cupo: string | null
       tieneCupo: boolean
@@ -86,9 +86,9 @@ export async function GET() {
       entry.viajes.push({
         id: v.id,
         fechaViaje: v.fechaViaje.toISOString(),
-        nroCartaPorte: v.nroCartaPorte,
-        cartaPorteS3Key: v.cartaPorteS3Key,
-        tieneCpe: v.tieneCpe,
+        nroCtg: v.nroCtg,
+        ctgS3Key: v.ctgS3Key,
+        tieneCtg: v.tieneCtg,
         remito: v.remito,
         cupo: v.cupo,
         tieneCupo: v.tieneCupo,

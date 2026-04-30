@@ -8,6 +8,7 @@
 
 import { prisma } from "@/lib/prisma"
 import { sumarImportes, restarImportes, maxMonetario, multiplicarImporte } from "@/lib/money"
+import { registrarMovimiento } from "@/lib/movimiento-cuenta"
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -187,21 +188,9 @@ export async function ejecutarPagoFleteroDirecto(
       const item = items[idx]
 
       if (item.tipo === "TRANSFERENCIA") {
-        await tx.cuenta.findUnique({
-          where: { id: item.cuentaId },
-          select: { tieneImpuestoDebcred: true, alicuotaImpuesto: true },
-        })
-        await tx.movimientoSinFactura.create({
-          data: {
-            cuentaId: item.cuentaId,
-            tipo: "EGRESO",
-            categoria: "TRANSFERENCIA_ENVIADA",
-            monto: item.monto,
-            fecha: fechaPagoDate,
-            descripcion: `Pago LP a ${fletero.razonSocial}${observaciones ? ` — ${observaciones}` : ""}`,
-            operadorId,
-          },
-        })
+        // El movimiento bancario se registra después, cuando existe el primer
+        // PagoAFletero al que referenciar (el item puede prorratearse entre
+        // varias liquidaciones; tomamos el primer pago como ancla).
       } else if (item.tipo === "CHEQUE_PROPIO") {
         // Emitir el ECheq vinculado a la primera liquidacion del lote
         const primeraLiqId = liqs[0].id
@@ -238,6 +227,9 @@ export async function ejecutarPagoFleteroDirecto(
       // EFECTIVO: sin efecto secundario adicional
     }
 
+    // Primer PagoAFletero creado por cada item (ancla del movimiento bancario)
+    const primerPagoPorItem: Map<number, string> = new Map()
+
     // ── Crear PagoAFletero por cada item x cada liquidacion (prorrateado) ──
 
     for (const liq of liqs) {
@@ -266,7 +258,8 @@ export async function ejecutarPagoFleteroDirecto(
           pagoData.chequeRecibidoId = item.chequeRecibidoId
         }
 
-        await tx.pagoAFletero.create({ data: pagoData })
+        const creado = await tx.pagoAFletero.create({ data: pagoData })
+        if (!primerPagoPorItem.has(idx)) primerPagoPorItem.set(idx, creado.id)
         pagosCreados++
       }
 
@@ -278,6 +271,24 @@ export async function ejecutarPagoFleteroDirecto(
       await tx.liquidacion.update({
         where: { id: liq.id },
         data: { estado: nuevoEstado },
+      })
+    }
+
+    // ── Registrar movimiento bancario de cada TRANSFERENCIA (uno por item) ──
+    for (let idx = 0; idx < items.length; idx++) {
+      const item = items[idx]
+      if (item.tipo !== "TRANSFERENCIA") continue
+      const ancla = primerPagoPorItem.get(idx)
+      if (!ancla) continue
+      await registrarMovimiento(tx, {
+        cuentaId: item.cuentaId,
+        tipo: "EGRESO",
+        categoria: "TRANSFERENCIA_ENVIADA",
+        monto: item.monto,
+        fecha: fechaPagoDate,
+        descripcion: `Pago LP a ${fletero.razonSocial}${observaciones ? ` — ${observaciones}` : ""}`,
+        pagoAFleteroId: ancla,
+        operadorCreacionId: operadorId,
       })
     }
   })

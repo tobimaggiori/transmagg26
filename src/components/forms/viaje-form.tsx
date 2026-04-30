@@ -14,7 +14,6 @@ import { Select } from "@/components/ui/select"
 import { FormError } from "@/components/ui/form-error"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { parsearImporte } from "@/lib/money"
-import { hoyLocalYmd } from "@/lib/date-local"
 
 interface Fletero { id: string; razonSocial: string; cuit: string }
 interface Camion { id: string; patenteChasis: string; fleteroId: string }
@@ -61,7 +60,7 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
   const [camionId, setCamionId] = useState("")
   const [choferId, setChoferId] = useState("")
   const [empresaId, setEmpresaId] = useState("")
-  const [fechaViaje, setFechaViaje] = useState(hoyLocalYmd())
+  const [fechaViaje, setFechaViaje] = useState("")
   const [remito, setRemito] = useState("")
   const [cupo, setCupo] = useState("")
   const [mercaderia, setMercaderia] = useState("")
@@ -267,7 +266,7 @@ export function ViajeForm({ fleteros, camiones, choferes, empresas, onSuccess }:
         </Button>
         <Button
           type="submit"
-          disabled={loading || !fleteroId || !camionId || !choferId || !empresaId || !tarifa}
+          disabled={loading || !fleteroId || !camionId || !choferId || !empresaId || !fechaViaje || !tarifa}
         >
           {loading ? "Guardando..." : "Crear viaje"}
         </Button>

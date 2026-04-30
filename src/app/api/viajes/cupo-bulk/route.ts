@@ -47,7 +47,7 @@ const camposBulkSchema = z
     camionId: z.string().uuid().optional(),
     choferId: z.string().uuid().optional(),
     esCamionPropio: z.boolean().optional(),
-    tieneCpe: z.boolean().optional(),
+    tieneCtg: z.boolean().optional(),
   })
   .refine((c) => Object.keys(c).length > 0, { message: "Indicá al menos un campo a modificar" })
 

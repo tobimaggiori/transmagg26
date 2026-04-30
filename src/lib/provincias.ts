@@ -5,7 +5,7 @@
 
 export const PROVINCIAS_ARGENTINA = [
   "Buenos Aires",
-  "Ciudad Autónoma de Buenos Aires",
+  "CABA",
   "Catamarca",
   "Chaco",
   "Chubut",

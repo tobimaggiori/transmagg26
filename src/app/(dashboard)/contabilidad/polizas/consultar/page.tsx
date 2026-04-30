@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { prisma } from "@/lib/prisma"
 import { ConsultarPolizasClient } from "./consultar-polizas-client"
 import type { Rol } from "@/types"
@@ -16,7 +16,8 @@ function estadoPoliza(vigenciaHasta: Date, activa: boolean): "VIGENTE" | "POR_VE
 export default async function ConsultarPolizasPage() {
   const session = await auth()
   if (!session?.user) redirect("/login")
-  if (!puedeAcceder(session.user.rol as Rol, "cuentas")) redirect("/dashboard")
+  const rol = session.user.rol as Rol
+  if (!(await tienePermiso(session.user.id, rol, "contabilidad.polizas"))) redirect("/dashboard")
 
   const polizas = await prisma.polizaSeguro.findMany({
     include: {

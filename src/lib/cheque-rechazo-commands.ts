@@ -9,6 +9,7 @@
 
 import { prisma } from "@/lib/prisma"
 import { sumarImportes, importesIguales } from "@/lib/money"
+import { registrarMovimiento } from "@/lib/movimiento-cuenta"
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -181,16 +182,15 @@ export async function ejecutarConfirmarRechazoCheque(
 
       // 5. Costo bancario si aplica
       if (costoBancarioMonto && chequeEmitido.estado === "EMITIDO") {
-        await tx.movimientoSinFactura.create({
-          data: {
-            cuentaId: chequeEmitido.cuentaId,
-            tipo: "EGRESO",
-            categoria: "MANTENIMIENTO_CUENTA",
-            monto: costoBancarioMonto,
-            fecha: new Date(),
-            descripcion: "Costo bancario por cheque rechazado",
-            operadorId,
-          },
+        await registrarMovimiento(tx, {
+          cuentaId: chequeEmitido.cuentaId,
+          tipo: "EGRESO",
+          categoria: "MANTENIMIENTO_CUENTA",
+          monto: costoBancarioMonto,
+          fecha: new Date(),
+          descripcion: "Costo bancario por cheque rechazado",
+          chequeEmitidoId: id,
+          operadorCreacionId: operadorId,
         })
       }
     })

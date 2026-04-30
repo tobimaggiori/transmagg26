@@ -115,6 +115,48 @@ export function tipoCbteArcaParaNotaCD(tipo: string, tipoCbteOrigen: number): nu
 }
 
 /**
+ * tipoCbteNotaRecibidaProveedor: ("NC_RECIBIDA" | "ND_RECIBIDA") (number | string | null) -> number
+ *
+ * Dado el tipo de nota recibida y el tipoCbte de la factura proveedor origen
+ * (que puede venir como string o int desde la DB), devuelve el código ARCA que
+ * corresponde a la NC/ND en la misma "clase" (A/B/C/FCE) que la factura.
+ * Devuelve 0 si el tipoCbte origen no está mapeado.
+ *
+ * La NC/ND recibida NO se emite a ARCA (es un comprobante del proveedor), pero
+ * se persiste con el código ARCA para reportes fiscales coherentes.
+ *
+ * Ejemplos:
+ * tipoCbteNotaRecibidaProveedor("NC_RECIBIDA", "1")   === 3
+ * tipoCbteNotaRecibidaProveedor("ND_RECIBIDA", "1")   === 2
+ * tipoCbteNotaRecibidaProveedor("NC_RECIBIDA", "6")   === 8
+ * tipoCbteNotaRecibidaProveedor("ND_RECIBIDA", "6")   === 7
+ * tipoCbteNotaRecibidaProveedor("NC_RECIBIDA", "11")  === 13
+ * tipoCbteNotaRecibidaProveedor("NC_RECIBIDA", null)  === 0
+ */
+export function tipoCbteNotaRecibidaProveedor(
+  tipo: "NC_RECIBIDA" | "ND_RECIBIDA",
+  tipoCbteFacturaOrigen: number | string | null | undefined
+): number {
+  const origen =
+    typeof tipoCbteFacturaOrigen === "string"
+      ? parseInt(tipoCbteFacturaOrigen, 10)
+      : tipoCbteFacturaOrigen ?? 0
+  if (!origen || Number.isNaN(origen)) return 0
+  const MATRIZ: Record<number, { nc: number; nd: number }> = {
+    1: { nc: 3, nd: 2 },     // Clase A
+    6: { nc: 8, nd: 7 },     // Clase B
+    11: { nc: 13, nd: 12 },  // Clase C (monotributo)
+    51: { nc: 53, nd: 52 },  // Clase M
+    201: { nc: 203, nd: 202 }, // FCE A
+    206: { nc: 208, nd: 207 }, // FCE B
+    211: { nc: 213, nd: 212 }, // FCE C
+  }
+  const entrada = MATRIZ[origen]
+  if (!entrada) return 0
+  return tipo === "NC_RECIBIDA" ? entrada.nc : entrada.nd
+}
+
+/**
  * tipoCbteArcaParaNotaCDLegacy: string string -> number
  *
  * Versión legacy que usa condicionIva (solo para NC/ND recibidas que no tienen

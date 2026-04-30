@@ -26,7 +26,7 @@ interface Fletero {
 interface Chequera {
   id: string
   nombre: string
-  bancoOEntidad: string
+  banco: { id: string; nombre: string } | null
 }
 
 interface ChequeEnCartera {
@@ -319,7 +319,7 @@ export function IngresarAdelantoClient({
                 >
                   <option value="">Seleccionar...</option>
                   {chequeras.map((c) => (
-                    <option key={c.id} value={c.id}>{c.nombre} — {c.bancoOEntidad}</option>
+                    <option key={c.id} value={c.id}>{c.nombre}{c.banco ? ` — ${c.banco.nombre}` : ""}</option>
                   ))}
                 </Select>
                 {chequeras.length === 0 && (

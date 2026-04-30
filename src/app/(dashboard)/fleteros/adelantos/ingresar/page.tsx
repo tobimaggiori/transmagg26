@@ -25,7 +25,11 @@ export default async function IngresarAdelantoPage() {
     }),
     prisma.cuenta.findMany({
       where: { activa: true, tieneChequera: true },
-      select: { id: true, nombre: true, bancoOEntidad: true },
+      select: {
+        id: true,
+        nombre: true,
+        banco: { select: { id: true, nombre: true } },
+      },
       orderBy: { nombre: "asc" },
     }),
   ])

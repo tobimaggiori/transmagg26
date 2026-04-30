@@ -21,15 +21,6 @@ interface CamionFormProps {
   onSuccess?: () => void
 }
 
-const TIPOS_CAMION = [
-  "Camión simple",
-  "Semi-remolque",
-  "Camión con acoplado",
-  "Camión cisterna",
-  "Camión frigorífico",
-  "Otro",
-]
-
 /**
  * CamionForm: CamionFormProps -> JSX.Element
  *
@@ -52,7 +43,6 @@ export function CamionForm({ fleteroIdFijo, fleteros = [], onSuccess }: CamionFo
     fleteroId: fleteroIdFijo ?? fleteros[0]?.id ?? "",
     patenteChasis: "",
     patenteAcoplado: "",
-    tipoCamion: TIPOS_CAMION[0],
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -73,7 +63,6 @@ export function CamionForm({ fleteroIdFijo, fleteros = [], onSuccess }: CamionFo
       const body = {
         fleteroId: form.fleteroId,
         patenteChasis: form.patenteChasis,
-        tipoCamion: form.tipoCamion,
         ...(form.patenteAcoplado ? { patenteAcoplado: form.patenteAcoplado } : {}),
       }
 
@@ -140,15 +129,6 @@ export function CamionForm({ fleteroIdFijo, fleteros = [], onSuccess }: CamionFo
             className="uppercase"
           />
         </div>
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="tipoCamion">Tipo de camión *</Label>
-        <Select id="tipoCamion" name="tipoCamion" value={form.tipoCamion} onChange={handleChange} disabled={loading}>
-          {TIPOS_CAMION.map((tipo) => (
-            <option key={tipo} value={tipo}>{tipo}</option>
-          ))}
-        </Select>
       </div>
 
       <FormError message={error} />

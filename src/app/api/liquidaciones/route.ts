@@ -101,7 +101,7 @@ export async function GET(request: NextRequest) {
           remito: true, tieneCupo: true, cupo: true, mercaderia: true,
           procedencia: true, provinciaOrigen: true, destino: true,
           provinciaDestino: true, kilos: true, tarifa: true, tarifaEmpresa: true,
-          nroCartaPorte: true, estadoLiquidacion: true, estadoFactura: true,
+          nroCtg: true, cpe: true, estadoLiquidacion: true, estadoFactura: true,
         },
         orderBy: { fechaViaje: "desc" },
         take: 200,
@@ -113,7 +113,7 @@ export async function GET(request: NextRequest) {
           fletero: { select: { razonSocial: true, cuit: true } },
           viajes: {
             include: {
-              viaje: { select: { nroCartaPorte: true, cartaPorteS3Key: true } },
+              viaje: { select: { nroCtg: true, ctgS3Key: true } },
             },
           },
           pagos: {

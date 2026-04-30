@@ -136,14 +136,27 @@ export async function GET(request: NextRequest) {
         items: {
           orderBy: { id: "asc" },
         },
+        notasCreditoDebito: {
+          select: { id: true, tipo: true, montoTotal: true },
+        },
       },
       orderBy: { fechaCbte: "desc" },
       take: 200,
     })
 
     const resultado = facturas.map((f) => {
-      const totalPagado = sumarImportes(f.pagos.map(p => p.monto))
-      const saldoPendiente = maxMonetario(0, restarImportes(f.total, totalPagado))
+      const totalPagado = sumarImportes(f.pagos.map((p) => p.monto))
+      const totalNC = sumarImportes(
+        f.notasCreditoDebito.filter((n) => n.tipo === "NC_RECIBIDA").map((n) => n.montoTotal)
+      )
+      const totalND = sumarImportes(
+        f.notasCreditoDebito.filter((n) => n.tipo === "ND_RECIBIDA").map((n) => n.montoTotal)
+      )
+      const saldoBruto = restarImportes(
+        restarImportes(sumarImportes([f.total, totalND]), totalPagado),
+        totalNC
+      )
+      const saldoPendiente = maxMonetario(0, saldoBruto)
       return {
         ...f,
         saldoPendiente,

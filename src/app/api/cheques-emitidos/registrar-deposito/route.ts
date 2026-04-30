@@ -9,6 +9,7 @@ import {
 import { registrarDepositoChequeEmitidoSchema } from "@/lib/financial-schemas"
 import { resolverOperadorId } from "@/lib/session-utils"
 import { importesIguales } from "@/lib/money"
+import { registrarMovimiento } from "@/lib/movimiento-cuenta"
 
 /**
  * POST: NextRequest -> Promise<NextResponse>
@@ -59,17 +60,15 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      const movimiento = await tx.movimientoSinFactura.create({
-        data: {
-          cuentaId: cheque.cuentaId,
-          tipo: "EGRESO",
-          categoria: "CHEQUE_EMITIDO_DEBITADO",
-          monto: parsed.data.monto,
-          fecha: new Date(),
-          descripcion: parsed.data.descripcion,
-          referencia: cheque.nroCheque,
-          operadorId,
-        },
+      const movimiento = await registrarMovimiento(tx, {
+        cuentaId: cheque.cuentaId,
+        tipo: "EGRESO",
+        categoria: "CHEQUE_EMITIDO_DEBITADO",
+        monto: parsed.data.monto,
+        fecha: new Date(),
+        descripcion: parsed.data.descripcion,
+        chequeEmitidoId: cheque.id,
+        operadorCreacionId: operadorId,
       })
 
       return { cheque: chequeActualizado, movimiento }

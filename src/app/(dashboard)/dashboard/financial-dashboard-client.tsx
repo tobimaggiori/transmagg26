@@ -52,6 +52,17 @@ interface DashboardData {
   cuentas: CuentaDashboard[]
 }
 
+interface NotaCDDashboard {
+  id: string
+  tipo: "NC_EMITIDA" | "ND_EMITIDA"
+  tipoCbte: number | null
+  nroComprobante: number | null
+  ptoVenta: number | null
+  monto: number
+  signo: -1 | 1
+  emitidaEn: string
+}
+
 interface DeudaEmpresa {
   empresaId: string
   razonSocial: string
@@ -59,7 +70,8 @@ interface DeudaEmpresa {
   totalFacturado: number
   totalPagado: number
   saldoDeudor: number
-  facturas: Array<{ id: string; nroComprobante: string | null; total: number; totalPagado: number; saldo: number; emitidaEn: string; estado: string }>
+  facturas: Array<{ id: string; nroComprobante: string | null; ptoVenta: number | null; tipoCbte: number; total: number; totalPagado: number; saldo: number; emitidaEn: string; estado: string }>
+  notas: NotaCDDashboard[]
 }
 
 interface DeudaFletero {
@@ -78,8 +90,10 @@ interface DeudaFletero {
     estado: string
     nroComprobante: number | null
     ptoVenta: number | null
+    tipoCbte: number | null
     pdfS3Key: string | null
   }>
+  notas: NotaCDDashboard[]
 }
 
 interface ChequeCartera {
@@ -115,7 +129,39 @@ type ModalTipo =
 
 // --- Modal ---
 
-function Modal({ titulo, onClose, children, wide }: { titulo: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+function Modal({
+  titulo, onClose, children, wide, pdfEndpoint, pdfFilename,
+}: {
+  titulo: string
+  onClose: () => void
+  children: React.ReactNode
+  wide?: boolean
+  /** Si se pasa, "Descargar PDF" descarga del endpoint (PDF real). Si no, usa window.print(). */
+  pdfEndpoint?: string
+  pdfFilename?: string
+}) {
+  const [descargando, setDescargando] = useState(false)
+
+  async function handleDescargar() {
+    if (!pdfEndpoint) { window.print(); return }
+    setDescargando(true)
+    try {
+      const res = await fetch(pdfEndpoint)
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = pdfFilename ?? "reporte.pdf"
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } finally {
+      setDescargando(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className={`bg-background rounded-lg shadow-xl w-full max-h-[90vh] flex flex-col ${wide ? "max-w-[95vw]" : "max-w-3xl"}`}>
@@ -123,10 +169,11 @@ function Modal({ titulo, onClose, children, wide }: { titulo: string; onClose: (
           <h2 className="text-lg font-semibold">{titulo}</h2>
           <div className="flex gap-2">
             <button
-              onClick={() => window.print()}
-              className="px-3 py-1.5 text-sm border rounded hover:bg-muted transition-colors"
+              onClick={handleDescargar}
+              disabled={descargando}
+              className="px-3 py-1.5 text-sm border rounded hover:bg-muted transition-colors disabled:opacity-50"
             >
-              Descargar PDF
+              {descargando ? "Generando..." : "Descargar PDF"}
             </button>
             <button
               onClick={onClose}
@@ -145,6 +192,54 @@ function Modal({ titulo, onClose, children, wide }: { titulo: string; onClose: (
 }
 
 // --- Contenidos de modales ---
+
+function labelTipoCbte(tipoCbte: number): string {
+  if (tipoCbte === 1) return "Fact. A"
+  if (tipoCbte === 6) return "Fact. B"
+  if (tipoCbte === 11) return "Fact. C"
+  if (tipoCbte === 201) return "MiPyme A"
+  if (tipoCbte === 206) return "MiPyme B"
+  if (tipoCbte === 211) return "MiPyme C"
+  return `Cbte ${tipoCbte}`
+}
+
+function formatearNroFactura(ptoVenta: number | null, nro: string | null): string {
+  if (!nro) return "s/n"
+  const pv = String(ptoVenta ?? 1).padStart(4, "0")
+  const n = /^\d+$/.test(nro) ? nro.padStart(8, "0") : nro
+  return `${pv}-${n}`
+}
+
+async function abrirPDFFactura(id: string) {
+  try {
+    const res = await fetch(`/api/facturas/${id}/pdf`)
+    if (!res.ok) return
+    const data = await res.json().catch(() => ({}))
+    if (data.url) window.open(data.url as string, "_blank", "noopener,noreferrer")
+  } catch { /* ignore */ }
+}
+
+async function abrirPDFNotaCD(id: string) {
+  try {
+    const res = await fetch(`/api/notas-credito-debito/${id}/pdf`)
+    if (!res.ok) return
+    const data = await res.json().catch(() => ({}))
+    if (data.url) window.open(data.url as string, "_blank", "noopener,noreferrer")
+  } catch { /* ignore */ }
+}
+
+function labelTipoNota(tipo: "NC_EMITIDA" | "ND_EMITIDA", tipoCbte: number | null): string {
+  const abrev = tipo === "NC_EMITIDA" ? "NC" : "ND"
+  if (tipoCbte === 3 || tipoCbte === 2) return `${abrev} A`
+  if (tipoCbte === 8 || tipoCbte === 7) return `${abrev} B`
+  if (tipoCbte === 13 || tipoCbte === 12) return `${abrev} C`
+  return abrev
+}
+
+function formatearNroNota(ptoVenta: number | null, nro: number | null): string {
+  if (nro == null) return "s/n"
+  return `${String(ptoVenta ?? 1).padStart(4, "0")}-${String(nro).padStart(8, "0")}`
+}
 
 function DeudaEmpresasModal() {
   const [data, setData] = useState<DeudaEmpresa[] | null>(null)
@@ -165,14 +260,46 @@ function DeudaEmpresasModal() {
             <p className="font-bold text-destructive">{formatearMoneda(e.saldoDeudor)}</p>
           </div>
           <table className="w-full text-sm">
-            <thead><tr className="text-muted-foreground text-xs border-b"><th className="text-left py-1">Comprobante</th><th className="text-right py-1">Total</th><th className="text-right py-1">Pagado</th><th className="text-right py-1">Saldo</th></tr></thead>
+            <thead>
+              <tr className="text-muted-foreground text-xs border-b">
+                <th className="text-left py-1">Fecha</th>
+                <th className="text-left py-1">Comprobante</th>
+                <th className="text-right py-1">Total</th>
+              </tr>
+            </thead>
             <tbody>
               {e.facturas.map((f) => (
                 <tr key={f.id} className="border-b last:border-0">
-                  <td className="py-1">{f.nroComprobante ?? "-"} <span className="text-muted-foreground">({formatearFecha(f.emitidaEn)})</span></td>
-                  <td className="text-right py-1">{formatearMoneda(f.total)}</td>
-                  <td className="text-right py-1">{formatearMoneda(f.totalPagado)}</td>
-                  <td className="text-right py-1 font-medium text-destructive">{formatearMoneda(f.saldo)}</td>
+                  <td className="py-1">{formatearFecha(f.emitidaEn)}</td>
+                  <td className="py-1">
+                    <button
+                      type="button"
+                      onClick={() => abrirPDFFactura(f.id)}
+                      className="text-primary hover:underline underline-offset-2 font-mono text-xs"
+                      title="Ver PDF"
+                    >
+                      {labelTipoCbte(f.tipoCbte)} {formatearNroFactura(f.ptoVenta, f.nroComprobante)}
+                    </button>
+                  </td>
+                  <td className="text-right py-1 font-medium">{formatearMoneda(f.total)}</td>
+                </tr>
+              ))}
+              {e.notas.map((n) => (
+                <tr key={n.id} className="border-b last:border-0">
+                  <td className="py-1">{formatearFecha(n.emitidaEn)}</td>
+                  <td className="py-1">
+                    <button
+                      type="button"
+                      onClick={() => abrirPDFNotaCD(n.id)}
+                      className="text-primary hover:underline underline-offset-2 font-mono text-xs"
+                      title="Ver PDF"
+                    >
+                      {labelTipoNota(n.tipo, n.tipoCbte)} {formatearNroNota(n.ptoVenta, n.nroComprobante)}
+                    </button>
+                  </td>
+                  <td className="text-right py-1 font-medium">
+                    {n.signo < 0 ? "−" : ""}{formatearMoneda(n.monto)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -183,137 +310,93 @@ function DeudaEmpresasModal() {
   )
 }
 
-/**
- * formatearNroLiquidacion: (ptoVenta: number | null, nroComprobante: number | null) -> string
- *
- * Dado el punto de venta y número de comprobante, devuelve el número formateado
- * como "0001-00000001". Si alguno es null, devuelve "-".
- * Existe para mostrar el número de la liquidación de forma consistente con ARCA.
- *
- * Ejemplos:
- * formatearNroLiquidacion(1, 1)    === "0001-00000001"
- * formatearNroLiquidacion(null, 1) === "-"
- * formatearNroLiquidacion(1, null) === "-"
- */
+function labelTipoCbteLP(tipoCbte: number | null): string {
+  if (tipoCbte === 60) return "LP A"
+  if (tipoCbte === 61) return "LP B"
+  if (tipoCbte == null) return "LP"
+  return `Cbte ${tipoCbte}`
+}
+
 function formatearNroLiquidacion(ptoVenta: number | null, nroComprobante: number | null): string {
-  if (ptoVenta === null || nroComprobante === null) return "-"
+  if (ptoVenta === null || nroComprobante === null) return "s/n"
   return `${String(ptoVenta).padStart(4, "0")}-${String(nroComprobante).padStart(8, "0")}`
 }
 
-/**
- * DeudaFleterosModal: () -> JSX.Element
- *
- * Dado [ningún prop], carga y muestra la deuda a fleteros en dos vistas:
- * - Vista 1: tabla con todos los fleteros con saldo pendiente y botón "VER DETALLE"
- * - Vista 2: detalle de liquidaciones EMITIDAS con saldo > 0 de un fletero, con número y link a PDF
- * El estado `fleteroSeleccionado` controla qué vista se muestra.
- * Existe para que los operadores identifiquen rápidamente qué liquidaciones están pendientes de pago.
- *
- * Ejemplos:
- * <DeudaFleterosModal /> // => Vista 1 con lista de fleteros; click en "VER DETALLE" → Vista 2
- * // → en Vista 2: botón "← Volver" regresa a Vista 1
- */
+async function abrirPDFLiquidacion(id: string) {
+  try {
+    const res = await fetch(`/api/liquidaciones/${id}/pdf`)
+    if (!res.ok) return
+    const data = await res.json().catch(() => ({}))
+    if (data.url) window.open(data.url as string, "_blank", "noopener,noreferrer")
+  } catch { /* ignore */ }
+}
+
 function DeudaFleterosModal() {
   const [data, setData] = useState<DeudaFletero[] | null>(null)
-  const [fleteroSeleccionado, setFleteroSeleccionado] = useState<string | null>(null)
-
   useEffect(() => {
     fetch("/api/dashboard-financiero/deuda-fleteros").then(r => r.json()).then(setData)
   }, [])
-
   if (!data) return <p className="text-muted-foreground">Cargando...</p>
   if (data.length === 0) return <p className="text-muted-foreground">Sin deudas pendientes.</p>
-
-  // Vista 2: detalle de un fletero
-  if (fleteroSeleccionado !== null) {
-    const fletero = data.find((f) => f.fleteroId === fleteroSeleccionado)
-    if (!fletero) return null
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setFleteroSeleccionado(null)}
-            className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
-          >
-            ← Volver
-          </button>
-        </div>
-        <div className="flex justify-between items-start">
-          <div>
-            <p className="font-semibold text-base">{fletero.razonSocial}</p>
-            <p className="text-xs text-muted-foreground">CUIT: {formatearCuit(fletero.cuit)}</p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-muted-foreground">Total adeudado</p>
-            <p className="font-bold text-orange-600 text-lg">{formatearMoneda(fletero.saldoAPagar)}</p>
-          </div>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-muted-foreground text-xs border-b">
-              <th className="text-left py-1.5">FECHA</th>
-              <th className="text-left py-1.5">NÚMERO</th>
-              <th className="text-right py-1.5">TOTAL</th>
-              <th className="text-center py-1.5">VER</th>
-            </tr>
-          </thead>
-          <tbody>
-            {fletero.liquidaciones.map((l) => (
-              <tr key={l.id} className="border-b last:border-0">
-                <td className="py-2">{formatearFecha(l.grabadaEn)}</td>
-                <td className="py-2 font-mono text-xs">{formatearNroLiquidacion(l.ptoVenta, l.nroComprobante)}</td>
-                <td className="text-right py-2 font-medium">{formatearMoneda(l.total)}</td>
-                <td className="text-center py-2">
-                  {l.pdfS3Key ? (
-                    <a
-                      href={l.pdfS3Key}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-primary underline hover:no-underline"
-                    >
-                      Ver PDF
-                    </a>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">PDF no disponible</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    )
-  }
-
-  // Vista 1: lista de fleteros
   return (
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="text-muted-foreground text-xs border-b">
-          <th className="text-left py-1.5">RAZÓN SOCIAL</th>
-          <th className="text-left py-1.5">CUIT</th>
-          <th className="text-right py-1.5">NO PAGADO</th>
-          <th className="py-1.5"></th>
-        </tr>
-      </thead>
-      <tbody>
-        {data.map((f) => (
-          <tr key={f.fleteroId} className="border-b last:border-0">
-            <td className="py-2 font-medium">{f.razonSocial}</td>
-            <td className="py-2 text-muted-foreground">{formatearCuit(f.cuit)}</td>
-            <td className="py-2 text-right font-bold text-orange-600">{formatearMoneda(f.saldoAPagar)}</td>
-            <td className="py-2 text-right">
-              <button
-                onClick={() => setFleteroSeleccionado(f.fleteroId)}
-                className="text-xs text-primary underline hover:no-underline"
-              >
-                VER DETALLE
-              </button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="space-y-4">
+      {data.map((f) => (
+        <div key={f.fleteroId} className="border rounded p-3 space-y-2">
+          <div className="flex justify-between items-center">
+            <div>
+              <p className="font-semibold">{f.razonSocial}</p>
+              <p className="text-xs text-muted-foreground">CUIT: {formatearCuit(f.cuit)}</p>
+            </div>
+            <p className="font-bold text-orange-600">{formatearMoneda(f.saldoAPagar)}</p>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-muted-foreground text-xs border-b">
+                <th className="text-left py-1">Fecha</th>
+                <th className="text-left py-1">Comprobante</th>
+                <th className="text-right py-1">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {f.liquidaciones.map((l) => (
+                <tr key={l.id} className="border-b last:border-0">
+                  <td className="py-1">{formatearFecha(l.grabadaEn)}</td>
+                  <td className="py-1">
+                    <button
+                      type="button"
+                      onClick={() => abrirPDFLiquidacion(l.id)}
+                      className="text-primary hover:underline underline-offset-2 font-mono text-xs"
+                      title="Ver PDF"
+                    >
+                      {labelTipoCbteLP(l.tipoCbte)} {formatearNroLiquidacion(l.ptoVenta, l.nroComprobante)}
+                    </button>
+                  </td>
+                  <td className="text-right py-1 font-medium">{formatearMoneda(l.total)}</td>
+                </tr>
+              ))}
+              {f.notas.map((n) => (
+                <tr key={n.id} className="border-b last:border-0">
+                  <td className="py-1">{formatearFecha(n.emitidaEn)}</td>
+                  <td className="py-1">
+                    <button
+                      type="button"
+                      onClick={() => abrirPDFNotaCD(n.id)}
+                      className="text-primary hover:underline underline-offset-2 font-mono text-xs"
+                      title="Ver PDF"
+                    >
+                      {labelTipoNota(n.tipo, n.tipoCbte)} {formatearNroNota(n.ptoVenta, n.nroComprobante)}
+                    </button>
+                  </td>
+                  <td className="text-right py-1 font-medium">
+                    {n.signo < 0 ? "−" : ""}{formatearMoneda(n.monto)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -389,9 +472,9 @@ function ChequesEmitidosModal() {
 interface ViajeLiquidar {
   id: string
   fechaViaje: string
-  nroCartaPorte: string | null
-  cartaPorteS3Key: string | null
-  tieneCpe: boolean
+  nroCtg: string | null
+  ctgS3Key: string | null
+  tieneCtg: boolean
   remito: string | null
   cupo: string | null
   tieneCupo: boolean
@@ -442,7 +525,7 @@ function PendienteLiquidarModal() {
                 <thead>
                   <tr className="text-muted-foreground text-xs border-b uppercase">
                     <th className="text-left px-3 py-2 whitespace-nowrap">Fecha</th>
-                    <th className="text-left px-3 py-2 whitespace-nowrap">CPE</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap">CTG</th>
                     <th className="text-left px-3 py-2 whitespace-nowrap">Remito</th>
                     <th className="text-left px-3 py-2 whitespace-nowrap">Cupo</th>
                     <th className="text-left px-3 py-2 whitespace-nowrap">Mercadería</th>
@@ -456,20 +539,20 @@ function PendienteLiquidarModal() {
                     <tr key={v.id} className="border-b last:border-0">
                       <td className="px-3 py-2 whitespace-nowrap">{formatearFecha(v.fechaViaje)}</td>
                       <td className="px-3 py-2">
-                        {v.tieneCpe && v.nroCartaPorte ? (
-                          v.cartaPorteS3Key ? (
+                        {v.tieneCtg && v.nroCtg ? (
+                          v.ctgS3Key ? (
                             <button
                               type="button"
                               onClick={() => abrirPDF({
-                                s3Key: v.cartaPorteS3Key!,
-                                titulo: `Carta de Porte — ${v.nroCartaPorte}`,
+                                s3Key: v.ctgS3Key!,
+                                titulo: `CTG — ${v.nroCtg}`,
                               })}
                               className="text-primary hover:underline font-medium text-xs"
                             >
-                              {v.nroCartaPorte}
+                              {v.nroCtg}
                             </button>
                           ) : (
-                            <span className="text-xs">{v.nroCartaPorte}</span>
+                            <span className="text-xs">{v.nroCtg}</span>
                           )
                         ) : <span className="text-xs text-muted-foreground">N/A</span>}
                       </td>
@@ -505,8 +588,8 @@ interface ViajeFacturar {
   fechaViaje: string
   procedencia: string | null
   destino: string | null
-  nroCartaPorte: string | null
-  cartaPorteS3Key: string | null
+  nroCtg: string | null
+  ctgS3Key: string | null
   empresaRazonSocial: string
   totalEmpresa: number | null
   liquidacion: {
@@ -561,7 +644,7 @@ function PendienteFacturarModal() {
                     <th className="text-left py-1">Liquidación</th>
                     <th className="text-left py-1">Procedencia</th>
                     <th className="text-left py-1">Destino</th>
-                    <th className="text-left py-1">Nro CPE</th>
+                    <th className="text-left py-1">Nro CTG</th>
                     <th className="text-left py-1">Empresa</th>
                     <th className="text-right py-1">Total Empresa</th>
                   </tr>
@@ -589,20 +672,20 @@ function PendienteFacturarModal() {
                         <td className="py-1">{v.procedencia ?? "—"}</td>
                         <td className="py-1">{v.destino ?? "—"}</td>
                         <td className="py-1">
-                          {v.nroCartaPorte ? (
-                            v.cartaPorteS3Key ? (
+                          {v.nroCtg ? (
+                            v.ctgS3Key ? (
                               <button
                                 type="button"
                                 onClick={() => abrirPDF({
-                                  s3Key: v.cartaPorteS3Key!,
-                                  titulo: `Carta de Porte — ${v.nroCartaPorte}`,
+                                  s3Key: v.ctgS3Key!,
+                                  titulo: `CTG — ${v.nroCtg}`,
                                 })}
                                 className="text-primary hover:underline font-medium text-xs"
                               >
-                                {v.nroCartaPorte}
+                                {v.nroCtg}
                               </button>
                             ) : (
-                              <span className="text-xs">{v.nroCartaPorte}</span>
+                              <span className="text-xs">{v.nroCtg}</span>
                             )
                           ) : "—"}
                         </td>
@@ -678,17 +761,16 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Dashboard Financiero</h2>
-        <p className="text-muted-foreground">Posición financiera consolidada de Transmagg</p>
       </div>
 
-      {/* Alertas FCI */}
-      {(data.alertasFci?.length ?? 0) > 0 && (
+      {/* Alertas FCI — sólo si el usuario tiene permiso a la sección FCI */}
+      {permisos.includes("contabilidad.fci") && (data.alertasFci?.length ?? 0) > 0 && (
         <div className="flex flex-wrap gap-2">
           <span className="text-sm font-medium text-muted-foreground self-center">Alertas FCI:</span>
           {(data.alertasFci ?? []).map((alerta) => (
             <button
               key={alerta.fciId}
-              onClick={() => router.push(`/cuentas?cuenta=${alerta.cuentaId}&tab=fci`)}
+              onClick={() => router.push(`/contabilidad/fci/${alerta.fciId}`)}
               className="inline-flex items-center rounded-full bg-orange-100 px-3 py-1 text-xs font-medium text-orange-800 hover:bg-orange-200 transition-colors"
             >
               FCI {alerta.fciNombre}: {alerta.diasSinActualizar} día(s) sin actualizar
@@ -698,7 +780,7 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
       )}
 
       {/* Tarjetas principales */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-fr">
         {permisos.includes("dashboard.deuda_empresas") && (
           <Card
             className="cursor-pointer hover:border-primary transition-colors"
@@ -813,7 +895,7 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
       {(data.cuentas?.length ?? 0) > 0 && permisos.some(p => p.startsWith("dashboard.cuentas_")) && (
         <div className="space-y-3">
           <h3 className="text-lg font-semibold">Cuentas Activas</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 auto-rows-fr">
             {(data.cuentas ?? [])
               .filter((cuenta) => {
                 if (cuenta.tipo === "BANCO") return permisos.includes("dashboard.cuentas_bancos")
@@ -822,7 +904,7 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
                 return false
               })
               .map((cuenta) => (
-              <Card key={cuenta.id} className="cursor-pointer hover:border-primary transition-colors" onClick={() => router.push(`/cuentas?cuenta=${cuenta.id}`)}>
+              <Card key={cuenta.id} className="cursor-pointer hover:border-primary transition-colors" onClick={() => router.push(`/contabilidad/cuentas/libro/${cuenta.id}`)}>
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-sm font-medium">{cuenta.nombre}</CardTitle>
@@ -830,24 +912,36 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-1">
+                  {/* 1. Saldo líquido de la cuenta */}
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Saldo contable</span>
-                    <span className="font-medium">{formatearMoneda(cuenta.saldoContable)}</span>
-                  </div>
-                  {cuenta.saldoEnFciPropios > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">En FCI propios</span>
-                      <span className="font-medium text-blue-600">{formatearMoneda(cuenta.saldoEnFciPropios)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm border-t pt-1">
-                    <span className="font-medium">Saldo disponible</span>
-                    <span className={`font-bold ${cuenta.saldoDisponible < 0 ? "text-destructive" : ""}`}>
+                    <span className="text-muted-foreground">Saldo en cuenta</span>
+                    <span className={`font-medium ${cuenta.saldoDisponible < 0 ? "text-destructive" : ""}`}>
                       {formatearMoneda(cuenta.saldoDisponible)}
                     </span>
                   </div>
+
+                  {/* 2. Saldo de cada FCI en esta cuenta */}
+                  {cuenta.fciDetalle.length > 0 && (
+                    <div className="border-t pt-1 space-y-0.5">
+                      {cuenta.fciDetalle.map((fci) => (
+                        <div key={fci.id} className="flex justify-between text-sm">
+                          <span className="text-muted-foreground truncate">{fci.nombre}</span>
+                          <span className="font-medium text-blue-600">{formatearMoneda(fci.saldoInformadoActual)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 3. Total en la cuenta */}
+                  <div className="flex justify-between text-sm border-t pt-1">
+                    <span className="font-semibold">Total en {cuenta.nombre}</span>
+                    <span className={`font-bold ${cuenta.saldoContable < 0 ? "text-destructive" : ""}`}>
+                      {formatearMoneda(cuenta.saldoContable)}
+                    </span>
+                  </div>
+
                   {cuenta.coberturaCheques30Dias > 0 && (
-                    <div className="flex justify-between text-xs text-orange-600">
+                    <div className="flex justify-between text-xs text-orange-600 pt-1">
                       <span>Cheques próx. 30 días</span>
                       <span>{formatearMoneda(cuenta.coberturaCheques30Dias)}</span>
                     </div>
@@ -866,16 +960,6 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
                       </div>
                     </div>
                   )}
-                  {cuenta.fciDetalle.length > 0 && (
-                    <div className="pt-1 border-t">
-                      {cuenta.fciDetalle.map((fci) => (
-                        <div key={fci.id} className="flex justify-between text-xs">
-                          <span className="text-muted-foreground truncate">{fci.nombre}</span>
-                          <span>{formatearMoneda(fci.saldoInformadoActual)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             ))}
@@ -885,12 +969,22 @@ export function FinancialDashboardClient({ permisos }: { permisos: string[] }) {
 
       {/* Modales */}
       {modalAbierto === "deuda-empresas" && (
-        <Modal titulo="Deuda de Empresas" onClose={() => setModalAbierto(null)}>
+        <Modal
+          titulo="Deuda de Empresas"
+          onClose={() => setModalAbierto(null)}
+          pdfEndpoint="/api/dashboard-financiero/deuda-empresas/pdf"
+          pdfFilename="deuda-empresas.pdf"
+        >
           <DeudaEmpresasModal />
         </Modal>
       )}
       {modalAbierto === "deuda-fleteros" && (
-        <Modal titulo="Deuda a Fleteros" onClose={() => setModalAbierto(null)}>
+        <Modal
+          titulo="Deuda a Fleteros"
+          onClose={() => setModalAbierto(null)}
+          pdfEndpoint="/api/dashboard-financiero/deuda-fleteros/pdf"
+          pdfFilename="deuda-fleteros.pdf"
+        >
           <DeudaFleterosModal />
         </Modal>
       )}

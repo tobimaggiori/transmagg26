@@ -5,7 +5,7 @@
 
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { NotasCDClient } from "../../notas-credito-debito/notas-cd-client"
 import type { Rol } from "@/types"
 
@@ -26,7 +26,7 @@ export default async function ContabilidadNotasCDPage() {
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
-  if (!puedeAcceder(rol, "notas_credito_debito")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "notas_credito_debito"))) redirect("/dashboard")
 
   return <NotasCDClient />
 }

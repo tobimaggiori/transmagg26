@@ -12,7 +12,7 @@ export interface OpcionesEmail {
   html: string
   /** Cuerpo texto plano (opcional) */
   texto?: string
-  /** "sistema" usa Resend (o ConfiguracionOtp SMTP como fallback); "usuario" usa config SMTP del Usuario */
+  /** "sistema" envía vía Resend; "usuario" usa SMTP del Usuario. */
   tipo: "sistema" | "usuario"
   /** Requerido cuando tipo === "usuario" */
   usuarioId?: string
@@ -22,37 +22,48 @@ export interface OpcionesEmail {
 /**
  * enviarEmail: OpcionesEmail -> Promise<{ ok: boolean; error?: string }>
  *
- * Envía un email. Para tipo "sistema":
- *   1) Si existe RESEND_API_KEY, usa Resend API
- *   2) Si no, usa SMTP desde ConfiguracionOtp
- * Para tipo "usuario", usa la config SMTP del Usuario.
+ * Envía un email. Para tipo "sistema" usa Resend (requiere RESEND_API_KEY).
+ * Para tipo "usuario" usa la configuración SMTP del Usuario (dueño del
+ * remitente, ej. facturas con su propio dominio).
  * Nunca lanza excepciones — siempre devuelve un resultado.
  *
  * Ejemplos:
- * await enviarEmail({ para: "x@acme.com", asunto: "Test", html: "<p>Hola</p>", tipo: "sistema" })
- * // => { ok: true } | { ok: false, error: "..." }
- * await enviarEmail({ para: "x@acme.com", asunto: "OP", html: "...", tipo: "usuario", usuarioId: "uuid" })
+ * await enviarEmail({ para: "x@acme.com", asunto: "OTP", html: "<p>123</p>", tipo: "sistema" })
+ * // => { ok: true } | { ok: false, error: "Resend no configurado" }
+ * await enviarEmail({ para: "x@acme.com", asunto: "Factura", html: "...", tipo: "usuario", usuarioId: "uuid" })
  * // => { ok: true } | { ok: false, error: "Sin configuración SMTP activa" }
  */
 export async function enviarEmail(opciones: OpcionesEmail): Promise<{ ok: boolean; error?: string }> {
-  // ── Resend para emails de sistema ─────────────────────────────────────────
-  if (opciones.tipo === "sistema" && process.env.RESEND_API_KEY) {
+  if (opciones.tipo === "sistema") {
     return enviarConResend(opciones)
   }
-
-  // ── SMTP (sistema fallback o usuario) ─────────────────────────────────────
-  return enviarConSmtp(opciones)
+  return enviarConSmtpUsuario(opciones)
 }
 
-// ── Resend ──────────────────────────────────────────────────────────────────
+// ── Resend (tipo "sistema") ─────────────────────────────────────────────────
 
 const RESEND_FROM = "Trans-Magg S.R.L. <auth@transmagg.com.ar>"
 
-async function enviarConResend(opciones: OpcionesEmail): Promise<{ ok: boolean; error?: string }> {
-  const apiKey = process.env.RESEND_API_KEY!
-  const resend = new Resend(apiKey)
+async function leerReplyTo(): Promise<string | null> {
+  try {
+    const cfg = await prisma.configuracionEnvio.findUnique({ where: { id: "singleton" } })
+    return cfg?.replyTo ?? null
+  } catch {
+    return null
+  }
+}
 
-  console.log(`[EMAIL RESEND] Enviando a ${opciones.para} | from=${RESEND_FROM} | asunto="${opciones.asunto}"`)
+async function enviarConResend(opciones: OpcionesEmail): Promise<{ ok: boolean; error?: string }> {
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey) {
+    console.error("[EMAIL RESEND] RESEND_API_KEY no configurada")
+    return { ok: false, error: "Resend no configurado (falta RESEND_API_KEY)" }
+  }
+
+  const resend = new Resend(apiKey)
+  const replyTo = await leerReplyTo()
+
+  console.log(`[EMAIL RESEND] Enviando a ${opciones.para} | from=${RESEND_FROM} | replyTo=${replyTo ?? "—"} | asunto="${opciones.asunto}"`)
 
   try {
     const { data, error } = await resend.emails.send({
@@ -61,6 +72,7 @@ async function enviarConResend(opciones: OpcionesEmail): Promise<{ ok: boolean; 
       subject: opciones.asunto,
       html: opciones.html,
       text: opciones.texto,
+      ...(replyTo ? { replyTo } : {}),
       attachments: opciones.adjuntos?.map((a) => ({
         filename: a.nombre,
         content: a.contenido,
@@ -82,77 +94,51 @@ async function enviarConResend(opciones: OpcionesEmail): Promise<{ ok: boolean; 
   }
 }
 
-// ── SMTP ────────────────────────────────────────────────────────────────────
+// ── SMTP por usuario (tipo "usuario") ───────────────────────────────────────
 
-async function enviarConSmtp(opciones: OpcionesEmail): Promise<{ ok: boolean; error?: string }> {
-  let host: string | null = null
-  let puerto: number | null = null
-  let smtpUser: string | null = null
-  let passwordEncrypted: string | null = null
-  let usarSsl = true
-  let emailRemitente: string | null = null
-  let nombreRemitente = "Trans-Magg S.R.L."
-
-  if (opciones.tipo === "sistema") {
-    const config = await prisma.configuracionOtp.findUnique({
-      where: { id: "singleton" },
-      select: {
-        host: true, puerto: true, usuario: true, passwordHash: true,
-        usarSsl: true, emailRemitente: true, nombreRemitente: true, activo: true,
-      },
-    }).catch(() => null)
-    if (config?.activo && config.host && config.passwordHash) {
-      host = config.host
-      puerto = config.puerto
-      smtpUser = config.usuario
-      passwordEncrypted = config.passwordHash
-      usarSsl = config.usarSsl
-      emailRemitente = config.emailRemitente
-      nombreRemitente = config.nombreRemitente ?? "Trans-Magg S.R.L."
-    }
-  } else if (opciones.tipo === "usuario" && opciones.usuarioId) {
-    const u = await prisma.usuario.findUnique({
-      where: { id: opciones.usuarioId },
-      select: {
-        email: true,
-        smtpHost: true, smtpPuerto: true, smtpUsuario: true,
-        smtpPassword: true, smtpSsl: true, smtpActivo: true,
-      },
-    }).catch(() => null)
-    if (u?.smtpActivo && u.smtpHost && u.smtpPassword) {
-      host = u.smtpHost
-      puerto = u.smtpPuerto
-      smtpUser = u.smtpUsuario ?? u.email
-      passwordEncrypted = u.smtpPassword
-      usarSsl = u.smtpSsl
-      emailRemitente = u.smtpUsuario ?? u.email
-    }
+async function enviarConSmtpUsuario(opciones: OpcionesEmail): Promise<{ ok: boolean; error?: string }> {
+  if (!opciones.usuarioId) {
+    return { ok: false, error: "Falta usuarioId para envío tipo 'usuario'" }
   }
 
-  if (!host || !puerto || !smtpUser || !passwordEncrypted || !emailRemitente) {
-    console.log(`[EMAIL FALLBACK] Para: ${opciones.para} | Asunto: ${opciones.asunto}`)
-    console.log(`[EMAIL FALLBACK] Sin configuración SMTP activa para tipo="${opciones.tipo}"`)
+  const u = await prisma.usuario.findUnique({
+    where: { id: opciones.usuarioId },
+    select: {
+      email: true,
+      smtpHost: true, smtpPuerto: true, smtpUsuario: true,
+      smtpPassword: true, smtpSsl: true, smtpActivo: true,
+    },
+  }).catch(() => null)
+
+  if (!u?.smtpActivo || !u.smtpHost || !u.smtpPuerto || !u.smtpPassword) {
+    console.log(`[EMAIL USUARIO] Sin configuración SMTP activa para usuario ${opciones.usuarioId}`)
     return { ok: false, error: "Sin configuración SMTP activa" }
+  }
+
+  const smtpUser = u.smtpUsuario ?? u.email
+  const emailRemitente = u.smtpUsuario ?? u.email
+  if (!smtpUser || !emailRemitente) {
+    return { ok: false, error: "Usuario sin email ni usuario SMTP" }
   }
 
   let pass: string
   try {
-    pass = decrypt(passwordEncrypted)
+    pass = decrypt(u.smtpPassword)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error("[EMAIL] Error descifrando contraseña SMTP:", msg)
+    console.error("[EMAIL USUARIO] Error descifrando contraseña SMTP:", msg)
     return { ok: false, error: `Error de configuración SMTP: ${msg}` }
   }
 
   const transporter = nodemailer.createTransport({
-    host,
-    port: puerto,
-    secure: usarSsl,
+    host: u.smtpHost,
+    port: u.smtpPuerto,
+    secure: u.smtpSsl,
     auth: { user: smtpUser, pass },
     tls: { rejectUnauthorized: false },
   })
 
-  const from = `"${nombreRemitente}" <${emailRemitente}>`
+  const from = `"Trans-Magg S.R.L." <${emailRemitente}>`
 
   try {
     const info = await transporter.sendMail({
@@ -167,11 +153,11 @@ async function enviarConSmtp(opciones: OpcionesEmail): Promise<{ ok: boolean; er
         contentType: a.tipo,
       })),
     })
-    console.log(`[EMAIL] Enviado a ${opciones.para}: ${opciones.asunto} — ${info.messageId}`)
+    console.log(`[EMAIL USUARIO] Enviado a ${opciones.para}: ${opciones.asunto} — ${info.messageId}`)
     return { ok: true }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
-    console.error(`[EMAIL] Error enviando a ${opciones.para}:`, msg)
+    console.error(`[EMAIL USUARIO] Error enviando a ${opciones.para}:`, msg)
     return { ok: false, error: msg }
   }
 }

@@ -154,7 +154,7 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
           kilos: true,
           tarifaFletero: true,
           subtotal: true,
-          viaje: { select: { nroCartaPorte: true } },
+          viaje: { select: { nroCtg: true, cpe: true } },
         },
       },
     },
@@ -395,13 +395,14 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
       kilos: v.kilos,
       tarifa: Number(v.tarifaFletero),
       subtotal: Number(v.subtotal),
-      nroCartaPorte: v.viaje?.nroCartaPorte ?? null,
+      nroCtg: v.viaje?.nroCtg ?? null,
+      cpe: v.viaje?.cpe ?? null,
     })))
 
     for (const v of grupos) {
       const hasProv = !!(v.provinciaOrigen || v.provinciaDestino)
       const rowH = hasProv ? rowHWithProv : rowHBase
-      const hasDocBadge = !!(v.remitos.length > 0 || v.cupo || v.cdps.length > 0)
+      const hasDocBadge = !!(v.remitos.length > 0 || v.cupo || v.ctgs.length > 0 || v.cpes.length > 0)
       const neededH = rowH + (hasDocBadge ? docBadgeH : 0)
 
       if (cursorY + neededH > footerLineY) {
@@ -455,8 +456,8 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
 
       cursorY += rowH
 
-      // Línea de documentación: Cupo / Remito(s) / CDP(s).
-      // Orden: Cupo → Remitos → CDPs. Etiqueta en negrita, valor regular.
+      // Línea de documentación: Cupo / Remito(s) / CTG(s) / CPE(s).
+      // Orden: Cupo → Remitos → CTGs → CPEs. Etiqueta en negrita, valor regular.
       // Sin fondo redondeado: sobre el color base de la liquidación.
       // Si hay >1 remito (viajes hermanos del mismo cupo), se formatean
       // con prefijo común + sufijos separados por "/" (ver formatearRemitosCupo).
@@ -468,9 +469,13 @@ export async function generarPDFLiquidacion(liquidacionId: string): Promise<Buff
           const label = v.remitos.length > 1 ? "Remitos: " : "Remito: "
           partes.push({ label, valor: formatearRemitosCupo(v.remitos) })
         }
-        if (v.cdps.length > 0) {
-          const label = v.cdps.length > 1 ? "CDPs: " : "CDP: "
-          partes.push({ label, valor: v.cdps.join(", ") })
+        if (v.ctgs.length > 0) {
+          const label = v.ctgs.length > 1 ? "CTGs: " : "CTG: "
+          partes.push({ label, valor: v.ctgs.join(", ") })
+        }
+        if (v.cpes.length > 0) {
+          const label = v.cpes.length > 1 ? "CPEs: " : "CPE: "
+          partes.push({ label, valor: v.cpes.join(", ") })
         }
 
         const SEP = "   "

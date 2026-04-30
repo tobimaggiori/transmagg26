@@ -20,7 +20,6 @@ import {
 import { validarComprobanteHabilitado } from "@/lib/arca/catalogo"
 import { leerComprobantesHabilitados } from "@/lib/arca/leer-config-habilitados"
 import { cargarConfigArca } from "@/lib/arca/config"
-import { calcularSaldoPendienteFactura } from "@/lib/cuenta-corriente"
 import { EstadoFacturaViaje, EstadoLiquidacionViaje } from "@/lib/viaje-workflow"
 import { parsearFechaLocalMediodia } from "@/lib/date-local"
 
@@ -50,6 +49,7 @@ export type DatosNotaCD = {
   facturaId?: string
   liquidacionId?: string
   chequeRecibidoId?: string
+  facturaProveedorId?: string
   montoNeto: number
   ivaPct: number
   descripcion: string
@@ -60,6 +60,10 @@ export type DatosNotaCD = {
   fechaComprobanteExterno?: string
   emisorExterno?: string
   incluirComision?: boolean
+  // Percepciones (sólo NC/ND recibida de proveedor)
+  percepcionIIBB?: number
+  percepcionIVA?: number
+  percepcionGanancias?: number
 }
 
 // ─── Comando principal ───────────────────────────────────────────────────────
@@ -89,7 +93,7 @@ export async function ejecutarCrearNotaCD(
     case "ND_EMITIDA":
       return crearNDEmitida(data, totales, operadorId)
     case "NC_RECIBIDA":
-      return crearNCRecibida(data)
+      return crearNCRecibida(data, totales, operadorId)
     case "ND_RECIBIDA":
       return crearNDRecibida(data, totales, operadorId)
     default:
@@ -410,8 +414,14 @@ async function crearNDEmitida(
 
 // ─── NC_RECIBIDA ─────────────────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function crearNCRecibida(data: DatosNotaCD): Promise<ResultadoNotaCD> {
+async function crearNCRecibida(
+  data: DatosNotaCD,
+  totales: TotalesNotaCD,
+  operadorId: string
+): Promise<ResultadoNotaCD> {
+  if (data.subtipo === "PROVEEDOR") {
+    return crearNotaRecibidaProveedor("NC_RECIBIDA", data, totales, operadorId)
+  }
   return { ok: false, status: 400, error: "Subtipo NC_RECIBIDA no reconocido" }
 }
 
@@ -534,7 +544,105 @@ async function crearNDRecibida(
     return { ok: true, nota }
   }
 
+  if (data.subtipo === "PROVEEDOR") {
+    return crearNotaRecibidaProveedor("ND_RECIBIDA", data, totales, operadorId)
+  }
+
   return { ok: false, status: 400, error: "Subtipo ND_RECIBIDA no reconocido" }
+}
+
+// ─── NC/ND RECIBIDA de proveedor ─────────────────────────────────────────────
+
+/**
+ * crearNotaRecibidaProveedor: "NC_RECIBIDA"|"ND_RECIBIDA" DatosNotaCD TotalesNotaCD string
+ *   -> Promise<ResultadoNotaCD>
+ *
+ * Dado el tipo (NC/ND), los datos validados, totales y operadorId,
+ * registra una NC/ND recibida de un proveedor asociada a una factura de proveedor.
+ * Persiste el comprobante externo (nroComprobante, fecha, emisor = proveedor.razonSocial),
+ * las percepciones opcionales y crea el asiento de IVA COMPRAS con signo correspondiente
+ * (negativo para NC, positivo para ND) para el período de la fecha del comprobante.
+ * El tipoCbte se fuerza a la misma clase (A/B/C) que la factura origen.
+ *
+ * Precondiciones:
+ *  - data.facturaProveedorId requerido.
+ *  - data.nroComprobanteExterno requerido.
+ *  - data.fechaComprobanteExterno requerido.
+ *  - La factura de proveedor existe.
+ *
+ * Ejemplos:
+ * crearNotaRecibidaProveedor("NC_RECIBIDA", { facturaProveedorId: "fp1", nroComprobanteExterno: "0001-00000123", fechaComprobanteExterno: "2026-04-01", ivaPct: 21, montoNeto: 1000, descripcion: "Devolución parcial", ... }, { montoNeto: 1000, montoIva: 210, montoTotal: 1210 }, "op1")
+ *   // => { ok: true, nota: { tipo: "NC_RECIBIDA", subtipo: "PROVEEDOR", tipoCbte: 3, ... } }
+ * crearNotaRecibidaProveedor("NC_RECIBIDA", { ...sin facturaProveedorId }, totales, "op1")
+ *   // => { ok: false, status: 400, error: "Se requiere facturaProveedorId" }
+ */
+async function crearNotaRecibidaProveedor(
+  tipo: "NC_RECIBIDA" | "ND_RECIBIDA",
+  data: DatosNotaCD,
+  totales: TotalesNotaCD,
+  operadorId: string
+): Promise<ResultadoNotaCD> {
+  if (!data.facturaProveedorId) {
+    return { ok: false, status: 400, error: `Se requiere facturaProveedorId para ${tipo}/PROVEEDOR` }
+  }
+  if (!data.nroComprobanteExterno) {
+    return { ok: false, status: 400, error: "Se requiere nroComprobanteExterno" }
+  }
+  if (!data.fechaComprobanteExterno) {
+    return { ok: false, status: 400, error: "Se requiere fechaComprobanteExterno" }
+  }
+
+  const factura = await prisma.facturaProveedor.findUnique({
+    where: { id: data.facturaProveedorId },
+    include: { proveedor: { select: { razonSocial: true } } },
+  })
+  if (!factura) return { ok: false, status: 404, error: "Factura de proveedor no encontrada" }
+
+  const { tipoCbteNotaRecibidaProveedor } = await import("@/lib/nota-cd-utils")
+  const tipoCbte = tipoCbteNotaRecibidaProveedor(tipo, factura.tipoCbte)
+
+  const fechaCbte = parsearFechaLocalMediodia(data.fechaComprobanteExterno)
+  const periodo = fechaCbte.toISOString().slice(0, 7)
+  const signo = tipo === "NC_RECIBIDA" ? -1 : 1
+
+  const nota = await prisma.$transaction(async (tx) => {
+    const created = await tx.notaCreditoDebito.create({
+      data: {
+        tipo,
+        subtipo: "PROVEEDOR",
+        facturaProveedorId: data.facturaProveedorId,
+        nroComprobanteExterno: data.nroComprobanteExterno,
+        fechaComprobanteExterno: fechaCbte,
+        emisorExterno: factura.proveedor.razonSocial,
+        tipoCbte: tipoCbte || null,
+        ...totales,
+        percepcionIIBB: data.percepcionIIBB ?? null,
+        percepcionIVA: data.percepcionIVA ?? null,
+        percepcionGanancias: data.percepcionGanancias ?? null,
+        descripcion: data.descripcion,
+        motivoDetalle: data.motivoDetalle ?? null,
+        estado: "REGISTRADA",
+        operadorId,
+      },
+    })
+
+    await tx.asientoIva.create({
+      data: {
+        notaCreditoDebitoId: created.id,
+        facturaProvId: data.facturaProveedorId,
+        tipoReferencia: tipo,
+        tipo: "COMPRA",
+        baseImponible: signo * totales.montoNeto,
+        alicuota: data.ivaPct,
+        montoIva: signo * totales.montoIva,
+        periodo,
+      },
+    })
+
+    return created
+  })
+
+  return { ok: true, nota }
 }
 
 // ─── Helpers internos ────────────────────────────────────────────────────────
@@ -609,14 +717,9 @@ export async function crearNotaEmpresaEmitida(
     return { ok: false, status: 422, error: "La factura debe estar autorizada en ARCA para emitir NC/ND" }
   }
 
-  // 3. Regla de saldo
-  const saldo = await calcularSaldoPendienteFactura(facturaId)
-  if (tipoNota === "NC" && saldo <= 0) {
-    return { ok: false, status: 422, error: "No se puede emitir NC: la factura está completamente cobrada" }
-  }
-  if (tipoNota === "ND" && saldo > 0) {
-    return { ok: false, status: 422, error: "No se puede emitir ND: la factura aún tiene saldo pendiente de cobro" }
-  }
+  // El estado de cobro de la factura no condiciona la emisión: NC sobre
+  // factura cobrada genera saldo a favor; ND sobre factura cobrada vuelve
+  // a generar saldo pendiente. La UI advierte el impacto al operador.
 
   // 4. Resolver tipoCbte
   const tipoCbteNota = resolverTipoCbteNotaEmpresa({ tipoNota, tipoCbteOrigen: factura.tipoCbte })

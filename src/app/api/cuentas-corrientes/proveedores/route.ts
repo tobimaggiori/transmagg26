@@ -11,6 +11,7 @@ import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
 import { resolverOperadorId } from "@/lib/session-utils"
 import { sumarImportes, restarImportes, maxMonetario, parsearImporte, m } from "@/lib/money"
+import { registrarMovimiento } from "@/lib/movimiento-cuenta"
 import type { Rol } from "@/types"
 
 /**
@@ -159,20 +160,20 @@ export async function POST(request: NextRequest) {
       montoRestante = restarImportes(montoRestante, montoAplicar)
     }
 
-    // Crear MovimientoSinFactura para TRANSFERENCIA si se provee cuenta y operador
-    if (tipo === "TRANSFERENCIA" && cuentaBancariaId && operadorId) {
+    // Registrar MovimientoCuenta para TRANSFERENCIA si se provee cuenta y operador
+    if (tipo === "TRANSFERENCIA" && cuentaBancariaId && operadorId && pagosCreados.length > 0) {
       const montoTotal = parsearImporte(String(monto))
-      await prisma.movimientoSinFactura.create({
-        data: {
+      await prisma.$transaction(async (tx) => {
+        await registrarMovimiento(tx, {
           cuentaId: cuentaBancariaId,
           tipo: "EGRESO",
           categoria: "TRANSFERENCIA_ENVIADA",
           monto: montoTotal,
           fecha: fechaPago,
           descripcion: `Pago proveedor ${proveedor.razonSocial}`,
-          referencia: referencia ?? null,
-          operadorId,
-        },
+          pagoProveedorId: pagosCreados[0].id,
+          operadorCreacionId: operadorId,
+        })
       })
     }
 

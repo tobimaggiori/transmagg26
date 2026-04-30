@@ -29,7 +29,7 @@ export interface UsuarioAbm {
   id: string
   nombre: string
   apellido: string
-  email: string
+  email: string | null
   telefono: string | null
   rol: string
   activo: boolean
@@ -84,7 +84,7 @@ const COLORES_ROL: Record<string, string> = {
 }
 
 const ROLES_POR_TIPO: Record<Tipo, string[]> = {
-  transmagg: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  transmagg: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG", "CHOFER"],
   empresas: ["ADMIN_EMPRESA", "OPERADOR_EMPRESA"],
   fleteros: ["FLETERO", "CHOFER"],
 }
@@ -94,7 +94,7 @@ export function calcularFiltroUsuario(usuario: UsuarioAbm, busqueda: string): bo
   return (
     usuario.nombre.toLowerCase().includes(q) ||
     usuario.apellido.toLowerCase().includes(q) ||
-    usuario.email.toLowerCase().includes(q) ||
+    (usuario.email?.toLowerCase().includes(q) ?? false) ||
     usuario.rol.toLowerCase().includes(q)
   )
 }
@@ -112,7 +112,7 @@ function SmtpModal({
   const [form, setForm] = useState({
     smtpHost: usuario.smtpHost ?? "",
     smtpPuerto: usuario.smtpPuerto ? String(usuario.smtpPuerto) : "587",
-    smtpUsuario: usuario.smtpUsuario ?? usuario.email,
+    smtpUsuario: usuario.smtpUsuario ?? usuario.email ?? "",
     smtpPassword: "",
     smtpSsl: usuario.smtpSsl,
     smtpActivo: usuario.smtpActivo,
@@ -189,7 +189,7 @@ function SmtpModal({
     <form onSubmit={handleGuardar} className="space-y-4">
       <div className="bg-muted/40 rounded-md px-3 py-2 text-sm">
         <span className="text-muted-foreground">Remitente: </span>
-        <span className="font-medium">{usuario.email}</span>
+        <span className="font-medium">{usuario.email ?? "—"}</span>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -301,12 +301,8 @@ const ARBOL_PERMISOS = [
     ]
   },
   {
-    label: "Cuentas", seccion: "cuentas",
-    sub: [
-      { label: "Bancos", seccion: "cuentas.bancos" },
-      { label: "Brokers", seccion: "cuentas.brokers" },
-      { label: "Billeteras", seccion: "cuentas.billeteras" },
-    ]
+    label: "Cuentas y Tarjetas", seccion: "cuentas",
+    sub: []
   },
   {
     label: "Aseguradoras", seccion: "aseguradoras",
@@ -509,9 +505,32 @@ function UsuarioFormModal({
     email: usuario?.email ?? "",
     telefono: usuario?.telefono ?? "",
     rol: (usuario?.rol ?? defaultRol) as Rol,
+    empleadoId: "",
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Flujo CHOFER: Usuario rol=CHOFER se vincula a un Empleado existente
+  // (cargo=CHOFER, sin usuarioId). El Empleado decide el fletero; Usuario
+  // es solo el login.
+  const modoCrearCuentaChofer = !isEdit && form.rol === "CHOFER"
+
+  type EmpleadoSinCuenta = { id: string; nombre: string; apellido: string; fleteroId: string | null }
+  const [empleadosDisponibles, setEmpleadosDisponibles] = useState<EmpleadoSinCuenta[]>([])
+  useEffect(() => {
+    if (!modoCrearCuentaChofer) { setEmpleadosDisponibles([]); return }
+    fetch("/api/empleados")
+      .then((r) => r.ok ? r.json() : [])
+      .then((ems: Array<EmpleadoSinCuenta & { cargo: string | null; usuario: unknown }>) => {
+        setEmpleadosDisponibles(
+          ems
+            .filter((e) => e.cargo === "CHOFER" && !e.usuario)
+            .filter((e) => tipo === "transmagg" ? !e.fleteroId : e.fleteroId === contextoId)
+            .map((e) => ({ id: e.id, nombre: e.nombre, apellido: e.apellido, fleteroId: e.fleteroId })),
+        )
+      })
+      .catch(() => setEmpleadosDisponibles([]))
+  }, [modoCrearCuentaChofer, tipo, contextoId])
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
@@ -522,20 +541,41 @@ function UsuarioFormModal({
     setLoading(true)
     setError(null)
     try {
-      const url = isEdit ? `/api/usuarios/${usuario.id}` : "/api/usuarios"
-      const body = isEdit
-        ? { nombre: form.nombre, apellido: form.apellido, telefono: form.telefono || undefined, rol: form.rol }
-        : {
-            nombre: form.nombre,
-            apellido: form.apellido,
-            email: form.email,
-            telefono: form.telefono || undefined,
-            rol: form.rol,
-            ...(tipo === "empresas" && contextoId ? { empresaId: contextoId } : {}),
-            ...(tipo === "fleteros" && contextoId && form.rol === "CHOFER" ? { fleteroId: contextoId } : {}),
-          }
+      let url: string
+      let method: "POST" | "PATCH"
+      let body: Record<string, unknown>
+
+      if (isEdit) {
+        url = `/api/usuarios/${usuario.id}`
+        method = "PATCH"
+        body = { nombre: form.nombre, apellido: form.apellido, telefono: form.telefono || undefined, rol: form.rol }
+      } else if (modoCrearCuentaChofer) {
+        if (!form.empleadoId) { setError("Seleccioná un empleado"); setLoading(false); return }
+        url = "/api/usuarios"
+        method = "POST"
+        body = {
+          nombre: form.nombre,
+          apellido: form.apellido,
+          email: form.email,
+          telefono: form.telefono || undefined,
+          rol: "CHOFER",
+          empleadoId: form.empleadoId,
+        }
+      } else {
+        url = "/api/usuarios"
+        method = "POST"
+        body = {
+          nombre: form.nombre,
+          apellido: form.apellido,
+          email: form.email,
+          telefono: form.telefono || undefined,
+          rol: form.rol,
+          ...(tipo === "empresas" && contextoId ? { empresaId: contextoId } : {}),
+        }
+      }
+
       const res = await fetch(url, {
-        method: isEdit ? "PATCH" : "POST",
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       })
@@ -565,36 +605,76 @@ function UsuarioFormModal({
           <span className="font-medium">{contextoLabel}</span>
         </div>
       )}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {!isEdit && (
         <div className="space-y-1">
-          <Label htmlFor="nombre">Nombre *</Label>
-          <Input id="nombre" name="nombre" value={form.nombre} onChange={handleChange} required disabled={loading} />
+          <Label htmlFor="rol">Rol *</Label>
+          <Select id="rol" name="rol" value={form.rol} onChange={handleChange} disabled={loading}>
+            {rolesDisponibles.map((k) => (
+              <option key={k} value={k}>{ROLES_DISPLAY[k] ?? k}</option>
+            ))}
+          </Select>
         </div>
-        <div className="space-y-1">
-          <Label htmlFor="apellido">Apellido *</Label>
-          <Input id="apellido" name="apellido" value={form.apellido} onChange={handleChange} required disabled={loading} />
-        </div>
-      </div>
-      <div className="space-y-1">
-        <Label htmlFor="email">Email *</Label>
-        <Input id="email" name="email" type="email" value={form.email} onChange={handleChange} required disabled={loading || isEdit} />
-      </div>
-      <div className="space-y-1">
-        <Label htmlFor="telefono">Teléfono</Label>
-        <Input id="telefono" name="telefono" value={form.telefono} onChange={handleChange} disabled={loading} />
-      </div>
-      <div className="space-y-1">
-        <Label htmlFor="rol">Rol *</Label>
-        <Select id="rol" name="rol" value={form.rol} onChange={handleChange} disabled={loading}>
-          {rolesDisponibles.map((k) => (
-            <option key={k} value={k}>{ROLES_DISPLAY[k] ?? k}</option>
-          ))}
-        </Select>
-      </div>
+      )}
+
+      {modoCrearCuentaChofer ? (
+        <>
+          <div className="space-y-1">
+            <Label htmlFor="empleadoId">Empleado *</Label>
+            <Select id="empleadoId" name="empleadoId" value={form.empleadoId} onChange={(e) => {
+              const emp = empleadosDisponibles.find((x) => x.id === e.target.value)
+              setForm((prev) => ({
+                ...prev,
+                empleadoId: e.target.value,
+                nombre: emp?.nombre ?? prev.nombre,
+                apellido: emp?.apellido ?? prev.apellido,
+              }))
+            }} required disabled={loading || empleadosDisponibles.length === 0}>
+              <option value="">Seleccionar empleado...</option>
+              {empleadosDisponibles.map((c) => (
+                <option key={c.id} value={c.id}>{c.apellido}, {c.nombre}</option>
+              ))}
+            </Select>
+            {empleadosDisponibles.length === 0 && (
+              <p className="text-xs text-muted-foreground">Sin empleados chofer disponibles. Dalo de alta en ABM → Empleados.</p>
+            )}
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="email">Email *</Label>
+            <Input id="email" name="email" type="email" value={form.email} onChange={handleChange} required disabled={loading} />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="telefono">Teléfono</Label>
+            <Input id="telefono" name="telefono" value={form.telefono} onChange={handleChange} disabled={loading} />
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="nombre">Nombre *</Label>
+              <Input id="nombre" name="nombre" value={form.nombre} onChange={handleChange} required disabled={loading} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="apellido">Apellido *</Label>
+              <Input id="apellido" name="apellido" value={form.apellido} onChange={handleChange} required disabled={loading} />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="email">Email *</Label>
+            <Input id="email" name="email" type="email" value={form.email} onChange={handleChange} required disabled={loading || isEdit} />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="telefono">Teléfono</Label>
+            <Input id="telefono" name="telefono" value={form.telefono} onChange={handleChange} disabled={loading} />
+          </div>
+        </>
+      )}
       <FormError message={error} />
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onSuccess} disabled={loading}>Cancelar</Button>
-        <Button type="submit" disabled={loading}>{loading ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear usuario"}</Button>
+        <Button type="submit" disabled={loading || (modoCrearCuentaChofer && !form.empleadoId)}>
+          {loading ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear usuario"}
+        </Button>
       </div>
     </form>
   )
@@ -637,7 +717,7 @@ function FilaUsuario({
           )}
         </div>
         <p className="text-sm text-muted-foreground">
-          {u.email}
+          {u.email ?? <span className="italic">sin cuenta</span>}
           {u.empresaUsuarios.length > 0 && ` · ${u.empresaUsuarios[0].empresa.razonSocial}`}
         </p>
       </div>

@@ -1,3 +1,46 @@
 {
-  "extends": ["next/core-web-vitals", "next/typescript"]
+  "extends": ["next/core-web-vitals", "next/typescript"],
+  "overrides": [
+    {
+      "files": [
+        "src/jm/**/*.{ts,tsx}",
+        "src/app/(jm)/**/*.{ts,tsx}",
+        "src/app/api/jm/**/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/lib/prisma",
+                "message": "JM no puede usar el cliente Prisma de Transmagg. Usá `@/jm/prisma` (prismaJm)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/**/*.{ts,tsx}"],
+      "excludedFiles": [
+        "src/jm/**/*.{ts,tsx}",
+        "src/app/(jm)/**/*.{ts,tsx}",
+        "src/app/api/jm/**/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@/jm/*", "@/jm"],
+                "message": "Código de Transmagg no puede importar de JM. Si necesitás algo compartido, sacá la primitiva a un lugar neutro."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

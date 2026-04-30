@@ -7,7 +7,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { formatearFecha } from "@/lib/utils"
 import { sumarImportes, formatearMoneda } from "@/lib/money"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -59,7 +59,7 @@ export default async function ContabilidadViajesSinLpPage({
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
-  if (!puedeAcceder(rol, "cuentas")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "cuentas"))) redirect("/dashboard")
 
   const { desde, hasta } = parsePeriodo(searchParams)
 
@@ -121,7 +121,7 @@ export default async function ContabilidadViajesSinLpPage({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Viajes Facturados sin LP</h2>
+        <h2 className="text-2xl font-bold tracking-tight">Viajes propios</h2>
         <p className="text-muted-foreground">Viajes con factura emitida que no tienen Líquido Producto asociado</p>
       </div>
 
@@ -137,7 +137,7 @@ export default async function ContabilidadViajesSinLpPage({
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Viajes sin LP</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Viajes propios</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{registros.length}</p>
@@ -167,8 +167,7 @@ export default async function ContabilidadViajesSinLpPage({
       <div className="flex gap-2">
         <a
           href={`/api/contabilidad/viajes-sin-lp/pdf${exportQuery}`}
-          target="_blank"
-          rel="noopener noreferrer"
+          download
           className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-2 hover:bg-primary/90"
         >
           Descargar PDF
@@ -185,7 +184,7 @@ export default async function ContabilidadViajesSinLpPage({
       {/* Tabla por provincias */}
       {provincias.length === 0 ? (
         <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
-          Sin viajes facturados sin LP para el período seleccionado.
+          Sin viajes propios para el período seleccionado.
         </div>
       ) : (
         <div className="space-y-4">

@@ -23,8 +23,8 @@ export type ViajeAPI = {
   tarifaEmpresa?: number | null
   estadoLiquidacion: string
   estadoFactura: string
-  nroCartaPorte?: string | null
-  cartaPorteS3Key?: string | null
+  nroCtg?: string | null
+  ctgS3Key?: string | null
   enLiquidaciones?: Array<{
     liquidacion: { estado: string }
   }>

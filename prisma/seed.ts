@@ -35,7 +35,6 @@ async function main() {
     prisma.pagoDeEmpresa.deleteMany(),
     prisma.chequeEmitido.deleteMany(),
     prisma.chequeRecibido.deleteMany(),
-    prisma.planillaGalicia.deleteMany(),
     prisma.movimientoSinFactura.deleteMany(),
     prisma.saldoFci.deleteMany(),
     prisma.movimientoFci.deleteMany(),
@@ -236,8 +235,6 @@ async function main() {
       tieneImpuestoDebcred: true,
       alicuotaImpuesto: 0.006,
       tieneChequera: true,
-      tienePlanillaEmisionMasiva: true,
-      formatoPlanilla: "GALICIA",
       formatoReconciliacion: "EXCEL",
     },
   })
@@ -711,17 +708,6 @@ async function main() {
     },
   })
 
-  const planillaGalicia = await prisma.planillaGalicia.create({
-    data: {
-      nombre: "Planilla 15/04/2026",
-      cuentaId: cuentaGaliciaPesos.id,
-      estado: "BORRADOR",
-      totalMonto: 155000,
-      cantidadCheques: 2,
-      operadorId: operadorTransmagg.id,
-    },
-  })
-
   const chequeEmitidoPlanilla1 = await prisma.chequeEmitido.create({
     data: {
       fleteroId: fletero1.id,
@@ -739,7 +725,6 @@ async function main() {
       clausula: "A_LA_ORDEN",
       estado: "EMITIDO",
       liquidacionId: liquidacion.id,
-      planillaGaliciaId: planillaGalicia.id,
       operadorId: operadorTransmagg.id,
     },
   })
@@ -760,7 +745,6 @@ async function main() {
       mailBeneficiario: "pagos@repuestosvial.com.ar",
       clausula: "NO_A_LA_ORDEN",
       estado: "EMITIDO",
-      planillaGaliciaId: planillaGalicia.id,
       operadorId: operadorTransmagg.id,
     },
   })

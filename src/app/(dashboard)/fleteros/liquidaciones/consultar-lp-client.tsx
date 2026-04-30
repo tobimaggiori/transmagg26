@@ -37,7 +37,7 @@ type ViajeEnLiquidacion = {
   kilos: number | null
   tarifaFletero: number
   subtotal: number
-  viaje?: { nroCartaPorte: string | null; cartaPorteS3Key: string | null }
+  viaje?: { nroCtg: string | null; ctgS3Key: string | null }
 }
 
 type Liquidacion = {
@@ -126,7 +126,7 @@ function ModalDetalleLP({
               <thead>
                 <tr className="border-b font-semibold uppercase text-xs bg-slate-50">
                   <th className="px-3 py-2 text-left">Fecha</th>
-                  <th className="px-3 py-2 text-left">Carta de Porte</th>
+                  <th className="px-3 py-2 text-left">CPE</th>
                   <th className="px-3 py-2 text-left">Remito</th>
                   <th className="px-3 py-2 text-left">Cupo</th>
                   <th className="px-3 py-2 text-left">Mercadería</th>
@@ -143,7 +143,7 @@ function ModalDetalleLP({
                 {liq.viajes.map((v, i) => (
                   <tr key={v.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                     <td className="px-3 py-2 whitespace-nowrap">{formatearFecha(new Date(v.fechaViaje))}</td>
-                    <td className="px-3 py-2">{v.viaje?.nroCartaPorte ?? <span className="text-muted-foreground">N/A</span>}</td>
+                    <td className="px-3 py-2">{v.viaje?.nroCtg ?? <span className="text-muted-foreground">N/A</span>}</td>
                     <td className="px-3 py-2">{v.remito ?? "—"}</td>
                     <td className="px-3 py-2">{v.cupo ?? "—"}</td>
                     <td className="px-3 py-2">{v.mercaderia ?? "—"}</td>

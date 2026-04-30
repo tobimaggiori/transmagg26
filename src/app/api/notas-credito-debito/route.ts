@@ -43,12 +43,14 @@ export async function GET(request: NextRequest) {
   const tipo = searchParams.get("tipo")
   const facturaId = searchParams.get("facturaId")
   const liquidacionId = searchParams.get("liquidacionId")
+  const facturaProveedorId = searchParams.get("facturaProveedorId")
 
   try {
     const where: Record<string, unknown> = {}
     if (tipo) where.tipo = tipo
     if (facturaId) where.facturaId = facturaId
     if (liquidacionId) where.liquidacionId = liquidacionId
+    if (facturaProveedorId) where.facturaProveedorId = facturaProveedorId
 
     const notas = await prisma.notaCreditoDebito.findMany({
       where,
@@ -65,6 +67,13 @@ export async function GET(request: NextRequest) {
             id: true,
             nroComprobante: true,
             fletero: { select: { razonSocial: true } },
+          },
+        },
+        facturaProveedor: {
+          select: {
+            id: true,
+            nroComprobante: true,
+            proveedor: { select: { razonSocial: true } },
           },
         },
         operador: { select: { nombre: true, apellido: true } },

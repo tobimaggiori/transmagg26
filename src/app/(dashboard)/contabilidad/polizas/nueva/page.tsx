@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { prisma } from "@/lib/prisma"
 import { NuevaPolizaClient } from "./nueva-poliza-client"
 import type { Rol } from "@/types"
@@ -12,7 +12,8 @@ export default async function NuevaPolizaPage({
 }) {
   const session = await auth()
   if (!session?.user) redirect("/login")
-  if (!puedeAcceder(session.user.rol as Rol, "cuentas")) redirect("/dashboard")
+  const rol = session.user.rol as Rol
+  if (!(await tienePermiso(session.user.id, rol, "contabilidad.polizas"))) redirect("/dashboard")
 
   const [camiones, proveedores] = await Promise.all([
     prisma.camion.findMany({

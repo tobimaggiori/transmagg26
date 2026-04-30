@@ -37,13 +37,7 @@ export default async function ProveedoresFacturaPage() {
       orderBy: { razonSocial: "asc" },
     }),
     prisma.cuenta.findMany({
-      where: {
-        activa: true,
-        OR: [
-          { cuentaPadreId: { not: null } },
-          { tipo: { not: "BANCO" } },
-        ],
-      },
+      where: { activa: true },
       select: { id: true, nombre: true, tipo: true, tieneChequera: true },
       orderBy: { nombre: "asc" },
     }),

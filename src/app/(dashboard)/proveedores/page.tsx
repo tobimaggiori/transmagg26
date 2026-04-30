@@ -8,7 +8,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import type { Rol } from "@/types"
 import { sumarImportes, restarImportes, maxMonetario } from "@/lib/money"
 import { ProveedoresClient } from "@/components/proveedores-client"
@@ -33,7 +33,7 @@ export default async function ProveedoresPage() {
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
-  if (!puedeAcceder(rol, "proveedores")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "proveedores"))) redirect("/dashboard")
 
   const proveedores = await prisma.proveedor.findMany({
     where: { activo: true },

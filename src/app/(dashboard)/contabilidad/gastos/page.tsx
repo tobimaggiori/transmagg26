@@ -8,7 +8,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
 import { sumarImportes } from "@/lib/money"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -50,7 +50,7 @@ export default async function ContabilidadGastosPage({
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
-  if (!puedeAcceder(rol, "cuentas")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "contabilidad.reportes"))) redirect("/dashboard")
 
   const { desde, hasta } = periodoFilter(searchParams)
 

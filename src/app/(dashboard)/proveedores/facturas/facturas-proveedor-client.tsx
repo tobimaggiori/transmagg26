@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback, useEffect, Fragment } from "react"
+import Link from "next/link"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
@@ -209,6 +210,7 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
                         <th className="pb-2 pr-3 text-center">Estado</th>
                         <th className="pb-2 pr-3 text-center">Factura</th>
                         <th className="pb-2 pr-3 text-center">Comprobante</th>
+                        <th className="pb-2 pr-3 text-center">Notas</th>
                         <th className="pb-2 text-center">Acciones</th>
                       </tr>
                     </thead>
@@ -256,6 +258,14 @@ export function FacturasProveedorClient({ proveedores }: FacturasProveedorClient
                               ) : (
                                 <ViewPDF s3Key={compKey} size="sm" label="Ver" />
                               )}
+                            </td>
+                            <td className="py-2 pr-3 text-center" onClick={(e) => e.stopPropagation()}>
+                              <Link
+                                href={`/proveedores/facturas/${f.id}/notas`}
+                                className="h-6 inline-flex items-center px-2 rounded border text-xs font-medium hover:bg-muted"
+                              >
+                                Notas C/D
+                              </Link>
                             </td>
                             <td className="py-2 text-center" onClick={(e) => e.stopPropagation()}>
                               <button

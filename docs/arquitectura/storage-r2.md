@@ -29,7 +29,7 @@ Cada tipo de PDF va a su prefijo. La key tiene formato
 | `comprobantes-pago-fletero` | OPs y comprobantes de medios de pago a fletero |
 | `resumenes-bancarios` | Resúmenes mensuales bancarios |
 | `resumenes-tarjeta` | Resúmenes mensuales de tarjetas |
-| `cartas-de-porte` | Cartas de porte de viajes |
+| `ctg` | PDFs de CTG de viajes |
 | `remitos` | Remitos asociados |
 | `polizas` | Pólizas de seguros |
 | `recibos-cobranza` | Recibos de cobranza |
@@ -53,6 +53,8 @@ El tipo `StoragePrefijo` en `src/lib/storage.ts` es la fuente de verdad.
 | `eliminarArchivo(key)` | Borra del bucket (irreversible) |
 | `eliminarArchivos(keys)` | Borra en lote (hasta 1000 por request) |
 | `listarArchivos(prefijo)` | Lista keys bajo un prefijo (paginado) |
+| `listarArchivosConMeta(prefijo)` | Lista keys + `lastModified` (para grace periods) |
+| `copiarArchivo(srcKey, destKey)` | Copia objeto dentro del bucket (CopyObject de S3) |
 | `storageConfigurado()` | Chequea env vars |
 
 ## Patrón de subida
@@ -87,11 +89,98 @@ Cuando un PDF se regenera (por cambio de datos), la práctica es:
 1. Setear `pdfS3Key = null` en el modelo (invalida el cache lógico).
 2. La próxima vez que se pida el PDF vía endpoint, se regenera y sube a R2,
    obteniendo una key nueva (UUID nuevo).
-3. La key vieja queda **huérfana en R2**. No se borra automáticamente — puede
-   acumularse basura.
+3. La key vieja queda **huérfana en R2**.
 
-Si se quiere limpiar las huérfanas, usar `eliminarArchivos` con un script
-batch. No hay job programado para esto hoy.
+Las huérfanas se barren con el cleanup periódico (ver siguiente sección),
+pero hoy ese script solo cubre `ctg/` y `remitos/`. Para extenderlo a otros
+prefijos, ver el patrón abajo.
+
+## Limpieza periódica de huérfanos
+
+Una key se considera **huérfana** cuando vive en R2 pero ya no está
+referenciada en ninguna columna de DB. Se generan principalmente por:
+
+- Operador sube un PDF en un formulario y abandona sin guardar.
+- Operador reemplaza un PDF: la key vieja queda en R2 después del UPDATE.
+- PDF regenerado vía cache invalidation (ver arriba).
+- Viaje/factura/etc. eliminado sin borrar su PDF asociado.
+
+### Script y cron actuales
+
+Script: [`scripts/cleanup-pdfs-huerfanos.ts`](../../scripts/cleanup-pdfs-huerfanos.ts).
+
+Cubre los prefijos `ctg/` y `remitos/`. Lógica:
+
+1. Carga todas las keys referenciadas en `viajes` (`ctgS3Key`, `remitoS3Key`).
+2. Lista R2 bajo cada prefijo con `listarArchivosConMeta` (incluye
+   `LastModified`).
+3. Una key es huérfana si no está en DB **y** tiene más de N horas
+   (default 24h; configurable con `--grace=H`). El grace evita borrar
+   archivos recién subidos cuyo registro DB todavía no se persistió
+   (operador llenando formulario).
+4. Borra en lote con `eliminarArchivos`.
+
+Modos:
+
+```bash
+npm run cleanup:pdfs-huerfanos -- --dry-run         # solo lista, no borra
+npm run cleanup:pdfs-huerfanos -- --apply           # borra
+npm run cleanup:pdfs-huerfanos -- --apply --grace=48
+```
+
+Cron instalado (crontab del usuario `tobi`):
+
+```cron
+0 4 * * * cd /home/tobi/transmagg26 && /usr/bin/npm run cleanup:pdfs-huerfanos -- --apply >> /home/tobi/transmagg26/logs/cleanup-pdfs.log 2>&1
+```
+
+### Cómo extenderlo a otros prefijos / secciones
+
+El patrón es siempre el mismo: **prefijo de R2 ↔ columnas de DB que lo
+referencian**. Para sumar un nuevo tipo de PDF a la limpieza:
+
+1. Identificar el prefijo en R2 y las columnas (potencialmente varias)
+   donde se guardan sus keys. Por ejemplo:
+
+   | Prefijo | Columnas que lo referencian |
+   |---|---|
+   | `liquidaciones/` | `liquidaciones.pdfS3Key` |
+   | `facturas-emitidas/` | `facturasEmitidas.pdfS3Key` |
+   | `facturas-proveedor/` | `facturaProveedor.pdfS3Key` |
+   | `recibos-cobranza/` | `reciboCobranza.pdfS3Key` |
+   | `comprobantes-pago-fletero/` | `ordenPago.pdfS3Key` (chequear) |
+   | `polizas/` | `polizaSeguro.pdfS3Key` |
+
+2. En `cleanup-pdfs-huerfanos.ts`, agregar el prefijo al array `PREFIJOS`
+   y extender la query que llena `refSet` con un `findMany` adicional
+   (o un único query con `OR` por modelo). Idea:
+
+   ```typescript
+   const liqs = await prisma.liquidacion.findMany({
+     where: { pdfS3Key: { not: null } },
+     select: { pdfS3Key: true },
+   })
+   for (const l of liqs) if (l.pdfS3Key) refSet.add(l.pdfS3Key)
+   ```
+
+3. Probar con `--dry-run` antes de `--apply`. Para tipos donde la regla
+   de cuándo "ya no se necesita" sea distinta (p. ej. PDFs que se
+   regeneran seguido), considerar grace period más largo.
+
+4. Si un tipo de PDF tiene reglas distintas (p. ej. mantener última
+   versión aunque haya N huérfanas, o nunca borrar de cierto prefijo),
+   excluirlo del script y manejarlo aparte.
+
+### Qué evitar
+
+- **No borrar prefijos sin DB que respalde** (ej. `logos/`): esos PDFs
+  no se referencian con keys en columnas, sino que se buscan por path
+  fijo. Mantener el script con allowlist explícita de prefijos seguros.
+- **No bajar `--grace` a menos de unas horas**: una operadora puede
+  tardar 30 min en cargar un viaje complicado. Default 24h es seguro.
+- **Verificar nuevas columnas tras agregar features**: si alguien agrega
+  un campo `pdfS3Key` a un modelo nuevo y lo olvida en el cleanup, esos
+  PDFs nunca se borrarán y los que se reemplacen quedarán en R2.
 
 ## Exportación masiva
 

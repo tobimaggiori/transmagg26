@@ -7,12 +7,14 @@
  */
 
 import { useState, useCallback, useEffect, useMemo } from "react"
+import { Pencil } from "lucide-react"
 import { formatearMoneda, formatearFecha } from "@/lib/utils"
-import { calcularTotalViaje, calcularFactura } from "@/lib/viajes"
+import { calcularFactura } from "@/lib/viajes"
 import { facturasEmpresaDisponibles } from "@/lib/arca/catalogo"
 import { SearchCombobox } from "@/components/ui/search-combobox"
-import { CeldaEditable } from "@/components/ui/celda-editable"
 import { hoyLocalYmd } from "@/lib/date-local"
+import { ModalPreviewFactura } from "./_components/modal-preview-factura"
+import { ModalDetalleViaje, type ViajeDetalleAPI } from "@/app/(dashboard)/fleteros/viajes/_components/modal-detalle-viaje"
 
 // ---- Tipos ----
 
@@ -29,8 +31,9 @@ type ViajeParaFacturar = {
   remito: string | null
   cupo: string | null
   fechaViaje: string
-  nroCartaPorte: string | null
-  tieneCpe: boolean
+  nroCtg: string | null
+  cpe: string | null
+  tieneCtg: boolean
   esCamionPropio: boolean
   fletero: { razonSocial: string } | null
   enLiquidaciones: Array<{
@@ -41,18 +44,15 @@ type ViajeParaFacturar = {
 // ---- Props ----
 
 type FacturarEmpresaClientProps = {
-  empresas: Array<{ id: string; razonSocial: string; cuit: string; condicionIva: string; padronFce: boolean }>
+  empresas: Array<{ id: string; razonSocial: string; cuit: string; condicionIva: string; padronFce: boolean; direccion?: string | null }>
+  fleteros: Array<{ id: string; razonSocial: string; cuit: string }>
+  camiones: Array<{ id: string; patenteChasis: string; fleteroId: string | null; esPropio?: boolean }>
+  choferes: Array<{ id: string; nombre: string; apellido: string; email: string | null }>
   comprobantesHabilitados: number[]
   montoMinimoFce: number | null
 }
 
 // ---- Helpers ----
-
-function formatNroLP(ptoVenta: number | null, nroComprobante: number | null): string {
-  const pv = (ptoVenta ?? 1).toString().padStart(4, "0")
-  const nc = (nroComprobante ?? 0).toString().padStart(8, "0")
-  return `${pv}-${nc}`
-}
 
 // ---- TipoCbteBadge ----
 
@@ -77,11 +77,10 @@ export function TipoCbteBadge({ tipoCbte, modalidad }: { tipoCbte: number; modal
  * selector de empresa con SearchCombobox, tabla de viajes pendientes con checkboxes,
  * edición inline de kilos y tarifa empresa, preview con neto/IVA/total, y confirmación.
  */
-export function FacturarEmpresaClient({ empresas, comprobantesHabilitados, montoMinimoFce }: FacturarEmpresaClientProps) {
+export function FacturarEmpresaClient({ empresas, fleteros, camiones, choferes, comprobantesHabilitados, montoMinimoFce }: FacturarEmpresaClientProps) {
   const [empresaId, setEmpresaId] = useState("")
   const [viajes, setViajes] = useState<ViajeParaFacturar[]>([])
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
-  const [ediciones, setEdiciones] = useState<Record<string, { kilos?: number; tarifaEmpresa?: number }>>({})
   const [tipoCbteNum, setTipoCbteNum] = useState<number | null>(null)
   const [modalidadMiPymes, setModalidadMiPymes] = useState<"SCA" | "ADC" | null>(null)
   const [ivaPct, setIvaPct] = useState<number>(21)
@@ -98,6 +97,9 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados, monto
   const [reintentableInfo, setReintentableInfo] = useState<{ documentoId: string; mensaje: string } | null>(null)
   const [reintentando, setReintentando] = useState(false)
   const [avisoFce, setAvisoFce] = useState<string | null>(null)
+  const [enPreview, setEnPreview] = useState(false)
+  const [viajeEditando, setViajeEditando] = useState<ViajeDetalleAPI | undefined>(undefined)
+  const [modalEditarAbierto, setModalEditarAbierto] = useState(false)
 
   const cargarDatos = useCallback(async () => {
     if (!empresaId) return
@@ -209,58 +211,69 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados, monto
     return tienePropios && tieneAjenos
   }, [viajes])
 
-  // Obtener valor efectivo de kilos/tarifa (con ediciones)
-  function getKilos(v: ViajeParaFacturar): number {
-    return ediciones[v.id]?.kilos ?? v.kilos ?? 0
-  }
-
-  function getTarifa(v: ViajeParaFacturar): number {
-    return ediciones[v.id]?.tarifaEmpresa ?? v.tarifaEmpresa
-  }
-
-  // Calcular preview solo para viajes seleccionados
+  // Viajes seleccionados (la edición de cada viaje se hace vía ModalDetalleViaje,
+  // los valores vienen directos del backend, sin ediciones in-memory).
   const viajesSeleccionados = viajes.filter((v) => seleccionados.has(v.id))
   const viajesParaCalc = viajesSeleccionados.map((v) => ({
-    kilos: getKilos(v),
-    tarifaEmpresa: getTarifa(v),
+    kilos: v.kilos ?? 0,
+    tarifaEmpresa: v.tarifaEmpresa,
   }))
-  const preview = viajesParaCalc.length > 0 ? calcularFactura(viajesParaCalc, ivaPct) : null
 
-  async function confirmarFactura() {
+  async function abrirEdicionViaje(viajeId: string) {
+    try {
+      const res = await fetch(`/api/viajes/${viajeId}`)
+      if (!res.ok) return
+      setViajeEditando(await res.json() as ViajeDetalleAPI)
+      setModalEditarAbierto(true)
+    } catch { /* ignore */ }
+  }
+
+  function handleGuardarViaje() {
+    setModalEditarAbierto(false)
+    setViajeEditando(undefined)
+    cargarDatos()
+  }
+
+  async function confirmarFactura(ivaPctFinal?: number, metodoPagoFinal?: string, fechaEmisionFinal?: string) {
     if (!empresaId || seleccionados.size === 0 || !tipoCbteEfectivo) return
 
+    const ivaEfectivo = ivaPctFinal ?? ivaPct
+    const metodoEfectivo = metodoPagoFinal ?? metodoPago
+    const fechaEfectiva = fechaEmisionFinal ?? fechaEmision
+
+    // Recalcular preview con el IVA final (puede haberse editado en el modal)
+    const previewFinal = viajesParaCalc.length > 0 ? calcularFactura(viajesParaCalc, ivaEfectivo) : null
+
     // Validar monto mínimo FCE: solo para empresas con padrón FCE
-    if (empresaSeleccionada?.padronFce && montoMinimoFce != null && montoMinimoFce > 0 && preview) {
+    if (empresaSeleccionada?.padronFce && montoMinimoFce != null && montoMinimoFce > 0 && previewFinal) {
       // Factura A común con monto >= mínimo → debe emitir MiPyME
-      if (tipoCbteEfectivo === 1 && preview.total >= montoMinimoFce) {
+      if (tipoCbteEfectivo === 1 && previewFinal.total >= montoMinimoFce) {
         setAvisoFce("Por el monto a facturar debe emitir Factura A MiPyME.")
         return
       }
       // FCE MiPyME con monto < mínimo → debe emitir Factura A común
-      if (tipoCbteEfectivo === 201 && preview.total < montoMinimoFce) {
+      if (tipoCbteEfectivo === 201 && previewFinal.total < montoMinimoFce) {
         setAvisoFce("Por el monto a facturar corresponde emitir Factura A.")
         return
       }
     }
 
+    // Sincronizar state con los valores finales del modal
+    setIvaPct(ivaEfectivo)
+    setMetodoPago(metodoEfectivo)
+    setFechaEmision(fechaEfectiva)
+
     setGenerando(true)
     setErrorGen(null)
     try {
-      // Solo enviar ediciones de viajes seleccionados que realmente fueron editados
-      const edicionesAEnviar: Record<string, { kilos?: number; tarifaEmpresa?: number }> = {}
-      for (const id of Array.from(seleccionados)) {
-        if (ediciones[id]) edicionesAEnviar[id] = ediciones[id]
-      }
-
       const body = {
         empresaId,
         viajeIds: Array.from(seleccionados),
         tipoCbte: tipoCbteEfectivo,
         modalidadMiPymes: modalidadMiPymes ?? undefined,
-        ivaPct,
-        metodoPago,
-        fechaEmision,
-        ediciones: Object.keys(edicionesAEnviar).length > 0 ? edicionesAEnviar : undefined,
+        ivaPct: ivaEfectivo,
+        metodoPago: metodoEfectivo,
+        fechaEmision: fechaEfectiva,
         emisionArca: true,
         idempotencyKey: (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`),
       }
@@ -298,8 +311,8 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados, monto
       const data = await res.json()
       const doc = data.documento
       setSeleccionados(new Set())
-      setEdiciones({})
       setReintentableInfo(null)
+      setEnPreview(false)
       setFacturaEmitida({
         id: doc.id,
         tipoCbte: doc.tipoCbte,
@@ -322,7 +335,6 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados, monto
   function resetearFormulario() {
     setFacturaEmitida(null)
     setSeleccionados(new Set())
-    setEdiciones({})
     setTipoCbteNum(null)
     setModalidadMiPymes(null)
     setIvaPct(21)
@@ -352,7 +364,6 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados, monto
       const doc = data.documento
       setReintentableInfo(null)
       setSeleccionados(new Set())
-      setEdiciones({})
       setFacturaEmitida({
         id: doc.id,
         tipoCbte: doc.tipoCbte,
@@ -400,7 +411,6 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados, monto
             onChange={(id) => {
               setEmpresaId(id)
               setSeleccionados(new Set())
-              setEdiciones({})
               setFacturaEmitida(null)
               setTipoCbteNum(null)
               setModalidadMiPymes(null)
@@ -597,224 +607,147 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados, monto
       )}
 
       {empresaId && !facturaEmitida && !reintentableInfo && (
-        <>
-          {/* Tabla de viajes pendientes con checkboxes */}
-          <div className="space-y-3">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <h3 className="text-base font-semibold">Viajes pendientes de facturar</h3>
               <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800">
                 {viajes.length}
               </span>
-              {seleccionados.size > 0 && (
-                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800">
-                  {seleccionados.size} seleccionado(s)
-                </span>
-              )}
             </div>
-
-            {hayMezclaEnViajes && origenSeleccionado && (
-              <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-                Solo se pueden seleccionar viajes del mismo tipo ({origenSeleccionado === "propio" ? "camión propio" : "fletero"}).
-                Los viajes del otro tipo están deshabilitados.
-              </div>
-            )}
-
-            {notifCupo && (
-              <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
-                {notifCupo}
-              </div>
-            )}
-
-            {cargando ? (
-              <div className="text-center py-6 text-muted-foreground">Cargando...</div>
-            ) : viajes.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">Sin viajes pendientes de facturación para esta empresa.</div>
-            ) : (
-              <div className="overflow-x-auto rounded-lg border">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-3 py-2 text-center w-10">
-                        <input
-                          type="checkbox"
-                          checked={seleccionados.size === viajes.length && viajes.length > 0}
-                          onChange={toggleTodos}
-                          className="accent-primary"
-                        />
-                      </th>
-                      <th className="px-3 py-2 text-left">Fecha</th>
-                      <th className="px-3 py-2 text-left">CPE</th>
-                      <th className="px-3 py-2 text-left">Origen</th>
-                      <th className="px-3 py-2 text-left">Mercadería</th>
-                      <th className="px-3 py-2 text-left">Origen</th>
-                      <th className="px-3 py-2 text-left">Destino</th>
-                      <th className="px-3 py-2 text-right">Kilos</th>
-                      <th className="px-3 py-2 text-right">Tarifa Emp/ton</th>
-                      <th className="px-3 py-2 text-right">Subtotal</th>
-                      <th className="px-3 py-2 text-left">Nro LP</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {viajes.map((v) => {
-                      const kilos = getKilos(v)
-                      const tarifa = getTarifa(v)
-                      const subtotal = kilos > 0 ? calcularTotalViaje(kilos, tarifa) : null
-                      const isSelected = seleccionados.has(v.id)
-                      const lp = v.enLiquidaciones?.[0]?.liquidacion
-                      return (
-                        <tr
-                          key={v.id}
-                          className={isSelected ? "bg-blue-50" : "hover:bg-muted/30"}
-                        >
-                          <td className="px-3 py-2 text-center">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              disabled={!isSelected && !esSeleccionable(v)}
-                              onChange={() => toggleViaje(v.id)}
-                              className="accent-primary disabled:opacity-30"
-                            />
-                          </td>
-                          <td className="px-3 py-2">{formatearFecha(v.fechaViaje)}</td>
-                          <td className="px-3 py-2">
-                            {v.tieneCpe
-                              ? v.nroCartaPorte ?? "Si"
-                              : <span className="text-muted-foreground">No</span>}
-                          </td>
-                          <td className="px-3 py-2">
-                            {v.esCamionPropio
-                              ? <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">Camión propio</span>
-                              : v.fletero?.razonSocial ?? "-"}
-                          </td>
-                          <td className="px-3 py-2">{v.mercaderia ?? "-"}</td>
-                          <td className="px-3 py-2">{v.provinciaOrigen ?? v.procedencia ?? "-"}</td>
-                          <td className="px-3 py-2">{v.destino ?? v.provinciaDestino ?? "-"}</td>
-                          <td className="px-3 py-1.5 text-right">
-                            <CeldaEditable
-                              valor={kilos}
-                              tipo="number"
-                              onGuardar={(val) =>
-                                setEdiciones((prev) => ({
-                                  ...prev,
-                                  [v.id]: { ...prev[v.id], kilos: Number(val) },
-                                }))
-                              }
-                              formatear={(val) => Number(val).toLocaleString("es-AR")}
-                              className="text-right"
-                            />
-                          </td>
-                          <td className="px-3 py-1.5 text-right">
-                            <CeldaEditable
-                              valor={tarifa}
-                              tipo="number"
-                              onGuardar={(val) =>
-                                setEdiciones((prev) => ({
-                                  ...prev,
-                                  [v.id]: { ...prev[v.id], tarifaEmpresa: Number(val) },
-                                }))
-                              }
-                              formatear={(val) => formatearMoneda(Number(val))}
-                              className="text-right"
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-right font-medium">
-                            {subtotal != null ? formatearMoneda(subtotal) : "-"}
-                          </td>
-                          <td className="px-3 py-2 font-mono text-xs">
-                            {lp ? formatNroLP(lp.ptoVenta, lp.nroComprobante) : <span className="text-muted-foreground">-</span>}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+            {seleccionados.size > 0 && (
+              <button
+                onClick={() => { setErrorGen(null); setEnPreview(true) }}
+                disabled={!tipoCbteValido}
+                className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+              >
+                Facturar seleccionados ({seleccionados.size})
+              </button>
             )}
           </div>
 
-          {/* Preview de factura (solo si hay viajes seleccionados) */}
-          {preview && (
-            <div className="p-4 bg-muted/40 rounded-lg border space-y-3">
-              <h3 className="font-semibold">Preview de factura</h3>
-              {errorGen && <div className="p-3 bg-red-50 text-red-700 rounded text-sm">{errorGen}</div>}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Tipo de comprobante</label>
-                  <div className="flex items-center gap-2 h-8">
-                    <TipoCbteBadge tipoCbte={tipoCbteEfectivo ?? 1} modalidad={modalidadMiPymes ?? undefined} />
-                    <span className="text-xs text-muted-foreground">(código ARCA: {tipoCbteEfectivo})</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">IVA %</label>
-                  <input
-                    type="number"
-                    value={ivaPct}
-                    onChange={(e) => setIvaPct(parseFloat(e.target.value) || 0)}
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    className="h-8 w-28 rounded border bg-background px-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Método de Pago</label>
-                  <select
-                    value={metodoPago}
-                    onChange={(e) => setMetodoPago(e.target.value)}
-                    className="h-8 rounded border bg-background px-2 text-sm"
-                  >
-                    <option value="Transferencia Bancaria">Transferencia Bancaria</option>
-                    <option value="Cuenta Corriente">Cuenta Corriente</option>
-                    <option value="Cheque">Cheque</option>
-                    <option value="Contado">Contado</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Fecha de emisión</label>
-                  <input
-                    type="date"
-                    value={fechaEmision}
-                    onChange={(e) => setFechaEmision(e.target.value)}
-                    max={hoyLocalYmd()}
-                    min={hoyLocalYmd(new Date(Date.now() - 10 * 24 * 60 * 60 * 1000))}
-                    className="h-8 rounded border bg-background px-2 text-sm"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">ARCA permite hasta 10 días atrás</p>
-                </div>
-              </div>
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between font-medium">
-                  <span>Neto ({viajesSeleccionados.length} viaje(s)):</span>
-                  <span>{formatearMoneda(preview.neto)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>IVA ({ivaPct}%):</span>
-                  <span>+ {formatearMoneda(preview.ivaMonto)}</span>
-                </div>
-                <div className="flex justify-between font-bold text-base border-t pt-2">
-                  <span>TOTAL:</span>
-                  <span>{formatearMoneda(preview.total)}</span>
-                </div>
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => { setSeleccionados(new Set()); setEdiciones({}) }}
-                  className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-accent"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={confirmarFactura}
-                  disabled={generando || !tipoCbteValido}
-                  className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {generando ? "Generando..." : "Emitir factura"}
-                </button>
-              </div>
+          {hayMezclaEnViajes && origenSeleccionado && (
+            <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+              Solo se pueden seleccionar viajes del mismo tipo ({origenSeleccionado === "propio" ? "camión propio" : "fletero"}).
+              Los viajes del otro tipo están deshabilitados.
             </div>
           )}
-        </>
+
+          {notifCupo && (
+            <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
+              {notifCupo}
+            </div>
+          )}
+
+          {cargando ? (
+            <div className="text-center py-6 text-muted-foreground">Cargando...</div>
+          ) : viajes.length === 0 ? (
+            <div className="text-center py-6 text-muted-foreground">Sin viajes pendientes de facturación para esta empresa.</div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <input
+                        type="checkbox"
+                        checked={seleccionados.size === viajes.length && viajes.length > 0}
+                        onChange={toggleTodos}
+                      />
+                    </th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Fecha</th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Remito</th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Mercadería</th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Origen</th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Destino</th>
+                    <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Kilos</th>
+                    <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Tarifa</th>
+                    <th className="px-4 py-2 text-center text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <Pencil className="inline h-3.5 w-3.5" />
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {viajes.map((v) => {
+                    const sel = seleccionados.has(v.id)
+                    const deshabilitado = !sel && !esSeleccionable(v)
+                    return (
+                      <tr key={v.id} className={`border-b last:border-0 hover:bg-gray-100 transition-colors ${sel ? "bg-blue-50" : ""}`}>
+                        <td className="px-4 py-2">
+                          <input
+                            type="checkbox"
+                            checked={sel}
+                            disabled={deshabilitado}
+                            onChange={() => toggleViaje(v.id)}
+                            className="accent-primary disabled:opacity-30"
+                          />
+                        </td>
+                        <td className="px-4 py-2 whitespace-nowrap">{formatearFecha(v.fechaViaje)}</td>
+                        <td className="px-4 py-2 whitespace-nowrap">{v.remito || "—"}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm max-w-[120px] truncate">{v.mercaderia || "—"}</td>
+                        <td className="px-4 py-2 whitespace-nowrap">
+                          <div>
+                            <p className="text-sm">{v.procedencia || "—"}</p>
+                            {v.provinciaOrigen && <p className="text-xs text-gray-500">{v.provinciaOrigen}</p>}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 whitespace-nowrap">
+                          <div>
+                            <p className="text-sm">{v.destino || "—"}</p>
+                            {v.provinciaDestino && <p className="text-xs text-gray-500">{v.provinciaDestino}</p>}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 whitespace-nowrap text-right text-sm">{v.kilos != null ? v.kilos.toLocaleString("es-AR") : "—"}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-right text-sm font-medium">{formatearMoneda(v.tarifaEmpresa)}</td>
+                        <td className="px-4 py-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => abrirEdicionViaje(v.id)}
+                            className="inline-flex items-center justify-center h-7 w-7 rounded-md border hover:bg-gray-100 text-sm transition-colors"
+                            title="Editar viaje"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal preview factura */}
+      {enPreview && empresaSeleccionada && tipoCbteEfectivo && (
+        <ModalPreviewFactura
+          empresa={empresaSeleccionada}
+          viajes={viajesSeleccionados.map((v) => ({
+            id: v.id,
+            fechaViaje: v.fechaViaje,
+            remito: v.remito,
+            cupo: v.cupo,
+            mercaderia: v.mercaderia,
+            procedencia: v.procedencia,
+            provinciaOrigen: v.provinciaOrigen,
+            destino: v.destino,
+            provinciaDestino: v.provinciaDestino,
+            kilos: v.kilos ?? 0,
+            tarifa: v.tarifaEmpresa,
+            nroCtg: v.nroCtg,
+            cpe: v.cpe,
+          }))}
+          tipoCbte={tipoCbteEfectivo}
+          modalidadMiPymes={modalidadMiPymes}
+          ivaPctInicial={ivaPct}
+          metodoPagoInicial={metodoPago}
+          fechaEmisionDefault={fechaEmision}
+          generando={generando}
+          error={errorGen}
+          onCancelar={() => { if (!generando) { setEnPreview(false); setErrorGen(null) } }}
+          onConfirmar={(iva, metodo, fecha) => confirmarFactura(iva, metodo, fecha)}
+        />
       )}
 
       {/* Modal aviso monto mínimo FCE */}
@@ -841,6 +774,19 @@ export function FacturarEmpresaClient({ empresas, comprobantesHabilitados, monto
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal edición de viaje (mismo que en LP y resto del sistema) */}
+      {modalEditarAbierto && viajeEditando && (
+        <ModalDetalleViaje
+          viaje={viajeEditando}
+          empresas={empresas}
+          fleteros={fleteros}
+          camiones={camiones}
+          choferes={choferes}
+          onGuardar={handleGuardarViaje}
+          onCerrar={() => { setModalEditarAbierto(false); setViajeEditando(undefined) }}
+        />
       )}
     </div>
   )

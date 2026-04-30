@@ -8,6 +8,7 @@ import {
   conflictResponse,
 } from "@/lib/financial-api"
 import { crearFciSchema } from "@/lib/financial-schemas"
+import { resolverOperadorId } from "@/lib/session-utils"
 
 /**
  * GET: -> Promise<NextResponse>
@@ -72,7 +73,35 @@ export async function POST(request: NextRequest) {
     if (!cuenta) return notFoundResponse("Cuenta")
     if (existente) return conflictResponse("Ya existe un FCI con ese nombre")
 
-    const fci = await prisma.fci.create({ data: parsed.data })
+    const { saldoInicial, ...datosFci } = parsed.data
+
+    const operadorId = await resolverOperadorId(access.session.user)
+
+    const fci = await prisma.$transaction(async (tx) => {
+      const creado = await tx.fci.create({ data: datosFci })
+      if (saldoInicial !== undefined && saldoInicial > 0) {
+        await tx.saldoFci.create({
+          data: {
+            fciId: creado.id,
+            saldoInformado: saldoInicial,
+            fechaActualizacion: new Date(),
+            rendimientoPeriodo: 0,
+            operadorId,
+          },
+        })
+        // Mantener la invariante del dashboard: cuenta.saldoContable
+        // incluye la plata asignada a FCIs. Al registrar un saldo inicial
+        // "histórico" (plata que ya estaba en el FCI), aumentamos el
+        // saldoInicial de la cuenta para que saldoDisponible = saldoContable
+        // − saldoFci dé el valor correcto de caja líquida.
+        await tx.cuenta.update({
+          where: { id: datosFci.cuentaId },
+          data: { saldoInicial: { increment: saldoInicial } },
+        })
+      }
+      return creado
+    })
+
     return NextResponse.json(fci, { status: 201 })
   } catch (error) {
     return serverErrorResponse("POST /api/fci", error)

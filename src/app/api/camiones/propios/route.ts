@@ -14,7 +14,6 @@ import type { Rol } from "@/types"
 const crearCamionPropioSchema = z.object({
   patenteChasis: z.string().min(6).max(8).toUpperCase(),
   patenteAcoplado: z.string().min(6).max(8).toUpperCase().optional().nullable(),
-  tipoCamion: z.string().min(1),
 })
 
 export async function GET() {
@@ -29,7 +28,7 @@ export async function GET() {
       include: {
         choferHistorial: {
           where: { hasta: null },
-          include: { chofer: { select: { id: true, nombre: true, apellido: true, email: true, empleado: { select: { id: true, nombre: true, apellido: true } } } } },
+          include: { chofer: { select: { id: true, nombre: true, apellido: true, usuario: { select: { email: true } } } } },
           take: 1,
         },
         polizas: {
@@ -87,13 +86,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { patenteChasis, patenteAcoplado, tipoCamion } = parsed.data
+    const { patenteChasis, patenteAcoplado } = parsed.data
 
     const existente = await prisma.camion.findUnique({ where: { patenteChasis } })
     if (existente) return NextResponse.json({ error: "La patente chasis ya está registrada" }, { status: 409 })
 
     const camion = await prisma.camion.create({
-      data: { patenteChasis, patenteAcoplado, tipoCamion, esPropio: true, fleteroId: null },
+      data: { patenteChasis, patenteAcoplado, esPropio: true, fleteroId: null },
     })
 
     return NextResponse.json(camion, { status: 201 })

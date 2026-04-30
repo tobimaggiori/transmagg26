@@ -9,24 +9,26 @@ Usar como checklist. Cuando un punto se resuelve, taché.
 
 ---
 
-## 1. Estados derivados de viajes
+## 1. Estados derivados de viajes ✅ resuelto
 
-**Doc original**: `docs/facturacion-empresa.md` y `docs/liquidacion-fletero.md`
-(ahora movidos a `docs/negocio/facturacion.md` y `liquidacion.md`) describen
+**Doc original**: `docs/negocio/facturacion.md` y `liquidacion.md` describían
 estados derivados de la situación económica:
 
 - `PENDIENTE_FACTURACION`, `FACTURADO_VIGENTE`, `FACTURADO_AJUSTADO_PARCIAL`
 - `PENDIENTE_LIQUIDACION`, `LIQUIDADO_VIGENTE`, `LIQUIDADO_AJUSTADO_PARCIAL`
 
-**Código actual** (`prisma/schema.prisma`, modelo `Viaje`): solo flags
-booleanos disfrazados:
+**Código actual** (`prisma/schema.prisma`, modelo `Viaje`): flags binarios:
 
-- `estadoLiquidacion`: default `PENDIENTE_LIQUIDAR`, transiciona a `LIQUIDADO`
-- `estadoFactura`: default `PENDIENTE_FACTURAR`, transiciona a `FACTURADO`
+- `estadoLiquidacion`: `PENDIENTE_LIQUIDAR` ↔ `LIQUIDADO`
+- `estadoFactura`: `PENDIENTE_FACTURAR` ↔ `FACTURADO`
 
-**Decisión pendiente**: ¿implementar estados derivados (computados a partir
-de viaje + comprobantes vivos), o aceptar que los flags simples alcanzan y
-actualizar la doc para reflejar la realidad?
+NC parcial sin liberación de viaje no cambia estado del viaje (solo afecta
+saldo e IVA). NC con liberación (lista `viajesALiberar` en
+`src/lib/nota-cd-commands.ts`) devuelve el viaje a PENDIENTE.
+
+**Acción tomada**: docs alineadas con el código (binario simple, sin
+`*_AJUSTADO_PARCIAL`). El neto económico se reconstruye desde comprobantes,
+no desde el estado del viaje.
 
 ---
 

@@ -128,16 +128,16 @@ async function listarResumenesBancarios(desde: Date, hasta: Date): Promise<Compr
   const desdeMes = desde.getMonth() + 1
   const hastaAnio = hasta.getFullYear()
   const hastaMes = hasta.getMonth() + 1
-  const items = await prisma.resumenBancario.findMany({
+  const items = await prisma.cierreMesCuenta.findMany({
     where: {
-      pdfS3Key: { not: null },
+      pdfExtractoKey: { not: null },
       OR: [
         { anio: { gt: desdeAnio, lt: hastaAnio } },
         { anio: desdeAnio, mes: { gte: desdeMes } },
         { anio: hastaAnio, mes: { lte: hastaMes } },
       ],
     },
-    select: { id: true, mes: true, anio: true, pdfS3Key: true, cuenta: { select: { nombre: true } } },
+    select: { id: true, mes: true, anio: true, pdfExtractoKey: true, cuenta: { select: { nombre: true } } },
     orderBy: [{ anio: "desc" }, { mes: "desc" }],
   })
   return items.map((r) => ({
@@ -145,26 +145,26 @@ async function listarResumenesBancarios(desde: Date, hasta: Date): Promise<Compr
     tipo: "resumenes-bancarios",
     nombreArchivo: `RES-${r.cuenta.nombre}-${r.anio}-${String(r.mes).padStart(2, "0")}.pdf`,
     fecha: new Date(r.anio, r.mes - 1, 1),
-    r2Key: r.pdfS3Key!,
+    r2Key: r.pdfExtractoKey!,
     r2KeysExtra: [],
   }))
 }
 
 async function listarResumenesTarjeta(desde: Date, hasta: Date): Promise<ComprobanteListado[]> {
-  const items = await prisma.cierreResumenTarjeta.findMany({
-    where: { pdfS3Key: { not: null }, fechaPago: { gte: desde, lte: hasta } },
+  const items = await prisma.resumenTarjeta.findMany({
+    where: { s3Key: { not: null }, fechaVtoPago: { gte: desde, lte: hasta } },
     select: {
-      id: true, mesAnio: true, fechaPago: true, pdfS3Key: true,
+      id: true, periodo: true, fechaVtoPago: true, s3Key: true,
       tarjeta: { select: { nombre: true } },
     },
-    orderBy: { fechaPago: "desc" },
+    orderBy: { fechaVtoPago: "desc" },
   })
   return items.map((t) => ({
     id: t.id,
     tipo: "resumenes-tarjeta",
-    nombreArchivo: `TARJ-${t.tarjeta.nombre}-${t.mesAnio}.pdf`,
-    fecha: t.fechaPago,
-    r2Key: t.pdfS3Key!,
+    nombreArchivo: `TARJ-${t.tarjeta.nombre}-${t.periodo}.pdf`,
+    fecha: t.fechaVtoPago,
+    r2Key: t.s3Key!,
     r2KeysExtra: [],
   }))
 }
@@ -220,17 +220,23 @@ export async function limpiarKeysEnBD(comprobantes: ComprobanteListado[]): Promi
     "ordenes-pago": "ordenPago",
     "recibos-cobranza": "reciboCobranza",
     "facturas-proveedor": "facturaProveedor",
-    "resumenes-bancarios": "resumenBancario",
-    "resumenes-tarjeta": "cierreResumenTarjeta",
+    "resumenes-bancarios": "cierreMesCuenta",
+    "resumenes-tarjeta": "resumenTarjeta",
   }
 
   for (const [tipo, ids] of Array.from(porTipo.entries())) {
     const model = modelMap[tipo]
     if (!model) continue
+    const keyField =
+      tipo === "resumenes-tarjeta"
+        ? "s3Key"
+        : tipo === "resumenes-bancarios"
+        ? "pdfExtractoKey"
+        : "pdfS3Key"
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (prisma as any)[model].updateMany({
       where: { id: { in: ids } },
-      data: { pdfS3Key: null },
+      data: { [keyField]: null },
     })
   }
 }

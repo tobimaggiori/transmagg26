@@ -1,7 +1,11 @@
 /**
  * API Route: GET /api/dashboard-financiero/deuda-fleteros
- * Devuelve el desglose de deuda a fleteros con detalle de liquidaciones.
- * Solo accesible para ADMIN_TRANSMAGG y OPERADOR_TRANSMAGG.
+ * Devuelve el desglose de deuda a fleteros con detalle de liquidaciones y NC/ND.
+ *
+ * NC/ND: NC_EMITIDA/ND_EMITIDA a un fletero (vía liquidacion.fleteroId) con
+ * `montoTotal > montoDescontado` se consideran pendientes. NC baja deuda,
+ * ND la sube. Cuando una NC se aplica a una OP (vía NCDescuento) su
+ * montoDescontado sube; al igualar montoTotal, desaparece.
  */
 
 import { NextResponse } from "next/server"
@@ -9,38 +13,64 @@ import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
 import { sumarImportes, maxMonetario, restarImportes } from "@/lib/money"
 
-/**
- * GET: -> Promise<NextResponse>
- *
- * Dado [ningún parámetro], devuelve [la lista de fleteros con saldo a pagar > 0 y el detalle
- * de sus liquidaciones EMITIDAS con saldo pendiente].
- * Solo incluye liquidaciones en estado "EMITIDA" con saldo > 0 (sin pagar o con pago parcial).
- * Esta función existe para mostrar el desglose de deuda a fleteros en el modal del dashboard.
- *
- * Ejemplos:
- * GET() === NextResponse.json([{ fleteroId, razonSocial, cuit, totalLiquidado, totalPagado, saldoAPagar, liquidaciones }])
- * GET() === NextResponse.json([{ fleteroId: "...", saldoAPagar: 80000, liquidaciones: [{ id, grabadaEn, total, totalPagado, saldo, estado, nroComprobante, ptoVenta, pdfS3Key }] }])
- * GET() === NextResponse.json([])
- */
 export async function GET() {
   const access = await requireFinancialAccess()
   if (!access.ok) return access.response
 
   try {
-    const fleteros = await prisma.fletero.findMany({
-      where: { activo: true },
-      include: {
-        liquidaciones: {
-          where: {
-            estado: { in: ["EMITIDA", "PARCIALMENTE_PAGADA"] },
-            pagos: { none: { ordenPagoId: { not: null }, anulado: false } },
+    const [fleteros, notasRaw] = await Promise.all([
+      prisma.fletero.findMany({
+        where: { activo: true },
+        include: {
+          liquidaciones: {
+            where: {
+              estado: { in: ["EMITIDA", "PARCIALMENTE_PAGADA"] },
+              pagos: { none: { ordenPagoId: { not: null }, anulado: false } },
+            },
+            include: { pagos: { select: { monto: true } } },
+            orderBy: { grabadaEn: "desc" },
           },
-          include: { pagos: { select: { monto: true } } },
-          orderBy: { grabadaEn: "desc" },
         },
-      },
-      orderBy: { razonSocial: "asc" },
-    })
+        orderBy: { razonSocial: "asc" },
+      }),
+      prisma.notaCreditoDebito.findMany({
+        where: {
+          tipo: { in: ["NC_EMITIDA", "ND_EMITIDA"] },
+          liquidacionId: { not: null },
+        },
+        select: {
+          id: true, tipo: true, tipoCbte: true,
+          nroComprobante: true, ptoVenta: true,
+          montoTotal: true, montoDescontado: true, creadoEn: true,
+          liquidacion: { select: { fleteroId: true } },
+        },
+      }),
+    ])
+
+    const notasPorFletero = new Map<string, Array<{
+      id: string; tipo: "NC_EMITIDA" | "ND_EMITIDA"
+      tipoCbte: number | null; nroComprobante: number | null; ptoVenta: number | null
+      monto: number; signo: -1 | 1; emitidaEn: string
+    }>>()
+    for (const n of notasRaw) {
+      const fleteroId = n.liquidacion?.fleteroId
+      if (!fleteroId) continue
+      const saldo = restarImportes(Number(n.montoTotal), Number(n.montoDescontado))
+      if (saldo <= 0) continue
+      const fila = {
+        id: n.id,
+        tipo: n.tipo as "NC_EMITIDA" | "ND_EMITIDA",
+        tipoCbte: n.tipoCbte,
+        nroComprobante: n.nroComprobante,
+        ptoVenta: n.ptoVenta,
+        monto: saldo,
+        signo: (n.tipo === "NC_EMITIDA" ? -1 : 1) as -1 | 1,
+        emitidaEn: n.creadoEn.toISOString(),
+      }
+      const arr = notasPorFletero.get(fleteroId) ?? []
+      arr.push(fila)
+      notasPorFletero.set(fleteroId, arr)
+    }
 
     const resultado = fleteros.map((flet) => {
       const liquidaciones = flet.liquidaciones
@@ -56,14 +86,19 @@ export async function GET() {
             estado: l.estado,
             nroComprobante: l.nroComprobante,
             ptoVenta: l.ptoVenta,
-            pdfS3Key: null as string | null, // campo reservado para futura integración S3
+            tipoCbte: l.tipoCbte,
+            pdfS3Key: null as string | null,
           }
         })
         .filter((l) => l.saldo > 0)
 
+      const notas = notasPorFletero.get(flet.id) ?? []
+
       const totalLiquidado = sumarImportes(liquidaciones.map((l) => l.total))
       const totalPagado = sumarImportes(liquidaciones.map((l) => l.totalPagado))
-      const saldoAPagar = sumarImportes(liquidaciones.map((l) => l.saldo))
+      const saldoLiqs = sumarImportes(liquidaciones.map((l) => l.saldo))
+      const saldoNotas = notas.reduce((acc, n) => acc + n.monto * n.signo, 0)
+      const saldoAPagar = maxMonetario(0, saldoLiqs + saldoNotas)
 
       return {
         fleteroId: flet.id,
@@ -73,9 +108,10 @@ export async function GET() {
         totalPagado,
         saldoAPagar,
         liquidaciones,
+        notas,
       }
     })
-      .filter((f) => f.saldoAPagar > 0)
+      .filter((f) => f.saldoAPagar > 0 || f.notas.length > 0)
       .sort((a, b) => b.saldoAPagar - a.saldoAPagar)
 
     return NextResponse.json(resultado)

@@ -8,6 +8,7 @@
 
 import { prisma } from "@/lib/prisma"
 import { sumarImportes, importesIguales, esMayorQueCero } from "@/lib/money"
+import { registrarMovimiento } from "@/lib/movimiento-cuenta"
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -140,23 +141,22 @@ export async function ejecutarAnularPagoFletero(
       })
     }
 
-    // 5. Transferencia: crear movimiento de reversion
+    // 5. Transferencia: crear movimiento de reversion (mismo pagoAFleteroId)
     if (pago.tipoPago === "TRANSFERENCIA" && pago.cuentaId && pago.liquidacion) {
       const liq = pago.liquidacion
       const nroLiq =
         liq.nroComprobante != null
           ? `${String(liq.ptoVenta ?? 1).padStart(4, "0")}-${String(liq.nroComprobante).padStart(8, "0")}`
           : "s/n"
-      await tx.movimientoSinFactura.create({
-        data: {
-          cuentaId: pago.cuentaId,
-          tipo: "INGRESO",
-          categoria: "OTRO",
-          monto: pago.monto,
-          fecha: new Date(),
-          descripcion: `REVERSIÓN Pago LP ${nroLiq} — ${liq.fletero.razonSocial} (anulado: ${justificacion})`,
-          operadorId,
-        },
+      await registrarMovimiento(tx, {
+        cuentaId: pago.cuentaId,
+        tipo: "INGRESO",
+        categoria: "OTRO",
+        monto: pago.monto,
+        fecha: new Date(),
+        descripcion: `REVERSIÓN Pago LP ${nroLiq} — ${liq.fletero.razonSocial} (anulado: ${justificacion})`,
+        pagoAFleteroId: pago.id,
+        operadorCreacionId: operadorId,
       })
     }
 
@@ -294,19 +294,18 @@ export async function ejecutarAnularPagoProveedor(
       })
     }
 
-    // 5. Transferencia: crear movimiento de reversion
+    // 5. Transferencia: crear movimiento de reversion (mismo pagoProveedorId)
     if (pago.tipo === "TRANSFERENCIA" && pago.cuentaId) {
       const fact = pago.facturaProveedor
-      await tx.movimientoSinFactura.create({
-        data: {
-          cuentaId: pago.cuentaId,
-          tipo: "INGRESO",
-          categoria: "OTRO",
-          monto: pago.monto,
-          fecha: new Date(),
-          descripcion: `REVERSIÓN Pago Factura ${fact.tipoCbte} ${fact.nroComprobante} — ${fact.proveedor.razonSocial} (anulado: ${justificacion})`,
-          operadorId,
-        },
+      await registrarMovimiento(tx, {
+        cuentaId: pago.cuentaId,
+        tipo: "INGRESO",
+        categoria: "OTRO",
+        monto: pago.monto,
+        fecha: new Date(),
+        descripcion: `REVERSIÓN Pago Factura ${fact.tipoCbte} ${fact.nroComprobante} — ${fact.proveedor.razonSocial} (anulado: ${justificacion})`,
+        pagoProveedorId: pago.id,
+        operadorCreacionId: operadorId,
       })
     }
 

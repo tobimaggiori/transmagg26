@@ -2,24 +2,7 @@ import { z } from "zod"
 
 export const cuentaTipoSchema = z.enum(["BANCO", "BILLETERA_VIRTUAL", "BROKER"])
 export const monedaSchema = z.enum(["PESOS", "DOLARES", "OTRO"])
-export const formatoReconciliacionSchema = z.enum(["PDF", "EXCEL", "AMBOS"])
 export const movimientoFciTipoSchema = z.enum(["SUSCRIPCION", "RESCATE"])
-export const movimientoBancarioTipoSchema = z.enum([
-  "CHEQUE_DEPOSITADO",
-  "CHEQUE_EMITIDO_DEBITADO",
-  "TRANSFERENCIA_RECIBIDA",
-  "TRANSFERENCIA_ENVIADA",
-  "TRANSFERENCIA_ENTRE_CUENTAS_PROPIAS",
-  "ENVIO_A_BROKER",
-  "RESCATE_DE_BROKER",
-  "INTERES_CUENTA_REMUNERADA",
-  "PAGO_SERVICIO",
-  "MANTENIMIENTO_CUENTA",
-  "PAGO_TARJETA",
-  "DESCUENTO_CHEQUE_BANCO",
-  "PAGO_SUELDO",
-  "OTRO",
-])
 export const chequeRecibidoEstadoSchema = z.enum([
   "EN_CARTERA",
   "DEPOSITADO",
@@ -39,7 +22,6 @@ export const endosadoATipoSchema = z.enum(["FLETERO", "PROVEEDOR", "BROKER"])
 export const tipoDocBeneficiarioSchema = z.enum(["CUIT", "CUIL", "CDI"])
 export const motivoPagoChequeSchema = z.enum(["VARIOS", "FACTURA", "ORDEN_DE_PAGO", "ALQUILER", "EXPENSAS", "SERVICIOS", "ADELANTO"])
 export const clausulaChequeSchema = z.enum(["A_LA_ORDEN", "NO_A_LA_ORDEN"])
-export const estadoPlanillaGaliciaSchema = z.enum(["BORRADOR", "DESCARGADA", "PROCESADA"])
 export const tipoGastoTarjetaPrepagaSchema = z.enum([
   "COMBUSTIBLE",
   "PEAJE",
@@ -62,32 +44,63 @@ export const estadoAdelantoFleteroSchema = z.enum([
   "DESCONTADO_TOTAL",
 ])
 
-export const crearCuentaSchema = z.object({
+const cuentaBaseSchema = z.object({
   nombre: z.string().min(1, "El nombre es obligatorio"),
   tipo: cuentaTipoSchema,
-  bancoOEntidad: z.string().min(1, "La entidad es obligatoria"),
+  bancoId: z.string().uuid().nullable().optional(),
+  billeteraId: z.string().uuid().nullable().optional(),
+  brokerId: z.string().uuid().nullable().optional(),
   moneda: monedaSchema,
   saldoInicial: z.number(),
+  fechaSaldoInicial: z.coerce.date().nullable().optional(),
   activa: z.boolean().default(true),
   cerradaEn: z.coerce.date().nullable().optional(),
   tieneImpuestoDebcred: z.boolean().default(false),
   alicuotaImpuesto: z.number().min(0).default(0.006),
   tieneChequera: z.boolean().default(false),
-  tienePlanillaEmisionMasiva: z.boolean().default(false),
-  formatoPlanilla: z.string().nullable().optional(),
   tieneCuentaRemunerada: z.boolean().default(false),
   tieneTarjetasPrepagasChoferes: z.boolean().default(false),
-  formatoReconciliacion: formatoReconciliacionSchema.nullable().optional(),
   esCuentaComitenteBroker: z.boolean().default(false),
   tieneIibbSircrebTucuman: z.boolean().default(false),
   alicuotaIibbSircrebTucuman: z.number().min(0).default(0.06),
-  cuentaPadreId: z.string().uuid().nullable().optional(),
   nroCuenta: z.string().nullable().optional(),
   cbu: z.string().nullable().optional(),
   alias: z.string().nullable().optional(),
 })
 
-export const actualizarCuentaSchema = crearCuentaSchema.partial()
+export const crearCuentaSchema = cuentaBaseSchema.refine(
+  (d) => {
+    if (d.tipo === "BANCO") return !!d.bancoId && !d.billeteraId && !d.brokerId
+    if (d.tipo === "BILLETERA_VIRTUAL") return !!d.billeteraId && !d.bancoId && !d.brokerId
+    if (d.tipo === "BROKER") return !!d.brokerId && !d.bancoId && !d.billeteraId
+    return false
+  },
+  {
+    message:
+      "Cada tipo debe asociarse a su entidad maestra: BANCO→bancoId, BILLETERA_VIRTUAL→billeteraId, BROKER→brokerId (y no a otra)",
+    path: ["tipo"],
+  },
+)
+
+export const actualizarCuentaSchema = cuentaBaseSchema.partial()
+
+export const crearBancoSchema = z.object({
+  nombre: z.string().min(1, "El nombre del banco es obligatorio").max(120),
+})
+
+export const actualizarBancoSchema = z.object({
+  nombre: z.string().min(1).max(120).optional(),
+  activo: z.boolean().optional(),
+})
+
+export const crearBilleteraVirtualSchema = z.object({
+  nombre: z.string().min(1, "El nombre de la billetera es obligatorio").max(120),
+})
+
+export const actualizarBilleteraVirtualSchema = z.object({
+  nombre: z.string().min(1).max(120).optional(),
+  activa: z.boolean().optional(),
+})
 
 export const crearFciSchema = z.object({
   nombre: z.string().min(1, "El nombre es obligatorio"),
@@ -95,6 +108,7 @@ export const crearFciSchema = z.object({
   moneda: monedaSchema,
   activo: z.boolean().default(true),
   diasHabilesAlerta: z.number().int().min(1).default(1),
+  saldoInicial: z.number().min(0).optional(),
 })
 
 export const actualizarFciSchema = crearFciSchema.partial()
@@ -121,44 +135,26 @@ export const actualizarSaldoFciSchema = crearSaldoFciSchema.partial()
 export const crearBrokerSchema = z.object({
   nombre: z.string().min(1, "El nombre es obligatorio"),
   cuit: z.string().regex(/^\d{11}$/, "CUIT debe tener 11 dígitos"),
-  cuentaId: z.string().uuid("Cuenta inválida"),
-  activo: z.boolean().default(true),
 })
 
-export const actualizarBrokerSchema = crearBrokerSchema.partial()
+export const actualizarBrokerSchema = z.object({
+  nombre: z.string().min(1).max(120).optional(),
+  cuit: z.string().regex(/^\d{11}$/, "CUIT debe tener 11 dígitos").optional(),
+  activo: z.boolean().optional(),
+})
 
 export const crearEmpleadoSchema = z.object({
   usuarioId: z.string().uuid("Usuario inválido").nullable().optional(),
+  fleteroId: z.string().uuid("Fletero inválido").nullable().optional(),
   nombre: z.string().min(1, "El nombre es obligatorio"),
   apellido: z.string().min(1, "El apellido es obligatorio"),
-  cuit: z.string().regex(/^\d{11}$/, "CUIT debe tener 11 dígitos"),
+  cuit: z.string().regex(/^\d{11}$/, "CUIT/CUIL debe tener 11 dígitos"),
   cargo: z.string().nullable().optional(),
   fechaIngreso: z.coerce.date(),
   activo: z.boolean().default(true),
 })
 
 export const actualizarEmpleadoSchema = crearEmpleadoSchema.partial()
-
-export const crearMovimientoBancarioSchema = z.object({
-  cuentaId: z.string().uuid("Cuenta inválida"),
-  tipo: movimientoBancarioTipoSchema,
-  monto: z.number(),
-  fecha: z.coerce.date(),
-  descripcion: z.string().min(1, "La descripción es obligatoria"),
-  referencia: z.string().nullable().optional(),
-  comprobanteS3Key: z.string().nullable().optional(),
-  impuestoDebitoAplica: z.boolean().optional(),
-  impuestoDebitoMonto: z.number().optional(),
-  impuestoCreditoAplica: z.boolean().optional(),
-  impuestoCreditoMonto: z.number().optional(),
-  otrosDescuentosDescripcion: z.string().nullable().optional(),
-  otrosDescuentosMonto: z.number().default(0),
-  cuentaDestinoId: z.string().uuid("Cuenta destino inválida").nullable().optional(),
-  cuentaBrokerId: z.string().uuid("Cuenta broker inválida").nullable().optional(),
-  empleadoId: z.string().uuid("Empleado inválido").nullable().optional(),
-})
-
-export const actualizarMovimientoBancarioSchema = crearMovimientoBancarioSchema.partial()
 
 export const crearChequeRecibidoSchema = z.object({
   empresaId: z.string().uuid("Empresa inválida").optional(),
@@ -200,7 +196,6 @@ export const crearChequeEmitidoSchema = z.object({
   estado: chequeEmitidoEstadoSchema.default("PENDIENTE_EMISION"),
   fechaDeposito: z.coerce.date().nullable().optional(),
   liquidacionId: z.string().uuid("Liquidación inválida").nullable().optional(),
-  planillaGaliciaId: z.string().uuid("Planilla inválida").nullable().optional(),
 })
 
 export const actualizarChequeEmitidoSchema = crearChequeEmitidoSchema.partial()
@@ -214,17 +209,6 @@ export const registrarDepositoChequeEmitidoSchema = z.object({
   otrosDescuentosMonto: z.number().default(0),
   descripcion: z.string().min(1).default("Débito por cheque emitido depositado"),
 })
-
-export const crearPlanillaGaliciaSchema = z.object({
-  nombre: z.string().min(1, "El nombre es obligatorio"),
-  cuentaId: z.string().uuid("Cuenta inválida"),
-  estado: estadoPlanillaGaliciaSchema.default("BORRADOR"),
-  totalMonto: z.number().min(0),
-  cantidadCheques: z.number().int().min(0).max(250),
-  xlsxS3Key: z.string().nullable().optional(),
-})
-
-export const actualizarPlanillaGaliciaSchema = crearPlanillaGaliciaSchema.partial()
 
 export const crearTarjetaPrepagaSchema = z.object({
   choferId: z.string().uuid("Chofer inválido"),
@@ -324,6 +308,7 @@ export const crearNotaCDSchema = z.object({
   facturaId: z.string().uuid().optional(),
   liquidacionId: z.string().uuid().optional(),
   chequeRecibidoId: z.string().uuid().optional(),
+  facturaProveedorId: z.string().uuid().optional(),
   montoNeto: z.number().positive(),
   ivaPct: z.number().min(0).max(100).default(21),
   descripcion: z.string().min(1),
@@ -336,6 +321,9 @@ export const crearNotaCDSchema = z.object({
   incluirComision: z.boolean().optional(),
   emisionArca: z.boolean().optional(),
   idempotencyKey: z.string().uuid().optional(),
+  percepcionIIBB: z.number().min(0).optional(),
+  percepcionIVA: z.number().min(0).optional(),
+  percepcionGanancias: z.number().min(0).optional(),
 })
 
 /**

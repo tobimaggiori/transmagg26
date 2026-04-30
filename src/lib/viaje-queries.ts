@@ -21,6 +21,9 @@ type FiltrosViaje = {
   desde?: string | null
   hasta?: string | null
   remito?: string | null
+  cupo?: string | null
+  cpe?: string | null
+  nroCtg?: string | null
   nroLP?: string | null
   nroFactura?: string | null
 }
@@ -62,7 +65,8 @@ export async function construirWhereViajes(
   if (rol === "FLETERO") {
     where.fletero = { usuario: { email } }
   } else if (rol === "CHOFER") {
-    where.chofer = { email }
+    // Empleado-chofer logueado: Viaje.chofer → Empleado → usuario (login).
+    where.chofer = { usuario: { email } }
   } else if (esRolEmpresa(rol)) {
     const empresaId = await resolverEmpresaIdPorEmail(email)
     if (!empresaId) return { ok: true, where: { id: "__none__" } } // sin empresa → sin viajes
@@ -94,6 +98,15 @@ export async function construirWhereViajes(
   if (filtros.remito) {
     where.remito = { contains: filtros.remito }
   }
+  if (filtros.cupo) {
+    where.cupo = { contains: filtros.cupo }
+  }
+  if (filtros.cpe) {
+    where.cpe = { contains: filtros.cpe }
+  }
+  if (filtros.nroCtg) {
+    where.nroCtg = { contains: filtros.nroCtg }
+  }
   if (filtros.nroLP) {
     const nro = parseInt(filtros.nroLP, 10)
     if (!isNaN(nro)) {
@@ -115,7 +128,7 @@ type DatosCrearViaje = {
   camionId: string
   choferId: string
   empresaId: string
-  nroCartaPorte?: string | null
+  nroCtg?: string | null
   remito?: string | null
 }
 
@@ -135,7 +148,7 @@ type ResultadoValidacion =
  * - Si es camión propio, el camión debe ser propio
  * - Chofer existe y está activo
  * - Empresa existe y está activa
- * - Carta de porte no duplicada
+ * - CTG no duplicado
  *
  * Ejemplos:
  * validarEntidadesViaje({ esCamionPropio: false, fleteroId: "f1", camionId: "c1", choferId: "ch1", empresaId: "e1" })
@@ -149,7 +162,7 @@ export async function validarEntidadesViaje(datos: DatosCrearViaje): Promise<Res
       ? prisma.fletero.findUnique({ where: { id: datos.fleteroId, activo: true } })
       : Promise.resolve(datos.esCamionPropio ? true : null),
     prisma.camion.findUnique({ where: { id: datos.camionId, activo: true } }),
-    prisma.usuario.findUnique({ where: { id: datos.choferId, activo: true } }),
+    prisma.empleado.findUnique({ where: { id: datos.choferId, activo: true } }),
     prisma.empresa.findUnique({ where: { id: datos.empresaId, activa: true } }),
   ])
 
@@ -161,10 +174,10 @@ export async function validarEntidadesViaje(datos: DatosCrearViaje): Promise<Res
   if (!chofer) return { ok: false, status: 404, error: "Chofer no encontrado" }
   if (!empresa) return { ok: false, status: 404, error: "Empresa no encontrada" }
 
-  if (datos.nroCartaPorte) {
-    const existente = await prisma.viaje.findFirst({ where: { nroCartaPorte: datos.nroCartaPorte } })
+  if (datos.nroCtg) {
+    const existente = await prisma.viaje.findFirst({ where: { nroCtg: datos.nroCtg } })
     if (existente) {
-      return { ok: false, status: 409, error: `Ya existe un viaje con la carta de porte ${datos.nroCartaPorte}` }
+      return { ok: false, status: 409, error: `Ya existe un viaje con el CTG ${datos.nroCtg}` }
     }
   }
 

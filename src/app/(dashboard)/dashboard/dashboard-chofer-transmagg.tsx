@@ -34,7 +34,6 @@ type CamionData = {
   id: string
   patenteChasis: string
   patenteAcoplado: string | null
-  tipoCamion: string
   polizaActual: Poliza | null
 } | null
 
@@ -77,7 +76,7 @@ type EmpleadoData = {
 }
 
 type Props = {
-  usuario: { nombre: string; apellido: string; email: string }
+  usuario: { nombre: string; apellido: string; email: string | null }
   empleado: EmpleadoData
   camion: CamionData
   tarjeta: TarjetaData
@@ -195,10 +194,6 @@ function CardCamion({ camion }: { camion: CamionData }) {
               <span>{camion.patenteAcoplado}</span>
             </div>
           )}
-          <div className="flex gap-2">
-            <span className="w-24 text-muted-foreground shrink-0">Tipo</span>
-            <span>{camion.tipoCamion}</span>
-          </div>
         </div>
       )}
     </div>

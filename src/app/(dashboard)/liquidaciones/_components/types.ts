@@ -34,7 +34,8 @@ export type ViajeParaLiquidar = {
   tarifaFletero: number
   tarifaEmpresa: number
   estadoFactura: string
-  nroCartaPorte?: string | null
+  nroCtg?: string | null
+  cpe?: string | null
   // editados localmente
   kilosEdit?: number
   tarifaEdit?: number
@@ -127,4 +128,8 @@ export type EntradaHistorial = {
   operador: { nombre: string; apellido: string }
 }
 
-export type CuentaBancaria = { id: string; nombre: string; bancoOEntidad: string }
+export type CuentaBancaria = {
+  id: string
+  nombre: string
+  banco: { id: string; nombre: string } | null
+}

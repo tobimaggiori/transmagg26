@@ -6,7 +6,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { puedeAcceder, esRolInterno } from "@/lib/permissions"
+import { tienePermiso, esRolInterno } from "@/lib/permissions"
 import { NuevoReciboClient } from "./nuevo-recibo-client"
 import type { Rol } from "@/types"
 
@@ -15,7 +15,7 @@ export default async function NuevoReciboPage() {
   if (!session?.user) redirect("/login")
 
   const rol = session.user.rol as Rol
-  if (!puedeAcceder(rol, "facturas") || !esRolInterno(rol)) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "facturas")) || !esRolInterno(rol)) redirect("/dashboard")
 
   const [empresas, cuentas] = await Promise.all([
     prisma.empresa.findMany({
@@ -24,14 +24,12 @@ export default async function NuevoReciboPage() {
       orderBy: { razonSocial: "asc" },
     }),
     prisma.cuenta.findMany({
-      where: {
-        activa: true,
-        OR: [
-          { cuentaPadreId: { not: null } },
-          { tipo: { not: "BANCO" } },
-        ],
+      where: { activa: true },
+      select: {
+        id: true,
+        nombre: true,
+        banco: { select: { id: true, nombre: true } },
       },
-      select: { id: true, nombre: true, bancoOEntidad: true },
       orderBy: { nombre: "asc" },
     }),
   ])

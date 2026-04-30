@@ -18,13 +18,14 @@ interface Movimiento {
   debe: number
   haber: number
   saldo: number
+  pdfEndpoint: string | null
 }
 
 /**
  * capitalize: string -> string
  *
  * Dado un string, devuelve el mismo con la primera letra en mayúscula.
- * Existe para formatear los valores de tipoPago provenientes del enum.
+ * Existe para formatear valores enum (tipoPago / tipo adelanto) para UI.
  *
  * Ejemplos:
  * capitalize("transferencia bancaria") === "Transferencia bancaria"
@@ -36,17 +37,49 @@ function capitalize(s: string): string {
 }
 
 /**
+ * formatearNroComprobante: (number | null, number | null) -> string
+ *
+ * Dado un pto de venta y un nro de comprobante opcionales, devuelve el string
+ * canónico "PPPP-NNNNNNNN" (con padStart) o una cadena vacía si falta info.
+ *
+ * Ejemplos:
+ * formatearNroComprobante(1, 42) === "0001-00000042"
+ * formatearNroComprobante(null, 42) === ""
+ */
+function formatearNroComprobante(ptoVenta: number | null, nro: number | null): string {
+  if (ptoVenta == null || nro == null) return ""
+  return `${String(ptoVenta).padStart(4, "0")}-${String(nro).padStart(8, "0")}`
+}
+
+/**
+ * signedUrl: (string | null | undefined) -> string | null
+ *
+ * Dada una key de R2 opcional, devuelve el endpoint de signed-url firmado
+ * que el client puede consumir. null si no hay key.
+ *
+ * Ejemplos:
+ * signedUrl("liquidaciones/abc.pdf") === "/api/storage/signed-url?key=liquidaciones%2Fabc.pdf"
+ * signedUrl(null) === null
+ */
+function signedUrl(key: string | null | undefined): string | null {
+  if (!key) return null
+  return `/api/storage/signed-url?key=${encodeURIComponent(key)}`
+}
+
+/**
  * GET: NextRequest { params: { id } } -> Promise<NextResponse>
  *
  * Dado el id de un fletero y los query params desde/hasta,
  * devuelve los movimientos cronológicos de su cuenta corriente:
  * liquidaciones (DEBE — Transmagg le debe), pagos realizados (HABER),
- * y notas de crédito/débito vinculadas a sus liquidaciones.
+ * notas de crédito/débito vinculadas a sus liquidaciones, gastos ingresados
+ * (HABER — reducen lo que Transmagg le debe) y adelantos entregados (HABER).
+ * Calcula saldo acumulado por movimiento.
  * Solo accesible para roles internos (ADMIN_TRANSMAGG, OPERADOR_TRANSMAGG).
  *
  * Ejemplos:
  * GET /api/fleteros/f1/cuenta-corriente
- * // => { fletero, movimientos: [...], totalDebe, totalHaber, saldoFinal }
+ * // => { fletero, movimientos: [...], totalDebe, totalHaber, saldoFinal, desde, hasta }
  * GET /api/fleteros/noexiste/cuenta-corriente
  * // => 404 { error: "Fletero no encontrado" }
  */
@@ -68,19 +101,20 @@ export async function GET(
 
     const { searchParams } = new URL(request.url)
     const hoy = new Date()
-    const noventa = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
 
     const desdeParam = searchParams.get("desde")
     const hastaParam = searchParams.get("hasta")
 
-    const desdeDate = desdeParam ? new Date(desdeParam) : noventa
+    const desdeDate = desdeParam ? new Date(desdeParam) : null
     const hastaDate = hastaParam ? new Date(hastaParam + "T23:59:59") : hoy
 
-    const [liquidaciones, pagos, notasCreditoDebito, gastosFletero, gastoDescuentos] = await Promise.all([
+    const rangoFecha = { ...(desdeDate ? { gte: desdeDate } : {}), lte: hastaDate }
+
+    const [liquidaciones, pagos, notasCreditoDebito, gastos, adelantos] = await Promise.all([
       prisma.liquidacion.findMany({
         where: {
           fleteroId: params.id,
-          grabadaEn: { gte: desdeDate, lte: hastaDate },
+          grabadaEn: rangoFecha,
         },
         select: {
           id: true,
@@ -93,7 +127,7 @@ export async function GET(
       prisma.pagoAFletero.findMany({
         where: {
           fleteroId: params.id,
-          fechaPago: { gte: desdeDate, lte: hastaDate },
+          fechaPago: rangoFecha,
           anulado: false,
         },
         select: {
@@ -102,18 +136,22 @@ export async function GET(
           monto: true,
           tipoPago: true,
           referencia: true,
+          comprobanteS3Key: true,
+          ordenPago: { select: { id: true, nro: true, anio: true, pdfS3Key: true } },
         },
       }),
       prisma.notaCreditoDebito.findMany({
         where: {
           liquidacion: { fleteroId: params.id },
-          creadoEn: { gte: desdeDate, lte: hastaDate },
+          creadoEn: rangoFecha,
         },
         select: {
           id: true,
           creadoEn: true,
           tipo: true,
           montoTotal: true,
+          nroComprobante: true,
+          ptoVenta: true,
           nroComprobanteExterno: true,
         },
       }),
@@ -121,8 +159,8 @@ export async function GET(
         where: {
           fleteroId: params.id,
           OR: [
-            { facturaProveedor: { fechaCbte: { gte: desdeDate, lte: hastaDate } } },
-            { sinFactura: true, creadoEn: { gte: desdeDate, lte: hastaDate } },
+            { facturaProveedor: { fechaCbte: rangoFecha } },
+            { sinFactura: true, creadoEn: rangoFecha },
           ],
         },
         select: {
@@ -136,21 +174,43 @@ export async function GET(
               fechaCbte: true,
               tipoCbte: true,
               nroComprobante: true,
+              pdfS3Key: true,
               proveedor: { select: { razonSocial: true } },
+            },
+          },
+          descuentos: {
+            orderBy: { fecha: "asc" },
+            take: 1,
+            select: {
+              liquidacion: {
+                select: {
+                  pagos: {
+                    where: { anulado: false, ordenPagoId: { not: null } },
+                    take: 1,
+                    select: {
+                      ordenPago: {
+                        select: { id: true, nro: true, anio: true, pdfS3Key: true },
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
         },
       }),
-      prisma.gastoDescuento.findMany({
+      prisma.adelantoFletero.findMany({
         where: {
-          gasto: { fleteroId: params.id },
-          fecha: { gte: desdeDate, lte: hastaDate },
+          fleteroId: params.id,
+          fecha: rangoFecha,
         },
         select: {
           id: true,
-          montoDescontado: true,
           fecha: true,
-          liquidacion: { select: { nroComprobante: true, ptoVenta: true } },
+          monto: true,
+          tipo: true,
+          descripcion: true,
+          comprobanteS3Key: true,
         },
       }),
     ])
@@ -158,97 +218,91 @@ export async function GET(
     const movimientos: (Omit<Movimiento, "saldo"> & { fechaRaw: Date })[] = []
 
     for (const l of liquidaciones) {
+      const nro = formatearNroComprobante(l.ptoVenta, l.nroComprobante)
       movimientos.push({
         fechaRaw: l.grabadaEn,
         fecha: l.grabadaEn.toISOString(),
         concepto: "Liquidación",
-        comprobante: `${l.ptoVenta ?? 1}-${l.nroComprobante ?? "s/n"}`,
+        comprobante: nro || "s/n",
         debe: l.total,
         haber: 0,
+        pdfEndpoint: `/api/liquidaciones/${l.id}/pdf`,
       })
     }
 
     for (const p of pagos) {
+      const pdfEndpoint = p.ordenPago?.pdfS3Key
+        ? signedUrl(p.ordenPago.pdfS3Key)
+        : p.ordenPago
+        ? `/api/ordenes-pago/${p.ordenPago.id}/pdf`
+        : signedUrl(p.comprobanteS3Key)
+      const comprobante = p.ordenPago
+        ? `OP ${p.ordenPago.nro}-${p.ordenPago.anio}`
+        : p.referencia ?? ""
       movimientos.push({
         fechaRaw: p.fechaPago,
         fecha: p.fechaPago.toISOString(),
         concepto: `Pago — ${capitalize(p.tipoPago.toLowerCase().replace(/_/g, " "))}`,
-        comprobante: p.referencia ?? "",
+        comprobante,
         debe: 0,
         haber: p.monto,
+        pdfEndpoint,
       })
     }
 
     for (const nc of notasCreditoDebito) {
-      if (nc.tipo === "NC_RECIBIDA") {
-        // Reduce lo que Transmagg le debe al fletero
-        movimientos.push({
-          fechaRaw: nc.creadoEn,
-          fecha: nc.creadoEn.toISOString(),
-          concepto: "Nota de Crédito",
-          comprobante: nc.nroComprobanteExterno ?? "",
-          debe: 0,
-          haber: nc.montoTotal,
-        })
-      } else if (nc.tipo === "ND_RECIBIDA") {
-        // Aumenta lo que Transmagg le debe al fletero
-        movimientos.push({
-          fechaRaw: nc.creadoEn,
-          fecha: nc.creadoEn.toISOString(),
-          concepto: "Nota de Débito",
-          comprobante: nc.nroComprobanteExterno ?? "",
-          debe: nc.montoTotal,
-          haber: 0,
-        })
-      } else if (nc.tipo === "NC_EMITIDA") {
-        movimientos.push({
-          fechaRaw: nc.creadoEn,
-          fecha: nc.creadoEn.toISOString(),
-          concepto: "Nota de Crédito Emitida",
-          comprobante: nc.nroComprobanteExterno ?? "",
-          debe: 0,
-          haber: nc.montoTotal,
-        })
-      } else if (nc.tipo === "ND_EMITIDA") {
-        movimientos.push({
-          fechaRaw: nc.creadoEn,
-          fecha: nc.creadoEn.toISOString(),
-          concepto: "Nota de Débito Emitida",
-          comprobante: nc.nroComprobanteExterno ?? "",
-          debe: nc.montoTotal,
-          haber: 0,
-        })
-      }
+      const cbteNro = formatearNroComprobante(nc.ptoVenta, nc.nroComprobante) || (nc.nroComprobanteExterno ?? "")
+      const esCredito = nc.tipo === "NC_EMITIDA" || nc.tipo === "NC_RECIBIDA"
+      const esDebito = nc.tipo === "ND_EMITIDA" || nc.tipo === "ND_RECIBIDA"
+      if (!esCredito && !esDebito) continue
+      movimientos.push({
+        fechaRaw: nc.creadoEn,
+        fecha: nc.creadoEn.toISOString(),
+        concepto: esCredito ? "Nota de Crédito" : "Nota de Débito",
+        comprobante: cbteNro,
+        debe: esCredito ? 0 : nc.montoTotal,
+        haber: esCredito ? nc.montoTotal : 0,
+        pdfEndpoint: `/api/notas-credito-debito/${nc.id}/pdf`,
+      })
     }
 
-    for (const g of gastosFletero) {
+    for (const g of gastos) {
       const fp = g.facturaProveedor
+      const opDescuento = g.descuentos[0]?.liquidacion.pagos[0]?.ordenPago ?? null
+      const comprobanteGasto = fp
+        ? `${fp.tipoCbte} ${fp.nroComprobante ?? "s/n"}`
+        : opDescuento
+        ? `OP ${opDescuento.nro}-${opDescuento.anio}`
+        : ""
+      const pdfEndpointGasto = fp
+        ? signedUrl(fp.pdfS3Key)
+        : opDescuento?.pdfS3Key
+        ? signedUrl(opDescuento.pdfS3Key)
+        : opDescuento
+        ? `/api/ordenes-pago/${opDescuento.id}/pdf`
+        : null
       movimientos.push({
         fechaRaw: fp?.fechaCbte ?? g.creadoEn,
         fecha: (fp?.fechaCbte ?? g.creadoEn).toISOString(),
         concepto: fp
           ? `Gasto ${g.tipo} — ${fp.proveedor.razonSocial}`
           : `Gasto ${g.tipo} — ${g.descripcion ?? "Sin factura"}`,
-        comprobante: fp
-          ? `${fp.tipoCbte} ${fp.nroComprobante ?? "s/n"}`
-          : "Sin factura",
-        debe: g.montoPagado,
-        haber: 0,
+        comprobante: comprobanteGasto,
+        debe: 0,
+        haber: g.montoPagado,
+        pdfEndpoint: pdfEndpointGasto,
       })
     }
 
-    for (const d of gastoDescuentos) {
-      const nroLiq =
-        d.liquidacion.ptoVenta != null && d.liquidacion.nroComprobante != null
-          ? `Liq. ${String(d.liquidacion.ptoVenta).padStart(4, "0")}-${String(d.liquidacion.nroComprobante).padStart(8, "0")}`
-          : "Liquidación s/n"
+    for (const a of adelantos) {
       movimientos.push({
-        fechaRaw: d.fecha,
-        fecha: d.fecha.toISOString(),
-        concepto: "Descuento gasto",
-        comprobante: nroLiq,
+        fechaRaw: a.fecha,
+        fecha: a.fecha.toISOString(),
+        concepto: `Adelanto — ${capitalize(a.tipo.toLowerCase().replace(/_/g, " "))}`,
+        comprobante: a.descripcion ?? "",
         debe: 0,
-        haber: d.montoDescontado,
+        haber: a.monto,
+        pdfEndpoint: signedUrl(a.comprobanteS3Key),
       })
     }
 
@@ -266,6 +320,7 @@ export async function GET(
         debe: m.debe,
         haber: m.haber,
         saldo,
+        pdfEndpoint: m.pdfEndpoint,
       }
     })
 
@@ -279,6 +334,8 @@ export async function GET(
       totalDebe,
       totalHaber,
       saldoFinal,
+      desde: desdeDate ? desdeDate.toISOString() : null,
+      hasta: hastaDate.toISOString(),
     })
   } catch (error) {
     console.error("[GET /api/fleteros/[id]/cuenta-corriente]", error)

@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
       pagos: { select: { monto: true } },
       notasCreditoDebito: {
         select: {
+          id: true,
           tipo: true,
           montoTotal: true,
           montoDescontado: true,
@@ -69,14 +70,20 @@ export async function GET(req: NextRequest) {
     orderBy: { emitidaEn: "asc" },
   })
 
-  // Calcular saldoPendiente por factura (modelo unificado: total − pagos − NCs aplicadas)
+  // Calcular saldoPendiente por factura: total + ND aplicadas − NC aplicadas − pagos.
+  // Las NCs/NDs no aplicadas todavía se exponen como `disponible` por nota
+  // para que el operador las elija explícitamente al armar el recibo.
   const resultado = facturas.map((f) => {
-    const saldoPendiente = calcularSaldoPendienteDoc(f.total, {
+    const saldoSinND = calcularSaldoPendienteDoc(f.total, {
       pagos: f.pagos.map((p) => p.monto),
       ncAplicadas: f.notasCreditoDebito
-        .filter((n) => n.tipo === "NC_EMITIDA")
+        .filter((n) => n.tipo === "NC_EMITIDA" || n.tipo === "NC_RECIBIDA")
         .map((n) => n.montoDescontado),
     })
+    const ndAplicadas = f.notasCreditoDebito
+      .filter((n) => n.tipo === "ND_EMITIDA" || n.tipo === "ND_RECIBIDA")
+      .reduce((acc, n) => acc + Number(n.montoDescontado), 0)
+    const saldoPendiente = saldoSinND + ndAplicadas
 
     return {
       id: f.id,
@@ -89,8 +96,11 @@ export async function GET(req: NextRequest) {
       estadoCobro: f.estadoCobro,
       saldoPendiente,
       notasCD: f.notasCreditoDebito.map((n) => ({
+        id: n.id,
         tipo: n.tipo,
-        montoTotal: n.montoTotal,
+        montoTotal: Number(n.montoTotal),
+        montoDescontado: Number(n.montoDescontado),
+        disponible: Math.max(0, Number(n.montoTotal) - Number(n.montoDescontado)),
         nro: n.nroComprobante
           ? `${String(n.ptoVenta ?? 1).padStart(4, "0")}-${String(n.nroComprobante).padStart(8, "0")}`
           : n.nroComprobanteExterno ?? null,

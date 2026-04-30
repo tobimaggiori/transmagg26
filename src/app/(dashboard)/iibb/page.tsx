@@ -8,7 +8,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { formatearMoneda } from "@/lib/utils"
 import { sumarImportes } from "@/lib/money"
 import {
@@ -45,7 +45,7 @@ export default async function IibbPage() {
 
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
 
-  if (!puedeAcceder(rol, "iibb")) {
+  if (!(await tienePermiso(session.user.id, rol, "iibb"))) {
     redirect("/dashboard")
   }
 

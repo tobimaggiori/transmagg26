@@ -34,8 +34,8 @@ export async function GET() {
       fechaViaje: string
       procedencia: string | null
       destino: string | null
-      nroCartaPorte: string | null
-      cartaPorteS3Key: string | null
+      nroCtg: string | null
+      ctgS3Key: string | null
       empresaRazonSocial: string
       totalEmpresa: number | null
       liquidacion: {
@@ -87,8 +87,8 @@ export async function GET() {
         fechaViaje: v.fechaViaje.toISOString(),
         procedencia: v.procedencia,
         destino: v.destino,
-        nroCartaPorte: v.nroCartaPorte,
-        cartaPorteS3Key: v.cartaPorteS3Key,
+        nroCtg: v.nroCtg,
+        ctgS3Key: v.ctgS3Key,
         empresaRazonSocial: v.empresa.razonSocial,
         totalEmpresa,
         liquidacion: liqActiva ? {

@@ -1,12 +1,11 @@
 /**
  * Propósito: Tests unitarios para las funciones de filtrado de los componentes ABM.
- * Cubre calcularFiltroEmpresa, calcularFiltroFletero, calcularFiltroChofer,
+ * Cubre calcularFiltroEmpresa, calcularFiltroFletero,
  * calcularFiltroUsuario, calcularFiltroProveedor y calcularFiltroProveedorOp.
  */
 
 import { calcularFiltroEmpresa } from "@/components/abm/empresas-abm"
 import { calcularFiltroFletero } from "@/components/abm/fleteros-abm"
-import { calcularFiltroChofer } from "@/components/abm/choferes-abm"
 import { calcularFiltroUsuario } from "@/components/abm/usuarios-abm"
 import { calcularFiltroProveedor } from "@/components/abm/proveedores-abm"
 import { calcularFiltroProveedorOp } from "@/components/proveedores-client"
@@ -58,27 +57,6 @@ describe("calcularFiltroFletero", () => {
 
   it("retorna false cuando no coincide nada", () => {
     expect(calcularFiltroFletero(fletero, "garcia")).toBe(false)
-  })
-})
-
-// ─── calcularFiltroChofer ──────────────────────────────────────────────────────
-describe("calcularFiltroChofer", () => {
-  const chofer = { id: "c1", nombre: "Carlos", apellido: "Rodríguez", email: "c.rod@transmagg.com", telefono: null, activo: true }
-
-  it("retorna true cuando coincide con nombre", () => {
-    expect(calcularFiltroChofer(chofer, "carlos")).toBe(true)
-  })
-
-  it("retorna true cuando coincide con apellido", () => {
-    expect(calcularFiltroChofer(chofer, "rodrí")).toBe(true)
-  })
-
-  it("retorna true cuando coincide con email", () => {
-    expect(calcularFiltroChofer(chofer, "c.rod")).toBe(true)
-  })
-
-  it("retorna false cuando no coincide nada", () => {
-    expect(calcularFiltroChofer(chofer, "martinez")).toBe(false)
   })
 })
 

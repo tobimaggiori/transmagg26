@@ -10,6 +10,9 @@ import { calcularTotalViaje } from "@/lib/viajes"
 import {
   requireFinancialAccess,
 } from "@/lib/financial-api"
+import { getPermisosUsuario } from "@/lib/permissions"
+import { resolverOperadorId } from "@/lib/session-utils"
+import type { Rol } from "@/types"
 import { sumarImportes, restarImportes, maxMonetario } from "@/lib/money"
 import {
   calcularSaldoContableCuenta,
@@ -35,6 +38,17 @@ export async function GET() {
   const access = await requireFinancialAccess()
   if (!access.ok) return access.response
 
+  // Permisos del operador — filtramos secciones que no tiene habilitadas.
+  const rol = access.session.user.rol as Rol
+  let permisos: string[] = []
+  try {
+    const userId = await resolverOperadorId(access.session.user)
+    permisos = await getPermisosUsuario(userId, rol)
+  } catch {
+    permisos = []
+  }
+  const puede = (s: string) => permisos.includes(s)
+
   try {
     const hoy = new Date()
 
@@ -45,30 +59,59 @@ export async function GET() {
     let pendienteLiquidar = 0
 
     try {
-      const facturasAgg = await prisma.facturaEmitida.aggregate({
-        _sum: { total: true },
+      // Facturas emitidas con saldo > 0 + NC/ND_EMITIDA asociadas (pendientes de cobrar)
+      const facturas = await prisma.facturaEmitida.findMany({
+        select: {
+          total: true,
+          pagos: { select: { monto: true } },
+          notasCreditoDebito: {
+            where: { tipo: { in: ["NC_EMITIDA", "ND_EMITIDA"] } },
+            select: { tipo: true, montoTotal: true },
+          },
+        },
       })
-      const pagosEmpresasAgg = await prisma.pagoDeEmpresa.aggregate({
-        _sum: { monto: true },
+      const saldosFacturas = facturas.map((f) => {
+        const pagado = sumarImportes(f.pagos.map((p) => p.monto))
+        const saldoFactura = maxMonetario(0, restarImportes(f.total, pagado))
+        if (saldoFactura <= 0) return 0 // factura cobrada → NC/ND asociadas se consideran extinguidas
+        const ajusteNotas = f.notasCreditoDebito.reduce((acc, n) => {
+          const monto = Number(n.montoTotal)
+          return acc + (n.tipo === "NC_EMITIDA" ? -monto : monto)
+        }, 0)
+        return maxMonetario(0, saldoFactura + ajusteNotas)
       })
-      deudaEmpresas = restarImportes(facturasAgg._sum.total ?? 0, pagosEmpresasAgg._sum.monto ?? 0)
+      deudaEmpresas = sumarImportes(saldosFacturas)
     } catch (e) { console.error("[dashboard] Error deudaEmpresas:", e) }
 
     try {
-      // Misma lógica que /api/dashboard-financiero/deuda-fleteros:
-      // Solo LPs EMITIDA/PARCIALMENTE_PAGADA sin orden de pago, con saldo > 0
-      const liqsConPagos = await prisma.liquidacion.findMany({
-        where: {
-          estado: { in: ["EMITIDA", "PARCIALMENTE_PAGADA"] },
-          pagos: { none: { ordenPagoId: { not: null }, anulado: false } },
-        },
-        select: { total: true, pagos: { select: { monto: true } } },
-      })
+      // LPs EMITIDA/PARCIALMENTE_PAGADA sin OP, con saldo > 0 +
+      // NC/ND_EMITIDA al fletero pendientes (montoTotal > montoDescontado).
+      const [liqsConPagos, notasFleteros] = await Promise.all([
+        prisma.liquidacion.findMany({
+          where: {
+            estado: { in: ["EMITIDA", "PARCIALMENTE_PAGADA"] },
+            pagos: { none: { ordenPagoId: { not: null }, anulado: false } },
+          },
+          select: { total: true, pagos: { select: { monto: true } } },
+        }),
+        prisma.notaCreditoDebito.findMany({
+          where: {
+            tipo: { in: ["NC_EMITIDA", "ND_EMITIDA"] },
+            liquidacionId: { not: null },
+          },
+          select: { tipo: true, montoTotal: true, montoDescontado: true },
+        }),
+      ])
       const saldos = liqsConPagos.map((l) => {
         const pagado = sumarImportes(l.pagos.map((p) => p.monto))
         return maxMonetario(0, restarImportes(l.total, pagado))
       })
-      deudaFleteros = sumarImportes(saldos)
+      const ajusteNotas = notasFleteros.reduce((acc, n) => {
+        const saldoNota = restarImportes(Number(n.montoTotal), Number(n.montoDescontado))
+        if (saldoNota <= 0) return acc
+        return acc + (n.tipo === "NC_EMITIDA" ? -saldoNota : saldoNota)
+      }, 0)
+      deudaFleteros = maxMonetario(0, sumarImportes(saldos) + ajusteNotas)
     } catch (e) { console.error("[dashboard] Error deudaFleteros:", e) }
 
     try {
@@ -142,14 +185,10 @@ export async function GET() {
     let cuentasResultado: Array<Record<string, unknown>> = []
     try {
       const cuentas = await prisma.cuenta.findMany({
-        where: {
-          activa: true,
-          // Excluir entidades padre (cuentas sin cuentaPadreId que tienen sub-cuentas)
-          NOT: { cuentaPadreId: null, subCuentas: { some: {} } },
-        },
+        where: { activa: true },
         select: {
           id: true, nombre: true, tipo: true, moneda: true, activa: true, saldoInicial: true,
-          movimientosSinFactura: { select: { monto: true, tipo: true, categoria: true } },
+          movimientos: { select: { monto: true, tipo: true, categoria: true } },
           fci: {
             select: {
               id: true, nombre: true, cuentaId: true, diasHabilesAlerta: true,
@@ -171,7 +210,7 @@ export async function GET() {
       cuentasResultado = cuentas.map((cuenta) => {
         const saldoContable = calcularSaldoContableCuenta(
           cuenta.saldoInicial,
-          cuenta.movimientosSinFactura.map((m) => m.tipo === "INGRESO" ? m.monto : -m.monto)
+          cuenta.movimientos.map((m) => m.tipo === "INGRESO" ? m.monto : -m.monto)
         )
         const fciDetalle = cuenta.fci.map((fci) => ({
           id: fci.id,
@@ -181,10 +220,10 @@ export async function GET() {
         const saldoEnFciPropios = calcularSaldoEnFciPropiosCuenta(fciDetalle)
         const saldoDisponible = calcularSaldoDisponibleCuenta(saldoContable, saldoEnFciPropios)
         const capitalEnviado = sumarImportes(
-          cuenta.movimientosSinFactura.filter((m) => m.categoria === "ENVIO_A_BROKER").map(m => m.monto)
+          cuenta.movimientos.filter((m) => m.categoria === "SUSCRIPCION_FCI").map(m => m.monto)
         )
         const capitalRescatado = sumarImportes(
-          cuenta.movimientosSinFactura.filter((m) => m.categoria === "RESCATE_DE_BROKER").map(m => m.monto)
+          cuenta.movimientos.filter((m) => m.categoria === "RESCATE_FCI").map(m => m.monto)
         )
         const capitalNetoEnBroker = calcularCapitalNetoBroker(capitalEnviado, capitalRescatado)
         const rendimiento = calcularRendimientoBroker({
@@ -215,21 +254,31 @@ export async function GET() {
       })
     } catch (e) { console.error("[dashboard] Error cuentas:", e) }
 
+    // Filtrar por permisos — no devolvemos datos que el operador no puede ver.
+    const cuentasFiltradas = cuentasResultado.filter((c) => {
+      if (c.tipo === "BANCO") return puede("dashboard.cuentas_bancos")
+      if (c.tipo === "BROKER") return puede("dashboard.cuentas_brokers")
+      if (c.tipo === "BILLETERA_VIRTUAL") return puede("dashboard.cuentas_billeteras")
+      return false
+    })
+
     return NextResponse.json({
-      deudaEmpresas,
-      deudaFleteros,
-      pendienteFacturar,
-      pendienteLiquidar,
-      chequesEnCartera: {
-        alDia: chequesAlDia,
-        noAlDia: chequesNoAlDia,
-        total: sumarImportes([chequesAlDia, chequesNoAlDia]),
-        fisico: chequesFisico,
-        electronico: chequesElectronico,
-      },
-      chequesEmitidosNoCobrados,
-      alertasFci,
-      cuentas: cuentasResultado,
+      deudaEmpresas: puede("dashboard.deuda_empresas") ? deudaEmpresas : 0,
+      deudaFleteros: puede("dashboard.deuda_fleteros") ? deudaFleteros : 0,
+      pendienteFacturar: puede("dashboard.pendiente_facturar") ? pendienteFacturar : 0,
+      pendienteLiquidar: puede("dashboard.pendiente_liquidar") ? pendienteLiquidar : 0,
+      chequesEnCartera: puede("dashboard.cheques_cartera")
+        ? {
+            alDia: chequesAlDia,
+            noAlDia: chequesNoAlDia,
+            total: sumarImportes([chequesAlDia, chequesNoAlDia]),
+            fisico: chequesFisico,
+            electronico: chequesElectronico,
+          }
+        : { alDia: 0, noAlDia: 0, total: 0, fisico: 0, electronico: 0 },
+      chequesEmitidosNoCobrados: puede("dashboard.cheques_emitidos") ? chequesEmitidosNoCobrados : 0,
+      alertasFci: puede("contabilidad.fci") ? alertasFci : [],
+      cuentas: cuentasFiltradas,
     })
   } catch (error) {
     console.error("[dashboard] Error global:", error)

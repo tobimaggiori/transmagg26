@@ -1,0 +1,10 @@
+
+> transmagg@0.1.0 cleanup:pdfs-huerfanos
+> ts-node --compiler-options '{"module":"CommonJS"}' scripts/cleanup-pdfs-huerfanos.ts --apply
+
+[cleanup-huérfanos] modo: APPLY · grace: 24h · cutoff: 2026-04-29T02:00:05.017Z
+Referenciadas en DB: 9 keys
+Total en R2 (ctg/, remitos/): 10
+Recientes (dentro del grace period): 1
+Huérfanos a borrar: 0
+Nada que hacer.

@@ -36,12 +36,33 @@ export default async function EmpresasFacturarPage() {
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
   if (!esRolInterno(rol)) redirect("/dashboard")
 
-  const [empresas, comprobantesHabilitados, configArca] = await Promise.all([
+  const [empresas, fleteros, camiones, choferes, comprobantesHabilitados, configArca] = await Promise.all([
     prisma.empresa.findMany({
       where: { activa: true },
-      select: { id: true, razonSocial: true, cuit: true, condicionIva: true, padronFce: true },
+      select: { id: true, razonSocial: true, cuit: true, condicionIva: true, padronFce: true, direccion: true },
       orderBy: { razonSocial: "asc" },
     }),
+    prisma.fletero.findMany({
+      where: { activo: true },
+      select: { id: true, razonSocial: true, cuit: true },
+      orderBy: { razonSocial: "asc" },
+    }),
+    prisma.camion.findMany({
+      where: { activo: true },
+      select: { id: true, patenteChasis: true, fleteroId: true, esPropio: true },
+      orderBy: { patenteChasis: "asc" },
+    }),
+    prisma.empleado.findMany({
+      where: { cargo: "CHOFER", activo: true },
+      select: {
+        id: true, nombre: true, apellido: true,
+        usuario: { select: { email: true } },
+      },
+      orderBy: { apellido: "asc" },
+    }).then((es) => es.map((e) => ({
+      id: e.id, nombre: e.nombre, apellido: e.apellido,
+      email: e.usuario?.email ?? null,
+    }))),
     leerComprobantesHabilitados(),
     prisma.configuracionArca.findUnique({
       where: { id: "unico" },
@@ -51,5 +72,14 @@ export default async function EmpresasFacturarPage() {
 
   const montoMinimoFce = configArca?.montoMinimoFce != null ? Number(configArca.montoMinimoFce) : null
 
-  return <FacturarEmpresaClient empresas={empresas} comprobantesHabilitados={comprobantesHabilitados} montoMinimoFce={montoMinimoFce} />
+  return (
+    <FacturarEmpresaClient
+      empresas={empresas}
+      fleteros={fleteros}
+      camiones={camiones}
+      choferes={choferes}
+      comprobantesHabilitados={comprobantesHabilitados}
+      montoMinimoFce={montoMinimoFce}
+    />
+  )
 }

@@ -9,6 +9,7 @@ import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { badRequestResponse, invalidDataResponse, notFoundResponse, requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
 import { resolverOperadorId } from "@/lib/session-utils"
+import { registrarMovimiento } from "@/lib/movimiento-cuenta"
 
 const schema = z.object({
   fechaDepositoBroker: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -51,17 +52,15 @@ export async function POST(
         data: { fechaDepositoBroker: fechaDeposito },
       })
 
-      const movimiento = await tx.movimientoSinFactura.create({
-        data: {
-          cuentaId: cheque.endosadoABrokerId!,
-          tipo: "INGRESO",
-          categoria: "CHEQUE_DEPOSITADO",
-          monto: cheque.monto,
-          fecha: fechaDeposito,
-          descripcion: `Depósito cheque endosado ${cheque.nroCheque}${cheque.empresa ? ` — ${cheque.empresa.razonSocial}` : ""}`,
-          referencia: cheque.nroCheque,
-          operadorId,
-        },
+      const movimiento = await registrarMovimiento(tx, {
+        cuentaId: cheque.endosadoABrokerId!,
+        tipo: "INGRESO",
+        categoria: "CHEQUE_DEPOSITADO",
+        monto: cheque.monto,
+        fecha: fechaDeposito,
+        descripcion: `Depósito cheque endosado ${cheque.nroCheque}${cheque.empresa ? ` — ${cheque.empresa.razonSocial}` : ""}`,
+        chequeRecibidoId: id,
+        operadorCreacionId: operadorId,
       })
 
       return { cheque: chequeActualizado, movimiento }

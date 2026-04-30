@@ -204,7 +204,9 @@ const FACTURA_MOCK = {
   empresa: { id: "e-1", cuit: "30123456789", condicionIva: "RESPONSABLE_INSCRIPTO" },
 }
 
-describe("crearNotaEmpresaEmitida: regla de saldo", () => {
+describe("crearNotaEmpresaEmitida: emisión independiente del saldo", () => {
+  // El estado de cobro de la factura no condiciona NC/ND. La UI muestra el
+  // impacto (saldo a favor / nuevo pendiente) pero el server permite siempre.
   beforeEach(() => {
     jest.clearAllMocks()
     mockPrisma.facturaEmitida.findUnique.mockResolvedValue(FACTURA_MOCK)
@@ -214,7 +216,7 @@ describe("crearNotaEmpresaEmitida: regla de saldo", () => {
     mockTx.asientoIva.create.mockResolvedValue({ id: "aiva-1" })
   })
 
-  it("NC permitida si saldo > 0", async () => {
+  it("NC permitida con saldo pendiente", async () => {
     ;(calcularSaldoPendienteFactura as jest.Mock).mockResolvedValue(50000)
     const r = await crearNotaEmpresaEmitida({
       facturaId: "f-1",
@@ -224,18 +226,17 @@ describe("crearNotaEmpresaEmitida: regla de saldo", () => {
     expect(r.ok).toBe(true)
   })
 
-  it("NC rechazada si saldo <= 0", async () => {
+  it("NC permitida con factura completamente cobrada (genera saldo a favor)", async () => {
     ;(calcularSaldoPendienteFactura as jest.Mock).mockResolvedValue(0)
     const r = await crearNotaEmpresaEmitida({
       facturaId: "f-1",
       tipoNota: "NC",
       items: [{ concepto: "Descuento", subtotal: 1000 }],
     }, "op-1")
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain("completamente cobrada")
+    expect(r.ok).toBe(true)
   })
 
-  it("ND permitida si saldo <= 0", async () => {
+  it("ND permitida con factura completamente cobrada", async () => {
     ;(calcularSaldoPendienteFactura as jest.Mock).mockResolvedValue(0)
     const r = await crearNotaEmpresaEmitida({
       facturaId: "f-1",
@@ -245,15 +246,14 @@ describe("crearNotaEmpresaEmitida: regla de saldo", () => {
     expect(r.ok).toBe(true)
   })
 
-  it("ND rechazada si saldo > 0", async () => {
+  it("ND permitida con saldo pendiente (suma al saldo)", async () => {
     ;(calcularSaldoPendienteFactura as jest.Mock).mockResolvedValue(50000)
     const r = await crearNotaEmpresaEmitida({
       facturaId: "f-1",
       tipoNota: "ND",
       items: [{ concepto: "Ajuste", subtotal: 500 }],
     }, "op-1")
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain("saldo pendiente")
+    expect(r.ok).toBe(true)
   })
 })
 

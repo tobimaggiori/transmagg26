@@ -2,140 +2,17 @@
  * tarjeta-commands.ts
  *
  * Lógica de negocio transaccional para operaciones con tarjetas:
- * - Cierre de resumen de tarjeta (pago de facturas)
  * - Resumen de tarjeta de aseguradora (pago de cuotas de seguro)
  */
 
 import { prisma } from "@/lib/prisma"
 import { sumarImportes } from "@/lib/money"
+import { registrarMovimiento } from "@/lib/movimiento-cuenta"
 
 // ─── Tipos comunes ──────────────────────────────────────────────────────────
 
 type ResultadoOk<T> = { ok: true; result: T }
 type ResultadoError = { ok: false; status: number; error: string }
-
-// ─── Cierre Resumen Tarjeta ─────────────────────────────────────────────────
-
-export type PagoCierreInput = {
-  facturaId: string
-  tipo: "PROVEEDOR" | "SEGURO"
-  montoPagado: number
-}
-
-export type DatosCierreResumenTarjeta = {
-  tarjetaId: string
-  mesAnio: string
-  cuentaPagoId: string
-  fechaPago: string
-  pdfS3Key?: string | null
-  diferencia: number
-  descripcionDiferencia?: string | null
-  pagos: PagoCierreInput[]
-}
-
-type ResultadoCierreResumen = ResultadoOk<unknown> | ResultadoError
-
-/**
- * ejecutarCierreResumenTarjeta: DatosCierreResumenTarjeta string -> Promise<ResultadoCierreResumen>
- *
- * Dado [los datos validados del cierre de resumen y el operadorId],
- * devuelve [el cierre creado o un error con status HTTP].
- *
- * Ejecuta en transacción:
- * - Crea CierreResumenTarjeta
- * - Crea PagoFacturaTarjeta por cada factura
- * - Actualiza estadoPago de cada factura (PAGADA o PAGADA_PARCIAL)
- * - Crea MovimientoSinFactura EGRESO en la cuenta de pago
- *
- * Ejemplos:
- * ejecutarCierreResumenTarjeta({ tarjetaId: "t1", mesAnio: "2026-03", ... }, "op1")
- *   // => { ok: true, result: { id, tarjetaId, ... } }
- */
-export async function ejecutarCierreResumenTarjeta(
-  data: DatosCierreResumenTarjeta,
-  operadorId: string
-): Promise<ResultadoCierreResumen> {
-  const sumaFacturas = sumarImportes(data.pagos.map((p) => p.montoPagado))
-  const diferencia = data.diferencia ?? 0
-  const totalPagado = sumarImportes([sumaFacturas, diferencia])
-
-  const result = await prisma.$transaction(async (tx) => {
-    // 1. Crear CierreResumenTarjeta
-    const cierre = await tx.cierreResumenTarjeta.create({
-      data: {
-        tarjetaId: data.tarjetaId,
-        mesAnio: data.mesAnio,
-        totalPagado,
-        diferencia,
-        descripcionDiferencia: data.descripcionDiferencia ?? null,
-        cuentaPagoId: data.cuentaPagoId,
-        fechaPago: new Date(data.fechaPago),
-        pdfS3Key: data.pdfS3Key ?? null,
-        operadorId,
-      },
-    })
-
-    // 2. Crear PagoFacturaTarjeta por cada factura incluida
-    for (const pago of data.pagos) {
-      await tx.pagoFacturaTarjeta.create({
-        data: {
-          cierreResumenId: cierre.id,
-          facturaProveedorId: pago.tipo === "PROVEEDOR" ? pago.facturaId : null,
-          facturaSeguroId: pago.tipo === "SEGURO" ? pago.facturaId : null,
-          montoPagado: pago.montoPagado,
-        },
-      })
-
-      // 3. Actualizar estadoPago de cada factura
-      if (pago.tipo === "PROVEEDOR") {
-        const factura = await tx.facturaProveedor.findUniqueOrThrow({ where: { id: pago.facturaId } })
-        const totalPagadoFactura = (
-          await tx.pagoFacturaTarjeta.aggregate({
-            where: { facturaProveedorId: pago.facturaId },
-            _sum: { montoPagado: true },
-          })
-        )._sum.montoPagado ?? 0
-        const nuevoEstado = totalPagadoFactura >= factura.total ? "PAGADA" : "PAGADA_PARCIAL"
-        await tx.facturaProveedor.update({
-          where: { id: pago.facturaId },
-          data: { estadoPago: nuevoEstado },
-        })
-      } else {
-        const factura = await tx.facturaSeguro.findUniqueOrThrow({ where: { id: pago.facturaId } })
-        const totalPagadoFactura = (
-          await tx.pagoFacturaTarjeta.aggregate({
-            where: { facturaSeguroId: pago.facturaId },
-            _sum: { montoPagado: true },
-          })
-        )._sum.montoPagado ?? 0
-        const nuevoEstado = totalPagadoFactura >= factura.total ? "PAGADA" : "PAGADA_PARCIAL"
-        await tx.facturaSeguro.update({
-          where: { id: pago.facturaId },
-          data: { estadoPago: nuevoEstado },
-        })
-      }
-    }
-
-    // 4. Crear MovimientoSinFactura EGRESO en la cuenta de pago
-    const tarjeta = await tx.tarjeta.findUniqueOrThrow({ where: { id: data.tarjetaId } })
-    await tx.movimientoSinFactura.create({
-      data: {
-        cuentaId: data.cuentaPagoId,
-        tipo: "EGRESO",
-        categoria: "PAGO_TARJETA",
-        monto: totalPagado,
-        fecha: new Date(data.fechaPago),
-        descripcion: `Cierre resumen ${tarjeta.nombre} — ${data.mesAnio}`,
-        tarjetaId: data.tarjetaId,
-        operadorId,
-      },
-    })
-
-    return cierre
-  })
-
-  return { ok: true, result }
-}
 
 // ─── Resumen Tarjeta Aseguradora ────────────────────────────────────────────
 
@@ -232,17 +109,18 @@ export async function ejecutarResumenTarjetaAseguradora(
         },
       })
 
-      // 5. Crear MovimientoSinFactura EGRESO
-      await tx.movimientoSinFactura.create({
-        data: {
-          cuentaId: data.cuentaPagoId,
-          tipo: "EGRESO",
-          categoria: "PAGO_TARJETA",
-          monto: totalCuotas,
-          fecha: new Date(data.fechaPago),
-          descripcion: `Pago resumen tarjeta ${tarjeta.nombre} ${data.mesAnio}`,
-          operadorId,
-        },
+      // 5. Registrar MovimientoCuenta EGRESO (esManual: el pago de resumen de
+      //    tarjeta no tiene entidad pagoX dedicada; el link al ResumenTarjeta
+      //    queda implícito via la cuenta y descripción)
+      await registrarMovimiento(tx, {
+        cuentaId: data.cuentaPagoId,
+        tipo: "EGRESO",
+        categoria: "PAGO_TARJETA",
+        monto: totalCuotas,
+        fecha: new Date(data.fechaPago),
+        descripcion: `Pago resumen tarjeta ${tarjeta.nombre} ${data.mesAnio}`,
+        esManual: true,
+        operadorCreacionId: operadorId,
       })
 
       return nuevoResumen

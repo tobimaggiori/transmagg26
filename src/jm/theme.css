@@ -1,0 +1,25 @@
+/* Theme overrides para el sistema "Javier Maggiori".
+ * Se importa desde src/app/(jm)/layout.tsx y se aplica vía la clase
+ * `theme-jm` en el shell raíz (src/jm/components/jm-shell.tsx).
+ *
+ * Solo cambia variables CSS de primary/sidebar/ring para que el operador
+ * vea visualmente que está en JM (negro/blanco vs el azul de Transmagg).
+ * El resto del tema se hereda del :root global. */
+
+.theme-jm {
+  --primary: oklch(0.18 0 0);
+  --primary-foreground: oklch(1 0 0);
+  --ring: oklch(0.18 0 0);
+  --accent: oklch(0.94 0 0);
+  --accent-foreground: oklch(0.18 0 0);
+
+  --sidebar: oklch(0.16 0 0);
+  --sidebar-foreground: oklch(0.98 0 0);
+  --sidebar-muted: oklch(0.68 0 0);
+  --sidebar-primary: oklch(0.42 0 0);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.26 0 0);
+  --sidebar-accent-foreground: oklch(1 0 0);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.50 0 0);
+}

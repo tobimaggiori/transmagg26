@@ -11,6 +11,7 @@ import { subirPDF } from "@/lib/storage"
 import { generarPDFReciboCobranza } from "@/lib/pdf-recibo-cobranza"
 import { sumarImportes, restarImportes, m } from "@/lib/money"
 import { calcularSaldoCCEmpresa } from "@/lib/cuenta-corriente"
+import { registrarMovimiento } from "@/lib/movimiento-cuenta"
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,11 @@ type FacturaAplicada = {
   montoAplicado: number
 }
 
+type NotaAplicada = {
+  notaId: string
+  monto: number
+}
+
 type FaltanteInput = {
   viajeId: string
   fleteroId: string
@@ -41,6 +47,7 @@ type FaltanteInput = {
 export type DatosCrearReciboCobranza = {
   empresaId: string
   facturasAplicadas: FacturaAplicada[]
+  notasAplicadas: NotaAplicada[]
   mediosPago: MedioPago[]
   retencionGanancias: number
   retencionIIBB: number
@@ -76,6 +83,7 @@ export async function ejecutarCrearReciboCobranza(
   const {
     empresaId,
     facturasAplicadas,
+    notasAplicadas,
     mediosPago,
     retencionGanancias,
     retencionIIBB,
@@ -96,7 +104,9 @@ export async function ejecutarCrearReciboCobranza(
     },
     include: {
       pagos: { select: { monto: true } },
-      notasCreditoDebito: { select: { tipo: true, montoTotal: true } },
+      notasCreditoDebito: {
+        select: { id: true, tipo: true, montoTotal: true, montoDescontado: true },
+      },
     },
   })
 
@@ -108,29 +118,94 @@ export async function ejecutarCrearReciboCobranza(
     }
   }
 
-  // Validar montoAplicado <= saldoPendiente de cada factura
-  for (const fa of facturasAplicadas) {
-    const factura = facturas.find((f) => f.id === fa.facturaId)!
-    const totalPagado = sumarImportes(factura.pagos.map((p) => p.monto))
-    // Ajuste por NC/ND
-    const ajusteNC = sumarImportes(
-      factura.notasCreditoDebito
-        .filter((n) => n.tipo === "NC_EMITIDA" || n.tipo === "NC_RECIBIDA")
-        .map((n) => n.montoTotal)
-    )
-    const ajusteND = sumarImportes(
-      factura.notasCreditoDebito
-        .filter((n) => n.tipo === "ND_EMITIDA" || n.tipo === "ND_RECIBIDA")
-        .map((n) => n.montoTotal)
-    )
-    const netoVigente = Math.max(0, sumarImportes([factura.total, ajusteND]) - ajusteNC)
-    const saldoPendiente = Math.max(0, restarImportes(netoVigente, totalPagado))
+  // ── Validar notas aplicadas ────────────────────────────────────────────
+  // Cada nota debe pertenecer a una factura del recibo y estar dentro del
+  // saldo aplicable (montoTotal − montoDescontado previo).
 
-    if (fa.montoAplicado > saldoPendiente + 0.01) {
+  const notasById = new Map<string, { tipo: string; montoTotal: number; montoDescontado: number; facturaId: string }>()
+  for (const f of facturas) {
+    for (const n of f.notasCreditoDebito) {
+      notasById.set(n.id, {
+        tipo: n.tipo,
+        montoTotal: Number(n.montoTotal),
+        montoDescontado: Number(n.montoDescontado),
+        facturaId: f.id,
+      })
+    }
+  }
+
+  for (const na of notasAplicadas) {
+    const nota = notasById.get(na.notaId)
+    if (!nota) {
       return {
         ok: false,
         status: 400,
-        error: `El monto aplicado ($${fa.montoAplicado.toFixed(2)}) supera el saldo pendiente ($${saldoPendiente.toFixed(2)}) de la factura`,
+        error: "Una nota seleccionada no pertenece a ninguna factura del recibo",
+      }
+    }
+    const disponible = Math.max(0, restarImportes(nota.montoTotal, nota.montoDescontado))
+    if (na.monto > disponible + 0.01) {
+      return {
+        ok: false,
+        status: 400,
+        error: `El monto aplicado de la nota ($${na.monto.toFixed(2)}) supera el disponible ($${disponible.toFixed(2)})`,
+      }
+    }
+  }
+
+  // Helpers para agrupar notas aplicadas por factura
+  const esNC = (t: string) => t === "NC_EMITIDA" || t === "NC_RECIBIDA"
+  const esND = (t: string) => t === "ND_EMITIDA" || t === "ND_RECIBIDA"
+
+  function notasDeFactura(facturaId: string) {
+    return notasAplicadas.filter((na) => notasById.get(na.notaId)?.facturaId === facturaId)
+  }
+  function ncAplicadasNuevoEnFactura(facturaId: string) {
+    return sumarImportes(
+      notasDeFactura(facturaId)
+        .filter((na) => esNC(notasById.get(na.notaId)!.tipo))
+        .map((na) => na.monto)
+    )
+  }
+  function ndAplicadasNuevoEnFactura(facturaId: string) {
+    return sumarImportes(
+      notasDeFactura(facturaId)
+        .filter((na) => esND(notasById.get(na.notaId)!.tipo))
+        .map((na) => na.monto)
+    )
+  }
+
+  // Validar saldoPendiente >= montoAplicado + NC nuevas − ND nuevas para cada factura.
+  // Es decir: lo que se "consume" del saldo en este recibo (cash + NCs) no puede
+  // superar la deuda actual (total + ND_total − NC_descontadas − pagos previos).
+  for (const fa of facturasAplicadas) {
+    const factura = facturas.find((f) => f.id === fa.facturaId)!
+    const totalPagado = sumarImportes(factura.pagos.map((p) => p.monto))
+
+    const ncDescontadasPrev = sumarImportes(
+      factura.notasCreditoDebito
+        .filter((n) => esNC(n.tipo))
+        .map((n) => n.montoDescontado)
+    )
+    const ndDescontadasPrev = sumarImportes(
+      factura.notasCreditoDebito
+        .filter((n) => esND(n.tipo))
+        .map((n) => n.montoDescontado)
+    )
+
+    const ncNuevo = ncAplicadasNuevoEnFactura(fa.facturaId)
+    const ndNuevo = ndAplicadasNuevoEnFactura(fa.facturaId)
+
+    const deudaVigente = Math.max(
+      0,
+      sumarImportes([factura.total, ndDescontadasPrev, ndNuevo]) - ncDescontadasPrev - ncNuevo - totalPagado
+    )
+
+    if (fa.montoAplicado > deudaVigente + 0.01) {
+      return {
+        ok: false,
+        status: 400,
+        error: `El monto aplicado ($${fa.montoAplicado.toFixed(2)}) supera el saldo pendiente ($${deudaVigente.toFixed(2)}) de la factura`,
       }
     }
   }
@@ -198,6 +273,14 @@ export async function ejecutarCrearReciboCobranza(
 
     const reciboLabel = `Recibo ${String(recibo.ptoVenta).padStart(4, "0")}-${String(nro).padStart(8, "0")}`
 
+    // Transferencias acumuladas para registrar movimientos bancarios después
+    // de crear los PagoDeEmpresa (el movimiento se ancla al primer pago).
+    const transferenciasPendientesDeMov: Array<{
+      cuentaId: string
+      monto: number
+      fecha: Date
+    }> = []
+
     // Crear medios de pago
     for (const mp of mediosPago) {
       await tx.medioPagoRecibo.create({
@@ -215,19 +298,11 @@ export async function ejecutarCrearReciboCobranza(
         },
       })
 
-      // TRANSFERENCIA: crear MovimientoSinFactura INGRESO
       if (mp.tipo === "TRANSFERENCIA" && mp.cuentaId) {
-        await tx.movimientoSinFactura.create({
-          data: {
-            cuentaId: mp.cuentaId,
-            tipo: "INGRESO",
-            categoria: "TRANSFERENCIA_RECIBIDA",
-            monto: mp.monto,
-            fecha: mp.fechaTransferencia ? new Date(mp.fechaTransferencia) : new Date(fecha),
-            descripcion: `Cobro ${reciboLabel} — ${facturasAplicadas.length} factura(s)`,
-            referencia: mp.referencia ?? null,
-            operadorId,
-          },
+        transferenciasPendientesDeMov.push({
+          cuentaId: mp.cuentaId,
+          monto: mp.monto,
+          fecha: mp.fechaTransferencia ? new Date(mp.fechaTransferencia) : new Date(fecha),
         })
       }
 
@@ -252,7 +327,24 @@ export async function ejecutarCrearReciboCobranza(
       // EFECTIVO y SALDO_CTA_CTE: solo el registro de MedioPagoRecibo (ya creado arriba)
     }
 
+    // Aplicar notas seleccionadas: junction + acumular en montoDescontado
+    for (const na of notasAplicadas) {
+      await tx.notaAplicadaEnRecibo.create({
+        data: {
+          notaId: na.notaId,
+          reciboId: recibo.id,
+          monto: na.monto,
+          fecha: new Date(fecha),
+        },
+      })
+      await tx.notaCreditoDebito.update({
+        where: { id: na.notaId },
+        data: { montoDescontado: { increment: na.monto } },
+      })
+    }
+
     // Crear FacturaEnRecibo + PagoDeEmpresa + actualizar estadoCobro por cada factura
+    let primerPagoDeEmpresaId: string | null = null
     for (const fa of facturasAplicadas) {
       // Junction table
       await tx.facturaEnRecibo.create({
@@ -263,24 +355,47 @@ export async function ejecutarCrearReciboCobranza(
         },
       })
 
-      // PagoDeEmpresa
-      await tx.pagoDeEmpresa.create({
-        data: {
-          empresaId,
-          facturaId: fa.facturaId,
-          tipoPago: "RECIBO_COBRANZA",
-          monto: fa.montoAplicado,
-          referencia: reciboLabel,
-          fechaPago: new Date(fecha),
-          operadorId,
-        },
-      })
+      // PagoDeEmpresa (solo si hay cash aplicado)
+      if (fa.montoAplicado > 0) {
+        const pagoDeEmp = await tx.pagoDeEmpresa.create({
+          data: {
+            empresaId,
+            facturaId: fa.facturaId,
+            tipoPago: "RECIBO_COBRANZA",
+            monto: fa.montoAplicado,
+            referencia: reciboLabel,
+            fechaPago: new Date(fecha),
+            operadorId,
+          },
+        })
+        if (primerPagoDeEmpresaId === null) primerPagoDeEmpresaId = pagoDeEmp.id
+      }
 
-      // Determinar nuevo estadoCobro
+      // Determinar nuevo estadoCobro: COBRADA si total + ND_total − NC_total − pagos ≤ 0
       const factura = facturas.find((f) => f.id === fa.facturaId)!
       const totalPagadoPrevio = sumarImportes(factura.pagos.map((p) => p.monto))
       const totalPagadoNuevo = sumarImportes([totalPagadoPrevio, fa.montoAplicado])
-      const nuevoEstado = totalPagadoNuevo >= Number(factura.total) - 0.01 ? "COBRADA" : "PARCIALMENTE_COBRADA"
+
+      const ncDescontadasPrev = sumarImportes(
+        factura.notasCreditoDebito
+          .filter((n) => esNC(n.tipo))
+          .map((n) => n.montoDescontado)
+      )
+      const ndDescontadasPrev = sumarImportes(
+        factura.notasCreditoDebito
+          .filter((n) => esND(n.tipo))
+          .map((n) => n.montoDescontado)
+      )
+      const ncNuevo = ncAplicadasNuevoEnFactura(fa.facturaId)
+      const ndNuevo = ndAplicadasNuevoEnFactura(fa.facturaId)
+
+      const saldoFinal =
+        sumarImportes([factura.total, ndDescontadasPrev, ndNuevo]) -
+        ncDescontadasPrev -
+        ncNuevo -
+        totalPagadoNuevo
+
+      const nuevoEstado = saldoFinal <= 0.01 ? "COBRADA" : "PARCIALMENTE_COBRADA"
 
       await tx.facturaEmitida.update({
         where: { id: fa.facturaId },
@@ -302,34 +417,9 @@ export async function ejecutarCrearReciboCobranza(
       })
     }
 
-    // Marcar NC_EMITIDA asociadas a facturas cobradas como descontadas
-    // (la NC ya reduce el saldo de la factura — al cobrar se confirma que fue aplicada)
-    for (const fa of facturasAplicadas) {
-      const ncsFactura = facturas.find((f) => f.id === fa.facturaId)
-        ?.notasCreditoDebito.filter((n) => n.tipo === "NC_EMITIDA") ?? []
-      if (ncsFactura.length > 0) {
-        // Buscar NC con saldo sin descontar para esta factura
-        const ncsPendientes = await tx.notaCreditoDebito.findMany({
-          where: {
-            facturaId: fa.facturaId,
-            tipo: "NC_EMITIDA",
-          },
-          select: { id: true, montoTotal: true, montoDescontado: true },
-        })
-        for (const nc of ncsPendientes) {
-          if (Number(nc.montoDescontado) < Number(nc.montoTotal)) {
-            await tx.notaCreditoDebito.update({
-              where: { id: nc.id },
-              data: { montoDescontado: nc.montoTotal },
-            })
-          }
-        }
-      }
-    }
-
     // Saldo a cuenta: si hay exceso, crear PagoDeEmpresa sin factura
     if (saldoACuenta > 0) {
-      await tx.pagoDeEmpresa.create({
+      const pagoSaldo = await tx.pagoDeEmpresa.create({
         data: {
           empresaId,
           facturaId: null,
@@ -340,6 +430,23 @@ export async function ejecutarCrearReciboCobranza(
           operadorId,
         },
       })
+      if (primerPagoDeEmpresaId === null) primerPagoDeEmpresaId = pagoSaldo.id
+    }
+
+    // Registrar movimientos bancarios de TRANSFERENCIA (ancla = primer PagoDeEmpresa)
+    if (primerPagoDeEmpresaId) {
+      for (const t of transferenciasPendientesDeMov) {
+        await registrarMovimiento(tx, {
+          cuentaId: t.cuentaId,
+          tipo: "INGRESO",
+          categoria: "TRANSFERENCIA_RECIBIDA",
+          monto: t.monto,
+          fecha: t.fecha,
+          descripcion: `Cobro ${reciboLabel} — ${facturasAplicadas.length} factura(s)`,
+          pagoDeEmpresaId: primerPagoDeEmpresaId,
+          operadorCreacionId: operadorId,
+        })
+      }
     }
 
     return recibo

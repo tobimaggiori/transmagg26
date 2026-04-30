@@ -36,6 +36,12 @@ la regla "una sola fuente por concepto".
 1. [negocio/cupo.md](./negocio/cupo.md) — sistema completo de cupo:
    campos lockeados, validaciones, edición en bloque, agrupamiento.
 
+### Si vas a tocar el sistema "Javier Maggiori" (otro tenant)
+1. [jm/README.md](./jm/README.md) — sistema independiente. Solo comparte
+   auth con Transmagg. Schema/DB/lib/UI separados. **Leer antes de tocar
+   nada bajo `src/app/(jm)`, `src/app/api/jm`, `src/components/jm`,
+   `src/lib/jm` o `prisma-jm/`**.
+
 ### Si sos un agente IA
 1. [../CLAUDE.md](../CLAUDE.md) — contrato operativo (lo principal).
 2. Lo de arriba según la tarea.
@@ -70,9 +76,27 @@ docs/
 │   ├── ordenes-pago.md          OP: aplicaciones + medios + invariante
 │   ├── cheques.md               Cartera propia/tercero (esqueleto)
 │   └── cupo.md                  Sistema de cupo (hermanos, lock, bulk, agrupamiento)
-└── reglas-fiscales/
-    └── nc-nd-iva.md             IVA en NC/ND (Manera 1 / Manera 2)
+├── reglas-fiscales/
+│   └── nc-nd-iva.md             IVA en NC/ND (Manera 1 / Manera 2)
+└── jm/
+    └── README.md                Sistema "Javier Maggiori" (tenant separado)
 ```
+
+## Multi-tenant
+
+El proyecto está evolucionando hacia un sistema multi-empresa. Cada **tenant**
+(Transmagg, Javier Maggiori, futuros) es independiente: DB, schema, entidades,
+rutas, UI. Lo único que comparten es **autenticación** y primitivas neutras de UI.
+
+Tenants actuales:
+- **Transmagg**: tenant principal — DB `transmagg`, código en
+  `src/app/(dashboard)`, `src/app/api/...`, `src/lib/...`, `src/components/...`.
+- **Javier Maggiori (JM)**: tenant secundario — DB `javiermaggiori`, código en
+  `src/app/(jm)`, `src/app/api/jm/...`, `src/lib/jm/...`, `src/components/jm/...`,
+  `prisma-jm/`. Ver [jm/README.md](./jm/README.md).
+
+Cuando se sume un tercer tenant, debe seguir el patrón de JM (carpetas propias,
+DB propia, no mezclar imports).
 
 ## Reglas de oro de la documentación
 

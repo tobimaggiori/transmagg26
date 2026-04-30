@@ -18,6 +18,7 @@ type Movimiento = {
   debe: number
   haber: number
   saldo: number
+  pdfEndpoint: string | null
 }
 type CCData = {
   empresa: Empresa
@@ -25,6 +26,8 @@ type CCData = {
   totalDebe: number
   totalHaber: number
   saldoFinal: number
+  desde: string | null
+  hasta: string
 }
 
 interface CCEmpresasClientProps {
@@ -44,21 +47,68 @@ interface CCEmpresasClientProps {
  */
 export function CCEmpresasClient({ empresas }: CCEmpresasClientProps) {
   const hoy = hoyLocalYmd()
-  const noventa = hoyLocalYmd(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000))
 
   const [empresaId, setEmpresaId] = useState("")
-  const [desde, setDesde] = useState(noventa)
+  const [desde, setDesde] = useState("")
   const [hasta, setHasta] = useState(hoy)
   const [data, setData] = useState<CCData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [abriendoPdf, setAbriendoPdf] = useState<number | null>(null)
+  const [imprimiendo, setImprimiendo] = useState(false)
+
+  async function handleImprimir() {
+    if (!empresaId) return
+    setImprimiendo(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams()
+      if (desde) params.set("desde", desde)
+      if (hasta) params.set("hasta", hasta)
+      const res = await fetch(`/api/empresas/${empresaId}/cuenta-corriente/pdf?${params.toString()}`)
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setError(body.error ?? "No se pudo generar el PDF")
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      window.open(url, "_blank", "noopener,noreferrer")
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch {
+      setError("Error de red al generar el PDF")
+    } finally {
+      setImprimiendo(false)
+    }
+  }
+
+  async function abrirPDF(endpoint: string, idx: number) {
+    setAbriendoPdf(idx)
+    setError(null)
+    try {
+      const res = await fetch(endpoint)
+      const body = await res.json()
+      if (!res.ok || !body.url) {
+        setError(body.error ?? "No se pudo obtener el PDF")
+        return
+      }
+      window.open(body.url as string, "_blank", "noopener,noreferrer")
+    } catch {
+      setError("Error de red al obtener el PDF")
+    } finally {
+      setAbriendoPdf(null)
+    }
+  }
 
   async function handleFiltrar() {
     if (!empresaId) return
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/empresas/${empresaId}/cuenta-corriente?desde=${desde}&hasta=${hasta}`)
+      const params = new URLSearchParams()
+      if (desde) params.set("desde", desde)
+      if (hasta) params.set("hasta", hasta)
+      const res = await fetch(`/api/empresas/${empresaId}/cuenta-corriente?${params.toString()}`)
       if (!res.ok) {
         const body = await res.json()
         throw new Error(body.error ?? "Error al cargar cuenta corriente")
@@ -126,7 +176,7 @@ export function CCEmpresasClient({ empresas }: CCEmpresasClientProps) {
               <p className="text-muted-foreground text-sm">CUIT: {formatearCuit(data.empresa.cuit)}</p>
             </div>
             <div className="text-right">
-              <p className="text-sm text-muted-foreground">Saldo actual</p>
+              <p className="text-sm text-muted-foreground">Saldo al {formatearFecha(data.hasta)}</p>
               <p
                 className={`text-2xl font-bold ${
                   data.saldoFinal > 0
@@ -150,8 +200,8 @@ export function CCEmpresasClient({ empresas }: CCEmpresasClientProps) {
                   : "Cuenta saldada"}
               </p>
             </div>
-            <Button variant="outline" onClick={() => window.print()}>
-              <Printer className="h-4 w-4 mr-2" /> Imprimir
+            <Button variant="outline" onClick={handleImprimir} disabled={imprimiendo}>
+              <Printer className="h-4 w-4 mr-2" /> {imprimiendo ? "Generando..." : "Imprimir"}
             </Button>
           </div>
 
@@ -182,7 +232,23 @@ export function CCEmpresasClient({ empresas }: CCEmpresasClientProps) {
                       <tr key={i} className="border-b hover:bg-muted/30">
                         <td className="px-4 py-2 text-muted-foreground">{formatearFecha(mov.fecha)}</td>
                         <td className="px-4 py-2">{mov.concepto}</td>
-                        <td className="px-4 py-2 text-muted-foreground text-xs">{mov.comprobante}</td>
+                        <td className="px-4 py-2 text-xs">
+                          {mov.comprobante ? (
+                            mov.pdfEndpoint ? (
+                              <button
+                                type="button"
+                                onClick={() => abrirPDF(mov.pdfEndpoint!, i)}
+                                disabled={abriendoPdf === i}
+                                className="text-primary underline-offset-2 hover:underline disabled:opacity-60"
+                                title="Ver PDF"
+                              >
+                                {abriendoPdf === i ? "Abriendo..." : mov.comprobante}
+                              </button>
+                            ) : (
+                              <span className="text-muted-foreground">{mov.comprobante}</span>
+                            )
+                          ) : null}
+                        </td>
                         <td className="px-4 py-2 text-right">
                           {mov.debe > 0 ? formatearMoneda(mov.debe) : ""}
                         </td>
@@ -205,7 +271,9 @@ export function CCEmpresasClient({ empresas }: CCEmpresasClientProps) {
                 <tfoot>
                   <tr className="bg-muted font-semibold border-t-2">
                     <td colSpan={3} className="px-4 py-3 text-right">
-                      Totales del período
+                      {data.desde
+                        ? `Totales desde ${formatearFecha(data.desde)} hasta ${formatearFecha(data.hasta)}:`
+                        : `Totales al ${formatearFecha(data.hasta)}`}
                     </td>
                     <td className="px-4 py-3 text-right">{formatearMoneda(data.totalDebe)}</td>
                     <td className="px-4 py-3 text-right text-green-700">
@@ -224,15 +292,6 @@ export function CCEmpresasClient({ empresas }: CCEmpresasClientProps) {
               </div>
             </CardContent>
           </Card>
-
-          {/* Leyenda saldo */}
-          <p className="text-sm font-medium text-center py-2 rounded-md border">
-            {data.saldoFinal > 0
-              ? `Saldo deudor: ${formatearMoneda(data.saldoFinal)} — La empresa debe este monto a Transmagg`
-              : data.saldoFinal < 0
-              ? `Saldo a favor de la empresa: ${formatearMoneda(Math.abs(data.saldoFinal))} — Se descontará en futuras facturas`
-              : "Cuenta saldada"}
-          </p>
         </>
       )}
     </div>

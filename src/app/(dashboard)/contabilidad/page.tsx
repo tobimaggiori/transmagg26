@@ -5,7 +5,7 @@
 
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import Link from "next/link"
 import type { Rol } from "@/types"
 
@@ -15,7 +15,7 @@ const SECCIONES = [
   { href: "/contabilidad/iibb", label: "IIBB", descripcion: "Listado de viajes por provincia para IIBB" },
   { href: "/contabilidad/gastos", label: "Gastos", descripcion: "Detalle de gastos agrupados por concepto" },
   { href: "/contabilidad/lp-vs-facturas", label: "Conciliación de Viajes", descripcion: "Comparación de subtotales LP vs facturas emitidas por viaje" },
-  { href: "/contabilidad/viajes-sin-lp", label: "Viajes sin LP", descripcion: "Viajes facturados que no tienen liquidación asociada" },
+  { href: "/contabilidad/viajes-sin-lp", label: "Viajes propios", descripcion: "Viajes facturados que no tienen liquidación asociada" },
   { href: "/contabilidad/notas-credito-debito", label: "Notas C/D", descripcion: "Notas de crédito y débito emitidas y recibidas" },
   { href: "/contabilidad/polizas", label: "Pólizas de Seguro", descripcion: "Alta y consulta de pólizas de seguro de la empresa" },
 ]
@@ -25,7 +25,7 @@ export default async function ContabilidadPage() {
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
-  if (!puedeAcceder(rol, "cuentas")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "cuentas"))) redirect("/dashboard")
 
   return (
     <div className="space-y-6">

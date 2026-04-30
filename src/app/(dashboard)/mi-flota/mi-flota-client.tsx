@@ -11,14 +11,13 @@ interface ChoferFlota {
   id: string
   nombre: string
   apellido: string
-  email: string
+  email: string | null
 }
 
 interface CamionFlota {
   id: string
   patenteChasis: string
   patenteAcoplado: string | null
-  tipoCamion: string
   choferActual: ChoferFlota | null
 }
 
@@ -66,7 +65,6 @@ export function MiFlotaClient({ camiones, choferesSinCamion, razonSocial }: MiFl
                   <span className="font-semibold">{c.patenteChasis}</span>
                   {c.patenteAcoplado && <span className="text-sm text-muted-foreground">/ {c.patenteAcoplado}</span>}
                 </div>
-                <p className="text-sm text-muted-foreground">{c.tipoCamion}</p>
                 {c.choferActual ? (
                   <div className="flex items-center gap-1.5 text-sm text-green-700">
                     <User className="h-3.5 w-3.5" />

@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     const tarjetas = await prisma.tarjetaPrepaga.findMany({
       where: cuentaId ? { cuentaId } : undefined,
       include: {
-        chofer: { select: { id: true, nombre: true, apellido: true, email: true } },
+        chofer: { select: { id: true, nombre: true, apellido: true, usuario: { select: { email: true } } } },
         cuenta: { select: { id: true, nombre: true } },
         gastos: { orderBy: { fecha: "desc" } },
       },
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) return invalidDataResponse(parsed.error.flatten())
 
     const [chofer, cuenta] = await Promise.all([
-      prisma.usuario.findUnique({ where: { id: parsed.data.choferId } }),
+      prisma.empleado.findUnique({ where: { id: parsed.data.choferId } }),
       prisma.cuenta.findUnique({ where: { id: parsed.data.cuentaId } }),
     ])
 

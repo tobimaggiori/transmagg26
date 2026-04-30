@@ -12,10 +12,6 @@ import { esRolInterno } from "@/lib/permissions"
 import type { Rol } from "@/types"
 
 const crearFleteroSchema = z.object({
-  nombre: z.string().min(1),
-  apellido: z.string().min(1),
-  email: z.string().email(),
-  telefono: z.string().optional(),
   razonSocial: z.string().min(1),
   cuit: z.string().regex(/^\d{11}$/, "CUIT debe tener 11 dígitos"),
   condicionIva: z.string().min(1),
@@ -99,29 +95,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { nombre, apellido, email, telefono, razonSocial, cuit, condicionIva, direccion, comisionDefault } = parsed.data
+    const { razonSocial, cuit, condicionIva, direccion, comisionDefault } = parsed.data
 
-    // Verificar que el CUIT y email no estén en uso
-    const [cuitExiste, emailExiste] = await Promise.all([
-      prisma.fletero.findUnique({ where: { cuit } }),
-      prisma.usuario.findUnique({ where: { email } }),
-    ])
-
+    const cuitExiste = await prisma.fletero.findUnique({ where: { cuit } })
     if (cuitExiste) return NextResponse.json({ error: "El CUIT ya está registrado" }, { status: 409 })
-    if (emailExiste) return NextResponse.json({ error: "El email ya está registrado" }, { status: 409 })
 
-    // Crear usuario + fletero en transacción
-    const result = await prisma.$transaction(async (tx) => {
-      const usuario = await tx.usuario.create({
-        data: { nombre, apellido, email, telefono, rol: "FLETERO" },
-      })
-      const fletero = await tx.fletero.create({
-        data: { usuarioId: usuario.id, razonSocial, cuit, condicionIva, direccion, comisionDefault },
-      })
-      return { usuario, fletero }
+    // El usuario asociado se crea/vincula desde ABM Usuarios.
+    const fletero = await prisma.fletero.create({
+      data: { razonSocial, cuit, condicionIva, direccion, comisionDefault },
     })
 
-    return NextResponse.json(result, { status: 201 })
+    return NextResponse.json({ fletero }, { status: 201 })
   } catch (error) {
     console.error("[POST /api/fleteros]", error)
     return NextResponse.json(

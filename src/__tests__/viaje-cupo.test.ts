@@ -28,7 +28,7 @@ const fuente: ViajeFuenteCupo = {
   camionId: "cam1",
   choferId: "ch1",
   esCamionPropio: false,
-  tieneCpe: true,
+  tieneCtg: true,
 }
 
 describe("compararCamposLockeados", () => {
@@ -124,7 +124,7 @@ describe("agruparViajesPorCupo", () => {
       kilos: 1000,
       tarifa: 5000,
       subtotal: 5000,
-      nroCartaPorte: null,
+      nroCtg: null,
       ...over,
     }
   }
@@ -179,13 +179,22 @@ describe("agruparViajesPorCupo", () => {
     expect(grupos[0].kilos).toBe(1000)
   })
 
-  it("CDPs se acumulan también", () => {
+  it("CTGs se acumulan también", () => {
     const grupos = agruparViajesPorCupo([
-      viaje({ cupo: "C", nroCartaPorte: "CDP-1" }),
-      viaje({ cupo: "C", nroCartaPorte: "CDP-2" }),
-      viaje({ cupo: "C", nroCartaPorte: null }),
+      viaje({ cupo: "C", nroCtg: "CTG-1" }),
+      viaje({ cupo: "C", nroCtg: "CTG-2" }),
+      viaje({ cupo: "C", nroCtg: null }),
     ])
-    expect(grupos[0].cdps).toEqual(["CDP-1", "CDP-2"])
+    expect(grupos[0].ctgs).toEqual(["CTG-1", "CTG-2"])
+  })
+
+  it("CPEs se acumulan también", () => {
+    const grupos = agruparViajesPorCupo([
+      viaje({ cupo: "C", cpe: "CPE-1" }),
+      viaje({ cupo: "C", cpe: "CPE-2" }),
+      viaje({ cupo: "C", cpe: null }),
+    ])
+    expect(grupos[0].cpes).toEqual(["CPE-1", "CPE-2"])
   })
 
   it("array vacío → []", () => {

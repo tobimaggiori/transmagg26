@@ -65,13 +65,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     fecha: string
     periodoDesde: string
     periodoHasta: string
-    neto: number
-    iva: number
-    total: number
-    percepciones?: Array<{
-      tipo: string
-      categoria: string
-      descripcion?: string | null
+    items: Array<{
+      tipo: "CONCEPTO" | "IVA" | "PERCEPCION" | "IMPUESTO"
+      subtipo?: "PERCEPCION_IVA" | "PERCEPCION_IIBB" | "PERCEPCION_GANANCIAS" | "PERCEPCION_SUSS" | "OTRO" | null
+      descripcion: string
+      alicuota?: number | null
+      baseCalculo?: number | null
       monto: number
     }>
     formaPago: string
@@ -97,9 +96,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     !data.fecha ||
     !data.periodoDesde ||
     !data.periodoHasta ||
-    data.neto === undefined ||
-    data.iva === undefined ||
-    data.total === undefined ||
+    !Array.isArray(data.items) ||
+    data.items.length === 0 ||
     !data.formaPago ||
     !Array.isArray(data.polizas) ||
     data.polizas.length === 0

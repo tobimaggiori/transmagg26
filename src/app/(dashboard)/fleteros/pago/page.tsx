@@ -6,7 +6,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { RegistrarPagoClient } from "./registrar-pago-client"
 import type { Rol } from "@/types"
 
@@ -15,7 +15,7 @@ export default async function OrdenDePagoPage() {
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_TRANSMAGG") as Rol
-  if (!puedeAcceder(rol, "pagos")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "pagos"))) redirect("/dashboard")
 
   const [fleteros, cuentas, chequesEnCartera, operador] = await Promise.all([
     prisma.fletero.findMany({
@@ -24,14 +24,12 @@ export default async function OrdenDePagoPage() {
       orderBy: { razonSocial: "asc" },
     }).then((rows) => rows.map((r) => ({ ...r, email: r.usuario?.email ?? null }))),
     prisma.cuenta.findMany({
-      where: {
-        activa: true,
-        OR: [
-          { cuentaPadreId: { not: null } },
-          { tipo: { not: "BANCO" } },
-        ],
+      where: { activa: true },
+      select: {
+        id: true,
+        nombre: true,
+        banco: { select: { id: true, nombre: true } },
       },
-      select: { id: true, nombre: true, bancoOEntidad: true },
       orderBy: { nombre: "asc" },
     }),
     prisma.chequeRecibido.findMany({

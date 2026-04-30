@@ -22,6 +22,7 @@ import {
 import { formatearCuit } from "@/lib/utils"
 import { CondicionIva } from "@/types"
 import { Plus, Pencil, Trash2, Search, PowerOff, Power } from "lucide-react"
+import { BotonBuscarPadron } from "./buscar-padron-button"
 
 export interface ProveedorAbm {
   id: string
@@ -67,6 +68,8 @@ function ProveedorFormModal({ proveedor, onSuccess }: { proveedor?: ProveedorAbm
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const isEdit = !!proveedor
+  const [padronOk, setPadronOk] = useState(isEdit)
+  const bloqueado = !isEdit && !padronOk
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
@@ -100,34 +103,46 @@ function ProveedorFormModal({ proveedor, onSuccess }: { proveedor?: ProveedorAbm
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div className="space-y-1">
-        <Label htmlFor="razonSocial">Razón social *</Label>
-        <Input id="razonSocial" name="razonSocial" value={form.razonSocial} onChange={handleChange} required disabled={loading} />
+        <Label htmlFor="cuit">CUIT (11 dígitos) *</Label>
+        <Input id="cuit" name="cuit" value={form.cuit} onChange={handleChange} required disabled={loading || isEdit} maxLength={11} pattern="\d{11}" placeholder="30123456789" />
+        {!isEdit && (
+          <BotonBuscarPadron
+            cuit={form.cuit}
+            disabled={loading}
+            onResultado={({ razonSocial, condicionIva }) => {
+              setForm((prev) => ({
+                ...prev,
+                razonSocial: razonSocial || prev.razonSocial,
+                condicionIva: condicionIva || prev.condicionIva,
+              }))
+              setPadronOk(true)
+            }}
+          />
+        )}
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label htmlFor="cuit">CUIT (11 dígitos) *</Label>
-          <Input id="cuit" name="cuit" value={form.cuit} onChange={handleChange} required disabled={loading || isEdit} maxLength={11} pattern="\d{11}" placeholder="30123456789" />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="condicionIva">Condición IVA *</Label>
-          <Select id="condicionIva" name="condicionIva" value={form.condicionIva} onChange={handleChange} disabled={loading}>
-            {Object.entries(CondicionIva).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </Select>
-        </div>
+      <div className="space-y-1">
+        <Label htmlFor="razonSocial">Razón social *</Label>
+        <Input id="razonSocial" name="razonSocial" value={form.razonSocial} onChange={handleChange} required disabled={loading || bloqueado} />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="condicionIva">Condición IVA *</Label>
+        <Select id="condicionIva" name="condicionIva" value={form.condicionIva} onChange={handleChange} disabled={loading || bloqueado}>
+          {Object.entries(CondicionIva).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </Select>
       </div>
       <div className="space-y-1">
         <Label htmlFor="rubro">Rubro</Label>
-        <Input id="rubro" name="rubro" value={form.rubro} onChange={handleChange} disabled={loading} placeholder="Combustible, Peajes, etc." />
+        <Input id="rubro" name="rubro" value={form.rubro} onChange={handleChange} disabled={loading || bloqueado} placeholder="Combustible, Peajes, etc." />
       </div>
       <div className="space-y-1">
         <Label>Tipo de proveedor</Label>
         <div className="flex gap-4 pt-1">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="radio" value="GENERAL" checked={form.tipo === "GENERAL"} onChange={() => setForm((p) => ({ ...p, tipo: "GENERAL" }))} disabled={loading} />
+          <label className={`flex items-center gap-2 ${bloqueado ? "opacity-50" : "cursor-pointer"}`}>
+            <input type="radio" value="GENERAL" checked={form.tipo === "GENERAL"} onChange={() => setForm((p) => ({ ...p, tipo: "GENERAL" }))} disabled={loading || bloqueado} />
             Proveedor general
           </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="radio" value="ASEGURADORA" checked={form.tipo === "ASEGURADORA"} onChange={() => setForm((p) => ({ ...p, tipo: "ASEGURADORA" }))} disabled={loading} />
+          <label className={`flex items-center gap-2 ${bloqueado ? "opacity-50" : "cursor-pointer"}`}>
+            <input type="radio" value="ASEGURADORA" checked={form.tipo === "ASEGURADORA"} onChange={() => setForm((p) => ({ ...p, tipo: "ASEGURADORA" }))} disabled={loading || bloqueado} />
             Aseguradora
           </label>
         </div>
@@ -135,7 +150,7 @@ function ProveedorFormModal({ proveedor, onSuccess }: { proveedor?: ProveedorAbm
       <FormError message={error} />
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onSuccess} disabled={loading}>Cancelar</Button>
-        <Button type="submit" disabled={loading}>{loading ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear proveedor"}</Button>
+        <Button type="submit" disabled={loading || bloqueado}>{loading ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear proveedor"}</Button>
       </div>
     </form>
   )

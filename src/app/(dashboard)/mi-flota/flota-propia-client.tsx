@@ -16,18 +16,11 @@ import { hoyLocalYmd } from "@/lib/date-local"
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
-interface Empleado {
-  id: string
-  nombre: string
-  apellido: string
-}
-
 interface ChoferDisponible {
   id: string
   nombre: string
   apellido: string
-  email: string
-  empleado: Empleado | null
+  usuario: { email: string | null } | null
 }
 
 interface Poliza {
@@ -56,7 +49,6 @@ interface CamionPropio {
   id: string
   patenteChasis: string
   patenteAcoplado: string | null
-  tipoCamion: string
   activo: boolean
   esPropio: boolean
   choferActual: ChoferDisponible | null
@@ -137,7 +129,6 @@ function ModalCamion({
 }) {
   const [patenteChasis, setPatenteChasis] = useState(camion?.patenteChasis ?? "")
   const [patenteAcoplado, setPatenteAcoplado] = useState(camion?.patenteAcoplado ?? "")
-  const [tipoCamion, setTipoCamion] = useState(camion?.tipoCamion ?? "")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
@@ -153,7 +144,6 @@ function ModalCamion({
             body: JSON.stringify({
               patenteChasis: patenteChasis.toUpperCase(),
               patenteAcoplado: patenteAcoplado || null,
-              tipoCamion,
             }),
           })
         : await fetch("/api/camiones/propios", {
@@ -162,7 +152,6 @@ function ModalCamion({
             body: JSON.stringify({
               patenteChasis: patenteChasis.toUpperCase(),
               patenteAcoplado: patenteAcoplado || null,
-              tipoCamion,
             }),
           })
       const data = await res.json()
@@ -210,16 +199,6 @@ function ModalCamion({
               onChange={(e) => setPatenteAcoplado(e.target.value.toUpperCase())}
               placeholder="Opcional"
               maxLength={8}
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium">Tipo de camión *</label>
-            <input
-              className="mt-1 w-full border rounded px-3 py-2 text-sm"
-              value={tipoCamion}
-              onChange={(e) => setTipoCamion(e.target.value)}
-              placeholder="Ej: Semi, Chasis, Zorra"
-              required
             />
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
@@ -612,7 +591,6 @@ function PanelCamion({
                 </span>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">{camion.tipoCamion}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">

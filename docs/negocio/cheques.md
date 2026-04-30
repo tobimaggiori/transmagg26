@@ -22,7 +22,7 @@ ChequeEmitido {
   estado              // PENDIENTE_EMISION | EMITIDO | DEPOSITADO | RECHAZADO
   esElectronico       // siempre true (Transmagg solo emite ECheq)
   fleteroId | proveedorId  // beneficiario
-  liquidacionId | planillaGaliciaId  // contexto opcional
+  liquidacionId  // contexto opcional
 }
 ```
 
@@ -33,7 +33,6 @@ ChequeEmitido {
 - **Pago a fletero en OP** tipo `CHEQUE_PROPIO`: ver [ordenes-pago.md](./ordenes-pago.md).
   Crea cheque con `motivoPago: "ORDEN_DE_PAGO"`.
 - **Pago a proveedor**.
-- **Planilla Galicia** (emisión masiva).
 
 ### Validaciones al crear
 
@@ -90,12 +89,6 @@ en `src/app/(dashboard)/contabilidad/chequeras/`.
 | `GET /api/cheques-emitidos/disponibles` | Cheques en estado `EMITIDO` sin uso |
 | `POST /api/cheques-emitidos/registrar-deposito` | Marcar como depositado |
 
-## Planilla Galicia (emisión masiva)
-
-Modelo `PlanillaGalicia`: agrupa hasta 250 cheques propios para emisión
-masiva por banco Galicia. Solo cuentas con
-`tienePlanillaEmisionMasiva: true`. Genera Excel con
-`src/lib/galicia-excel.ts`.
 
 ## Pendiente de profundizar en doc
 

@@ -12,6 +12,7 @@ import { calcularSaldoCCFletero } from "@/lib/cuenta-corriente"
 import { generarPDFOrdenPago } from "@/lib/pdf-orden-pago"
 import { subirPDF, storageConfigurado } from "@/lib/storage"
 import { sumarImportes, restarImportes, maxMonetario, importesIguales, m } from "@/lib/money"
+import { registrarMovimiento } from "@/lib/movimiento-cuenta"
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -303,6 +304,10 @@ export async function ejecutarCrearOrdenPago(
         })
       }
 
+      // Para TRANSFERENCIA, el movimiento bancario se registra después de
+      // crear el primer pagoAFletero (se usa como ancla de la FK).
+      let primerPagoIdParaMov: string | null = null
+      let descripcionMovTransf = ""
       if (pago.tipoPago === "TRANSFERENCIA") {
         const lpLabels = lpsOrdenados
           .map((lp) => {
@@ -310,22 +315,10 @@ export async function ejecutarCrearOrdenPago(
             return `${String(lp.ptoVenta).padStart(4, "0")}-${String(lp.nroComprobante).padStart(8, "0")}`
           })
           .join(", ")
-        const descripcionMov =
+        descripcionMovTransf =
           lpsOrdenados.length === 1
             ? `Pago LP ${lpLabels} — ${fleteroDb.razonSocial}`
             : `Pago LPs ${lpLabels} — ${fleteroDb.razonSocial}`
-        await tx.movimientoSinFactura.create({
-          data: {
-            cuentaId: pago.cuentaBancariaId,
-            tipo: "EGRESO",
-            categoria: "TRANSFERENCIA_ENVIADA",
-            monto: pago.monto,
-            fecha: fechaPago,
-            descripcion: descripcionMov,
-            referencia: pago.referencia,
-            operadorId,
-          },
-        })
       }
 
       // ── Distribuir este item entre los LPs con saldo restante ──────────
@@ -360,12 +353,27 @@ export async function ejecutarCrearOrdenPago(
             },
           })
           pagoIdsParaOP.push(nuevoPago.id)
+          if (primerPagoIdParaMov === null) primerPagoIdParaMov = nuevoPago.id
 
           saldosRestantes.set(lp.id, restarImportes(saldoLP, montoParaEsteLP))
           montoRestantePago = restarImportes(montoRestantePago, montoParaEsteLP)
         }
 
         if ((saldosRestantes.get(lp.id) ?? 0) < 0.01) lpIndex++
+      }
+
+      // Registrar movimiento bancario de TRANSFERENCIA (ancla = primer pago)
+      if (pago.tipoPago === "TRANSFERENCIA" && primerPagoIdParaMov) {
+        await registrarMovimiento(tx, {
+          cuentaId: pago.cuentaBancariaId,
+          tipo: "EGRESO",
+          categoria: "TRANSFERENCIA_ENVIADA",
+          monto: pago.monto,
+          fecha: fechaPago,
+          descripcion: descripcionMovTransf,
+          pagoAFleteroId: primerPagoIdParaMov,
+          operadorCreacionId: operadorId,
+        })
       }
     }
 

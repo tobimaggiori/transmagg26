@@ -11,11 +11,6 @@
 > - Adelantos y gastos descontables en OP: [./adelantos.md](./adelantos.md)
 > - Viajes con cupo (auto-selección de hermanos al liquidar, validación
 >   de tarifa, agrupamiento en el PDF): [./cupo.md](./cupo.md)
->
-> **Inconsistencia conocida**: este doc describe estados derivados de viaje
-> (`PENDIENTE_LIQUIDACION`, `LIQUIDADO_VIGENTE`, `LIQUIDADO_AJUSTADO_PARCIAL`)
-> que probablemente NO estén implementados así en el código. Ver
-> [../INCONSISTENCIAS-DETECTADAS.md](../INCONSISTENCIAS-DETECTADAS.md).
 
 ## Objetivo
 
@@ -182,41 +177,38 @@ Eso no debe interpretarse como múltiples liquidaciones principales vigentes sim
 
 ## 5. Estado de liquidación del viaje
 
-El estado operativo del viaje en el circuito del fletero debe derivarse de su situación económica vigente, no solo de la existencia de un comprobante histórico.
+El estado operativo del viaje en el circuito del fletero se modela con un
+flag binario sobre el viaje base (`Viaje.estadoLiquidacion` en
+`prisma/schema.prisma`, resuelto en `src/lib/viaje-workflow.ts`):
 
-### Estados propuestos
+### Estados implementados
 
-#### `PENDIENTE_LIQUIDACION`
+#### `PENDIENTE_LIQUIDAR`
 
-El viaje no tiene actualmente liquidación vigente neta.
-
-Casos típicos:
+El viaje no está tomado por una liquidación vigente. Casos típicos:
 
 * nunca fue liquidado
-* fue liquidado y luego totalmente revertido por NC
+* fue liquidado y luego liberado por NC (la NC incluyó el viaje en
+  `viajesALiberar`)
 
 ---
 
-#### `LIQUIDADO_VIGENTE`
+#### `LIQUIDADO`
 
-El viaje tiene liquidación vigente completa.
-
-Casos típicos:
+El viaje está tomado por al menos una liquidación vigente. Casos típicos:
 
 * LP emitido sin correcciones
-* LP emitido y luego ND
-* LP original revertido y luego reliquidado correctamente
+* LP emitido y luego ND (la ND complementa, no libera)
+* LP emitido y luego NC parcial que NO libera el viaje (corrección
+  monetaria sin reversión operativa)
 
 ---
 
-#### `LIQUIDADO_AJUSTADO_PARCIAL`
-
-El viaje sigue liquidado, pero con ajuste parcial por NC.
-
-Casos típicos:
-
-* LP emitido y luego NC parcial
-* se corrigió parcialmente el importe reconocido al fletero sin liberar completamente el viaje
+> **Nota sobre el granular**: la "vigencia económica" de un viaje no se modela
+> como un tercer estado del viaje. Lo único que decide qué neto queda
+> reconocido al fletero son los comprobantes asociados (LP + NC/ND) y la
+> cuenta corriente del fletero. Una NC parcial sin liberación de viaje afecta
+> el saldo y el IVA Compras, pero el viaje sigue contando como `LIQUIDADO`.
 
 ---
 
@@ -229,37 +221,46 @@ Cuando se emite un LP:
 * se genera comprobante de liquidación
 * se registra la deuda correspondiente en cuenta corriente del fletero
 * se determinan descuentos, retenciones y neto
-* los viajes incluidos pasan a `LIQUIDADO_VIGENTE`
+* los viajes incluidos pasan a `LIQUIDADO`
 
-El LP no debe modelarse solo como una impresión o resumen. Debe quedar trazado como documento económico principal del circuito.
+El flag `estadoLiquidacion` en el viaje no es la fuente de verdad económica:
+solo indica si el viaje está tomado por alguna liquidación vigente. La
+trazabilidad y el neto vivo se reconstruyen desde el LP y sus NC/ND
+asociadas.
 
 ---
 
-### 6.2 Emisión de NC total sobre LP o sobre componente del viaje
+### 6.2 Emisión de NC con liberación de viaje
 
-Cuando se emite una NC que revierte totalmente la liquidación vigente de un viaje:
+Cuando se emite una NC que libera un viaje (revierte totalmente su
+liquidación):
 
 * el LP original sigue existiendo
 * la NC queda asociada al comprobante origen
 * se revierte totalmente el efecto económico vigente de ese viaje
-* el viaje pasa a `PENDIENTE_LIQUIDACION`
-* el viaje puede quedar habilitado para reliquidación completa, si operativamente corresponde
+* el viaje pasa a `PENDIENTE_LIQUIDAR`
+* el viaje queda habilitado para reliquidación
 
-La evaluación debe ser por viaje afectado, no solo por cabecera de comprobante.
+La liberación se decide por viaje (lista `viajesALiberar` en
+`src/lib/nota-cd-commands.ts`), no por cabecera de LP: una NC puede liberar
+solo parte de los viajes incluidos en el LP origen.
 
 ---
 
-### 6.3 Emisión de NC parcial
+### 6.3 Emisión de NC parcial sin liberación de viaje
 
-Cuando se emite una NC parcial sobre una liquidación del fletero:
+Cuando se emite una NC que reduce el monto reconocido al fletero pero NO
+libera el viaje:
 
-* el comprobante original sigue existiendo
+* el LP original sigue existiendo
 * la NC queda asociada al origen
-* el efecto económico vigente se reduce parcialmente
-* el viaje sigue liquidado
-* el viaje pasa a `LIQUIDADO_AJUSTADO_PARCIAL`
+* el efecto económico vigente se reduce parcialmente (afecta saldo de
+  cuenta corriente fletero e IVA Compras)
+* el viaje sigue en `LIQUIDADO`
+* el viaje NO queda habilitado para reliquidación
 
-La NC parcial no debe liberar automáticamente al viaje para una reliquidación total.
+La decisión de liberar o no es del operador al emitir la NC; el sistema no
+asume liberación automática por importe parcial.
 
 ---
 
@@ -272,10 +273,9 @@ Cuando se emite una ND del lado fletero:
 * aumenta el importe vigente a favor del fletero
 * el viaje se mantiene liquidado
 
-En términos operativos:
-
-* si estaba `LIQUIDADO_VIGENTE`, permanece así
-* si estaba `LIQUIDADO_AJUSTADO_PARCIAL`, una ND puede recomponer total o parcialmente el ajuste, sin borrar historial
+En términos operativos el viaje sigue en `LIQUIDADO`. La ND no cambia el
+estado del viaje; solo aumenta el saldo de cuenta corriente del fletero y el
+IVA Compras asociados.
 
 ---
 
@@ -364,42 +364,20 @@ Un viaje puede estar:
 
 ## 9. Reliquidación
 
-## 9.1 Cuándo un viaje es reliquidable completo
+## 9.1 Cuándo un viaje es reliquidable
 
-Un viaje es reliquidable completo cuando:
+Un viaje es reliquidable cuando está en `PENDIENTE_LIQUIDAR`. Esto ocurre si:
 
-* su liquidación vigente fue revertida totalmente
-* no queda importe neto vigente reconocido al fletero por ese viaje
-* no existe otra liquidación vigente cubriéndolo
-
-En ese caso el viaje queda en `PENDIENTE_LIQUIDACION`.
+* nunca fue liquidado, o
+* fue liquidado y la NC posterior lo liberó (ver 6.2)
 
 ---
 
-## 9.2 Cuándo un viaje NO es reliquidable completo
+## 9.2 Cuándo un viaje NO es reliquidable
 
-No debe quedar liberado para reliquidación total cuando:
-
-* existe un LP vigente sin reversión total
-* solo hubo NC parcial
-* ya existe una nueva liquidación vigente asociada
-
----
-
-## 9.3 Reliquidación parcial
-
-Como regla inicial, la NC parcial no debe habilitar automáticamente una reliquidación libre.
-
-Si más adelante se soporta reliquidación parcial explícita, deberá controlarse:
-
-* qué parte fue revertida
-* qué parte puede volver a liquidarse
-* que nunca se duplique reconocimiento neto sobre el mismo viaje
-
-Hasta que eso quede bien cerrado, la regla segura es:
-
-* NC parcial => viaje sigue liquidado con ajuste parcial
-* no se libera para reliquidación total automática
+Un viaje en `LIQUIDADO` no es reliquidable. Para volver a liquidarlo hay
+que liberarlo primero emitiendo una NC que lo incluya en la lista de viajes
+a liberar.
 
 ---
 
@@ -452,7 +430,7 @@ Una NC o ND posterior a una OP no debe borrar la OP. Debe alterar el saldo neto 
 LP simple sin OP:
 
 * se crea deuda al fletero
-* viaje queda `LIQUIDADO_VIGENTE`
+* viaje queda `LIQUIDADO`
 
 ### Caso 2
 
@@ -460,41 +438,41 @@ LP + OP total:
 
 * LP sigue histórico
 * saldo pendiente queda en cero
-* viaje sigue `LIQUIDADO_VIGENTE`
+* viaje sigue `LIQUIDADO`
 
 ### Caso 3
 
-LP + NC total:
+LP + NC que libera viaje:
 
 * LP sigue histórico
 * NC asociada visible
-* viaje pasa a `PENDIENTE_LIQUIDACION`
-* queda reliquidable completo
+* viaje pasa a `PENDIENTE_LIQUIDAR`
+* queda reliquidable
 
 ### Caso 4
 
-LP + NC parcial:
+LP + NC parcial sin liberar viaje:
 
-* viaje pasa a `LIQUIDADO_AJUSTADO_PARCIAL`
-* no queda pendiente total
-* no se libera reliquidación total automática
+* viaje sigue en `LIQUIDADO`
+* saldo de cuenta corriente fletero e IVA Compras se ajustan
+* no se habilita reliquidación
 
 ### Caso 5
 
-LP + OP total + NC total:
+LP + OP total + NC que libera viaje:
 
 * OP sigue histórica
 * la corrección no borra el pago
 * debe reflejarse el nuevo neto/saldo resultante
-* viaje queda `PENDIENTE_LIQUIDACION`
+* viaje queda `PENDIENTE_LIQUIDAR`
 
 ### Caso 6
 
-LP + OP parcial + NC parcial:
+LP + OP parcial + NC parcial sin liberar viaje:
 
 * no se borra la OP
 * se recalcula neto de cuenta corriente
-* viaje queda `LIQUIDADO_AJUSTADO_PARCIAL`
+* viaje sigue en `LIQUIDADO`
 
 ### Caso 7
 
@@ -513,11 +491,11 @@ LP + OP total + ND:
 
 ### Caso 9
 
-NC total solo sobre parte de un comprobante con múltiples viajes:
+NC que libera solo parte de los viajes de un LP con múltiples viajes:
 
-* evaluar por viaje
-* solo los viajes totalmente revertidos pasan a `PENDIENTE_LIQUIDACION`
-* los demás conservan estado vigente
+* evaluar por viaje (lista `viajesALiberar`)
+* solo los viajes liberados pasan a `PENDIENTE_LIQUIDAR`
+* los demás siguen en `LIQUIDADO`
 
 ### Caso 10
 
@@ -535,31 +513,24 @@ Descuentos/consumos coexistiendo con LP y OP:
 
 ---
 
-## 12. Decisiones abiertas a confirmar más adelante
+## 12. Reglas resumidas
 
-Estas decisiones todavía pueden necesitar validación fina contra operatoria real:
-
-1. cómo representar técnicamente el vínculo por viaje entre LP y NC/ND
-2. si habrá reliquidación parcial explícita o solo control por saldo neto
-3. cómo se resolverán exactamente los saldos a favor/diferencias cuando haya NC posterior a OP ya emitida
-4. qué parte del flujo de descuentos/consumos ya está cerrada y no debe tocarse
-
-Mientras no se cierre eso, la regla segura es:
-
-* NC total libera completamente
-* NC parcial ajusta pero no libera totalmente
-* ND incrementa el reconocimiento y no libera
+* NC con liberación de viaje → viaje a `PENDIENTE_LIQUIDAR`
+* NC parcial sin liberación → viaje sigue `LIQUIDADO`, ajusta saldo e IVA
+  Compras
+* ND → viaje sigue `LIQUIDADO`, incrementa saldo e IVA Compras
 * OP no se borra por correcciones posteriores
 
 ---
 
 ## 13. Criterio final de diseño
 
-Para Transmagg nuevo, la lógica correcta de liquidación al fletero debe basarse en:
+La lógica de liquidación al fletero se apoya en:
 
-* comprobantes históricos inmutables
+* comprobantes históricos inmutables (LP, NC, ND, OP)
 * correcciones mediante nuevos comprobantes asociados
 * cuenta corriente como reflejo del neto vigente
 * separación conceptual entre liquidación, descuentos/consumos y pago
-* estado del viaje derivado del neto por viaje
-* prohibición de simplificar todo a un único booleano `liquidado`
+* flag binario en el viaje (`PENDIENTE_LIQUIDAR` / `LIQUIDADO`) que indica
+  solo si el viaje está tomado por alguna liquidación vigente; el detalle
+  económico se reconstruye desde los comprobantes

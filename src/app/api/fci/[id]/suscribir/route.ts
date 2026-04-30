@@ -14,6 +14,7 @@ import {
   serverErrorResponse,
 } from "@/lib/financial-api"
 import { resolverOperadorId } from "@/lib/session-utils"
+import { registrarMovimiento } from "@/lib/movimiento-cuenta"
 
 const schema = z.object({
   cuentaId: z.string().uuid("Cuenta bancaria inválida"),
@@ -21,16 +22,6 @@ const schema = z.object({
   fecha: z.string().min(1, "La fecha es obligatoria"),
 })
 
-/**
- * POST: NextRequest { params: { id: string (FCI id) } } -> Promise<NextResponse>
- *
- * Dado [el id del FCI, la cuenta bancaria origen, el monto y la fecha],
- * crea un EGRESO en la cuenta banco, un MovimientoFci SUSCRIPCION y actualiza saldoActual del FCI.
- *
- * Ejemplos:
- * POST(req, { params: { id: "fciId" } }) === { movimientoFci, movimientoBanco }
- * POST(req, { params: { id: "noexiste" } }) === { error: "FCI no encontrado" }
- */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -54,29 +45,24 @@ export async function POST(
     const { cuentaId, monto, fecha } = parsed.data
 
     const [fci, cuentaBanco] = await Promise.all([
-      prisma.fci.findUnique({ where: { id } }),
+      prisma.fci.findUnique({ where: { id }, include: { cuenta: true } }),
       prisma.cuenta.findUnique({ where: { id: cuentaId } }),
     ])
 
     if (!fci) return notFoundResponse("FCI")
-    if (!cuentaBanco) return notFoundResponse("Cuenta bancaria")
-    if (cuentaBanco.tipo !== "BANCO") return badRequestResponse("La cuenta debe ser de tipo BANCO")
+    if (!cuentaBanco) return notFoundResponse("Cuenta")
+    if (!cuentaBanco.activa) return badRequestResponse("La cuenta está inactiva")
+
+    // FCI de banco/billetera: la cuenta origen debe ser la propia del FCI.
+    // FCI de broker: el operador puede usar cualquier cuenta activa de Transmagg.
+    if (fci.cuenta.tipo !== "BROKER" && cuentaId !== fci.cuentaId) {
+      return badRequestResponse("Para FCIs bancarios la suscripción debe provenir de la cuenta asociada al FCI")
+    }
 
     const fechaDate = new Date(fecha)
 
-    const [movimientoBanco, movimientoFci] = await prisma.$transaction([
-      prisma.movimientoSinFactura.create({
-        data: {
-          cuentaId,
-          tipo: "EGRESO",
-          categoria: "ENVIO_A_BROKER",
-          monto,
-          fecha: fechaDate,
-          descripcion: `Suscripción FCI ${fci.nombre}`,
-          operadorId,
-        },
-      }),
-      prisma.movimientoFci.create({
+    const resultado = await prisma.$transaction(async (tx) => {
+      const movimientoFci = await tx.movimientoFci.create({
         data: {
           fciId: id,
           cuentaOrigenDestinoId: cuentaId,
@@ -86,18 +72,32 @@ export async function POST(
           descripcion: `Suscripción desde ${cuentaBanco.nombre}`,
           operadorId,
         },
-      }),
-      prisma.fci.update({
+      })
+      await tx.fci.update({
         where: { id },
         data: {
           saldoActual: { increment: monto },
           saldoActualizadoEn: fechaDate,
         },
-      }),
-    ])
+      })
+      const movimientoBanco = await registrarMovimiento(tx, {
+        cuentaId,
+        tipo: "EGRESO",
+        categoria: "SUSCRIPCION_FCI",
+        monto,
+        fecha: fechaDate,
+        descripcion: `Suscripción FCI ${fci.nombre}`,
+        movimientoFciId: movimientoFci.id,
+        operadorCreacionId: operadorId,
+      })
+      return { movimientoFci, movimientoBanco }
+    })
 
-    return NextResponse.json({ movimientoFci, movimientoBanco }, { status: 201 })
+    return NextResponse.json(resultado, { status: 201 })
   } catch (error) {
+    if (error instanceof Error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return serverErrorResponse("POST /api/fci/[id]/suscribir", error)
   }
 }

@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { esAdmin } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { FciAbm } from "@/components/abm/fci-abm"
 import type { Rol } from "@/types"
 
@@ -10,7 +10,7 @@ export default async function FciPage() {
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_TRANSMAGG") as Rol
-  if (!esAdmin(rol)) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "abm.fci"))) redirect("/dashboard")
 
   const [fcis, cuentas] = await Promise.all([
     prisma.fci.findMany({
@@ -19,7 +19,19 @@ export default async function FciPage() {
     }),
     prisma.cuenta.findMany({
       orderBy: { nombre: "asc" },
-      select: { id: true, nombre: true, tipo: true, bancoOEntidad: true, moneda: true, activa: true, tieneChequera: true, tienePlanillaEmisionMasiva: true, tieneCuentaRemunerada: true, tieneTarjetasPrepagasChoferes: true, tieneImpuestoDebcred: true, alicuotaImpuesto: true },
+      select: {
+        id: true,
+        nombre: true,
+        tipo: true,
+        moneda: true,
+        activa: true,
+        tieneChequera: true,
+        tieneCuentaRemunerada: true,
+        tieneTarjetasPrepagasChoferes: true,
+        tieneImpuestoDebcred: true,
+        alicuotaImpuesto: true,
+        banco: { select: { id: true, nombre: true } },
+      },
     }),
   ])
 

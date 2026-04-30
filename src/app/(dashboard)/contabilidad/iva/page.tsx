@@ -7,7 +7,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
 import { sumarImportes, restarImportes } from "@/lib/money"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -64,7 +64,7 @@ export default async function ContabilidadIvaPage({
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
-  if (!puedeAcceder(rol, "iva")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "iva"))) redirect("/dashboard")
 
   const tabActivo = parseTab(searchParams.tab)
   const whereExtra = construirWherePeriodo(searchParams)

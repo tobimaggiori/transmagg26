@@ -6,7 +6,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { ResumenTarjetasClient } from "./resumen-tarjetas-client"
 import type { Rol } from "@/types"
 
@@ -15,7 +15,7 @@ export default async function ResumenTarjetasPage() {
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_TRANSMAGG") as Rol
-  if (!puedeAcceder(rol, "aseguradoras")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "aseguradoras"))) redirect("/dashboard")
 
   const [tarjetas, cuentas] = await Promise.all([
     prisma.tarjeta.findMany({
@@ -24,7 +24,7 @@ export default async function ResumenTarjetasPage() {
       orderBy: { nombre: "asc" },
     }),
     prisma.cuenta.findMany({
-      where: { activa: true, cuentaPadreId: { not: null } },
+      where: { activa: true },
       select: { id: true, nombre: true, tipo: true },
       orderBy: { nombre: "asc" },
     }),

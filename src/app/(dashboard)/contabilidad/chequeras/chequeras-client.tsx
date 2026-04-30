@@ -34,7 +34,6 @@ interface ChequeEmitido {
   fletero: { id: string; razonSocial: string; cuit: string } | null
   proveedor: { id: string; razonSocial: string; cuit: string } | null
   liquidacion: { id: string; estado: string; total: number } | null
-  planillaGalicia: { id: string; nombre: string; estado: string } | null
 }
 
 interface ChequeRecibido {
@@ -57,11 +56,10 @@ interface ChequeRecibido {
   endosadoABroker: { id: string; nombre: string } | null
 }
 
-interface Cuenta { id: string; nombre: string; tieneChequera?: boolean; cuentaPadreId?: string | null }
+interface Cuenta { id: string; nombre: string; tipo: string; tieneChequera?: boolean }
 interface Empresa { id: string; razonSocial: string }
 interface Fletero { id: string; razonSocial: string }
 interface Proveedor { id: string; razonSocial: string }
-interface Broker { id: string; nombre: string; cuentaId: string }
 
 type TabId = "emitidos" | "recibidos"
 
@@ -172,7 +170,7 @@ function TabEmitidos() {
   useEffect(() => {
     fetch("/api/cuentas").then(r => r.json()).then(d => {
       const todas: Cuenta[] = Array.isArray(d) ? d : []
-      setCuentas(todas.filter(c => c.cuentaPadreId && c.tieneChequera))
+      setCuentas(todas.filter(c => c.tieneChequera))
     })
   }, [])
 
@@ -235,9 +233,6 @@ function TabEmitidos() {
   function VinculadoA({ c }: { c: ChequeEmitido }) {
     if (c.liquidacion) {
       return <span className="text-xs text-blue-700">LP #{c.liquidacion.id.slice(-6).toUpperCase()}</span>
-    }
-    if (c.planillaGalicia) {
-      return <span className="text-xs text-muted-foreground">{c.planillaGalicia.nombre}</span>
     }
     return <span className="text-muted-foreground">—</span>
   }
@@ -537,7 +532,6 @@ function TabEmitidos() {
                 ["Motivo", accion.cheque.motivoPago],
                 ["Estado", accion.cheque.estado],
                 ["Liquidación", accion.cheque.liquidacion ? `LP #${accion.cheque.liquidacion.id.slice(-6).toUpperCase()}` : "—"],
-                ["Planilla", accion.cheque.planillaGalicia?.nombre ?? "—"],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between">
                   <span className="text-muted-foreground">{k}</span>
@@ -584,9 +578,8 @@ function TabRecibidos() {
   const [cuentas, setCuentas] = useState<Cuenta[]>([])
   const [fleteros, setFleteros] = useState<Fletero[]>([])
   const [proveedores, setProveedores] = useState<Proveedor[]>([])
-  const [brokers, setBrokers] = useState<Broker[]>([])
   const [formDepositar, setFormDepositar] = useState({ cuentaId: "", fechaDeposito: hoy() })
-  const [formBroker, setFormBroker] = useState({ brokerId: "" })
+  const [formBroker, setFormBroker] = useState({ cuentaBrokerId: "" })
   const [formConfirmarBroker, setFormConfirmarBroker] = useState({ fechaDepositoBroker: hoy() })
   const [formFletero, setFormFletero] = useState({ fleteroId: "" })
   const [formProveedor, setFormProveedor] = useState({ proveedorId: "" })
@@ -649,7 +642,7 @@ function TabRecibidos() {
       if (proveedores.length === 0) fetch("/api/proveedores").then(r => r.json()).then(d => setProveedores(Array.isArray(d) ? d : []))
     }
     if (a?.tipo === "endosar-broker") {
-      if (brokers.length === 0) fetch("/api/brokers").then(r => r.json()).then(d => setBrokers(Array.isArray(d) ? d : []))
+      if (cuentas.length === 0) fetch("/api/cuentas").then(r => r.json()).then(d => setCuentas(Array.isArray(d) ? d : []))
     }
   }
 
@@ -1008,10 +1001,10 @@ function TabRecibidos() {
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label>Broker</Label>
-              <Select value={formBroker.brokerId} onChange={e => setFormBroker({ brokerId: e.target.value })}>
+              <Label>Cuenta de broker</Label>
+              <Select value={formBroker.cuentaBrokerId} onChange={e => setFormBroker({ cuentaBrokerId: e.target.value })}>
                 <option value="">Seleccionar...</option>
-                {brokers.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                {cuentas.filter(c => c.tipo === "BROKER").map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </Select>
             </div>
             {errorAccion && <FormError message={errorAccion} />}

@@ -125,14 +125,16 @@ export async function PATCH(
           }
         }
         await tx.fletero.update({ where: { id: params.id }, data: { activo } })
-        await tx.usuario.update({ where: { id: fletero.usuarioId }, data: { activo } })
+        if (fletero.usuarioId) {
+          await tx.usuario.update({ where: { id: fletero.usuarioId }, data: { activo } })
+        }
       })
     } else {
       // Actualizar datos del fletero y usuario en paralelo si hay cambio de teléfono
       const updates: Promise<unknown>[] = [
         prisma.fletero.update({ where: { id: params.id }, data: datosFletero }),
       ]
-      if (telefono !== undefined) {
+      if (telefono !== undefined && fletero.usuarioId) {
         updates.push(
           prisma.usuario.update({ where: { id: fletero.usuarioId }, data: { telefono } })
         )
@@ -216,10 +218,12 @@ export async function DELETE(
         await tx.camion.deleteMany({ where: { id: { in: camionIds } } })
       }
       await tx.contactoEmail.deleteMany({ where: { fleteroId: params.id } })
-      // Desactivar primero los choferes (usuarios vinculados al fletero) antes de borrar el fletero
-      await tx.usuario.updateMany({ where: { fleteroId: params.id, rol: "CHOFER" }, data: { activo: false } })
+      // Desactivar empleados-chofer vinculados al fletero antes de borrarlo
+      await tx.empleado.updateMany({ where: { fleteroId: params.id, cargo: "CHOFER" }, data: { activo: false } })
       await tx.fletero.delete({ where: { id: params.id } })
-      await tx.usuario.delete({ where: { id: fletero.usuarioId } })
+      if (fletero.usuarioId) {
+        await tx.usuario.delete({ where: { id: fletero.usuarioId } })
+      }
     })
 
     return NextResponse.json({ message: "Fletero eliminado correctamente" })

@@ -16,7 +16,6 @@ const crearCamionSchema = z.object({
   fleteroId: z.string().uuid(),
   patenteChasis: z.string().min(6).max(8).toUpperCase(),
   patenteAcoplado: z.string().min(6).max(8).toUpperCase().optional(),
-  tipoCamion: z.string().min(1),
 })
 
 /**
@@ -69,14 +68,14 @@ export async function GET() {
 /**
  * POST: NextRequest -> Promise<NextResponse>
  *
- * Dado el body { fleteroId, patenteChasis, patenteAcoplado?, tipoCamion },
+ * Dado el body { fleteroId, patenteChasis, patenteAcoplado? },
  * crea un camión verificando que la patente no esté duplicada y que
  * un FLETERO solo pueda crear camiones bajo su propio fleteroId.
  * Existe para registrar vehículos en el sistema de forma segura,
  * con control de acceso por rol.
  *
  * Ejemplos:
- * POST /api/camiones { fleteroId: "f1", patenteChasis: "ABC123", tipoCamion: "Semi" }
+ * POST /api/camiones { fleteroId: "f1", patenteChasis: "ABC123" }
  * // => 201 { id, patenteChasis: "ABC123", fleteroId: "f1" }
  * POST /api/camiones { ...datos, patenteChasis: "ABC123" } (patente duplicada)
  * // => 409 { error: "La patente chasis ya está registrada" }
@@ -96,7 +95,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { fleteroId, patenteChasis, patenteAcoplado, tipoCamion } = parsed.data
+    const { fleteroId, patenteChasis, patenteAcoplado } = parsed.data
 
     // Un FLETERO solo puede crear camiones bajo su propio fleteroId
     if (rol === "FLETERO") {
@@ -111,7 +110,7 @@ export async function POST(request: NextRequest) {
     if (patenteExiste) return NextResponse.json({ error: "La patente chasis ya está registrada" }, { status: 409 })
 
     const camion = await prisma.camion.create({
-      data: { fleteroId, patenteChasis, patenteAcoplado, tipoCamion },
+      data: { fleteroId, patenteChasis, patenteAcoplado },
     })
 
     return NextResponse.json(camion, { status: 201 })

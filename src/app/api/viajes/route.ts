@@ -53,20 +53,29 @@ const crearViajeSchema = z.object({
   comisionPct: z.number().min(0).max(100).optional(),
   estadoLiquidacion: z.string().default("PENDIENTE_LIQUIDAR"),
   estadoFactura: z.string().default("PENDIENTE_FACTURAR"),
-  tieneCpe: z.boolean().default(false),
-  nroCartaPorte: z.string().nullable().optional(),
-  cartaPorteS3Key: z.string().nullable().optional(),
+  tieneCtg: z.boolean().default(false),
+  nroCtg: z.string().nullable().optional(),
+  ctgS3Key: z.string().nullable().optional(),
+  cpe: z.string().nullable().optional(),
 }).refine(
   (data) => data.esCamionPropio || !!data.fleteroId,
   { message: "El fletero es obligatorio para viajes con transportista externo", path: ["fleteroId"] }
 ).refine(
   (data) => {
-    // Al menos remito o CDP debe estar cargado (con su PDF)
+    // Un viaje lleva remito O CTG, nunca ambos.
     const tieneRemito = data.remito && data.remito.trim().length > 0
-    const tieneCDP = data.nroCartaPorte && data.nroCartaPorte.trim().length > 0
-    return tieneRemito || tieneCDP
+    const tieneCTG = data.nroCtg && data.nroCtg.trim().length > 0
+    return !(tieneRemito && tieneCTG)
   },
-  { message: "Debe cargar al menos un Nro. de Remito o un Nro. de CDP", path: ["remito"] }
+  { message: "Un viaje no puede tener remito y CTG al mismo tiempo", path: ["remito"] }
+).refine(
+  (data) => {
+    // Al menos remito o CTG debe estar cargado (con su PDF)
+    const tieneRemito = data.remito && data.remito.trim().length > 0
+    const tieneCTG = data.nroCtg && data.nroCtg.trim().length > 0
+    return tieneRemito || tieneCTG
+  },
+  { message: "Debe cargar al menos un Nro. de Remito o un Nro. de CTG", path: ["remito"] }
 ).refine(
   (data) => {
     // Si hay remito, el PDF de remito es obligatorio
@@ -74,15 +83,15 @@ const crearViajeSchema = z.object({
     if (!tieneRemito) return true
     return data.remitoS3Key != null && data.remitoS3Key.trim().length > 0
   },
-  { message: "El PDF del remito es obligatorio cuando se indica un número de remito", path: ["remitoS3Key"] }
+  { message: "Debe cargar PDF de remito", path: ["remitoS3Key"] }
 ).refine(
   (data) => {
-    // Si hay CDP, el PDF de CDP es obligatorio
-    const tieneCDP = data.nroCartaPorte && data.nroCartaPorte.trim().length > 0
-    if (!tieneCDP) return true
-    return data.cartaPorteS3Key != null && data.cartaPorteS3Key.trim().length > 0
+    // Si hay CTG, el PDF de CTG es obligatorio
+    const tieneCTG = data.nroCtg && data.nroCtg.trim().length > 0
+    if (!tieneCTG) return true
+    return data.ctgS3Key != null && data.ctgS3Key.trim().length > 0
   },
-  { message: "El PDF de la carta de porte es obligatorio cuando se indica un número", path: ["cartaPorteS3Key"] }
+  { message: "Debe cargar PDF de CTG", path: ["ctgS3Key"] }
 )
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
@@ -108,6 +117,9 @@ export async function GET(request: NextRequest) {
     desde: searchParams.get("desde"),
     hasta: searchParams.get("hasta"),
     remito: searchParams.get("remito"),
+    cupo: searchParams.get("cupo"),
+    cpe: searchParams.get("cpe"),
+    nroCtg: searchParams.get("nroCtg"),
     nroLP: searchParams.get("nroLP"),
     nroFactura: searchParams.get("nroFactura"),
   })
@@ -121,7 +133,7 @@ export async function GET(request: NextRequest) {
       where: resultado.where,
       include: {
         fletero: { select: { razonSocial: true } },
-        camion: { select: { patenteChasis: true, tipoCamion: true } },
+        camion: { select: { patenteChasis: true } },
         chofer: { select: { nombre: true, apellido: true } },
         empresa: { select: { razonSocial: true } },
         operador: { select: { nombre: true, apellido: true } },
@@ -199,7 +211,7 @@ export async function POST(request: NextRequest) {
     // Validar que todas las entidades referenciadas existan
     const validacion = await validarEntidadesViaje({
       esCamionPropio, fleteroId, camionId, choferId, empresaId,
-      nroCartaPorte: parsed.data.nroCartaPorte,
+      nroCtg: parsed.data.nroCtg,
       remito: parsed.data.remito,
     })
     if (!validacion.ok) {
@@ -223,7 +235,7 @@ export async function POST(request: NextRequest) {
           camionId,
           choferId,
           esCamionPropio,
-          tieneCpe: parsed.data.tieneCpe,
+          tieneCtg: parsed.data.tieneCtg,
         }
         const diferencias = compararCamposLockeados(fuente, propuesto)
         if (diferencias.length > 0) {

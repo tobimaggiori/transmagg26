@@ -70,10 +70,21 @@ export function ModalEmitirNotaEmpresa({
   const netoVigente = Math.max(0, restarImportes(sumarImportes([factura.total, ajusteND]), ajusteNC))
   const saldoPendiente = Math.max(0, restarImportes(netoVigente, totalPagado))
 
-  const tipoPermitido: "NC" | "ND" = saldoPendiente > 0 ? "NC" : "ND"
-  const tipoInicial = tipoForzado ?? tipoPermitido
+  const tipoInicial = tipoForzado ?? (saldoPendiente > 0 ? "NC" : "ND")
 
   const [tipoNota, setTipoNota] = useState<"NC" | "ND">(tipoInicial)
+
+  // Mensaje de impacto: cómo afecta la NC/ND al saldo de la factura.
+  function mensajeImpacto(): string {
+    if (tipoNota === "NC") {
+      return saldoPendiente > 0
+        ? "La NC reducirá el saldo pendiente de cobro de la factura."
+        : "La factura está completamente cobrada — la NC generará un saldo a favor de la empresa."
+    }
+    return saldoPendiente > 0
+      ? "La ND aumentará el saldo pendiente de cobro de la factura."
+      : "La factura está completamente cobrada — la ND volverá a generar saldo pendiente de cobro."
+  }
   const [fechaEmision, setFechaEmision] = useState(hoyLocalYmd())
   const [items, setItems] = useState<ItemNota[]>([{ concepto: "", subtotal: "" }])
   const [generando, setGenerando] = useState(false)
@@ -249,17 +260,20 @@ export function ModalEmitirNotaEmpresa({
               <div>
                 <Label>Tipo de nota</Label>
                 <div className="flex gap-4 mt-1">
-                  <label className={`flex items-center gap-2 text-sm ${tipoPermitido !== "NC" ? "opacity-40" : "cursor-pointer"}`}>
-                    <input type="radio" name="tipoNota" value="NC" checked={tipoNota === "NC"} onChange={() => setTipoNota("NC")} disabled={tipoPermitido !== "NC"} className="accent-primary" />
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="radio" name="tipoNota" value="NC" checked={tipoNota === "NC"} onChange={() => setTipoNota("NC")} className="accent-primary" />
                     Nota de Crédito <span className="text-xs text-muted-foreground">(reduce deuda)</span>
                   </label>
-                  <label className={`flex items-center gap-2 text-sm ${tipoPermitido !== "ND" ? "opacity-40" : "cursor-pointer"}`}>
-                    <input type="radio" name="tipoNota" value="ND" checked={tipoNota === "ND"} onChange={() => setTipoNota("ND")} disabled={tipoPermitido !== "ND"} className="accent-primary" />
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="radio" name="tipoNota" value="ND" checked={tipoNota === "ND"} onChange={() => setTipoNota("ND")} className="accent-primary" />
                     Nota de Débito <span className="text-xs text-muted-foreground">(suma deuda)</span>
                   </label>
                 </div>
               </div>
             )}
+
+            {/* Impacto sobre el saldo de la factura */}
+            <p className="text-xs text-muted-foreground">{mensajeImpacto()}</p>
 
             {/* Fecha emisión */}
             <div>

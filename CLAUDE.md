@@ -26,6 +26,38 @@ viven en [`docs/`](./docs/).
 9. **Visibilidad de tarifas** (regla de seguridad crítica):
    - `tarifa` (fletero) NUNCA visible para roles empresa o chofer.
    - `tarifaEmpresa` NUNCA visible para roles fletero o chofer.
+10. **UI sin copy instructivo**. Salvo que el dueño del proyecto lo pida
+    expresamente, NO agregar hints, descripciones de diálogos
+    (`DialogDescription`), placeholders narrativos ni textos muted
+    explicando cómo usar el formulario. Los operadores ya conocen el flujo;
+    la interfaz no los tiene que guiar paso a paso. Si hace falta guiar:
+    labels claros, estado `disabled` y placeholders mínimos — nunca
+    párrafos explicativos.
+11. **Separación entre tenants (Transmagg / Javier Maggiori / futuros)**.
+    El proyecto está evolucionando hacia un sistema multi-empresa. Cada
+    tenant es **independiente**: tiene su propia base de datos, su propio
+    schema Prisma, sus propias entidades, sus propias rutas, su propia UI.
+    Lo único que comparten es la **autenticación** (mismos usuarios y
+    sesión) y primitivas neutras de UI (botones, inputs, combobox).
+    - **JM = Transmagg − Fletero**. El sistema "Javier Maggiori" replica
+      Transmagg eliminando todo lo que tenga que ver con la identidad
+      Fletero: no hay sección Fleteros, ni Liquidaciones (LP), ni gastos
+      o adelantos a fleteros, ni CC fleteros, ni viajes con fletero
+      externo, ni NC/ND sobre LP. Todo el resto (Empresas, Proveedores,
+      Contabilidad, Mi Flota, ABM, Configuración, ARCA) se replica con
+      la misma lógica/UI, adaptado para que JM tenga su propia DB y su
+      propio cliente Prisma.
+    - **No mezclar imports**: en código JM se usa `prismaJm`, `@/jm/lib/...`,
+      `@/jm/components/...`. En código Transmagg se usa `prisma`,
+      `@/lib/...`, `@/components/...`. Cruzar es bug (lint lo bloquea
+      para `prisma`, otros cruces se permiten para primitivas neutras
+      como `money`, `storage`, `auth`).
+    - **No crear FKs entre DBs**. Si un tenant necesita referenciar un
+      usuario, guarda `email` o `id` como string sin FK.
+    - **Duplicar lógica está bien** cuando el flujo es parecido — los
+      tenants pueden divergir y queremos esa libertad. No abstraer "porque
+      es igual".
+    - Detalle por tenant: [`docs/jm/README.md`](./docs/jm/README.md).
 
 ## Cómo cerrar una tarea
 
@@ -59,6 +91,7 @@ o actualizar tests, correr verificación final.
 | Patrón de API route, conventions | [`docs/arquitectura/stack.md`](./docs/arquitectura/stack.md) |
 | Tests | [`docs/politicas/tests.md`](./docs/politicas/tests.md) |
 | Invariantes generales | [`docs/politicas/invariantes.md`](./docs/politicas/invariantes.md) |
+| Sistema "Javier Maggiori" (tenant aparte) | [`docs/jm/README.md`](./docs/jm/README.md) |
 
 Índice maestro: [`docs/README.md`](./docs/README.md).
 

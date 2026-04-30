@@ -22,7 +22,7 @@ import { hoyLocalYmd } from "@/lib/date-local"
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 interface Empresa { id: string; razonSocial: string; cuit: string }
-interface Cuenta { id: string; nombre: string; bancoOEntidad: string }
+interface Cuenta { id: string; nombre: string; banco: { id: string; nombre: string } | null }
 interface ContactoEmail { id: string; email: string; nombre: string | null }
 
 interface ViajeEnFactura {
@@ -36,8 +36,11 @@ interface ViajeEnFactura {
 }
 
 interface NotaCDResumen {
+  id: string
   tipo: string   // NC_EMITIDA | NC_RECIBIDA | ND_EMITIDA | ND_RECIBIDA
   montoTotal: number
+  montoDescontado: number
+  disponible: number
   nro: string | null
 }
 
@@ -118,6 +121,8 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
   const [errorFacturas, setErrorFacturas] = useState<string | null>(null)
   const [seleccionadas, setSeleccionadas] = useState<Set<string>>(new Set())
   const [importes, setImportes] = useState<Record<string, string>>({}) // facturaId → monto string
+  const [notasSel, setNotasSel] = useState<Set<string>>(new Set())     // notaId
+  const [notasMonto, setNotasMonto] = useState<Record<string, string>>({}) // notaId → monto string
 
   // Paso 2
   const [fecha, setFecha] = useState(hoyLocalYmd())
@@ -159,6 +164,8 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
       setFacturas(data)
       setSeleccionadas(new Set())
       setImportes({})
+      setNotasSel(new Set())
+      setNotasMonto({})
       if (resSaldo.ok) {
         const saldoData = await resSaldo.json()
         setSaldoAFavorDisponible(saldoData.saldoAFavor ?? 0)
@@ -172,16 +179,54 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
 
   useEffect(() => {
     if (empresaId) cargarFacturas(empresaId)
-    else { setFacturas([]); setSeleccionadas(new Set()); setImportes({}); setSaldoAFavorDisponible(0) }
+    else {
+      setFacturas([])
+      setSeleccionadas(new Set()); setImportes({})
+      setNotasSel(new Set()); setNotasMonto({})
+      setSaldoAFavorDisponible(0)
+    }
   }, [empresaId, cargarFacturas])
 
   // ─── Cálculos ─────────────────────────────────────────────────────────────
+
+  const esNC = (t: string) => t === "NC_EMITIDA" || t === "NC_RECIBIDA"
+  const esND = (t: string) => t === "ND_EMITIDA" || t === "ND_RECIBIDA"
+
+  const notaInfo = useMemo(() => {
+    const map = new Map<string, NotaCDResumen & { facturaId: string }>()
+    facturas.forEach((f) => {
+      f.notasCD?.forEach((n) => map.set(n.id, { ...n, facturaId: f.id }))
+    })
+    return map
+  }, [facturas])
 
   const totalAplicado = useMemo(() => {
     return sumarImportes(
       Array.from(seleccionadas).map((id) => parsearImporte(importes[id] ?? "0"))
     )
   }, [seleccionadas, importes])
+
+  const totalNCAplicadas = useMemo(() => {
+    return sumarImportes(
+      Array.from(notasSel)
+        .filter((nid) => {
+          const n = notaInfo.get(nid)
+          return n && esNC(n.tipo)
+        })
+        .map((nid) => parsearImporte(notasMonto[nid] ?? "0"))
+    )
+  }, [notasSel, notasMonto, notaInfo])
+
+  const totalNDAplicadas = useMemo(() => {
+    return sumarImportes(
+      Array.from(notasSel)
+        .filter((nid) => {
+          const n = notaInfo.get(nid)
+          return n && esND(n.tipo)
+        })
+        .map((nid) => parsearImporte(notasMonto[nid] ?? "0"))
+    )
+  }, [notasSel, notasMonto, notaInfo])
 
   const totalOriginalFacturas = useMemo(() => {
     return sumarImportes(
@@ -195,6 +240,9 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
   const totalRetenciones = sumarImportes([retGananciasNum, retIIBBNum, retSUSSNum])
   const totalMedios = sumarImportes(medios.map((m) => parsearImporte(m.monto)))
 
+  // El cash que cubre cada factura ya está absorbido en montoAplicado:
+  // montoAplicado = saldoFactura − NC_aplicadas + ND_aplicadas.
+  // Por eso totalAplicado ya es el cash neto que medios+retenciones deben cubrir.
   const montoCubrir = totalAplicado
   const montoProvisto = sumarImportes([totalMedios, totalRetenciones])
   const saldoACuenta = Math.max(0, montoProvisto - montoCubrir)
@@ -202,12 +250,44 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
 
   // ─── Funciones de UI ──────────────────────────────────────────────────────
 
+  // Recalcula el monto a cobrar (cash) de una factura considerando NC/ND
+  // seleccionadas para esa misma factura.
+  function calcularCashFactura(facturaId: string, notasSelLocal: Set<string>, notasMontoLocal: Record<string, string>) {
+    const f = facturas.find((x) => x.id === facturaId)
+    if (!f) return 0
+    let nc = 0
+    let nd = 0
+    notasSelLocal.forEach((nid) => {
+      const n = notaInfo.get(nid)
+      if (!n || n.facturaId !== facturaId) return
+      const monto = parsearImporte(notasMontoLocal[nid] ?? "0")
+      if (esNC(n.tipo)) nc = sumarImportes([nc, monto])
+      else if (esND(n.tipo)) nd = sumarImportes([nd, monto])
+    })
+    return Math.max(0, f.saldoPendiente - nc + nd)
+  }
+
   function toggleFactura(id: string) {
     setSeleccionadas((prev) => {
       const next = new Set(prev)
       if (next.has(id)) {
         next.delete(id)
         setImportes((prev) => { const n = { ...prev }; delete n[id]; return n })
+        // Deseleccionar todas las notas de esa factura
+        setNotasSel((prev) => {
+          const nx = new Set(prev)
+          nx.forEach((nid) => {
+            if (notaInfo.get(nid)?.facturaId === id) nx.delete(nid)
+          })
+          return nx
+        })
+        setNotasMonto((prev) => {
+          const nx = { ...prev }
+          Object.keys(nx).forEach((nid) => {
+            if (notaInfo.get(nid)?.facturaId === id) delete nx[nid]
+          })
+          return nx
+        })
       } else {
         next.add(id)
         const f = facturas.find((f) => f.id === id)
@@ -215,6 +295,37 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
       }
       return next
     })
+  }
+
+  function toggleNota(notaId: string) {
+    const n = notaInfo.get(notaId)
+    if (!n) return
+    setNotasSel((prev) => {
+      const next = new Set(prev)
+      let nuevoMontoMap: Record<string, string>
+      if (next.has(notaId)) {
+        next.delete(notaId)
+        nuevoMontoMap = { ...notasMonto }
+        delete nuevoMontoMap[notaId]
+      } else {
+        next.add(notaId)
+        nuevoMontoMap = { ...notasMonto, [notaId]: n.disponible.toFixed(2) }
+      }
+      setNotasMonto(nuevoMontoMap)
+      // Recalcular cash de la factura
+      const cash = calcularCashFactura(n.facturaId, next, nuevoMontoMap)
+      setImportes((prev) => ({ ...prev, [n.facturaId]: cash.toFixed(2) }))
+      return next
+    })
+  }
+
+  function actualizarMontoNota(notaId: string, valor: string) {
+    const n = notaInfo.get(notaId)
+    if (!n) return
+    const nuevoMap = { ...notasMonto, [notaId]: valor }
+    setNotasMonto(nuevoMap)
+    const cash = calcularCashFactura(n.facturaId, notasSel, nuevoMap)
+    setImportes((prev) => ({ ...prev, [n.facturaId]: cash.toFixed(2) }))
   }
 
   function seleccionarTodas() {
@@ -225,7 +336,12 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
     setImportes(imp)
   }
 
-  function deseleccionarTodas() { setSeleccionadas(new Set()); setImportes({}) }
+  function deseleccionarTodas() {
+    setSeleccionadas(new Set())
+    setImportes({})
+    setNotasSel(new Set())
+    setNotasMonto({})
+  }
 
   function actualizarImporte(id: string, valor: string) {
     setImportes((prev) => ({ ...prev, [id]: valor }))
@@ -250,20 +366,28 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
         montoAplicado: parsearImporte(importes[id] ?? "0"),
       }))
 
+      const notasAplicadas = Array.from(notasSel).map((nid) => ({
+        notaId: nid,
+        monto: parsearImporte(notasMonto[nid] ?? "0"),
+      }))
+
       const body = {
         empresaId,
         facturasAplicadas,
-        mediosPago: medios.map((m) => ({
-          tipo: m.tipo,
-          monto: parsearImporte(m.monto),
-          cuentaId: m.cuentaId || undefined,
-          fechaTransferencia: m.fechaTransferencia || undefined,
-          referencia: m.referencia || undefined,
-          nroCheque: m.nroCheque || undefined,
-          bancoEmisor: m.bancoEmisor || undefined,
-          fechaEmision: m.fechaEmision || undefined,
-          fechaPago: m.fechaPago || undefined,
-        })),
+        notasAplicadas,
+        mediosPago: medios
+          .map((m) => ({
+            tipo: m.tipo,
+            monto: parsearImporte(m.monto),
+            cuentaId: m.cuentaId || undefined,
+            fechaTransferencia: m.fechaTransferencia || undefined,
+            referencia: m.referencia || undefined,
+            nroCheque: m.nroCheque || undefined,
+            bancoEmisor: m.bancoEmisor || undefined,
+            fechaEmision: m.fechaEmision || undefined,
+            fechaPago: m.fechaPago || undefined,
+          }))
+          .filter((m) => m.monto > 0),
         retencionGanancias: retGananciasNum,
         retencionIIBB: retIIBBNum,
         retencionSUSS: retSUSSNum,
@@ -340,6 +464,7 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
 
   function resetForm() {
     setEmpresaId(""); setFacturas([]); setSeleccionadas(new Set()); setImportes({})
+    setNotasSel(new Set()); setNotasMonto({})
     setRetGanancias(""); setRetIIBB(""); setRetSUSS("")
     setMedios([{ tipo: "TRANSFERENCIA", monto: "", cuentaId: "", fechaTransferencia: hoyLocalYmd() }])
     setFecha(hoyLocalYmd()); setReciboCreado(null); setError(null)
@@ -432,34 +557,48 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
                           </tr>
                         )
                       })}
-                      {/* Desglose NC/ND de facturas seleccionadas que tengan notas */}
+                      {/* NC/ND seleccionables de facturas tildadas */}
                       {(() => {
                         const facturasConNotas = facturas.filter(
-                          (f) => seleccionadas.has(f.id) && f.notasCD && f.notasCD.length > 0
+                          (f) => seleccionadas.has(f.id) && f.notasCD && f.notasCD.some((n) => n.disponible > 0)
                         )
                         if (facturasConNotas.length === 0) return null
                         return (
                           <tr>
                             <td colSpan={7} className="p-0">
                               <div className="bg-muted/30 border-t border-b px-4 py-2 space-y-2">
-                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notas de Crédito / Débito asociadas</p>
+                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notas de Crédito / Débito disponibles</p>
                                 {facturasConNotas.map((f) => (
-                                  <div key={f.id} className="space-y-0.5">
+                                  <div key={f.id} className="space-y-1">
                                     {facturasConNotas.length > 1 && (
                                       <p className="text-xs text-muted-foreground">Factura {f.nroComprobante ?? f.id.slice(0, 8)}:</p>
                                     )}
-                                    {f.notasCD!.map((n, i) => {
-                                      const esNC = n.tipo === "NC_EMITIDA" || n.tipo === "NC_RECIBIDA"
+                                    {f.notasCD!.filter((n) => n.disponible > 0).map((n) => {
+                                      const isNC = esNC(n.tipo)
+                                      const sel = notasSel.has(n.id)
                                       return (
-                                        <div key={i} className="flex justify-between items-center text-xs">
-                                          <span>
-                                            <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${esNC ? "bg-green-500" : "bg-amber-500"}`} />
-                                            {tipoNotaCDLabel(n.tipo)}
-                                            {n.nro && <span className="font-mono ml-1">{n.nro}</span>}
-                                          </span>
-                                          <span className={`font-mono font-medium ${esNC ? "text-green-700" : "text-amber-700"}`}>
-                                            {esNC ? "−" : "+"} {fmt(n.montoTotal)}
-                                          </span>
+                                        <div key={n.id} className="flex justify-between items-center text-xs gap-2">
+                                          <label className="flex items-center gap-2 flex-1 cursor-pointer">
+                                            <input type="checkbox" checked={sel} onChange={() => toggleNota(n.id)} />
+                                            <span className={`inline-block w-2 h-2 rounded-full ${isNC ? "bg-green-500" : "bg-amber-500"}`} />
+                                            <span>
+                                              {tipoNotaCDLabel(n.tipo)}
+                                              {n.nro && <span className="font-mono ml-1">{n.nro}</span>}
+                                              <span className="text-muted-foreground ml-2">disponible {fmt(n.disponible)}</span>
+                                            </span>
+                                          </label>
+                                          {sel ? (
+                                            <Input
+                                              type="number" min="0.01" step="0.01" max={n.disponible}
+                                              value={notasMonto[n.id] ?? ""}
+                                              onChange={(e) => actualizarMontoNota(n.id, e.target.value)}
+                                              className="h-7 w-28 text-xs text-right"
+                                            />
+                                          ) : (
+                                            <span className={`font-mono font-medium ${isNC ? "text-green-700" : "text-amber-700"}`}>
+                                              {isNC ? "−" : "+"} {fmt(n.montoTotal)}
+                                            </span>
+                                          )}
                                         </div>
                                       )
                                     })}
@@ -484,7 +623,14 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
               </div>
             )}
 
-            <Button disabled={!empresaId || seleccionadas.size === 0 || totalAplicado <= 0} onClick={() => setPaso(2)}>
+            <Button
+              disabled={
+                !empresaId ||
+                seleccionadas.size === 0 ||
+                (totalAplicado <= 0 && totalNCAplicadas <= 0 && totalNDAplicadas <= 0)
+              }
+              onClick={() => setPaso(2)}
+            >
               Siguiente
             </Button>
           </CardContent>
@@ -510,39 +656,45 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
                 <span className="font-mono">{fmt(totalOriginalFacturas)}</span>
               </div>
 
-              {/* Desglose NC/ND */}
-              {(() => {
-                const facturasConNotas = facturas.filter(
-                  (f) => seleccionadas.has(f.id) && f.notasCD && f.notasCD.length > 0
-                )
-                const notas = facturasConNotas.flatMap((f) =>
-                  f.notasCD!.map((n) => ({ ...n, factNro: f.nroComprobante }))
-                )
-                if (notas.length === 0) return null
-                return (
-                  <div className="rounded-lg border bg-muted/30 p-3 space-y-1">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Notas de Crédito / Débito incluidas en saldo</p>
-                    {notas.map((n, i) => {
-                      const esNC = n.tipo === "NC_EMITIDA" || n.tipo === "NC_RECIBIDA"
-                      return (
-                        <div key={i} className="flex justify-between items-center text-xs">
-                          <span>
-                            <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${esNC ? "bg-green-500" : "bg-amber-500"}`} />
-                            {tipoNotaCDLabel(n.tipo)}
-                            {n.nro && <span className="font-mono ml-1">{n.nro}</span>}
-                          </span>
-                          <span className={`font-mono font-medium ${esNC ? "text-green-700" : "text-amber-700"}`}>
-                            {esNC ? "−" : "+"} {fmt(n.montoTotal)}
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )
-              })()}
+              {/* NC/ND aplicadas en este recibo */}
+              {notasSel.size > 0 && (
+                <div className="rounded-lg border bg-muted/30 p-3 space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">NC / ND aplicadas</p>
+                  {Array.from(notasSel).map((nid) => {
+                    const n = notaInfo.get(nid)
+                    if (!n) return null
+                    const isNC = esNC(n.tipo)
+                    const monto = parsearImporte(notasMonto[nid] ?? "0")
+                    return (
+                      <div key={nid} className="flex justify-between items-center text-xs">
+                        <span>
+                          <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${isNC ? "bg-green-500" : "bg-amber-500"}`} />
+                          {tipoNotaCDLabel(n.tipo)}
+                          {n.nro && <span className="font-mono ml-1">{n.nro}</span>}
+                        </span>
+                        <span className={`font-mono font-medium ${isNC ? "text-green-700" : "text-amber-700"}`}>
+                          {isNC ? "−" : "+"} {fmt(monto)}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
 
+              {totalNCAplicadas > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">NC aplicadas:</span>
+                  <span className="font-mono text-green-700">− {fmt(totalNCAplicadas)}</span>
+                </div>
+              )}
+              {totalNDAplicadas > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">ND aplicadas:</span>
+                  <span className="font-mono text-amber-700">+ {fmt(totalNDAplicadas)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-sm font-semibold">
-                <span className="text-muted-foreground">Total aplicado:</span>
+                <span className="text-muted-foreground">A cobrar (cash):</span>
                 <span className="font-bold font-mono">{fmt(totalAplicado)}</span>
               </div>
 
@@ -627,7 +779,7 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
                         <Label className="text-xs">Cuenta destino</Label>
                         <select value={m.cuentaId ?? ""} onChange={(e) => actualizarMedio(i, "cuentaId", e.target.value)} className="h-8 w-full rounded-md border bg-background px-2 text-sm">
                           <option value="">— Sin cuenta —</option>
-                          {cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre} ({c.bancoOEntidad})</option>)}
+                          {cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}{c.banco ? ` (${c.banco.nombre})` : ""}</option>)}
                         </select>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
@@ -708,6 +860,29 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
               )
             })}
             <div className="flex justify-between font-bold"><span>Total aplicado:</span><span className="font-mono">{fmt(totalAplicado)}</span></div>
+
+            {notasSel.size > 0 && (
+              <>
+                <hr />
+                <p className="font-semibold">NC / ND aplicadas:</p>
+                {Array.from(notasSel).map((nid) => {
+                  const n = notaInfo.get(nid)
+                  if (!n) return null
+                  const isNC = esNC(n.tipo)
+                  const monto = parsearImporte(notasMonto[nid] ?? "0")
+                  return (
+                    <div key={nid} className="flex justify-between">
+                      <span className="text-muted-foreground">
+                        {tipoNotaCDLabel(n.tipo)}{n.nro ? ` ${n.nro}` : ""}
+                      </span>
+                      <span className={`font-mono ${isNC ? "text-green-700" : "text-amber-700"}`}>
+                        {isNC ? "−" : "+"} {fmt(monto)}
+                      </span>
+                    </div>
+                  )
+                })}
+              </>
+            )}
 
             {totalRetenciones > 0 && (
               <>

@@ -24,7 +24,7 @@ interface Fletero {
 interface CuentaBancaria {
   id: string
   nombre: string
-  bancoOEntidad: string
+  banco: { id: string; nombre: string } | null
 }
 
 interface ChequeEnCartera {

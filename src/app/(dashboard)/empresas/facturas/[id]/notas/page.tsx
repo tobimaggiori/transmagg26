@@ -5,7 +5,7 @@
 
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { NotasFacturaClient } from "./notas-factura-client"
 import type { Rol } from "@/types"
 
@@ -18,7 +18,7 @@ export default async function NotasFacturaPage({
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
-  if (!puedeAcceder(rol, "facturas")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "facturas"))) redirect("/dashboard")
 
   const { id } = await params
 

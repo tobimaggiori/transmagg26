@@ -6,7 +6,7 @@
 
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { PagosClient } from "./pagos-client"
 import type { Rol } from "@/types"
 
@@ -30,7 +30,7 @@ export default async function PagosPage() {
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_TRANSMAGG") as Rol
-  if (!puedeAcceder(rol, "pagos")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "pagos"))) redirect("/dashboard")
 
   return <PagosClient />
 }

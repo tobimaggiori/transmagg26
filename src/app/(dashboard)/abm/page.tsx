@@ -8,7 +8,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { esAdmin } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { EmpresasAbm } from "@/components/abm/empresas-abm"
 import { FleterosAbm } from "@/components/abm/fleteros-abm"
 import { UsuariosAbm } from "@/components/abm/usuarios-abm"
@@ -17,10 +17,10 @@ import { CuentasAbm } from "@/components/abm/cuentas-abm"
 import { FciAbm } from "@/components/abm/fci-abm"
 import { EmpleadosAbm } from "@/components/abm/empleados-abm"
 import { ConfiguracionArcaAbm } from "@/components/abm/configuracion-arca-abm"
-import { ConfiguracionOtpAbm } from "@/components/abm/configuracion-otp-abm"
+import { ConfiguracionEnvioAbm } from "@/components/abm/configuracion-envio-abm"
 import type { Rol } from "@/types"
 
-type Tab = "empresas" | "fleteros" | "usuarios" | "proveedores" | "cuentas" | "fci" | "empleados" | "arca" | "otp"
+type Tab = "empresas" | "fleteros" | "usuarios" | "proveedores" | "cuentas" | "fci" | "empleados" | "arca" | "envio"
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "empresas", label: "Empresas" },
@@ -31,7 +31,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "fci", label: "FCI" },
   { id: "empleados", label: "Empleados" },
   { id: "arca", label: "ARCA" },
-  { id: "otp", label: "OTP" },
+  { id: "envio", label: "Envío" },
 ]
 
 /**
@@ -59,7 +59,7 @@ export default async function AbmPage({
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_TRANSMAGG") as Rol
-  if (!esAdmin(rol)) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "abm"))) redirect("/dashboard")
 
   if (!searchParams.tab) redirect("/abm/base-de-datos")
 
@@ -67,7 +67,7 @@ export default async function AbmPage({
   const tabValido = TABS.some((t) => t.id === tab) ? tab : "empresas"
 
   // Fetch data según tab activo para no cargar todo innecesariamente
-  const [empresas, fleteros, , usuarios, proveedores, cuentas, fcis, empleados] = await Promise.all([
+  const [empresas, fleteros, , usuarios, proveedores, cuentas, fcis, empleados, bancos, billeteras, brokers] = await Promise.all([
     tabValido === "empresas"
       ? prisma.empresa.findMany({
           select: {
@@ -92,18 +92,27 @@ export default async function AbmPage({
                 id: true,
                 patenteChasis: true,
                 patenteAcoplado: true,
-                tipoCamion: true,
                 choferHistorial: {
                   where: { hasta: null },
-                  select: { chofer: { select: { id: true, nombre: true, apellido: true, email: true } } },
+                  select: {
+                    chofer: {
+                      select: {
+                        id: true, nombre: true, apellido: true,
+                        usuario: { select: { email: true } },
+                      },
+                    },
+                  },
                   take: 1,
                 },
               },
               orderBy: { patenteChasis: "asc" },
             },
-            choferes: {
-              where: { rol: "CHOFER", activo: true },
-              select: { id: true, nombre: true, apellido: true, email: true },
+            empleados: {
+              where: { cargo: "CHOFER", activo: true },
+              select: {
+                id: true, nombre: true, apellido: true,
+                usuario: { select: { email: true } },
+              },
               orderBy: [{ apellido: "asc" }, { nombre: "asc" }],
             },
             contactosEmail: {
@@ -122,10 +131,10 @@ export default async function AbmPage({
           orderBy: [{ activo: "desc" }, { apellido: "asc" }],
           select: {
             id: true, nombre: true, apellido: true, email: true, telefono: true, rol: true, activo: true,
-            fleteroId: true,
             smtpHost: true, smtpPuerto: true, smtpUsuario: true, smtpPassword: true, smtpSsl: true, smtpActivo: true,
             empresaUsuarios: { select: { empresaId: true, empresa: { select: { razonSocial: true } }, nivelAcceso: true } },
             fletero: { select: { id: true } },
+            empleado: { select: { id: true, fleteroId: true } },
           },
         })
       : [],
@@ -138,7 +147,31 @@ export default async function AbmPage({
     (tabValido === "cuentas" || tabValido === "fci")
       ? prisma.cuenta.findMany({
           orderBy: { nombre: "asc" },
-          select: { id: true, nombre: true, tipo: true, bancoOEntidad: true, moneda: true, activa: true, tieneChequera: true, tienePlanillaEmisionMasiva: true, tieneCuentaRemunerada: true, tieneTarjetasPrepagasChoferes: true, tieneImpuestoDebcred: true, alicuotaImpuesto: true, tieneIibbSircrebTucuman: true, alicuotaIibbSircrebTucuman: true, cuentaPadreId: true, _count: { select: { movimientosSinFactura: true } } },
+          select: {
+            id: true,
+            nombre: true,
+            tipo: true,
+            moneda: true,
+            activa: true,
+            tieneChequera: true,
+            tieneCuentaRemunerada: true,
+            tieneTarjetasPrepagasChoferes: true,
+            tieneImpuestoDebcred: true,
+            alicuotaImpuesto: true,
+            tieneIibbSircrebTucuman: true,
+            alicuotaIibbSircrebTucuman: true,
+            esCuentaComitenteBroker: true,
+            nroCuenta: true,
+            cbu: true,
+            alias: true,
+            bancoId: true,
+            billeteraId: true,
+            brokerId: true,
+            banco: { select: { id: true, nombre: true, activo: true } },
+            billetera: { select: { id: true, nombre: true, activa: true } },
+            broker: { select: { id: true, nombre: true, cuit: true, activo: true } },
+            _count: { select: { movimientos: true } },
+          },
         })
       : [],
     tabValido === "fci"
@@ -151,6 +184,24 @@ export default async function AbmPage({
       ? prisma.empleado.findMany({
           orderBy: [{ activo: "desc" }, { apellido: "asc" }],
           select: { id: true, nombre: true, apellido: true, cuit: true, cargo: true, fechaIngreso: true, activo: true },
+        })
+      : [],
+    tabValido === "cuentas"
+      ? prisma.banco.findMany({
+          orderBy: { nombre: "asc" },
+          include: { _count: { select: { cuentas: true } } },
+        })
+      : [],
+    tabValido === "cuentas"
+      ? prisma.billeteraVirtual.findMany({
+          orderBy: { nombre: "asc" },
+          include: { _count: { select: { cuentas: true } } },
+        })
+      : [],
+    tabValido === "cuentas"
+      ? prisma.broker.findMany({
+          orderBy: { nombre: "asc" },
+          include: { _count: { select: { cuentas: true } } },
         })
       : [],
   ])
@@ -176,21 +227,20 @@ export default async function AbmPage({
     ? await prisma.configuracionArca.findFirst()
     : null
 
-  // Config OTP (tab otp)
-  const otpConfigRaw = tabValido === "otp"
-    ? await prisma.configuracionOtp.findUnique({ where: { id: "singleton" } })
+  // Config Envío (tab envio)
+  const envioConfigRaw = tabValido === "envio"
+    ? await prisma.configuracionEnvio.upsert({
+        where: { id: "singleton" },
+        create: { id: "singleton" },
+        update: {},
+      })
     : null
 
-  const otpConfig = otpConfigRaw
+  const envioConfig = envioConfigRaw
     ? {
-        host: otpConfigRaw.host,
-        puerto: otpConfigRaw.puerto,
-        usuario: otpConfigRaw.usuario,
-        tienePassword: !!otpConfigRaw.passwordHash,
-        usarSsl: otpConfigRaw.usarSsl,
-        emailRemitente: otpConfigRaw.emailRemitente,
-        nombreRemitente: otpConfigRaw.nombreRemitente,
-        activo: otpConfigRaw.activo,
+        replyTo: envioConfigRaw.replyTo,
+        resendConfigurado: !!process.env.RESEND_API_KEY,
+        remitente: "Trans-Magg S.R.L. <auth@transmagg.com.ar>",
       }
     : null
 
@@ -260,6 +310,21 @@ export default async function AbmPage({
         {tabValido === "fleteros" && (
           <FleterosAbm fleteros={fleteros.map(f => ({
             ...f,
+            camiones: f.camiones.map((c) => ({
+              ...c,
+              choferHistorial: c.choferHistorial.map((h) => ({
+                chofer: {
+                  id: h.chofer.id,
+                  nombre: h.chofer.nombre,
+                  apellido: h.chofer.apellido,
+                  email: h.chofer.usuario?.email ?? null,
+                },
+              })),
+            })),
+            choferes: f.empleados.map((e) => ({
+              id: e.id, nombre: e.nombre, apellido: e.apellido,
+              email: e.usuario?.email ?? null,
+            })),
             puedeEliminar: f.activo && f._count.viajes === 0 && f._count.liquidaciones === 0,
           }))} />
         )}
@@ -269,6 +334,7 @@ export default async function AbmPage({
               ...u,
               smtpTienePassword: !!u.smtpPassword,
               smtpPassword: undefined,
+              fleteroId: u.empleado?.fleteroId ?? null,
               fleteroPropio: u.fletero ?? null,
             }))}
             empresas={empresasParaUsuarios}
@@ -282,11 +348,34 @@ export default async function AbmPage({
             puedeEliminar: p.activo && p._count.facturas === 0,
           }))} />
         )}
-        {tabValido === "cuentas" && <CuentasAbm cuentas={cuentas} />}
+        {tabValido === "cuentas" && (
+          <CuentasAbm
+            cuentas={cuentas}
+            bancos={bancos.map((b) => ({
+              id: b.id,
+              nombre: b.nombre,
+              activo: b.activo,
+              cuentasCount: b._count.cuentas,
+            }))}
+            billeteras={billeteras.map((b) => ({
+              id: b.id,
+              nombre: b.nombre,
+              activa: b.activa,
+              cuentasCount: b._count.cuentas,
+            }))}
+            brokers={brokers.map((b) => ({
+              id: b.id,
+              nombre: b.nombre,
+              cuit: b.cuit,
+              activo: b.activo,
+              cuentasCount: b._count.cuentas,
+            }))}
+          />
+        )}
         {tabValido === "fci" && <FciAbm fcis={fcis} cuentas={cuentas.map(c => ({ id: c.id, nombre: c.nombre }))} />}
         {tabValido === "empleados" && <EmpleadosAbm empleados={empleados.map(e => ({ ...e, fechaIngreso: e.fechaIngreso.toISOString() }))} />}
         {tabValido === "arca" && <ConfiguracionArcaAbm config={arcaConfig} />}
-        {tabValido === "otp" && <ConfiguracionOtpAbm config={otpConfig} />}
+        {tabValido === "envio" && envioConfig && <ConfiguracionEnvioAbm config={envioConfig} />}
       </div>
     </div>
   )

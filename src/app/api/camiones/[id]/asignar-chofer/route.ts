@@ -1,5 +1,5 @@
 /**
- * API Route para asignar un chofer a un camión.
+ * API Route para asignar un chofer (Empleado con cargo CHOFER) a un camión.
  * POST /api/camiones/[id]/asignar-chofer
  */
 
@@ -17,22 +17,9 @@ const asignarChoferSchema = z.object({
 /**
  * POST: NextRequest { params: { id } } -> Promise<NextResponse>
  *
- * Dado el id del camión y { choferId }, cierra la asignación anterior (hasta=now)
- * y crea una nueva entrada en CamionChofer con desde=now y hasta=null.
- * También actualiza el fleteroId en el Usuario (chofer) para vincularlo al fletero dueño del camión.
- * Solo accesible por ADMIN_TRANSMAGG.
- * Existe para mantener el historial de asignaciones chofer↔camión de forma atómica
- * y garantizar que un camión tenga a lo sumo un chofer activo en todo momento.
- *
- * Ejemplos:
- * POST /api/camiones/c1/asignar-chofer { choferId: "u1" }
- * // => 200 { id, camionId: "c1", choferId: "u1", desde, hasta: null }
- * POST /api/camiones/noexiste/asignar-chofer { choferId: "u1" }
- * // => 404 { error: "Camión no encontrado" }
- * POST /api/camiones/c1/asignar-chofer { choferId: "u_no_chofer" }
- * // => 400 { error: "El usuario no tiene rol CHOFER" }
- * POST /api/camiones/c1/asignar-chofer { choferId: "u1" } (chofer de otro fletero)
- * // => 400 { error: "El chofer no pertenece al mismo fletero que el camión" }
+ * Dado el id del camión y { choferId } (id de un Empleado con cargo CHOFER),
+ * cierra la asignación previa (hasta=now) y crea una nueva en CamionChofer.
+ * Para camiones de fletero, el empleado debe pertenecer al mismo fletero.
  */
 export async function POST(
   request: NextRequest,
@@ -54,39 +41,29 @@ export async function POST(
     const camion = await prisma.camion.findUnique({ where: { id: params.id } })
     if (!camion) return NextResponse.json({ error: "Camión no encontrado" }, { status: 404 })
 
-    const chofer = await prisma.usuario.findUnique({ where: { id: choferId } })
+    const chofer = await prisma.empleado.findUnique({ where: { id: choferId } })
     if (!chofer) return NextResponse.json({ error: "Chofer no encontrado" }, { status: 404 })
-    if (chofer.rol !== "CHOFER") return NextResponse.json({ error: "El usuario no tiene rol CHOFER" }, { status: 400 })
+    if (chofer.cargo !== "CHOFER") return NextResponse.json({ error: "El empleado no tiene cargo CHOFER" }, { status: 400 })
 
-    // Para camiones propios (esPropio=true, fleteroId=null), cualquier chofer sin fletero es válido.
-    // Para camiones de fletero, el chofer debe pertenecer al mismo fletero (o no tener fletero asignado aún).
-    if (!camion.esPropio) {
-      if (chofer.fleteroId && chofer.fleteroId !== camion.fleteroId) {
-        return NextResponse.json({ error: "El chofer no pertenece al mismo fletero que el camión" }, { status: 400 })
-      }
+    // Camión propio: fleteroId=null; empleado debe tener fleteroId=null.
+    // Camión de fletero: fleteroId debe coincidir.
+    if (camion.fleteroId !== chofer.fleteroId) {
+      return NextResponse.json(
+        { error: "El chofer no pertenece al mismo fletero que el camión" },
+        { status: 400 },
+      )
     }
 
     const ahora = new Date()
 
     const asignacion = await prisma.$transaction(async (tx) => {
-      // Cerrar asignación anterior del camión (si existe)
       await tx.camionChofer.updateMany({
         where: { camionId: params.id, hasta: null },
         data: { hasta: ahora },
       })
-
-      // Crear nueva asignación
-      const nueva = await tx.camionChofer.create({
+      return tx.camionChofer.create({
         data: { camionId: params.id, choferId, desde: ahora },
       })
-
-      // Vincular fletero al chofer
-      await tx.usuario.update({
-        where: { id: choferId },
-        data: { fleteroId: camion.fleteroId },
-      })
-
-      return nueva
     })
 
     return NextResponse.json(asignacion)

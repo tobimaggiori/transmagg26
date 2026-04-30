@@ -28,8 +28,17 @@ export const PERMISOS_SECCION: Record<string, Rol[]> = {
   financiero: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
   cuentas: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
   pagos: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
-  abm: ["ADMIN_TRANSMAGG"],
+  abm: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  "abm.empresas": ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  "abm.fleteros": ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  "abm.usuarios": ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  "abm.proveedores": ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  "abm.cuentas": ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  "abm.fci": ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
+  "abm.empleados": ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
   admin: ["ADMIN_TRANSMAGG"],
+  configuracion: ["ADMIN_TRANSMAGG"],
+  configuracion_permisos: ["ADMIN_TRANSMAGG"],
   // Secciones de grupos de navegación (nuevas rutas agrupadas)
   empresas_facturar: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG", "ADMIN_EMPRESA", "OPERADOR_EMPRESA"],
   empresas_facturas: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG", "ADMIN_EMPRESA", "OPERADOR_EMPRESA"],
@@ -46,6 +55,7 @@ export const PERMISOS_SECCION: Record<string, Rol[]> = {
   aseguradoras: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
   contabilidad_comprobantes: ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
   contabilidad_comprobantes_eliminar: ["ADMIN_TRANSMAGG"],
+  "contabilidad.fci": ["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG"],
 }
 
 /**
@@ -190,15 +200,22 @@ export function puedeGestionarFlota(rol: Rol): boolean {
 /**
  * tienePermiso: (usuarioId, rol, seccion) -> Promise<boolean>
  *
- * Dado el id y rol del usuario y el nombre de una sección granular,
- * devuelve true si el usuario tiene permiso para acceder a esa sección.
- * ADMIN_TRANSMAGG siempre tiene acceso. Para OPERADOR_TRANSMAGG consulta
- * la tabla PermisoUsuario. Para otros roles devuelve false.
- * Existe para el sistema de permisos granulares por sección y sub-sección.
+ * Dado el id y rol del usuario y el nombre de una sección, devuelve true si
+ * el usuario tiene permiso para acceder a ella.
+ *
+ * Matriz de decisión:
+ *  - ADMIN_TRANSMAGG → siempre true.
+ *  - Si `seccion` está en SECCIONES (es una sección granular) → consulta
+ *    PermisoUsuario y devuelve habilitado.
+ *  - Si `seccion` NO está en SECCIONES (solo tiene definición en
+ *    PERMISOS_SECCION a nivel de rol) → cae a puedeAcceder (role-based).
+ *    Esto evita bloquear accesos por mismatch entre SECCIONES y el guard.
+ *  - Si no hay fila y tampoco está en PERMISOS_SECCION → false.
  *
  * Ejemplos:
  * tienePermiso("u1", "ADMIN_TRANSMAGG", "contabilidad.reportes") === true
  * tienePermiso("u2", "OPERADOR_TRANSMAGG", "dashboard.deuda_empresas") === depende DB
+ * tienePermiso("u2", "OPERADOR_TRANSMAGG", "liquidaciones") === true (no granular, fallback rol)
  */
 export async function tienePermiso(
   usuarioId: string,
@@ -206,11 +223,16 @@ export async function tienePermiso(
   seccion: string
 ): Promise<boolean> {
   if (rol === "ADMIN_TRANSMAGG") return true
-  const { prisma } = await import("@/lib/prisma")
-  const permiso = await prisma.permisoUsuario.findUnique({
-    where: { usuarioId_seccion: { usuarioId, seccion } }
-  })
-  return permiso?.habilitado ?? false
+  const seccionesGranulares = new Set<string>(Object.values(SECCIONES))
+  if (seccionesGranulares.has(seccion)) {
+    const { prisma } = await import("@/lib/prisma")
+    const permiso = await prisma.permisoUsuario.findUnique({
+      where: { usuarioId_seccion: { usuarioId, seccion } }
+    })
+    return permiso?.habilitado ?? false
+  }
+  // Fallback: role-based check.
+  return puedeAcceder(rol as Rol, seccion)
 }
 
 /**

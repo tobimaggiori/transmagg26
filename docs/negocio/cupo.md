@@ -16,8 +16,8 @@ número de cupo y son cupos independientes.
 
 1. **Hermanos del mismo cupo comparten un conjunto de campos lockeados**
    (mercadería, origen+provincia, destino+provincia, tarifa, comisión,
-   fletero, camión, chofer, esCamionPropio, tieneCpe). Solo varían:
-   kilos, remito, nro de carta de porte y fecha del viaje.
+   fletero, camión, chofer, esCamionPropio, tieneCtg). Solo varían:
+   kilos, remito, nro de CTG y fecha del viaje.
 2. **Mientras al menos un hermano esté pendiente de facturar**, ningún
    viaje nuevo del mismo cupo (misma empresa) puede tener datos lockeados
    distintos.
@@ -43,7 +43,7 @@ UI: `/fleteros/viajes/nuevo`. Componente:
 4. Si hay match (existe ≥1 viaje pendiente con ese cupo), el cliente
    autocompleta los campos lockeados con los del **viaje fuente** (el más
    antiguo pendiente) y los **deshabilita** vía `disabled`.
-5. El operador solo puede modificar kilos, remito, nro CDP y fecha.
+5. El operador solo puede modificar kilos, remito, nro CTG y fecha.
 
 Validación defensiva server-side en `POST /api/viajes`: aún si el
 cliente bypassea el lock, el endpoint compara los campos lockeados del
@@ -60,7 +60,7 @@ Si el viaje tiene cupo y hay hermanos pendientes:
   "Modificar").
 - Aparece un banner ámbar arriba del modal:
   > Este viaje comparte el cupo X con N viajes pendientes de facturar.
-  > Solo se pueden modificar kilos, fecha, remito y carta de porte.
+  > Solo se pueden modificar kilos, fecha, remito y CTG.
   > [Editar campos compartidos →]
 - El botón abre el sub-modal `ModalBulkEditCupo`.
 
@@ -130,8 +130,9 @@ PDF de factura y de LP:
 - **Resto** (fecha, mercadería, origen, destino, tarifa): tomado del
   primer viaje del grupo.
 - **Remitos**: formateados con [`formatearRemitosCupo`](#formato-de-remitos).
-- **CDPs**: separados por `, ` (sin formato especial, cada hermano
-  conserva su CDP individual).
+- **CTGs**: separados por `, ` (sin formato especial, cada hermano
+  conserva su CTG individual).
+- **CDPs**: idem, número opcional de CDP por hermano.
 
 Helper: [`agruparViajesPorCupo`](../../src/lib/viaje-cupo.ts), genérica
 (sirve para factura y LP — el caller decide qué tarifa pasar).
@@ -160,10 +161,11 @@ Por cada renglón de viaje (o grupo), debajo se imprime una línea con:
 
 - `Cupo: X` (negrita en "Cupo:", regular en valor)
 - `Remito: Y` o `Remitos: Y/Z/...` (etiqueta plural si hay >1)
-- `CDP: Z` o `CDPs: a, b, c` (etiqueta plural si hay >1)
+- `CTG: Z` o `CTGs: a, b, c` (etiqueta plural si hay >1)
+- `CDP: W` o `CDPs: x, y, z` (cuando se cargó CDP opcional, plural si >1)
 
 Sin fondo redondeado, sobre el color base del PDF. Orden fijo: Cupo →
-Remito(s) → CDP(s).
+Remito(s) → CTG(s) → CDP(s).
 
 ## Endpoints relacionados
 
@@ -181,4 +183,4 @@ Remito(s) → CDP(s).
 - `compararCamposLockeados`: 7 casos.
 - `formatearRemitosCupo`: 8 casos (incluye los ejemplos de arriba).
 - `agruparViajesPorCupo`: 7 casos (suma de kilos, agrupamiento, orden,
-  CDPs, vacíos).
+  CTGs, vacíos).

@@ -7,16 +7,15 @@
 
 import { useState, useEffect, useRef } from "react"
 import { SearchCombobox, type SearchComboboxItem } from "@/components/ui/search-combobox"
-import { formatearMoneda, formatearFecha } from "@/lib/utils"
+import { formatearFecha } from "@/lib/utils"
 import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
-import { UploadPDF } from "@/components/upload-pdf"
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
 export type Fletero = { id: string; razonSocial: string; cuit: string; comisionDefault?: number }
 export type Empresa = { id: string; razonSocial: string; cuit: string }
 export type Camion = { id: string; patenteChasis: string; fleteroId: string | null; esPropio?: boolean }
-export type Chofer = { id: string; nombre: string; apellido: string; email?: string }
+export type Chofer = { id: string; nombre: string; apellido: string; email?: string | null }
 
 export type ViajeDetalleAPI = {
   id: string
@@ -35,9 +34,11 @@ export type ViajeDetalleAPI = {
   comisionPct: number | null
   toneladas: number
   total: number
-  tieneCpe: boolean
-  nroCartaPorte: string | null
-  cartaPorteS3Key: string | null
+  tieneCtg: boolean
+  nroCtg: string | null
+  ctgS3Key: string | null
+  cpe: string | null
+  remitoS3Key: string | null
   estadoLiquidacion: string
   estadoFactura: string
   esCamionPropio: boolean
@@ -48,7 +49,7 @@ export type ViajeDetalleAPI = {
   choferId: string
   fletero: { razonSocial: string; cuit?: string } | null
   empresa: { razonSocial: string; cuit?: string } | null
-  camion: { patenteChasis: string; tipoCamion: string | null } | null
+  camion: { patenteChasis: string } | null
   chofer: { nombre: string; apellido: string } | null
   enLiquidaciones: Array<{
     tarifaFletero: number; kilos: number | null; subtotal: number
@@ -76,11 +77,6 @@ function formatNroComprobante(ptoVenta: number | null, nroComprobante: number | 
   return `${pv}-${nro}`
 }
 
-function formatKilos(kilos: number | null): string {
-  if (kilos == null) return "—"
-  return kilos.toLocaleString("es-AR")
-}
-
 function formatCuit(cuit: string): string {
   const clean = cuit.replace(/\D/g, "")
   if (clean.length !== 11) return cuit
@@ -88,7 +84,7 @@ function formatCuit(cuit: string): string {
 }
 
 type FormViaje = {
-  fechaViaje: string; remito: string; tieneCupo: boolean; cupo: string
+  fechaViaje: string; remito: string; cupo: string; nroCtg: string; cpe: string
   mercaderia: string; procedencia: string; provinciaOrigen: string
   destino: string; provinciaDestino: string; kilos: string
   tarifa: string; tarifaEmpresa: string; comisionPct: string
@@ -98,7 +94,8 @@ type FormViaje = {
 function formDesdeViaje(v: ViajeDetalleAPI): FormViaje {
   return {
     fechaViaje: v.fechaViaje.slice(0, 10),
-    remito: v.remito ?? "", tieneCupo: v.tieneCupo, cupo: v.cupo ?? "",
+    remito: v.remito ?? "", cupo: v.cupo ?? "", nroCtg: v.nroCtg ?? "",
+    cpe: v.cpe ?? "",
     mercaderia: v.mercaderia ?? "", procedencia: v.procedencia ?? "",
     provinciaOrigen: v.provinciaOrigen ?? "", destino: v.destino ?? "",
     provinciaDestino: v.provinciaDestino ?? "", kilos: v.kilos != null ? String(v.kilos) : "",
@@ -118,44 +115,105 @@ type EntradaHistorial = { fecha: string; campo: string; valorAnterior: string; v
 
 // ─── Sub-components ─────────────────────────────────────────────────────────
 
-function EditableField({
-  label, value, canEdit, editing, onToggleEdit, children, editLabel,
+/**
+ * cellInputCls: boolean -> string
+ *
+ * Clase Tailwind para un input tipo "celda de Excel": se ve como texto plano,
+ * con borde visible al hover y foco. Si está disabled, se muestra como valor
+ * fijo (no editable).
+ */
+function cellInputCls(disabled: boolean): string {
+  const base = "w-full rounded px-2 py-1 text-sm font-medium border bg-background"
+  if (disabled) {
+    return `${base} border-border/60 bg-muted/40 text-muted-foreground cursor-not-allowed`
+  }
+  return `${base} border-input hover:border-ring/60 focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30`
+}
+
+/**
+ * Cell: layout simple de "label + contenido" para formularios tipo hoja de cálculo.
+ */
+function Cell({
+  label, children, hint,
 }: {
-  label: string; value: React.ReactNode; canEdit: boolean; editing: boolean
-  onToggleEdit: () => void; children: React.ReactNode; editLabel?: string
+  label: string; children: React.ReactNode; hint?: React.ReactNode
 }) {
   return (
     <div>
-      <span className="text-sm font-medium text-foreground">{label}</span>
-      {editing ? (
-        <div>{children}</div>
-      ) : (
-        <>
-          <div className="text-sm font-medium">{value}</div>
-          {canEdit && (
-            <button type="button" onClick={onToggleEdit} className="text-[11px] text-blue-600 hover:text-blue-800 hover:underline">
-              {editLabel ?? "Modificar"}
-            </button>
-          )}
-        </>
-      )}
+      <span className="text-xs font-medium text-muted-foreground block mb-0.5">{label}</span>
+      {children}
+      {hint && <div className="mt-0.5">{hint}</div>}
     </div>
   )
 }
 
-function InlineInput({
-  value, onChange, onConfirm, onCancel, type, step, placeholder,
+/**
+ * PdfAttachedCell: celda tipo input con PDF opcional adjunto.
+ *
+ * - Si el valor está vacío: input con placeholder "No".
+ * - Si hay valor: el texto se muestra como link clickeable (abre el PDF si existe)
+ *   o como input normal (si no hay PDF aún).
+ * - Al lado: botón compacto "Ver" (cuando hay PDF) o "Subir" (cuando no).
+ */
+function PdfAttachedCell({
+  label,
+  value,
+  pdfKey,
+  disabled,
+  onChange,
+  onViewPdf,
+  onSubirPdf,
+  subiendo,
 }: {
-  value: string; onChange: (v: string) => void; onConfirm: () => void; onCancel: () => void
-  type?: string; step?: string; placeholder?: string
+  label: string
+  value: string
+  pdfKey: string | null | undefined
+  disabled: boolean
+  onChange: (v: string) => void
+  onViewPdf: () => void
+  onSubirPdf: () => void
+  subiendo: boolean
 }) {
+  const hasValue = value.trim().length > 0
+  const hasPdf = !!pdfKey
+
   return (
-    <div className="flex items-center gap-1.5">
-      <input type={type ?? "text"} step={step} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-        className="flex-1 rounded-md border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" autoFocus />
-      <button type="button" onClick={onConfirm} className="h-7 w-7 rounded-md bg-green-600 text-white text-sm hover:bg-green-700 flex items-center justify-center">&#10003;</button>
-      <button type="button" onClick={onCancel} className="h-7 w-7 rounded-md border text-gray-500 text-sm hover:bg-gray-100 flex items-center justify-center">&#10005;</button>
-    </div>
+    <Cell label={label}>
+      <div className="flex gap-1.5 items-stretch">
+        {hasValue && hasPdf ? (
+          <button
+            type="button"
+            onClick={onViewPdf}
+            className={`${cellInputCls(false)} text-left text-primary underline underline-offset-2 hover:bg-accent cursor-pointer`}
+            title="Ver PDF"
+          >
+            {value}
+          </button>
+        ) : (
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            disabled={disabled}
+            placeholder="No"
+            className={cellInputCls(disabled)}
+          />
+        )}
+        {hasValue && !disabled && (
+          hasPdf ? null : (
+            <button
+              type="button"
+              onClick={onSubirPdf}
+              disabled={subiendo}
+              className="h-[30px] px-2 rounded border text-xs font-medium hover:bg-accent whitespace-nowrap disabled:opacity-50"
+              title="Subir PDF"
+            >
+              {subiendo ? "…" : "Subir PDF"}
+            </button>
+          )
+        )}
+      </div>
+    </Cell>
   )
 }
 
@@ -198,27 +256,22 @@ export function ModalDetalleViaje({
   onGuardar: () => void; onCerrar: () => void; onEliminar?: () => void
 }) {
   const [form, setForm] = useState<FormViaje>(formDesdeViaje(viaje))
-  const [editingFields, setEditingFields] = useState<Set<string>>(new Set())
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [motivo, setMotivo] = useState("")
   const [mostrarHistorial, setMostrarHistorial] = useState(false)
-  const [subiendoCPE, setSubiendoCPE] = useState(false)
   const [mostrarConfirmarSalida, setMostrarConfirmarSalida] = useState(false)
-  const [agregandoCPE, setAgregandoCPE] = useState(false)
-  const [nuevoCPENro, setNuevoCPENro] = useState("")
-  const [nuevoCPEKey, setNuevoCPEKey] = useState("")
-  const cpeInputRef = useRef<HTMLInputElement>(null)
+  const [subiendoPdf, setSubiendoPdf] = useState<"remito" | "ctg" | null>(null)
+  const [viewingPdf, setViewingPdf] = useState<{ campo: "remito" | "ctg"; url: string } | null>(null)
+  const pdfInputRef = useRef<HTMLInputElement>(null)
+  const pdfTargetRef = useRef<"remito" | "ctg" | null>(null)
 
   useEffect(() => {
     setForm(formDesdeViaje(viaje))
     setError(null)
     setMotivo("")
-    setEditingFields(new Set())
     setMostrarHistorial(false)
-    setAgregandoCPE(false)
-    setNuevoCPENro("")
-    setNuevoCPEKey("")
+    setViewingPdf(null)
   }, [viaje.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const tieneLP = viaje.estadoLiquidacion === "LIQUIDADO"
@@ -228,7 +281,7 @@ export function ModalDetalleViaje({
   // Lookup de cupo: si este viaje comparte cupo con otros viajes pendientes
   // de facturar de la misma empresa, los campos lockeados no se pueden
   // editar individualmente — solo en bloque desde el sub-modal.
-  type ViajeHermano = { id: string; fechaViaje: string; remito: string | null; nroCartaPorte: string | null; kilos: number | null }
+  type ViajeHermano = { id: string; fechaViaje: string; remito: string | null; nroCtg: string | null; kilos: number | null }
   const [hermanos, setHermanos] = useState<ViajeHermano[]>([])
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
 
@@ -269,7 +322,8 @@ export function ModalDetalleViaje({
     camionId: puedeEditarTodo && !cupoBloqueado,
     fechaViaje: puedeEditarTodo,
     remito: puedeEditarTodo,
-    tieneCupo: puedeEditarTodo && !cupoBloqueado,
+    nroCtg: puedeEditarTodo,
+    cpe: puedeEditarTodo,
     cupo: puedeEditarTodo && !cupoBloqueado,
     mercaderia: puedeEditarTodo && !cupoBloqueado,
     procedencia: puedeEditarTodo && !cupoBloqueado,
@@ -289,14 +343,10 @@ export function ModalDetalleViaje({
   const camionesDisponibles = camiones.filter((c) => form.fleteroId ? c.fleteroId === form.fleteroId : c.esPropio)
 
   function setField<K extends keyof FormViaje>(key: K, value: FormViaje[K]) { setForm((prev) => ({ ...prev, [key]: value })) }
-  function isEditing(field: string) { return editingFields.has(field) }
-  function toggleEdit(field: string) { setEditingFields((prev) => { const n = new Set(prev); if (n.has(field)) n.delete(field); else n.add(field); return n }) }
-  function closeEdit(field: string) { setEditingFields((prev) => { const n = new Set(prev); n.delete(field); return n }) }
-  function cancelEdit(field: string) { const o = formDesdeViaje(viaje); setField(field as keyof FormViaje, o[field as keyof FormViaje]); closeEdit(field) }
 
   const fleteroItems: SearchComboboxItem[] = fleteros.map((f) => ({ id: f.id, label: f.razonSocial, sublabel: f.cuit }))
   const empresaItems: SearchComboboxItem[] = empresas.map((e) => ({ id: e.id, label: e.razonSocial, sublabel: e.cuit }))
-  const choferItems: SearchComboboxItem[] = choferes.map((c) => ({ id: c.id, label: `${c.nombre} ${c.apellido}`, sublabel: c.email }))
+  const choferItems: SearchComboboxItem[] = choferes.map((c) => ({ id: c.id, label: `${c.nombre} ${c.apellido}`, sublabel: c.email ?? undefined }))
 
   const fleteroDisplay = form.fleteroId ? fleteros.find((f) => f.id === form.fleteroId) : null
   const empresaDisplay = form.empresaId ? empresas.find((e) => e.id === form.empresaId) : null
@@ -315,8 +365,14 @@ export function ModalDetalleViaje({
       const original = formDesdeViaje(viaje)
       if (form.fechaViaje !== original.fechaViaje) body.fechaViaje = form.fechaViaje
       if (form.remito !== original.remito) body.remito = form.remito || null
-      if (form.tieneCupo !== original.tieneCupo) body.tieneCupo = form.tieneCupo
+      // tieneCupo/tieneCtg se derivan de la presencia de texto en la celda.
+      const nuevoTieneCupo = form.cupo.trim().length > 0
+      if (nuevoTieneCupo !== viaje.tieneCupo) body.tieneCupo = nuevoTieneCupo
       if (form.cupo !== original.cupo) body.cupo = form.cupo || null
+      const nuevoTieneCtg = form.nroCtg.trim().length > 0
+      if (nuevoTieneCtg !== viaje.tieneCtg) body.tieneCtg = nuevoTieneCtg
+      if (form.nroCtg !== original.nroCtg) body.nroCtg = form.nroCtg || null
+      if (form.cpe !== original.cpe) body.cpe = form.cpe || null
       if (form.mercaderia !== original.mercaderia) body.mercaderia = form.mercaderia || null
       if (form.procedencia !== original.procedencia) body.procedencia = form.procedencia || null
       if (form.provinciaOrigen !== original.provinciaOrigen) body.provinciaOrigen = form.provinciaOrigen || null
@@ -334,44 +390,56 @@ export function ModalDetalleViaje({
       const res = await fetch(`/api/viajes/${viaje.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       const json = await res.json()
       if (!res.ok) { setError(json.error ?? "Error al guardar"); return }
-      setMotivo(""); setEditingFields(new Set()); onGuardar()
+      setMotivo(""); onGuardar()
     } catch { setError("Error de red") } finally { setGuardando(false) }
   }
 
-  async function handleCPEUpload(file: File) {
-    setSubiendoCPE(true); setError(null)
+  async function handleVerPdf(campo: "remito" | "ctg") {
+    const s3Key = campo === "remito" ? viaje.remitoS3Key : viaje.ctgS3Key
+    if (!s3Key) return
     try {
-      const fd = new FormData(); fd.append("file", file); fd.append("prefijo", "cartas-porte")
+      const res = await fetch(`/api/storage/signed-url?key=${encodeURIComponent(s3Key)}`)
+      if (!res.ok) return
+      const { url } = await res.json()
+      setViewingPdf({ campo, url })
+    } catch { /* ignore */ }
+  }
+
+  function handleCambiarPdfClick(campo: "remito" | "ctg") {
+    pdfTargetRef.current = campo
+    pdfInputRef.current?.click()
+  }
+
+  async function handlePdfFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    const campo = pdfTargetRef.current
+    e.target.value = ""
+    if (!file || !campo) return
+
+    setSubiendoPdf(campo); setError(null)
+    try {
+      const prefijo = campo === "remito" ? "remitos" : "ctg"
+      const fd = new FormData(); fd.append("file", file); fd.append("prefijo", prefijo)
       const uploadRes = await fetch("/api/storage/upload", { method: "POST", body: fd })
       if (!uploadRes.ok) { setError("Error al subir el PDF"); return }
       const { key } = await uploadRes.json()
-      const patchRes = await fetch(`/api/viajes/${viaje.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cartaPorteS3Key: key }) })
-      if (!patchRes.ok) { setError("Error al actualizar el viaje"); return }
-      onGuardar()
-    } catch { setError("Error de red al subir CPE") } finally { setSubiendoCPE(false) }
-  }
 
-  async function handleAgregarCPE() {
-    if (!nuevoCPENro.trim() || !nuevoCPEKey) return
-    setError(null)
-    try {
-      const res = await fetch(`/api/viajes/${viaje.id}`, {
+      const patchBody: Record<string, unknown> = campo === "remito"
+        ? { remitoS3Key: key }
+        : { ctgS3Key: key, tieneCtg: true }
+      const patchRes = await fetch(`/api/viajes/${viaje.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tieneCpe: true, nroCartaPorte: nuevoCPENro.trim(), cartaPorteS3Key: nuevoCPEKey }),
+        body: JSON.stringify(patchBody),
       })
-      if (!res.ok) { const j = await res.json(); setError(j.error ?? "Error"); return }
-      setAgregandoCPE(false); onGuardar()
-    } catch { setError("Error de red") }
-  }
-
-  async function handleVerCPE() {
-    if (!viaje.cartaPorteS3Key) return
-    try {
-      const res = await fetch(`/api/storage/signed-url?key=${encodeURIComponent(viaje.cartaPorteS3Key)}`)
-      if (!res.ok) return
-      const { url } = await res.json()
-      window.open(url, "_blank")
-    } catch { /* ignore */ }
+      if (!patchRes.ok) { setError("Error al actualizar el viaje"); return }
+      setViewingPdf(null)
+      onGuardar()
+    } catch {
+      setError("Error de red al subir PDF")
+    } finally {
+      setSubiendoPdf(null)
+      pdfTargetRef.current = null
+    }
   }
 
   const secCls = "rounded-xl border border-border bg-card"
@@ -381,7 +449,6 @@ export function ModalDetalleViaje({
   const dataCls = "text-sm text-foreground font-medium"
   const labelSmCls = "text-xs text-muted-foreground"
   const pdfBtnCls = "text-xs px-2.5 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 font-medium"
-  const linkCls = "text-xs text-primary hover:text-primary/80 hover:underline font-medium"
 
   return (
     <>
@@ -407,7 +474,7 @@ export function ModalDetalleViaje({
               <div className="text-sm text-amber-900">
                 Este viaje comparte el cupo <strong>{viaje.cupo}</strong> con{" "}
                 <strong>{hermanos.length} {hermanos.length === 1 ? "viaje pendiente" : "viajes pendientes"}</strong> de facturar.
-                Solo se pueden modificar kilos, fecha, remito y carta de porte.
+                Solo se pueden modificar kilos, fecha, remito y CTG.
               </div>
               <button
                 type="button"
@@ -427,38 +494,68 @@ export function ModalDetalleViaje({
               <div className={secHeaderCls}><h3 className={secTitleCls}>Participantes</h3></div>
               <div className={secBodyCls}>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-3">
-                  <EditableField label="Fletero" editLabel="Cambiar" canEdit={editable.fleteroId} editing={isEditing("fleteroId")} onToggleEdit={() => toggleEdit("fleteroId")}
-                    value={<div><p className={dataCls}>{fleteroDisplay?.razonSocial ?? (form.fleteroId ? "—" : "Camión propio")}</p>{fleteroDisplay && <p className={labelSmCls}>CUIT: {formatCuit(fleteroDisplay.cuit)}</p>}</div>}>
-                    <SearchCombobox items={[{ id: "", label: "Camión propio" }, ...fleteroItems]} value={form.fleteroId}
-                      onChange={(id) => { setField("fleteroId", id); setField("camionId", ""); closeEdit("fleteroId") }} placeholder="Buscar fletero..." />
-                  </EditableField>
-                  <EditableField label="Empresa" editLabel="Cambiar" canEdit={editable.empresaId} editing={isEditing("empresaId")} onToggleEdit={() => toggleEdit("empresaId")}
-                    value={<div><p className={dataCls}>{empresaDisplay?.razonSocial ?? "—"}</p>{empresaDisplay && <p className={labelSmCls}>CUIT: {formatCuit(empresaDisplay.cuit)}</p>}</div>}>
-                    <SearchCombobox items={empresaItems} value={form.empresaId}
-                      onChange={(id) => { setField("empresaId", id); closeEdit("empresaId") }} placeholder="Buscar empresa..." />
-                  </EditableField>
-                  <EditableField label="Chofer" editLabel="Cambiar" canEdit={editable.choferId} editing={isEditing("choferId")} onToggleEdit={() => toggleEdit("choferId")}
-                    value={<span className={dataCls}>{choferDisplay ? `${choferDisplay.nombre} ${choferDisplay.apellido}` : (viaje.chofer ? `${viaje.chofer.nombre} ${viaje.chofer.apellido}` : "—")}</span>}>
-                    <SearchCombobox items={choferItems} value={form.choferId} onChange={(id) => { setField("choferId", id); closeEdit("choferId") }} placeholder="Buscar chofer..." />
-                  </EditableField>
-                  <EditableField label="Camión" editLabel="Cambiar" canEdit={editable.camionId} editing={isEditing("camionId")} onToggleEdit={() => toggleEdit("camionId")}
-                    value={<span className={dataCls}>{camionDisplay?.patenteChasis ?? "—"}</span>}>
-                    <div className="flex items-center gap-1.5">
-                      <select value={form.camionId} onChange={(e) => setField("camionId", e.target.value)} className="flex-1 rounded-md border bg-background px-2 py-1 text-sm" autoFocus>
+                  <Cell label="Fletero" hint={fleteroDisplay && <p className={labelSmCls}>CUIT: {formatCuit(fleteroDisplay.cuit)}</p>}>
+                    {editable.fleteroId ? (
+                      <SearchCombobox
+                        items={[{ id: "", label: "Camión propio" }, ...fleteroItems]}
+                        value={form.fleteroId}
+                        onChange={(id) => { setField("fleteroId", id); setField("camionId", "") }}
+                        placeholder="Buscar fletero..."
+                      />
+                    ) : (
+                      <div className={dataCls}>{fleteroDisplay?.razonSocial ?? (form.fleteroId ? "—" : "Camión propio")}</div>
+                    )}
+                  </Cell>
+                  <Cell label="Empresa" hint={empresaDisplay && <p className={labelSmCls}>CUIT: {formatCuit(empresaDisplay.cuit)}</p>}>
+                    {editable.empresaId ? (
+                      <SearchCombobox
+                        items={empresaItems}
+                        value={form.empresaId}
+                        onChange={(id) => setField("empresaId", id)}
+                        placeholder="Buscar empresa..."
+                      />
+                    ) : (
+                      <div className={dataCls}>{empresaDisplay?.razonSocial ?? "—"}</div>
+                    )}
+                  </Cell>
+                  <Cell label="Chofer">
+                    {editable.choferId ? (
+                      <SearchCombobox
+                        items={choferItems}
+                        value={form.choferId}
+                        onChange={(id) => setField("choferId", id)}
+                        placeholder="Buscar chofer..."
+                      />
+                    ) : (
+                      <div className={dataCls}>{choferDisplay ? `${choferDisplay.nombre} ${choferDisplay.apellido}` : (viaje.chofer ? `${viaje.chofer.nombre} ${viaje.chofer.apellido}` : "—")}</div>
+                    )}
+                  </Cell>
+                  <Cell label="Camión">
+                    {editable.camionId ? (
+                      <select
+                        value={form.camionId}
+                        onChange={(e) => setField("camionId", e.target.value)}
+                        className={cellInputCls(false)}
+                      >
                         <option value="">-- Seleccionar --</option>
                         {camionesDisponibles.map((c) => <option key={c.id} value={c.id}>{c.patenteChasis}</option>)}
                       </select>
-                      <button type="button" onClick={() => closeEdit("camionId")} className="h-7 w-7 rounded-md bg-success text-white text-sm hover:bg-success/90 flex items-center justify-center">&#10003;</button>
-                      <button type="button" onClick={() => cancelEdit("camionId")} className="h-7 w-7 rounded-md border text-muted-foreground text-sm hover:bg-accent flex items-center justify-center">&#10005;</button>
-                    </div>
-                  </EditableField>
+                    ) : (
+                      <div className={dataCls}>{camionDisplay?.patenteChasis ?? "—"}</div>
+                    )}
+                  </Cell>
                 </div>
                 {!viaje.esCamionPropio && (
-                  <div className="mt-2">
-                    <EditableField label="Comisión %" canEdit={editable.comisionPct} editing={isEditing("comisionPct")} onToggleEdit={() => toggleEdit("comisionPct")}
-                      value={<span className={dataCls}>{form.comisionPct ? `${form.comisionPct}%` : (viaje.comisionPct != null ? `${viaje.comisionPct}%` : "—")}</span>}>
-                      <InlineInput type="number" step="0.01" value={form.comisionPct} onChange={(v) => setField("comisionPct", v)} onConfirm={() => closeEdit("comisionPct")} onCancel={() => cancelEdit("comisionPct")} />
-                    </EditableField>
+                  <div className="mt-2 max-w-xs">
+                    <Cell label="Comisión %">
+                      <input
+                        type="number" step="0.01"
+                        value={form.comisionPct}
+                        onChange={(e) => setField("comisionPct", e.target.value)}
+                        disabled={!editable.comisionPct}
+                        className={cellInputCls(!editable.comisionPct)}
+                      />
+                    </Cell>
                   </div>
                 )}
               </div>
@@ -470,34 +567,77 @@ export function ModalDetalleViaje({
                 <div className={secHeaderCls}><h3 className={secTitleCls}>Recorrido</h3></div>
                 <div className={secBodyCls}>
                   <div className="grid grid-cols-2 gap-4">
-                    <EditableField label="Origen" canEdit={editable.procedencia} editing={isEditing("origen")} onToggleEdit={() => toggleEdit("origen")}
-                      value={<div><p className={dataCls}>{viaje.procedencia || "—"}</p>{viaje.provinciaOrigen && <p className={labelSmCls}>{viaje.provinciaOrigen}</p>}</div>}>
-                      <div className="space-y-2">
-                        <input type="text" value={form.procedencia} onChange={(e) => setField("procedencia", e.target.value)} className="w-full rounded-md border bg-background px-2 py-1 text-sm" placeholder="Ciudad" autoFocus />
-                        <select value={form.provinciaOrigen} onChange={(e) => setField("provinciaOrigen", e.target.value)} className="w-full rounded-md border bg-background px-2 py-1 text-sm">
+                    <Cell label="Origen">
+                      <div className="space-y-1">
+                        <input
+                          type="text"
+                          value={form.procedencia}
+                          onChange={(e) => setField("procedencia", e.target.value)}
+                          disabled={!editable.procedencia}
+                          placeholder="Ciudad"
+                          className={cellInputCls(!editable.procedencia)}
+                        />
+                        <select
+                          value={form.provinciaOrigen}
+                          onChange={(e) => setField("provinciaOrigen", e.target.value)}
+                          disabled={!editable.provinciaOrigen}
+                          className={cellInputCls(!editable.provinciaOrigen)}
+                        >
                           <option value="">— Provincia —</option>
                           {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
                         </select>
-                        <div className="flex gap-1.5">
-                          <button type="button" onClick={() => closeEdit("origen")} className="h-7 w-7 rounded-md bg-success text-white text-sm hover:bg-success/90 flex items-center justify-center">&#10003;</button>
-                          <button type="button" onClick={() => cancelEdit("origen")} className="h-7 w-7 rounded-md border text-muted-foreground text-sm hover:bg-accent flex items-center justify-center">&#10005;</button>
-                        </div>
                       </div>
-                    </EditableField>
-                    <EditableField label="Destino" canEdit={editable.destino} editing={isEditing("destino")} onToggleEdit={() => toggleEdit("destino")}
-                      value={<div><p className={dataCls}>{viaje.destino || "—"}</p>{viaje.provinciaDestino && <p className={labelSmCls}>{viaje.provinciaDestino}</p>}</div>}>
-                      <div className="space-y-2">
-                        <input type="text" value={form.destino} onChange={(e) => setField("destino", e.target.value)} className="w-full rounded-md border bg-background px-2 py-1 text-sm" placeholder="Ciudad" autoFocus />
-                        <select value={form.provinciaDestino} onChange={(e) => setField("provinciaDestino", e.target.value)} className="w-full rounded-md border bg-background px-2 py-1 text-sm">
+                    </Cell>
+                    <Cell label="Destino">
+                      <div className="space-y-1">
+                        <input
+                          type="text"
+                          value={form.destino}
+                          onChange={(e) => setField("destino", e.target.value)}
+                          disabled={!editable.destino}
+                          placeholder="Ciudad"
+                          className={cellInputCls(!editable.destino)}
+                        />
+                        <select
+                          value={form.provinciaDestino}
+                          onChange={(e) => setField("provinciaDestino", e.target.value)}
+                          disabled={!editable.provinciaDestino}
+                          className={cellInputCls(!editable.provinciaDestino)}
+                        >
                           <option value="">— Provincia —</option>
                           {PROVINCIAS_ARGENTINA.map((p) => <option key={p} value={p}>{p}</option>)}
                         </select>
-                        <div className="flex gap-1.5">
-                          <button type="button" onClick={() => closeEdit("destino")} className="h-7 w-7 rounded-md bg-success text-white text-sm hover:bg-success/90 flex items-center justify-center">&#10003;</button>
-                          <button type="button" onClick={() => cancelEdit("destino")} className="h-7 w-7 rounded-md border text-muted-foreground text-sm hover:bg-accent flex items-center justify-center">&#10005;</button>
-                        </div>
                       </div>
-                    </EditableField>
+                    </Cell>
+                  </div>
+                  <div className="grid grid-cols-3 gap-x-4 gap-y-3 mt-3">
+                    <Cell label="Fecha">
+                      <input
+                        type="date"
+                        value={form.fechaViaje}
+                        onChange={(e) => setField("fechaViaje", e.target.value)}
+                        disabled={!editable.fechaViaje}
+                        className={cellInputCls(!editable.fechaViaje)}
+                      />
+                    </Cell>
+                    <Cell label="Mercadería">
+                      <input
+                        type="text"
+                        value={form.mercaderia}
+                        onChange={(e) => setField("mercaderia", e.target.value)}
+                        disabled={!editable.mercaderia}
+                        className={cellInputCls(!editable.mercaderia)}
+                      />
+                    </Cell>
+                    <Cell label="Kilos">
+                      <input
+                        type="number"
+                        value={form.kilos}
+                        onChange={(e) => setField("kilos", e.target.value)}
+                        disabled={!editable.kilos}
+                        className={cellInputCls(!editable.kilos)}
+                      />
+                    </Cell>
                   </div>
                 </div>
               </div>
@@ -505,83 +645,88 @@ export function ModalDetalleViaje({
               <div className={secCls}>
                 <div className={secHeaderCls}><h3 className={secTitleCls}>Operación</h3></div>
                 <div className={secBodyCls}>
-                  <div className="grid grid-cols-3 gap-x-4 gap-y-3">
-                    <EditableField label="Fecha" canEdit={editable.fechaViaje} editing={isEditing("fechaViaje")} onToggleEdit={() => toggleEdit("fechaViaje")}
-                      value={<span className={dataCls}>{formatearFecha(new Date(viaje.fechaViaje))}</span>}>
-                      <InlineInput type="date" value={form.fechaViaje} onChange={(v) => setField("fechaViaje", v)} onConfirm={() => closeEdit("fechaViaje")} onCancel={() => cancelEdit("fechaViaje")} />
-                    </EditableField>
-                    <EditableField label="Mercadería" canEdit={editable.mercaderia} editing={isEditing("mercaderia")} onToggleEdit={() => toggleEdit("mercaderia")}
-                      value={<span className={dataCls}>{viaje.mercaderia || "—"}</span>}>
-                      <InlineInput value={form.mercaderia} onChange={(v) => setField("mercaderia", v)} onConfirm={() => closeEdit("mercaderia")} onCancel={() => cancelEdit("mercaderia")} />
-                    </EditableField>
-                    <EditableField label="Remito" canEdit={editable.remito} editing={isEditing("remito")} onToggleEdit={() => toggleEdit("remito")}
-                      value={<span className={dataCls}>{viaje.remito || "—"}</span>}>
-                      <InlineInput value={form.remito} onChange={(v) => setField("remito", v)} onConfirm={() => closeEdit("remito")} onCancel={() => cancelEdit("remito")} placeholder="Nro remito" />
-                    </EditableField>
-                    <EditableField label="Kilos" canEdit={editable.kilos} editing={isEditing("kilos")} onToggleEdit={() => toggleEdit("kilos")}
-                      value={<span className={dataCls}>{formatKilos(form.kilos ? Number(form.kilos) : viaje.kilos)}</span>}>
-                      <InlineInput type="number" value={form.kilos} onChange={(v) => setField("kilos", v)} onConfirm={() => closeEdit("kilos")} onCancel={() => cancelEdit("kilos")} />
-                    </EditableField>
-                    <EditableField label="Tarifa Fletero" canEdit={editable.tarifa} editing={isEditing("tarifa")} onToggleEdit={() => toggleEdit("tarifa")}
-                      value={<span className={dataCls}>{formatearMoneda(form.tarifa ? Number(form.tarifa) : viaje.tarifa)}</span>}>
-                      <InlineInput type="number" step="0.01" value={form.tarifa} onChange={(v) => setField("tarifa", v)} onConfirm={() => closeEdit("tarifa")} onCancel={() => cancelEdit("tarifa")} />
-                    </EditableField>
-                    <EditableField label="Tarifa Empresa" canEdit={editable.tarifaEmpresa} editing={isEditing("tarifaEmpresa")} onToggleEdit={() => toggleEdit("tarifaEmpresa")}
-                      value={<span className={dataCls}>{formatearMoneda(form.tarifaEmpresa ? Number(form.tarifaEmpresa) : viaje.tarifaEmpresa)}</span>}>
-                      <InlineInput type="number" step="0.01" value={form.tarifaEmpresa} onChange={(v) => setField("tarifaEmpresa", v)} onConfirm={() => closeEdit("tarifaEmpresa")} onCancel={() => cancelEdit("tarifaEmpresa")} />
-                    </EditableField>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                    <Cell label="Tarifa Fletero">
+                      <input
+                        type="number" step="0.01"
+                        value={form.tarifa}
+                        onChange={(e) => setField("tarifa", e.target.value)}
+                        disabled={!editable.tarifa}
+                        className={cellInputCls(!editable.tarifa)}
+                      />
+                    </Cell>
+                    <Cell label="Tarifa Empresa">
+                      <input
+                        type="number" step="0.01"
+                        value={form.tarifaEmpresa}
+                        onChange={(e) => setField("tarifaEmpresa", e.target.value)}
+                        disabled={!editable.tarifaEmpresa}
+                        className={cellInputCls(!editable.tarifaEmpresa)}
+                      />
+                    </Cell>
                   </div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-3">
-                    <EditableField label="Cupo" canEdit={editable.tieneCupo} editing={isEditing("cupo")} onToggleEdit={() => toggleEdit("cupo")}
-                      editLabel={viaje.tieneCupo ? "Modificar" : "Agregar cupo"}
-                      value={<span className={dataCls}>{viaje.tieneCupo ? (viaje.cupo || "Sí") : "No"}</span>}>
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <button type="button" onClick={() => setField("tieneCupo", !form.tieneCupo)}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${form.tieneCupo ? "bg-primary" : "bg-muted"}`}>
-                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.tieneCupo ? "translate-x-4" : "translate-x-0.5"}`} />
-                          </button>
-                          <span className="text-sm">{form.tieneCupo ? "Sí" : "No"}</span>
-                        </div>
-                        {form.tieneCupo && <input type="text" value={form.cupo} onChange={(e) => setField("cupo", e.target.value)} className="w-full rounded-md border bg-background px-2 py-1 text-sm" placeholder="Nro cupo" />}
-                        <div className="flex gap-1.5">
-                          <button type="button" onClick={() => closeEdit("cupo")} className="h-7 w-7 rounded-md bg-success text-white text-sm hover:bg-success/90 flex items-center justify-center">&#10003;</button>
-                          <button type="button" onClick={() => cancelEdit("cupo")} className="h-7 w-7 rounded-md border text-muted-foreground text-sm hover:bg-accent flex items-center justify-center">&#10005;</button>
-                        </div>
+                  {(() => {
+                    // Un viaje lleva remito O CTG, nunca ambos. Mostramos solo
+                    // la celda del tipo vigente.
+                    const esCTG = !!(viaje.nroCtg || viaje.tieneCtg || form.nroCtg)
+                    const colsCls = esCTG ? "grid-cols-2 md:grid-cols-3" : "grid-cols-2"
+                    return (
+                      <div className={`grid ${colsCls} gap-x-4 gap-y-3 mt-3`}>
+                        {esCTG ? (
+                          <>
+                            <PdfAttachedCell
+                              label="CTG"
+                              value={form.nroCtg}
+                              pdfKey={viaje.ctgS3Key}
+                              disabled={!editable.nroCtg}
+                              onChange={(v) => setField("nroCtg", v)}
+                              onViewPdf={() => handleVerPdf("ctg")}
+                              onSubirPdf={() => handleCambiarPdfClick("ctg")}
+                              subiendo={subiendoPdf === "ctg"}
+                            />
+                            <Cell label="CPE">
+                              <input
+                                type="text"
+                                value={form.cpe}
+                                onChange={(e) => setField("cpe", e.target.value)}
+                                disabled={!editable.cpe}
+                                placeholder="No"
+                                className={cellInputCls(!editable.cpe)}
+                              />
+                            </Cell>
+                          </>
+                        ) : (
+                          <PdfAttachedCell
+                            label="Remito"
+                            value={form.remito}
+                            pdfKey={viaje.remitoS3Key}
+                            disabled={!editable.remito}
+                            onChange={(v) => setField("remito", v)}
+                            onViewPdf={() => handleVerPdf("remito")}
+                            onSubirPdf={() => handleCambiarPdfClick("remito")}
+                            subiendo={subiendoPdf === "remito"}
+                          />
+                        )}
+                        <Cell label="Cupo">
+                          <input
+                            type="text"
+                            value={form.cupo}
+                            onChange={(e) => setField("cupo", e.target.value)}
+                            disabled={!editable.cupo}
+                            placeholder="No"
+                            className={cellInputCls(!editable.cupo)}
+                          />
+                        </Cell>
                       </div>
-                    </EditableField>
-
-                    {/* CPE */}
-                    <div>
-                      <span className="text-sm font-medium text-foreground">CPE / Carta de Porte</span>
-                      {viaje.tieneCpe && viaje.nroCartaPorte ? (
-                        <div className="mt-0.5">
-                          <p className={dataCls}>{viaje.nroCartaPorte}</p>
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            {viaje.cartaPorteS3Key && <button type="button" onClick={handleVerCPE} className={pdfBtnCls}>VER CPE</button>}
-                            <button type="button" onClick={() => cpeInputRef.current?.click()} disabled={subiendoCPE} className={`${linkCls} disabled:opacity-50`}>
-                              {subiendoCPE ? "Subiendo..." : "Cambiar PDF"}
-                            </button>
-                            <input ref={cpeInputRef} type="file" accept=".pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCPEUpload(f); e.target.value = "" }} />
-                          </div>
-                        </div>
-                      ) : agregandoCPE ? (
-                        <div className="space-y-2 mt-1">
-                          <input type="text" value={nuevoCPENro} onChange={(e) => setNuevoCPENro(e.target.value)} placeholder="Nro carta de porte" className="w-full rounded-md border bg-background px-2 py-1 text-sm" />
-                          <UploadPDF prefijo="cartas-de-porte" onUpload={(key) => setNuevoCPEKey(key)} label="Subir PDF" s3Key={nuevoCPEKey || undefined} />
-                          <div className="flex gap-1.5">
-                            <button type="button" onClick={handleAgregarCPE} disabled={!nuevoCPENro.trim() || !nuevoCPEKey} className="text-xs px-2.5 py-1 rounded-md bg-success text-white hover:bg-success/90 disabled:opacity-40 font-medium">Guardar CPE</button>
-                            <button type="button" onClick={() => setAgregandoCPE(false)} className="text-xs px-2.5 py-1 rounded-md border hover:bg-accent font-medium">Cancelar</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="mt-0.5">
-                          <p className={dataCls}>No</p>
-                          <button type="button" onClick={() => setAgregandoCPE(true)} className={linkCls}>Agregar CPE</button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                    )
+                  })()}
+                  <input
+                    ref={pdfInputRef}
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    className="hidden"
+                    onChange={handlePdfFileChange}
+                  />
                 </div>
               </div>
             </div>
@@ -723,12 +868,40 @@ export function ModalDetalleViaje({
         <ModalConfirmarSalida onSalir={() => { setMostrarConfirmarSalida(false); onCerrar() }} onVolver={() => setMostrarConfirmarSalida(false)} />
       )}
 
+      {viewingPdf && (
+        <div className="fixed inset-0 z-[60] flex flex-col bg-background">
+          <div className="flex items-center justify-between px-6 py-3 border-b bg-card">
+            <div className="flex items-center gap-3">
+              <h3 className="text-sm font-semibold">
+                {viewingPdf.campo === "remito" ? "Remito" : "CTG"} — {viewingPdf.campo === "remito" ? form.remito : form.nroCtg}
+              </h3>
+              <button
+                type="button"
+                onClick={() => handleCambiarPdfClick(viewingPdf.campo)}
+                disabled={subiendoPdf !== null}
+                className="h-8 px-3 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+              >
+                {subiendoPdf === viewingPdf.campo ? "Subiendo..." : "Cambiar PDF"}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setViewingPdf(null)}
+              className="h-8 px-3 rounded-md border text-sm hover:bg-accent"
+            >
+              Cerrar
+            </button>
+          </div>
+          <iframe src={viewingPdf.url} className="flex-1 w-full" title="PDF viewer" />
+        </div>
+      )}
+
       {bulkEditOpen && cupoBloqueado && viaje.cupo && (
         <ModalBulkEditCupo
           empresaId={viaje.empresaId}
           cupo={viaje.cupo}
           empresaNombre={viaje.empresa?.razonSocial ?? "—"}
-          viajeActual={{ id: viaje.id, fechaViaje: viaje.fechaViaje, remito: viaje.remito, nroCartaPorte: viaje.nroCartaPorte, kilos: viaje.kilos }}
+          viajeActual={{ id: viaje.id, fechaViaje: viaje.fechaViaje, remito: viaje.remito, nroCtg: viaje.nroCtg, kilos: viaje.kilos }}
           hermanos={hermanos}
           fleteros={fleteros}
           empresas={empresas}
@@ -773,8 +946,8 @@ function ModalBulkEditCupo({
   empresaId: string
   cupo: string
   empresaNombre: string
-  viajeActual: { id: string; fechaViaje: string; remito: string | null; nroCartaPorte: string | null; kilos: number | null }
-  hermanos: Array<{ id: string; fechaViaje: string; remito: string | null; nroCartaPorte: string | null; kilos: number | null }>
+  viajeActual: { id: string; fechaViaje: string; remito: string | null; nroCtg: string | null; kilos: number | null }
+  hermanos: Array<{ id: string; fechaViaje: string; remito: string | null; nroCtg: string | null; kilos: number | null }>
   fleteros: Fletero[]
   empresas: Empresa[]
   camiones: Camion[]
@@ -936,7 +1109,7 @@ function ModalBulkEditCupo({
                   <tr>
                     <th className="px-2 py-1.5 text-left">Fecha</th>
                     <th className="px-2 py-1.5 text-left">Remito</th>
-                    <th className="px-2 py-1.5 text-left">CDP</th>
+                    <th className="px-2 py-1.5 text-left">CTG</th>
                     <th className="px-2 py-1.5 text-right">Kilos</th>
                   </tr>
                 </thead>
@@ -945,7 +1118,7 @@ function ModalBulkEditCupo({
                     <tr key={v.id}>
                       <td className="px-2 py-1.5">{formatearFecha(new Date(v.fechaViaje))}</td>
                       <td className="px-2 py-1.5 font-mono">{v.remito ?? "—"}</td>
-                      <td className="px-2 py-1.5 font-mono">{v.nroCartaPorte ?? "—"}</td>
+                      <td className="px-2 py-1.5 font-mono">{v.nroCtg ?? "—"}</td>
                       <td className="px-2 py-1.5 text-right">{v.kilos != null ? v.kilos.toLocaleString("es-AR") : "—"}</td>
                     </tr>
                   ))}

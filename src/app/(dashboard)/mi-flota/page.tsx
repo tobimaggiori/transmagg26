@@ -7,7 +7,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { esRolInterno, puedeAcceder } from "@/lib/permissions"
+import { esRolInterno, tienePermiso } from "@/lib/permissions"
 import { resolverFleteroIdPorEmail } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 import { sumarImportes } from "@/lib/money"
@@ -19,7 +19,7 @@ export default async function MiFlotaPage() {
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
-  if (!puedeAcceder(rol, "mi_flota")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "mi_flota"))) redirect("/dashboard")
 
   // ── Roles internos: gestión de flota propia de Transmagg ──────────────────
   if (esRolInterno(rol)) {
@@ -35,8 +35,7 @@ export default async function MiFlotaPage() {
                 id: true,
                 nombre: true,
                 apellido: true,
-                email: true,
-                empleado: { select: { id: true, nombre: true, apellido: true } },
+                usuario: { select: { email: true } },
               },
             },
           },
@@ -61,7 +60,7 @@ export default async function MiFlotaPage() {
     })
 
     const cuentas = await prisma.cuenta.findMany({
-      where: { activa: true, cuentaPadreId: { not: null } },
+      where: { activa: true },
       select: { id: true, nombre: true },
       orderBy: { nombre: "asc" },
     })
@@ -95,7 +94,6 @@ export default async function MiFlotaPage() {
         id: c.id,
         patenteChasis: c.patenteChasis,
         patenteAcoplado: c.patenteAcoplado,
-        tipoCamion: c.tipoCamion,
         activo: c.activo,
         esPropio: c.esPropio,
         choferActual: c.choferHistorial[0]?.chofer ?? null,
@@ -111,15 +109,14 @@ export default async function MiFlotaPage() {
       }
     })
 
-    // Choferes empleados de Transmagg con rol CHOFER
-    const choferes = await prisma.usuario.findMany({
-      where: { rol: "CHOFER", activo: true, fleteroId: null },
+    // Choferes empleados de Transmagg (Empleado con cargo CHOFER y sin fleteroId)
+    const choferes = await prisma.empleado.findMany({
+      where: { cargo: "CHOFER", activo: true, fleteroId: null },
       select: {
         id: true,
         nombre: true,
         apellido: true,
-        email: true,
-        empleado: { select: { id: true, nombre: true, apellido: true } },
+        usuario: { select: { email: true } },
       },
       orderBy: [{ apellido: "asc" }, { nombre: "asc" }],
     })
@@ -143,17 +140,26 @@ export default async function MiFlotaPage() {
           id: true,
           patenteChasis: true,
           patenteAcoplado: true,
-          tipoCamion: true,
           choferHistorial: {
             where: { hasta: null },
-            select: { chofer: { select: { id: true, nombre: true, apellido: true, email: true } } },
+            select: {
+              chofer: {
+                select: {
+                  id: true, nombre: true, apellido: true,
+                  usuario: { select: { email: true } },
+                },
+              },
+            },
             take: 1,
           },
         },
       },
-      choferes: {
-        where: { rol: "CHOFER", activo: true },
-        select: { id: true, nombre: true, apellido: true, email: true },
+      empleados: {
+        where: { cargo: "CHOFER", activo: true },
+        select: {
+          id: true, nombre: true, apellido: true,
+          usuario: { select: { email: true } },
+        },
         orderBy: [{ apellido: "asc" }, { nombre: "asc" }],
       },
     },
@@ -172,10 +178,18 @@ export default async function MiFlotaPage() {
         id: c.id,
         patenteChasis: c.patenteChasis,
         patenteAcoplado: c.patenteAcoplado,
-        tipoCamion: c.tipoCamion,
-        choferActual: c.choferHistorial[0]?.chofer ?? null,
+        choferActual: c.choferHistorial[0]?.chofer
+          ? {
+              id: c.choferHistorial[0].chofer.id,
+              nombre: c.choferHistorial[0].chofer.nombre,
+              apellido: c.choferHistorial[0].chofer.apellido,
+              email: c.choferHistorial[0].chofer.usuario?.email ?? null,
+            }
+          : null,
       }))}
-      choferesSinCamion={fletero.choferes.filter((c) => !choferesConCamion.has(c.id))}
+      choferesSinCamion={fletero.empleados
+        .filter((e) => !choferesConCamion.has(e.id))
+        .map((e) => ({ id: e.id, nombre: e.nombre, apellido: e.apellido, email: e.usuario?.email ?? null }))}
     />
   )
 }

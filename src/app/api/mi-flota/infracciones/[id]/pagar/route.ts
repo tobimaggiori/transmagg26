@@ -7,6 +7,8 @@ import { auth } from "@/lib/auth"
 import { esRolInterno } from "@/lib/permissions"
 import { prisma } from "@/lib/prisma"
 import type { Rol } from "@/types"
+import { registrarMovimiento } from "@/lib/movimiento-cuenta"
+import { resolverOperadorId } from "@/lib/session-utils"
 
 export async function PATCH(
   request: NextRequest,
@@ -43,31 +45,34 @@ export async function PATCH(
     return NextResponse.json({ error: "La infracción ya está pagada" }, { status: 400 })
   }
 
-  const updated = await prisma.infraccion.update({
-    where: { id },
-    data: {
-      estado: "PAGADA",
-      fechaPago: new Date(fechaPago),
-      medioPago,
-      cuentaId: cuentaId ?? null,
-      comprobantePdfS3Key: comprobantePdfS3Key ?? null,
-    },
-  })
+  const operadorId = await resolverOperadorId(session.user)
 
-  // Create MovimientoSinFactura EGRESO if transferencia + cuenta
-  if (medioPago === "TRANSFERENCIA" && cuentaId) {
-    await prisma.movimientoSinFactura.create({
+  const updated = await prisma.$transaction(async (tx) => {
+    const upd = await tx.infraccion.update({
+      where: { id },
       data: {
+        estado: "PAGADA",
+        fechaPago: new Date(fechaPago),
+        medioPago,
+        cuentaId: cuentaId ?? null,
+        comprobantePdfS3Key: comprobantePdfS3Key ?? null,
+      },
+    })
+
+    if (medioPago === "TRANSFERENCIA" && cuentaId) {
+      await registrarMovimiento(tx, {
         cuentaId,
         tipo: "EGRESO",
-        categoria: "PAGO_SERVICIO",
+        categoria: "PAGO_INFRACCION",
         monto: infraccion.monto,
         fecha: new Date(fechaPago),
         descripcion: `Pago infracción — ${infraccion.organismo}`,
-        operadorId: session.user.id,
-      },
-    })
-  }
+        infraccionId: id,
+        operadorCreacionId: operadorId,
+      })
+    }
+    return upd
+  })
 
   return NextResponse.json({ infraccion: updated })
 }

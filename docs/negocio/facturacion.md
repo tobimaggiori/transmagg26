@@ -7,11 +7,6 @@
 > - Cuenta corriente y saldo pendiente: [./cuenta-corriente.md](./cuenta-corriente.md)
 > - Viajes con cupo (auto-selección de hermanos al facturar, validación
 >   de tarifa, agrupamiento en el PDF): [./cupo.md](./cupo.md)
->
-> **Inconsistencia conocida**: este doc describe estados derivados de viaje
-> (`PENDIENTE_FACTURACION`, `FACTURADO_VIGENTE`, `FACTURADO_AJUSTADO_PARCIAL`)
-> que probablemente NO estén implementados así en el código (los flags reales
-> son más simples). Ver [../INCONSISTENCIAS-DETECTADAS.md](../INCONSISTENCIAS-DETECTADAS.md).
 
 ## Objetivo
 
@@ -152,41 +147,37 @@ Eso no implica múltiples facturas vigentes simultáneas sobre el mismo viaje co
 
 ## 5. Estado de facturación del viaje
 
-Para el circuito empresa, el estado operativo del viaje debe derivarse de la situación económica vigente, no de la mera existencia de una factura histórica.
+El estado operativo del viaje en el circuito empresa se modela con un flag
+binario sobre el viaje base (`Viaje.estadoFactura` en `prisma/schema.prisma`,
+resuelto en `src/lib/viaje-workflow.ts`):
 
-### Estados propuestos
+### Estados implementados
 
-#### `PENDIENTE_FACTURACION`
+#### `PENDIENTE_FACTURAR`
 
-El viaje no tiene actualmente cargo facturado vigente.
-
-Casos típicos:
+El viaje no está tomado por una factura vigente. Casos típicos:
 
 * nunca fue facturado
-* fue facturado y luego totalmente revertido por NC
+* fue facturado y luego liberado por NC (total o parcial que libera el viaje)
 
 ---
 
-#### `FACTURADO_VIGENTE`
+#### `FACTURADO`
 
-El viaje tiene cargo facturado vigente completo.
-
-Casos típicos:
+El viaje está tomado por al menos una factura vigente. Casos típicos:
 
 * factura emitida sin correcciones
-* factura emitida y luego ND
-* factura original revertida y luego refactura vigente
+* factura emitida y luego ND (la ND complementa, no libera)
+* factura emitida y luego NC parcial que NO libera el viaje (corrección
+  monetaria sin reversión operativa)
 
 ---
 
-#### `FACTURADO_AJUSTADO_PARCIAL`
-
-El viaje sigue facturado, pero con ajuste parcial por NC.
-
-Casos típicos:
-
-* factura emitida y luego NC parcial
-* hubo corrección parcial sin liberar completamente el viaje para una nueva facturación total
+> **Nota sobre el granular**: la "vigencia económica" de un viaje no se modela
+> como un tercer estado del viaje. Lo único que decide qué deuda neta queda
+> abierta son los comprobantes asociados (factura + NC/ND) y la cuenta
+> corriente. Una NC parcial sin liberación de viaje afecta el saldo y el
+> efecto IVA, pero el viaje sigue contando como `FACTURADO`.
 
 ---
 
@@ -199,37 +190,44 @@ Cuando se emite una factura a empresa:
 * se genera un comprobante de factura
 * se registra el cargo en cuenta corriente empresa
 * se genera IVA ventas según corresponda
-* los viajes incluidos pasan a estado `FACTURADO_VIGENTE`
+* los viajes incluidos pasan a estado `FACTURADO`
 
-No debe considerarse suficiente un simple booleano de “facturado”; la factura debe quedar trazada documentalmente.
+El flag `estadoFactura` en el viaje no es la fuente de verdad económica: solo
+indica si el viaje está tomado por alguna factura vigente. La trazabilidad y
+el neto vivo se reconstruyen desde el comprobante y sus NC/ND asociadas.
 
 ---
 
 ### 6.2 Emisión de NC total
 
-Cuando se emite una NC que revierte totalmente la facturación de un viaje:
+Cuando se emite una NC que libera un viaje (revierte totalmente su
+facturación):
 
 * la factura original sigue existiendo
 * la NC queda asociada a la factura origen
 * se revierte totalmente el efecto económico e impositivo de ese viaje
-* el viaje pasa a `PENDIENTE_FACTURACION`
-* el viaje queda habilitado para refacturación completa, si operativamente corresponde
+* el viaje pasa a `PENDIENTE_FACTURAR`
+* el viaje queda habilitado para refacturación
 
-Esto aplica por viaje afectado, no solo por cabecera de factura.
+La liberación se decide por viaje (lista `viajesALiberar` en
+`src/lib/nota-cd-commands.ts`), no por cabecera de factura: una NC puede
+liberar solo parte de los viajes incluidos en la factura origen.
 
 ---
 
-### 6.3 Emisión de NC parcial
+### 6.3 Emisión de NC parcial sin liberación de viaje
 
-Cuando se emite una NC parcial sobre un viaje:
+Cuando se emite una NC que reduce monto pero NO libera el viaje:
 
 * la factura original sigue existiendo
 * la NC queda asociada a la factura origen
-* el efecto económico vigente se reduce solo parcialmente
-* el viaje sigue estando facturado
-* el viaje pasa a `FACTURADO_AJUSTADO_PARCIAL`
+* el efecto económico vigente se reduce parcialmente (afecta saldo de cuenta
+  corriente e IVA ventas)
+* el viaje sigue en `FACTURADO`
+* el viaje NO queda habilitado para refacturación
 
-La NC parcial no debe liberar automáticamente al viaje como pendiente de facturación total.
+La decisión de liberar o no es del operador al emitir la NC; el sistema no
+asume liberación automática por importe parcial.
 
 ---
 
@@ -243,10 +241,9 @@ Cuando se emite una ND sobre una factura:
 * aumenta el IVA ventas según corresponda
 * el viaje se mantiene facturado
 
-En términos operativos:
-
-* si estaba `FACTURADO_VIGENTE`, permanece así
-* si estaba `FACTURADO_AJUSTADO_PARCIAL`, una ND posterior puede compensar total o parcialmente ese ajuste, pero no “borra” historial
+En términos operativos el viaje sigue en `FACTURADO`. La ND no cambia el
+estado del viaje; solo aumenta el saldo de cuenta corriente y el IVA ventas
+asociados.
 
 ---
 
@@ -332,42 +329,20 @@ El sistema no debe intentar borrar o reescribir retrospectivamente los comproban
 
 ## 10. Refacturación
 
-## 10.1 Cuándo un viaje es refacturable completo
+## 10.1 Cuándo un viaje es refacturable
 
-Un viaje es refacturable completo cuando:
+Un viaje es refacturable cuando está en `PENDIENTE_FACTURAR`. Esto ocurre si:
 
-* su facturación vigente fue revertida totalmente
-* no queda cargo neto vigente asociado a ese viaje
-* no existe otra factura vigente cubriéndolo
-
-En ese caso el viaje queda en `PENDIENTE_FACTURACION`.
+* nunca fue facturado, o
+* fue facturado y la NC posterior lo liberó (ver 6.2)
 
 ---
 
-## 10.2 Cuándo un viaje NO es refacturable completo
+## 10.2 Cuándo un viaje NO es refacturable
 
-Un viaje no debe quedar liberado para refacturación total cuando:
-
-* existe una factura vigente sin reversión total
-* solo hubo NC parcial
-* ya existe una nueva factura vigente asociada
-
----
-
-## 10.3 Refacturación parcial
-
-Como regla inicial, la NC parcial no debe habilitar automáticamente una nueva facturación libre.
-
-Si más adelante se soporta refacturación parcial, deberá existir una regla explícita para controlar:
-
-* qué parte fue acreditada
-* qué parte puede volver a facturarse
-* que nunca se duplique cargo neto sobre el mismo viaje
-
-Hasta que eso esté bien cerrado, la lógica recomendada es:
-
-* NC parcial => viaje sigue facturado con ajuste parcial
-* no se libera para refacturación total automática
+Un viaje en `FACTURADO` no es refacturable. Para volver a facturarlo hay
+que liberarlo primero emitiendo una NC que lo incluya en la lista de viajes
+a liberar.
 
 ---
 
@@ -419,7 +394,7 @@ Una NC o ND posterior a un recibo no debe borrar el recibo. Debe alterar el sald
 Factura simple sin recibo:
 
 * se crea deuda
-* viaje queda `FACTURADO_VIGENTE`
+* viaje queda `FACTURADO`
 
 ### Caso 2
 
@@ -427,40 +402,40 @@ Factura + recibo total:
 
 * factura sigue histórica
 * saldo pendiente queda en cero
-* viaje sigue `FACTURADO_VIGENTE`
+* viaje sigue `FACTURADO`
 
 ### Caso 3
 
-Factura + NC total:
+Factura + NC que libera viaje:
 
 * factura sigue histórica
 * NC asociada visible
-* viaje pasa a `PENDIENTE_FACTURACION`
-* queda refacturable completo
+* viaje pasa a `PENDIENTE_FACTURAR`
+* queda refacturable
 
 ### Caso 4
 
-Factura + NC parcial:
+Factura + NC parcial sin liberar viaje:
 
-* viaje pasa a `FACTURADO_AJUSTADO_PARCIAL`
-* no queda pendiente total
-* no se libera refacturación total automática
+* viaje sigue en `FACTURADO`
+* saldo de cuenta corriente y IVA ventas se ajustan
+* no se habilita refacturación
 
 ### Caso 5
 
-Factura + recibo total + NC total:
+Factura + recibo total + NC que libera viaje:
 
 * recibo sigue histórico
 * NC genera saldo a favor/crédito de empresa
-* viaje queda `PENDIENTE_FACTURACION`
+* viaje queda `PENDIENTE_FACTURAR`
 
 ### Caso 6
 
-Factura + recibo parcial + NC parcial:
+Factura + recibo parcial + NC parcial sin liberar viaje:
 
 * no se borra el recibo
 * se recalcula neto de cuenta corriente
-* viaje queda `FACTURADO_AJUSTADO_PARCIAL`
+* viaje sigue en `FACTURADO`
 
 ### Caso 7
 
@@ -479,11 +454,11 @@ Factura + recibo total + ND:
 
 ### Caso 9
 
-NC total solo sobre parte de una factura con múltiples viajes:
+NC que libera solo parte de los viajes de una factura con múltiples viajes:
 
-* evaluar por viaje
-* solo los viajes totalmente revertidos pasan a `PENDIENTE_FACTURACION`
-* los demás conservan su estado vigente
+* evaluar por viaje (lista `viajesALiberar`)
+* solo los viajes liberados pasan a `PENDIENTE_FACTURAR`
+* los demás siguen en `FACTURADO`
 
 ### Caso 10
 
@@ -493,28 +468,21 @@ No permitir neto negativo por viaje:
 
 ---
 
-## 13. Decisiones abiertas a confirmar más adelante
+## 13. Reglas resumidas
 
-Estas decisiones todavía pueden necesitar validación fina contra operatoria real:
-
-1. si se permitirá refacturación parcial automática o no
-2. cómo se representará técnicamente el vínculo por viaje entre factura y NC/ND
-3. si habrá un estado explícito separado para “refacturable parcial” o si eso será solo una regla derivada
-
-Mientras no se cierre eso, la regla segura es:
-
-* NC total libera completamente
-* NC parcial ajusta pero no libera totalmente
-* ND incrementa cargo y no libera
+* NC con liberación de viaje → viaje a `PENDIENTE_FACTURAR`
+* NC parcial sin liberación → viaje sigue `FACTURADO`, ajusta saldo e IVA
+* ND → viaje sigue `FACTURADO`, incrementa saldo e IVA
 
 ---
 
 ## 14. Criterio final de diseño
 
-Para Transmagg nuevo, la lógica correcta de facturación empresa debe basarse en:
+La lógica de facturación empresa se apoya en:
 
-* comprobantes históricos inmutables
+* comprobantes históricos inmutables (factura, NC, ND, recibos)
 * correcciones mediante nuevos comprobantes asociados
 * cuenta corriente como reflejo del neto vigente
-* estado del viaje derivado del neto por viaje
-* prohibición de simplificar todo a un único booleano `facturado`
+* flag binario en el viaje (`PENDIENTE_FACTURAR` / `FACTURADO`) que indica
+  solo si el viaje está tomado por alguna factura vigente; el detalle
+  económico se reconstruye desde los comprobantes

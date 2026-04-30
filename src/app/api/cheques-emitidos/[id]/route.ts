@@ -17,7 +17,7 @@ import { actualizarChequeEmitidoSchema } from "@/lib/financial-schemas"
  *
  * Ejemplos:
  * GET(request, { params: { id: "ce1" } }) === NextResponse.json({ id: "ce1", cuenta, estado })
- * GET(request, { params: { id: "ce2" } }) === NextResponse.json({ id: "ce2", fletero, planillaGalicia })
+ * GET(request, { params: { id: "ce2" } }) === NextResponse.json({ id: "ce2", fletero, liquidacion })
  * GET(request, { params: { id: "noexiste" } }) === NextResponse.json({ error: "Cheque emitido no encontrado" }, { status: 404 })
  */
 export async function GET(
@@ -35,7 +35,6 @@ export async function GET(
         proveedor: true,
         cuenta: true,
         liquidacion: true,
-        planillaGalicia: true,
         operador: { select: { id: true, nombre: true, apellido: true } },
       },
     })
@@ -76,25 +75,17 @@ export async function PATCH(
     const cuentaId = parsed.data.cuentaId ?? existente.cuentaId
     const fleteroId = parsed.data.fleteroId ?? existente.fleteroId
     const proveedorId = parsed.data.proveedorId ?? existente.proveedorId
-    const planillaGaliciaId = parsed.data.planillaGaliciaId ?? existente.planillaGaliciaId
     const descripcion1 = parsed.data.descripcion1 ?? existente.descripcion1
     const descripcion2 = parsed.data.descripcion2 ?? existente.descripcion2
 
-    const [cuenta, planilla] = await Promise.all([
-      prisma.cuenta.findUnique({ where: { id: cuentaId } }),
-      planillaGaliciaId ? prisma.planillaGalicia.findUnique({ where: { id: planillaGaliciaId } }) : Promise.resolve(null),
-    ])
+    const cuenta = await prisma.cuenta.findUnique({ where: { id: cuentaId } })
 
     if (!cuenta) return notFoundResponse("Cuenta")
-    if (planillaGaliciaId && !planilla) return notFoundResponse("Planilla Galicia")
     if (!fleteroId && !proveedorId) {
       return badRequestResponse("El cheque emitido debe vincularse a un fletero o a un proveedor")
     }
     if (descripcion2 && !descripcion1) {
       return badRequestResponse("Descripción 2 requiere descripción 1")
-    }
-    if (planillaGaliciaId && !cuenta.tienePlanillaEmisionMasiva) {
-      return badRequestResponse("La cuenta seleccionada no admite planilla de emisión masiva")
     }
 
     const cheque = await prisma.chequeEmitido.update({ where: { id: params.id }, data: parsed.data })

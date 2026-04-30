@@ -26,6 +26,7 @@ const provinciaOptSchema = z.string().transform(normalizarProvincia).nullable().
 const actualizarViajeSchema = z.object({
   fechaViaje: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   remito: z.string().nullable().optional(),
+  remitoS3Key: z.string().nullable().optional(),
   tieneCupo: z.boolean().optional(),
   cupo: z.string().nullable().optional(),
   mercaderia: z.string().nullable().optional(),
@@ -37,9 +38,10 @@ const actualizarViajeSchema = z.object({
   tarifa: z.number().positive().optional(),
   tarifaEmpresa: z.number().positive().optional(),
   comisionPct: z.number().min(0).max(100).nullable().optional(),
-  cartaPorteS3Key: z.string().nullable().optional(),
-  tieneCpe: z.boolean().optional(),
-  nroCartaPorte: z.string().nullable().optional(),
+  ctgS3Key: z.string().nullable().optional(),
+  tieneCtg: z.boolean().optional(),
+  nroCtg: z.string().nullable().optional(),
+  cpe: z.string().nullable().optional(),
   empresaId: z.string().optional(),
   motivoCambioEmpresa: z.string().optional(),
   fleteroId: z.string().uuid().nullable().optional(),
@@ -77,8 +79,8 @@ export async function GET(
       where: { id: params.id },
       include: {
         fletero: { select: { razonSocial: true, cuit: true } },
-        camion: { select: { patenteChasis: true, patenteAcoplado: true, tipoCamion: true } },
-        chofer: { select: { nombre: true, apellido: true, email: true } },
+        camion: { select: { patenteChasis: true, patenteAcoplado: true } },
+        chofer: { select: { nombre: true, apellido: true, usuario: { select: { email: true } } } },
         empresa: { select: { razonSocial: true, cuit: true } },
         operador: { select: { nombre: true, apellido: true } },
         enLiquidaciones: {
@@ -252,7 +254,7 @@ export async function PATCH(
       }
     }
 
-    const { fechaViaje, empresaId, motivoCambioEmpresa, fleteroId, camionId, choferId, motivoCambioFletero, tarifa, tarifaEmpresa, cartaPorteS3Key, ...resto } = parsed.data
+    const { fechaViaje, empresaId, motivoCambioEmpresa, fleteroId, camionId, choferId, motivoCambioFletero, tarifa, tarifaEmpresa, ctgS3Key, ...resto } = parsed.data
 
     // Actualizar tarifas de forma independiente
     const tarifaUpdate: Record<string, number> = {}
@@ -301,7 +303,7 @@ export async function PATCH(
           ...(fleteroId !== undefined ? { fleteroId } : {}),
           ...(camionId ? { camionId } : {}),
           ...(choferId ? { choferId } : {}),
-          ...(cartaPorteS3Key !== undefined ? { cartaPorteS3Key } : {}),
+          ...(ctgS3Key !== undefined ? { ctgS3Key } : {}),
           ...(historial.length > 0 ? { historialCambios } : {}),
           ...(fechaViaje ? { fechaViaje: new Date(fechaViaje) } : {}),
         },

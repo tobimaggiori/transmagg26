@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { esAdmin } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { ProveedoresAbm } from "@/components/abm/proveedores-abm"
 import type { Rol } from "@/types"
 
@@ -10,7 +10,7 @@ export default async function ProveedoresPage() {
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_TRANSMAGG") as Rol
-  if (!esAdmin(rol)) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "abm.proveedores"))) redirect("/dashboard")
 
   const proveedores = await prisma.proveedor.findMany({
     orderBy: [{ activo: "desc" }, { razonSocial: "asc" }],

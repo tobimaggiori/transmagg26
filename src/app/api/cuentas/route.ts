@@ -34,7 +34,10 @@ export async function GET() {
   try {
     const cuentas = await prisma.cuenta.findMany({
       include: {
-        movimientosSinFactura: {
+        banco: { select: { id: true, nombre: true, activo: true } },
+        billetera: { select: { id: true, nombre: true, activa: true } },
+        broker: { select: { id: true, nombre: true, cuit: true, activo: true } },
+        movimientos: {
           select: { monto: true, tipo: true, categoria: true },
         },
         fci: {
@@ -47,7 +50,7 @@ export async function GET() {
           orderBy: { nombre: "asc" },
         },
         _count: {
-          select: { movimientosSinFactura: true },
+          select: { movimientos: true },
         },
       },
       orderBy: { nombre: "asc" },
@@ -56,7 +59,7 @@ export async function GET() {
     const resultado = cuentas.map((cuenta) => {
       const saldoContable = calcularSaldoContableCuenta(
         cuenta.saldoInicial,
-        cuenta.movimientosSinFactura.map((m) => m.tipo === "INGRESO" ? m.monto : -m.monto)
+        cuenta.movimientos.map((m) => m.tipo === "INGRESO" ? m.monto : -m.monto)
       )
 
       const detalleFci = cuenta.fci.map((fci) => ({
@@ -68,13 +71,13 @@ export async function GET() {
       const saldoEnFciPropios = calcularSaldoEnFciPropiosCuenta(detalleFci)
       const saldoDisponible = calcularSaldoDisponibleCuenta(saldoContable, saldoEnFciPropios)
       const capitalEnviado = sumarImportes(
-        cuenta.movimientosSinFactura
-          .filter((m) => m.categoria === "ENVIO_A_BROKER")
+        cuenta.movimientos
+          .filter((m) => m.categoria === "SUSCRIPCION_FCI")
           .map((m) => m.monto)
       )
       const capitalRescatado = sumarImportes(
-        cuenta.movimientosSinFactura
-          .filter((m) => m.categoria === "RESCATE_DE_BROKER")
+        cuenta.movimientos
+          .filter((m) => m.categoria === "RESCATE_FCI")
           .map((m) => m.monto)
       )
       const capitalNetoEnBroker = calcularCapitalNetoBroker(capitalEnviado, capitalRescatado)
@@ -126,8 +129,32 @@ export async function POST(request: NextRequest) {
     const existente = await prisma.cuenta.findUnique({ where: { nombre: parsed.data.nombre } })
     if (existente) return conflictResponse("Ya existe una cuenta con ese nombre")
 
+    if (parsed.data.bancoId) {
+      const banco = await prisma.banco.findUnique({ where: { id: parsed.data.bancoId } })
+      if (!banco || !banco.activo) {
+        return conflictResponse("El banco seleccionado no existe o está inactivo")
+      }
+    }
+    if (parsed.data.billeteraId) {
+      const billetera = await prisma.billeteraVirtual.findUnique({ where: { id: parsed.data.billeteraId } })
+      if (!billetera || !billetera.activa) {
+        return conflictResponse("La billetera seleccionada no existe o está inactiva")
+      }
+    }
+    if (parsed.data.brokerId) {
+      const broker = await prisma.broker.findUnique({ where: { id: parsed.data.brokerId } })
+      if (!broker || !broker.activo) {
+        return conflictResponse("El broker seleccionado no existe o está inactivo")
+      }
+    }
+
     const cuenta = await prisma.cuenta.create({
       data: parsed.data,
+      include: {
+        banco: { select: { id: true, nombre: true } },
+        billetera: { select: { id: true, nombre: true } },
+        broker: { select: { id: true, nombre: true, cuit: true } },
+      },
     })
 
     return NextResponse.json(cuenta, { status: 201 })

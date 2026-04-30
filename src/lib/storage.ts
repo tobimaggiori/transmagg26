@@ -10,7 +10,7 @@
  *   comprobantes-pago-fletero/    → Comprobantes de pago de LP a fleteros
  *   resumenes-bancarios/          → Resúmenes mensuales bancarios
  *   resumenes-tarjeta/            → Resúmenes mensuales de tarjetas
- *   cartas-de-porte/              → PDFs de cartas de porte de viajes
+ *   ctg/                          → PDFs de CTG de viajes
  */
 
 import {
@@ -20,10 +20,14 @@ import {
   DeleteObjectCommand,
   ListObjectsV2Command,
   DeleteObjectsCommand,
+  CopyObjectCommand,
 } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { randomUUID } from "crypto"
 
+// Prefijos de Transmagg (raíz del bucket).
+// Prefijos de JM (Javier Maggiori) van bajo `jm/` para no mezclar con
+// Transmagg en el bucket compartido. Ver docs/jm/README.md.
 export type StoragePrefijo =
   | "liquidaciones"
   | "facturas-emitidas"
@@ -32,7 +36,7 @@ export type StoragePrefijo =
   | "comprobantes-pago-fletero"
   | "resumenes-bancarios"
   | "resumenes-tarjeta"
-  | "cartas-de-porte"
+  | "ctg"
   | "remitos"
   | "polizas"
   | "recibos-cobranza"
@@ -43,6 +47,24 @@ export type StoragePrefijo =
   | "libros-percepciones"
   | "cierres-resumen"
   | "logos"
+  // JM
+  | "jm/facturas-emitidas"
+  | "jm/facturas-proveedor"
+  | "jm/comprobantes-pago-proveedor"
+  | "jm/resumenes-bancarios"
+  | "jm/resumenes-tarjeta"
+  | "jm/ctg"
+  | "jm/remitos"
+  | "jm/polizas"
+  | "jm/recibos-cobranza"
+  | "jm/notas-credito-debito"
+  | "jm/comprobantes-impuestos"
+  | "jm/comprobantes-infracciones"
+  | "jm/libros-iva"
+  | "jm/libros-iibb"
+  | "jm/libros-percepciones"
+  | "jm/cierres-resumen"
+  | "jm/logos"
 
 export const PREFIJOS_VALIDOS: StoragePrefijo[] = [
   "liquidaciones",
@@ -52,7 +74,7 @@ export const PREFIJOS_VALIDOS: StoragePrefijo[] = [
   "comprobantes-pago-fletero",
   "resumenes-bancarios",
   "resumenes-tarjeta",
-  "cartas-de-porte",
+  "ctg",
   "remitos",
   "polizas",
   "recibos-cobranza",
@@ -63,6 +85,23 @@ export const PREFIJOS_VALIDOS: StoragePrefijo[] = [
   "libros-percepciones",
   "cierres-resumen",
   "logos",
+  "jm/facturas-emitidas",
+  "jm/facturas-proveedor",
+  "jm/comprobantes-pago-proveedor",
+  "jm/resumenes-bancarios",
+  "jm/resumenes-tarjeta",
+  "jm/ctg",
+  "jm/remitos",
+  "jm/polizas",
+  "jm/recibos-cobranza",
+  "jm/notas-credito-debito",
+  "jm/comprobantes-impuestos",
+  "jm/comprobantes-infracciones",
+  "jm/libros-iva",
+  "jm/libros-iibb",
+  "jm/libros-percepciones",
+  "jm/cierres-resumen",
+  "jm/logos",
 ]
 
 const r2 = new S3Client({
@@ -174,6 +213,27 @@ export async function listarArchivos(prefijo: string): Promise<string[]> {
   return keys
 }
 
+export async function listarArchivosConMeta(
+  prefijo: string,
+): Promise<Array<{ key: string; lastModified: Date | null }>> {
+  const items: Array<{ key: string; lastModified: Date | null }> = []
+  let continuationToken: string | undefined
+  do {
+    const res = await r2.send(
+      new ListObjectsV2Command({
+        Bucket: BUCKET,
+        Prefix: prefijo,
+        ContinuationToken: continuationToken,
+      })
+    )
+    for (const obj of res.Contents ?? []) {
+      if (obj.Key) items.push({ key: obj.Key, lastModified: obj.LastModified ?? null })
+    }
+    continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined
+  } while (continuationToken)
+  return items
+}
+
 export async function eliminarArchivos(keys: string[]): Promise<number> {
   if (keys.length === 0) return 0
   let eliminados = 0
@@ -188,6 +248,16 @@ export async function eliminarArchivos(keys: string[]): Promise<number> {
     eliminados += res.Deleted?.length ?? 0
   }
   return eliminados
+}
+
+export async function copiarArchivo(srcKey: string, destKey: string): Promise<void> {
+  await r2.send(
+    new CopyObjectCommand({
+      Bucket: BUCKET,
+      Key: destKey,
+      CopySource: `${BUCKET}/${srcKey}`,
+    }),
+  )
 }
 
 export async function obtenerArchivo(key: string): Promise<Buffer> {

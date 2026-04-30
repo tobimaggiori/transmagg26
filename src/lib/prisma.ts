@@ -102,17 +102,17 @@ function createPrismaClient() {
         saldoInformado: dn("saldoInformado"),
         rendimientoPeriodo: dn("rendimientoPeriodo"),
       },
-      movimientoSinFactura: {
+      movimientoCuenta: {
         monto: dn("monto"),
+      },
+      conciliacionDia: {
+        saldoExtracto: dn("saldoExtracto"),
       },
       chequeRecibido: {
         monto: dn("monto"),
       },
       chequeEmitido: {
         monto: dn("monto"),
-      },
-      planillaGalicia: {
-        totalMonto: dn("totalMonto"),
       },
       tarjetaPrepaga: {
         limiteMensual: dnNull("limiteMensual"),
@@ -198,13 +198,6 @@ function createPrismaClient() {
       },
       cuotaFacturaSeguro: {
         monto: dn("monto"),
-      },
-      cierreResumenTarjeta: {
-        totalPagado: dn("totalPagado"),
-        diferencia: dn("diferencia"),
-      },
-      pagoFacturaTarjeta: {
-        montoPagado: dn("montoPagado"),
       },
       reciboCobranza: {
         totalCobrado: dn("totalCobrado"),

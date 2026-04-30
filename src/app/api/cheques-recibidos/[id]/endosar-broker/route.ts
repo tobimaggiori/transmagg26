@@ -10,7 +10,7 @@ import { badRequestResponse, invalidDataResponse, notFoundResponse, requireFinan
 import { resolverOperadorId } from "@/lib/session-utils"
 
 const schema = z.object({
-  brokerId: z.string().uuid(),
+  cuentaBrokerId: z.string().uuid(),
 })
 
 export async function POST(
@@ -36,16 +36,21 @@ export async function POST(
     if (!cheque) return notFoundResponse("Cheque recibido")
     if (cheque.estado !== "EN_CARTERA") return badRequestResponse("El cheque no está EN_CARTERA")
 
-    // brokerId es el id de la cuenta del broker
-    const broker = await prisma.broker.findUnique({ where: { id: parsed.data.brokerId }, select: { id: true, cuentaId: true } })
-    if (!broker) return notFoundResponse("Broker")
+    const cuentaBroker = await prisma.cuenta.findUnique({
+      where: { id: parsed.data.cuentaBrokerId },
+      select: { id: true, tipo: true, brokerId: true },
+    })
+    if (!cuentaBroker) return notFoundResponse("Cuenta broker")
+    if (cuentaBroker.tipo !== "BROKER" || !cuentaBroker.brokerId) {
+      return badRequestResponse("La cuenta debe ser de tipo BROKER con broker asociado")
+    }
 
     const chequeActualizado = await prisma.chequeRecibido.update({
       where: { id },
       data: {
         estado: "ENDOSADO_BROKER",
         endosadoATipo: "BROKER",
-        endosadoABrokerId: broker.cuentaId,
+        endosadoABrokerId: cuentaBroker.id,
       },
     })
 

@@ -203,7 +203,7 @@ export async function ejecutarCrearLiquidacion(
               ? tx.camion.findFirst({ where: { id: viaje.camionId, fleteroId, activo: true }, select: { id: true } })
               : Promise.resolve({ id: viajeData.camionId }),
             viaje.choferId
-              ? tx.usuario.findFirst({ where: { id: viaje.choferId, rol: "CHOFER", activo: true }, select: { id: true } })
+              ? tx.empleado.findFirst({ where: { id: viaje.choferId, cargo: "CHOFER", activo: true }, select: { id: true } })
               : Promise.resolve({ id: viajeData.choferId }),
           ])
           if (!camion) throw new _ValidationError(400, `Camión inválido para el viaje ${viaje.viajeId}`)

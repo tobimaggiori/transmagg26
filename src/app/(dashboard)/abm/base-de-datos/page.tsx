@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
-import { esAdmin } from "@/lib/permissions"
+import { puedeAcceder, tienePermiso } from "@/lib/permissions"
 import { ActionCard } from "@/components/ui/action-card"
 import { Building2, Truck, Package, Users } from "lucide-react"
 import type { Rol } from "@/types"
@@ -8,7 +8,17 @@ import type { Rol } from "@/types"
 export default async function BaseDeDatosPage() {
   const session = await auth()
   if (!session?.user) redirect("/login")
-  if (!esAdmin(session.user.rol as Rol)) redirect("/dashboard")
+  const rol = session.user.rol as Rol
+  if (!puedeAcceder(rol, "abm")) redirect("/dashboard")
+
+  const [verEmpresas, verFleteros, verProveedores, verUsuarios] = await Promise.all([
+    tienePermiso(session.user.id, rol, "abm.empresas"),
+    tienePermiso(session.user.id, rol, "abm.fleteros"),
+    tienePermiso(session.user.id, rol, "abm.proveedores"),
+    tienePermiso(session.user.id, rol, "abm.usuarios"),
+  ])
+
+  if (!verEmpresas && !verFleteros && !verProveedores && !verUsuarios) redirect("/dashboard")
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8">
@@ -17,10 +27,10 @@ export default async function BaseDeDatosPage() {
         <p className="text-muted-foreground mt-2">¿Qué querés gestionar?</p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-2xl">
-        <ActionCard title="EMPRESAS"    subtitle="ABM Empresas"    href="/abm/empresas"    icon={Building2} />
-        <ActionCard title="FLETEROS"    subtitle="ABM Fleteros"    href="/abm/fleteros"    icon={Truck} />
-        <ActionCard title="PROVEEDORES" subtitle="ABM Proveedores" href="/abm/proveedores" icon={Package} />
-        <ActionCard title="USUARIOS"    subtitle="ABM Usuarios"    href="/abm/usuarios"    icon={Users} />
+        {verEmpresas    && <ActionCard title="EMPRESAS"    subtitle="ABM Empresas"    href="/abm/empresas"    icon={Building2} />}
+        {verFleteros    && <ActionCard title="FLETEROS"    subtitle="ABM Fleteros"    href="/abm/fleteros"    icon={Truck} />}
+        {verProveedores && <ActionCard title="PROVEEDORES" subtitle="ABM Proveedores" href="/abm/proveedores" icon={Package} />}
+        {verUsuarios    && <ActionCard title="USUARIOS"    subtitle="ABM Usuarios"    href="/abm/usuarios"    icon={Users} />}
       </div>
     </div>
   )

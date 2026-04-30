@@ -6,7 +6,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { puedeAcceder, esRolInterno } from "@/lib/permissions"
+import { tienePermiso, esRolInterno } from "@/lib/permissions"
 import { resolverFleteroIdPorEmail } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 import { ConsultarLPClient } from "./consultar-lp-client"
@@ -28,7 +28,7 @@ export default async function FleterosLiquidacionesPage() {
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
-  if (!puedeAcceder(rol, "liquidaciones")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "liquidaciones"))) redirect("/dashboard")
 
   const esInterno = esRolInterno(rol)
 

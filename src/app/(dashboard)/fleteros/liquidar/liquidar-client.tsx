@@ -84,7 +84,8 @@ export function LiquidarClient({ rol, fleteros, empresas, camiones, choferes, fl
             mercaderia: string | null; procedencia: string | null;
             provinciaOrigen: string | null; destino: string | null; provinciaDestino: string | null;
             kilos: number | null; tarifa: number; tarifaEmpresa: number; estadoFactura: string;
-            nroCartaPorte: string | null;
+            nroCtg: string | null;
+            cpe: string | null;
           }>
           fletero: { cuit: string; condicionIva: string; direccion?: string | null } | null
           nroProximoComprobante: number
@@ -111,7 +112,8 @@ export function LiquidarClient({ rol, fleteros, empresas, camiones, choferes, fl
           tarifaFletero: v.tarifa,
           tarifaEmpresa: v.tarifaEmpresa,
           estadoFactura: v.estadoFactura,
-          nroCartaPorte: v.nroCartaPorte,
+          nroCtg: v.nroCtg,
+          cpe: v.cpe,
           // Campos de edición inicializados
           kilosEdit: v.kilos ?? undefined,
           tarifaEdit: v.tarifa,

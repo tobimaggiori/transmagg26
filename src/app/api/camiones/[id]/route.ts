@@ -14,25 +14,20 @@ import type { Rol } from "@/types"
 
 const actualizarSchema = z.object({
   patenteAcoplado: z.string().min(6).max(8).toUpperCase().nullable().optional(),
-  tipoCamion: z.string().min(1).optional(),
   activo: z.boolean().optional(),
 })
 
 /**
  * PATCH: NextRequest { params: { id } } -> Promise<NextResponse>
  *
- * Dado el id del camión y campos opcionales { patenteAcoplado, tipoCamion, activo },
+ * Dado el id del camión y campos opcionales { patenteAcoplado, activo },
  * actualiza el camión. FLETERO solo puede modificar sus propios camiones.
- * Existe para corregir o actualizar datos de un camión registrado
- * sin necesidad de eliminarlo y recrearlo.
  *
  * Ejemplos:
- * PATCH /api/camiones/c1 { tipoCamion: "Chasis" }
- * // => 200 { id: "c1", tipoCamion: "Chasis", ... }
- * PATCH /api/camiones/noexiste { tipoCamion: "Semi" }
+ * PATCH /api/camiones/c1 { patenteAcoplado: "XYZ789" }
+ * // => 200 { id: "c1", patenteAcoplado: "XYZ789", ... }
+ * PATCH /api/camiones/noexiste { activo: false }
  * // => 404 { error: "Camión no encontrado" }
- * PATCH /api/camiones/c1 { tipoCamion: "" }
- * // => 400 { error: "Datos inválidos", detalles: {...} }
  */
 export async function PATCH(
   request: NextRequest,

@@ -5,7 +5,7 @@
 
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { ActionCard } from "@/components/ui/action-card"
 import type { Rol } from "@/types"
 import { Plus, Search } from "lucide-react"
@@ -15,7 +15,7 @@ export default async function AseguradorasFacturasPage() {
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_TRANSMAGG") as Rol
-  if (!puedeAcceder(rol, "aseguradoras")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "aseguradoras"))) redirect("/dashboard")
 
   return (
     <div className="space-y-6">

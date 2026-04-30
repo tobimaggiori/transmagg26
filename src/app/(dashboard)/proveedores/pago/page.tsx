@@ -32,23 +32,12 @@ export default async function RegistrarPagoProveedorPage() {
       where: {
         activa: true,
         tipo: { in: ["BANCO", "BILLETERA_VIRTUAL"] },
-        OR: [
-          { cuentaPadreId: { not: null } },
-          { tipo: { not: "BANCO" } },
-        ],
       },
       select: { id: true, nombre: true, tipo: true },
       orderBy: { nombre: "asc" },
     }),
     prisma.cuenta.findMany({
-      where: {
-        activa: true,
-        tieneChequera: true,
-        OR: [
-          { cuentaPadreId: { not: null } },
-          { tipo: { not: "BANCO" } },
-        ],
-      },
+      where: { activa: true, tieneChequera: true },
       select: { id: true, nombre: true },
       orderBy: { nombre: "asc" },
     }),

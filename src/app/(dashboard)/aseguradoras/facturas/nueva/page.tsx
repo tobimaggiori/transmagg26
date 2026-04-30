@@ -6,7 +6,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { NuevaFacturaSeguroClient } from "./nueva-factura-seguro-client"
 import type { Rol } from "@/types"
 
@@ -15,7 +15,7 @@ export default async function NuevaFacturaSeguroPage() {
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_TRANSMAGG") as Rol
-  if (!puedeAcceder(rol, "aseguradoras")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "aseguradoras"))) redirect("/dashboard")
 
   const [proveedores, tarjetas, camiones, cuentas] = await Promise.all([
     prisma.proveedor.findMany({
@@ -30,17 +30,11 @@ export default async function NuevaFacturaSeguroPage() {
     }),
     prisma.camion.findMany({
       where: { activo: true },
-      select: { id: true, patenteChasis: true, patenteAcoplado: true, tipoCamion: true },
+      select: { id: true, patenteChasis: true, patenteAcoplado: true },
       orderBy: { patenteChasis: "asc" },
     }),
     prisma.cuenta.findMany({
-      where: {
-        activa: true,
-        OR: [
-          { cuentaPadreId: { not: null } },
-          { tipo: { not: "BANCO" } },
-        ],
-      },
+      where: { activa: true },
       select: { id: true, nombre: true, tipo: true },
       orderBy: { nombre: "asc" },
     }),

@@ -60,6 +60,7 @@ function FciFormModal({ fci, cuentas, onSuccess }: { fci?: FciAbm; cuentas: Arra
     moneda: fci?.moneda ?? "PESOS",
     activo: fci?.activo ?? true,
     diasHabilesAlerta: String(fci?.diasHabilesAlerta ?? "1"),
+    saldoInicial: "",
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -71,7 +72,15 @@ function FciFormModal({ fci, cuentas, onSuccess }: { fci?: FciAbm; cuentas: Arra
     try {
       const url = isEdit ? `/api/fci/${fci.id}` : "/api/fci"
       const method = isEdit ? "PATCH" : "POST"
-      const body = { ...form, diasHabilesAlerta: parseInt(form.diasHabilesAlerta) }
+      const { saldoInicial, ...rest } = form
+      const body: Record<string, unknown> = {
+        ...rest,
+        diasHabilesAlerta: parseInt(form.diasHabilesAlerta),
+      }
+      if (!isEdit && saldoInicial.trim()) {
+        const n = parseFloat(saldoInicial)
+        if (!Number.isNaN(n) && n > 0) body.saldoInicial = n
+      }
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       if (!res.ok) {
         const d = await res.json()
@@ -103,6 +112,20 @@ function FciFormModal({ fci, cuentas, onSuccess }: { fci?: FciAbm; cuentas: Arra
         </div>
         <div><Label>Días hábiles alerta</Label><Input type="number" min="1" value={form.diasHabilesAlerta} onChange={(e) => setForm(f => ({ ...f, diasHabilesAlerta: e.target.value }))} /></div>
       </div>
+      {!isEdit && (
+        <div>
+          <Label htmlFor="saldoInicial">Saldo inicial (opcional)</Label>
+          <Input
+            id="saldoInicial"
+            type="number"
+            min="0"
+            step="0.01"
+            value={form.saldoInicial}
+            onChange={(e) => setForm(f => ({ ...f, saldoInicial: e.target.value }))}
+            placeholder="0.00"
+          />
+        </div>
+      )}
       {isEdit && (
         <label className="flex items-center gap-2 text-sm cursor-pointer">
           <input type="checkbox" checked={form.activo} onChange={(e) => setForm(f => ({ ...f, activo: e.target.checked }))} />

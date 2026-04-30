@@ -43,11 +43,11 @@ describe("construirWhereViajes — FLETERO", () => {
 // ─── CHOFER: solo ve viajes donde es chofer ──────────────────────────────────
 
 describe("construirWhereViajes — CHOFER", () => {
-  it("restringe por chofer.email", async () => {
+  it("restringe por chofer.usuario.email (Empleado con login vinculado)", async () => {
     const r = await construirWhereViajes("CHOFER", "chofer@x.com", {})
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect(r.where).toEqual({ chofer: { email: "chofer@x.com" } })
+    expect(r.where).toEqual({ chofer: { usuario: { email: "chofer@x.com" } } })
   })
 })
 

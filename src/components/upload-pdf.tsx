@@ -5,7 +5,7 @@
  * Muestra estado de subida, errores, y enlace para ver el PDF ya subido.
  */
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import type { StoragePrefijo } from "@/lib/storage"
 
@@ -21,6 +21,8 @@ interface UploadPDFProps {
   s3Key?: string
   /** Indica visualmente que el campo es obligatorio */
   required?: boolean
+  /** Si true, sube el PDF inmediatamente al seleccionarlo (sin botón "Subir") */
+  autoUpload?: boolean
 }
 
 /**
@@ -42,14 +44,29 @@ export function UploadPDF({
   disabled = false,
   s3Key,
   required = false,
+  autoUpload = false,
 }: UploadPDFProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [archivoSeleccionado, setArchivoSeleccionado] = useState<File | null>(null)
   const [subiendo, setSubiendo] = useState(false)
   const [keySubida, setKeySubida] = useState<string | null>(s3Key ?? null)
+  const [nombreSubido, setNombreSubido] = useState<string | null>(null)
   const [error, setError] = useState("")
   const [reemplazando, setReemplazando] = useState(false)
   const [cargandoUrl, setCargandoUrl] = useState(false)
+
+  // Sincronizar estado interno con el prop s3Key: si el padre lo cambia (p.ej.
+  // al resetear el formulario tras cargar un viaje), limpiamos la vista.
+  useEffect(() => {
+    setKeySubida(s3Key ?? null)
+    if (!s3Key) {
+      setArchivoSeleccionado(null)
+      setNombreSubido(null)
+      setReemplazando(false)
+      setError("")
+      if (inputRef.current) inputRef.current.value = ""
+    }
+  }, [s3Key])
 
   function alSeleccionarArchivo(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null
@@ -65,15 +82,19 @@ export function UploadPDF({
       return
     }
     setArchivoSeleccionado(file)
+    if (autoUpload && file) {
+      void subir(file)
+    }
   }
 
-  async function subir() {
-    if (!archivoSeleccionado) return
+  async function subir(archivo?: File) {
+    const target = archivo ?? archivoSeleccionado
+    if (!target) return
     setError("")
     setSubiendo(true)
     try {
       const formData = new FormData()
-      formData.append("file", archivoSeleccionado)
+      formData.append("file", target)
       formData.append("prefijo", prefijo)
       const res = await fetch("/api/storage/upload", { method: "POST", body: formData })
       const data = await res.json()
@@ -81,6 +102,7 @@ export function UploadPDF({
         setError(data.error ?? "Error al subir el archivo")
       } else {
         setKeySubida(data.key as string)
+        setNombreSubido(target.name)
         setArchivoSeleccionado(null)
         setReemplazando(false)
         onUpload(data.key as string)
@@ -111,28 +133,26 @@ export function UploadPDF({
 
   // Estado: ya hay PDF subido y no está reemplazando
   if (keySubida && !reemplazando) {
+    const nombreVisible = nombreSubido ?? keySubida.split("/").pop() ?? "documento.pdf"
     return (
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-sm text-green-700 font-medium">✓ PDF cargado</span>
-        <Button
+      <div className="flex items-center gap-3 flex-wrap text-sm">
+        <button
           type="button"
-          size="sm"
-          variant="outline"
           onClick={() => verPDF(keySubida)}
           disabled={cargandoUrl}
+          className="text-primary hover:underline font-medium truncate max-w-[260px] disabled:opacity-50"
+          title={nombreVisible}
         >
-          {cargandoUrl ? "Cargando..." : "Ver PDF"}
-        </Button>
+          {cargandoUrl ? "Cargando..." : nombreVisible}
+        </button>
         {!disabled && (
-          <Button
+          <button
             type="button"
-            size="sm"
-            variant="ghost"
             onClick={() => { setReemplazando(true); setArchivoSeleccionado(null); setError("") }}
-            className="text-muted-foreground"
+            className="text-xs text-muted-foreground hover:text-foreground underline"
           >
             Reemplazar
-          </Button>
+          </button>
         )}
         {error && <p className="w-full text-xs text-destructive">{error}</p>}
       </div>
@@ -170,24 +190,32 @@ export function UploadPDF({
             <span className="text-sm text-muted-foreground truncate max-w-[200px]">
               {archivoSeleccionado.name}
             </span>
-            <Button
-              type="button"
-              size="sm"
-              onClick={subir}
-              disabled={subiendo}
-            >
-              {subiendo ? "Subiendo..." : "Subir"}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => { setArchivoSeleccionado(null); setError(""); if (inputRef.current) inputRef.current.value = "" }}
-              disabled={subiendo}
-              className="text-muted-foreground"
-            >
-              Cancelar
-            </Button>
+            {autoUpload ? (
+              <span className="text-sm text-muted-foreground">
+                {subiendo ? "Subiendo..." : ""}
+              </span>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => subir()}
+                  disabled={subiendo}
+                >
+                  {subiendo ? "Subiendo..." : "Subir"}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => { setArchivoSeleccionado(null); setError(""); if (inputRef.current) inputRef.current.value = "" }}
+                  disabled={subiendo}
+                  className="text-muted-foreground"
+                >
+                  Cancelar
+                </Button>
+              </>
+            )}
           </>
         )}
         {reemplazando && (

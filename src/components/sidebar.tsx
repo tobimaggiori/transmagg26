@@ -11,7 +11,8 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { signOut } from "next-auth/react"
 import { NavSubItem } from "@/components/nav-sub-item"
-import { puedeAcceder } from "@/lib/permissions"
+import { EmpresaSelector } from "@/components/empresa-selector"
+import { puedeAcceder, esRolInterno } from "@/lib/permissions"
 import type { Rol } from "@/types"
 import {
   LayoutDashboard,
@@ -26,7 +27,6 @@ import {
   ChevronRight,
   ChevronLeft,
   ShieldAlert,
-  Shield,
   Cog,
   PanelLeftOpen,
 } from "lucide-react"
@@ -48,6 +48,8 @@ interface SubItem {
   href: string
   label: string
   seccion?: string
+  /** Si se provee, el item se muestra si el usuario tiene al menos una de estas secciones (útil para hubs que agrupan varias). */
+  seccionAny?: string[]
 }
 
 interface NavGroup {
@@ -93,18 +95,9 @@ const NAV_GROUPS: NavGroup[] = [
     pathPrefix: "/proveedores",
     items: [
       { href: "/proveedores/facturas",           label: "Facturas",           seccion: "proveedores.facturas" },
+      { href: "/aseguradoras/facturas",          label: "Aseguradoras",       seccion: "aseguradoras" },
       { href: "/proveedores/pago",               label: "Registrar Pago",     seccion: "proveedores.pagos" },
       { href: "/proveedores/cuentas-corrientes", label: "Cuentas Corrientes", seccion: "proveedores.cuentas_corrientes" },
-    ],
-  },
-  {
-    id: "aseguradoras",
-    label: "Aseguradoras",
-    icon: Shield,
-    seccion: "aseguradoras",
-    pathPrefix: "/aseguradoras",
-    items: [
-      { href: "/aseguradoras/facturas", label: "Facturas y Pólizas", seccion: "aseguradoras" },
     ],
   },
   {
@@ -115,7 +108,8 @@ const NAV_GROUPS: NavGroup[] = [
     pathPrefix: "/contabilidad",
     items: [
       { href: "/contabilidad/chequeras",       label: "Chequeras",          seccion: "contabilidad.reportes" },
-      { href: "/contabilidad/cuentas",         label: "Cuentas y Tarjetas", seccion: "contabilidad.reportes" },
+      { href: "/contabilidad/cuentas",         label: "Cuentas y Tarjetas", seccion: "cuentas" },
+      { href: "/contabilidad/fci",             label: "FCI",                seccion: "contabilidad.fci" },
       { href: "/contabilidad/impuestos",       label: "Pago de Impuestos",  seccion: "contabilidad.impuestos" },
       { href: "/contabilidad/reportes",        label: "Reportes",           seccion: "contabilidad.reportes" },
     ],
@@ -127,20 +121,21 @@ const NAV_GROUPS: NavGroup[] = [
     seccion: "abm",
     pathPrefix: "/abm/base-de-datos",
     items: [
-      { href: "/abm/base-de-datos", label: "Base de datos", seccion: "" },
-      { href: "/abm/contabilidad",  label: "Contabilidad",  seccion: "" },
-      { href: "/mi-flota",          label: "Mi Flota",      seccion: "" },
+      { href: "/abm/base-de-datos", label: "Base de datos", seccionAny: ["abm.empresas", "abm.fleteros", "abm.usuarios", "abm.proveedores"] },
+      { href: "/abm/contabilidad",  label: "Contabilidad",  seccionAny: ["abm.empleados", "abm.cuentas", "abm.fci"] },
+      { href: "/mi-flota",          label: "Mi Flota",      seccion: "mi_flota" },
     ],
   },
   {
     id: "configuracion",
     label: "Configuración",
     icon: Cog,
-    seccion: "abm",
+    seccion: "configuracion",
     pathPrefix: "/configuracion",
     items: [
-      { href: "/configuracion/arca", label: "ARCA", seccion: "" },
-      { href: "/configuracion/otp",  label: "OTP",  seccion: "" },
+      { href: "/configuracion/arca",     label: "ARCA",     seccion: "" },
+      { href: "/configuracion/envio",    label: "Envío",    seccion: "" },
+      { href: "/configuracion/permisos", label: "Permisos", seccion: "" },
     ],
   },
 ]
@@ -195,7 +190,11 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
 
   function filtrarItems(items: SubItem[]): SubItem[] {
     if (rol !== "OPERADOR_TRANSMAGG" || !permisos) return items
-    return items.filter(item => !item.seccion || item.seccion === "" || permisos.includes(item.seccion))
+    return items.filter(item => {
+      if (item.seccionAny) return item.seccionAny.some((s) => permisos.includes(s))
+      if (!item.seccion || item.seccion === "") return true
+      return permisos.includes(item.seccion)
+    })
   }
 
   function renderGrupo(grupo: NavGroup) {
@@ -307,6 +306,8 @@ export function Sidebar({ rol, nombreUsuario, emailUsuario, esChoferTransmagg, a
 
       {/* Footer */}
       <div className="border-t border-sidebar-border p-3 space-y-2">
+        {esRolInterno(rol) && <EmpresaSelector collapsed={collapsed} />}
+
         {onToggleCollapse && (
           <button
             type="button"

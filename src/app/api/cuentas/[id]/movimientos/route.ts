@@ -1,6 +1,7 @@
 /**
- * GET /api/cuentas/[id]/movimientos — Lista movimientos de una cuenta con saldo running.
- * POST /api/cuentas/[id]/movimientos — Crea un movimiento manual vinculado a la cuenta.
+ * GET  /api/cuentas/[id]/movimientos — Libro de la cuenta. Devuelve los movimientos
+ *       con saldo corrido y el flag `conciliado` por día.
+ * POST /api/cuentas/[id]/movimientos — Crea un movimiento manual (esManual=true).
  * Solo accesible para ADMIN_TRANSMAGG y OPERADOR_TRANSMAGG.
  */
 
@@ -14,29 +15,32 @@ import {
   serverErrorResponse,
 } from "@/lib/financial-api"
 import { resolverOperadorId } from "@/lib/session-utils"
-import { sumarImportes, restarImportes } from "@/lib/money"
+import {
+  listarMovimientosConSaldoCorrido,
+  calcularSaldoActual,
+  registrarMovimientoManualConImpuestos,
+} from "@/lib/movimiento-cuenta"
+import { estadoMesCuenta } from "@/lib/conciliacion"
 
-const crearMovimientoSchema = z.object({
+const crearManualSchema = z.object({
   tipo: z.enum(["INGRESO", "EGRESO"]),
   categoria: z.string().min(1, "Categoría requerida"),
   monto: z.number().positive("El monto debe ser mayor a 0"),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida (YYYY-MM-DD)"),
   descripcion: z.string().min(1, "Descripción requerida"),
-  referencia: z.string().optional().nullable(),
   comprobanteS3Key: z.string().optional().nullable(),
+  cuentaDestinoId: z.string().uuid().optional().nullable(),
+  aplicarImpuestoDebcred: z.boolean().optional().default(false),
+  aplicarIibbSircreb: z.boolean().optional().default(false),
 })
 
 /**
  * GET: NextRequest, { params: { id } } -> Promise<NextResponse>
  *
- * Dado el id de una cuenta y filtros opcionales (tipo, categoria, desde, hasta, page, limit),
- * devuelve los movimientos paginados con saldo running calculado desde saldoInicial.
- * El saldo running refleja el balance real de la cuenta en ese momento (incluyendo todos
- * los movimientos, no solo los del filtro actual).
- *
- * Ejemplos:
- * GET(/api/cuentas/c1/movimientos) === { movimientos: [...], total, totalDebitos, totalCreditos }
- * GET(...?tipo=EGRESO&desde=2026-03-01) === movimientos filtrados con saldo running real
+ * Dado el id de una cuenta y filtros opcionales (desde, hasta, tipo, categoria,
+ * soloConciliados, soloNoConciliados), devuelve los movimientos del libro
+ * ordenados por (fecha, orden) con su saldo corrido, junto con el saldo actual
+ * total de la cuenta y (si el rango cae dentro de un mes) el estado del mes.
  */
 export async function GET(
   request: NextRequest,
@@ -48,80 +52,48 @@ export async function GET(
   try {
     const { id } = await params
     const { searchParams } = new URL(request.url)
-    const tipo = searchParams.get("tipo") ?? undefined
-    const categoria = searchParams.get("categoria") ?? undefined
-    const desde = searchParams.get("desde") ?? undefined
-    const hasta = searchParams.get("hasta") ?? undefined
-    const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10))
-    const limit = Math.min(200, Math.max(1, parseInt(searchParams.get("limit") ?? "50", 10)))
 
     const cuenta = await prisma.cuenta.findUnique({
       where: { id },
-      select: { id: true, saldoInicial: true },
+      select: { id: true, nombre: true, moneda: true, saldoInicial: true, fechaSaldoInicial: true },
     })
     if (!cuenta) return notFoundResponse("Cuenta")
 
-    // Load ALL movements to compute running saldo accurately (regardless of filters)
-    const todosLosMovimientos = await prisma.movimientoSinFactura.findMany({
-      where: { cuentaId: id },
-      select: { id: true, tipo: true, monto: true },
-      orderBy: [{ fecha: "asc" }, { creadoEn: "asc" }],
+    const desde = searchParams.get("desde")
+    const hasta = searchParams.get("hasta")
+    const tipo = searchParams.get("tipo")
+    const categoria = searchParams.get("categoria")
+    const soloConciliados = searchParams.get("soloConciliados") === "true"
+    const soloNoConciliados = searchParams.get("soloNoConciliados") === "true"
+
+    const movimientos = await listarMovimientosConSaldoCorrido({
+      cuentaId: id,
+      desde: desde ? new Date(desde) : undefined,
+      hasta: hasta ? new Date(hasta) : undefined,
+      tipo: tipo === "INGRESO" || tipo === "EGRESO" ? tipo : undefined,
+      categoria: categoria ?? undefined,
+      soloConciliados: soloConciliados || undefined,
+      soloNoConciliados: soloNoConciliados || undefined,
     })
 
-    let saldoAcumulado = cuenta.saldoInicial
-    const saldoPorId = new Map<string, number>()
-    for (const mov of todosLosMovimientos) {
-      if (mov.tipo === "INGRESO") saldoAcumulado = sumarImportes([saldoAcumulado, mov.monto])
-      else saldoAcumulado = restarImportes(saldoAcumulado, mov.monto)
-      saldoPorId.set(mov.id, saldoAcumulado)
+    const saldoActual = await calcularSaldoActual(id)
+
+    let estadoMes: Awaited<ReturnType<typeof estadoMesCuenta>> | null = null
+    const mesParam = searchParams.get("mes")
+    const anioParam = searchParams.get("anio")
+    if (mesParam && anioParam) {
+      const mes = parseInt(mesParam, 10)
+      const anio = parseInt(anioParam, 10)
+      if (!Number.isNaN(mes) && !Number.isNaN(anio)) {
+        estadoMes = await estadoMesCuenta(id, mes, anio)
+      }
     }
-
-    const where = {
-      cuentaId: id,
-      ...(tipo ? { tipo } : {}),
-      ...(categoria ? { categoria: { contains: categoria } } : {}),
-      ...(desde || hasta
-        ? {
-            fecha: {
-              ...(desde ? { gte: new Date(desde) } : {}),
-              ...(hasta ? { lte: new Date(hasta + "T23:59:59.999Z") } : {}),
-            },
-          }
-        : {}),
-    }
-
-    const [total, movimientos] = await Promise.all([
-      prisma.movimientoSinFactura.count({ where }),
-      prisma.movimientoSinFactura.findMany({
-        where,
-        include: {
-          operador: { select: { nombre: true, apellido: true } },
-        },
-        orderBy: [{ fecha: "desc" }, { creadoEn: "desc" }],
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-    ])
-
-    const movimientosConSaldo = movimientos.map((m) => ({
-      ...m,
-      saldoDespues: saldoPorId.get(m.id) ?? null,
-    }))
-
-    const totalDebitos = sumarImportes(
-      movimientos.filter((m) => m.tipo === "EGRESO").map((m) => m.monto)
-    )
-    const totalCreditos = sumarImportes(
-      movimientos.filter((m) => m.tipo === "INGRESO").map((m) => m.monto)
-    )
 
     return NextResponse.json({
-      movimientos: movimientosConSaldo,
-      total,
-      page,
-      limit,
-      totalDebitos,
-      totalCreditos,
+      cuenta,
+      movimientos,
+      saldoActual,
+      estadoMes,
     })
   } catch (error) {
     return serverErrorResponse("GET /api/cuentas/[id]/movimientos", error)
@@ -131,12 +103,8 @@ export async function GET(
 /**
  * POST: NextRequest, { params: { id } } -> Promise<NextResponse>
  *
- * Dado el id de la cuenta y el body del movimiento, crea un MovimientoSinFactura
- * vinculado a esta cuenta.
- *
- * Ejemplos:
- * POST({ tipo: "EGRESO", categoria: "COMBUSTIBLE", monto: 5000, fecha: "2026-03-15", descripcion: "YPF" })
- * => 201 { id, cuentaId, tipo, categoria, monto }
+ * Dado el id de la cuenta y el body del movimiento manual, crea un
+ * MovimientoCuenta con esManual=true.
  */
 export async function POST(
   request: NextRequest,
@@ -156,28 +124,71 @@ export async function POST(
     const { id: cuentaId } = await params
     const cuenta = await prisma.cuenta.findUnique({
       where: { id: cuentaId },
-      select: { id: true },
-    })
-    if (!cuenta) return notFoundResponse("Cuenta")
-
-    const body = await request.json()
-    const parsed = crearMovimientoSchema.safeParse(body)
-    if (!parsed.success) return invalidDataResponse(parsed.error.flatten())
-
-    const { fecha, ...rest } = parsed.data
-    const movimiento = await prisma.movimientoSinFactura.create({
-      data: {
-        ...rest,
-        cuentaId,
-        fecha: new Date(fecha),
-        operadorId,
-        referencia: rest.referencia ?? null,
-        comprobanteS3Key: rest.comprobanteS3Key ?? null,
+      select: {
+        id: true,
+        activa: true,
+        tieneImpuestoDebcred: true,
+        alicuotaImpuesto: true,
+        tieneIibbSircrebTucuman: true,
+        alicuotaIibbSircrebTucuman: true,
       },
     })
+    if (!cuenta) return notFoundResponse("Cuenta")
+    if (!cuenta.activa) {
+      return NextResponse.json(
+        { error: "La cuenta está cerrada. No se pueden registrar movimientos." },
+        { status: 400 }
+      )
+    }
 
-    return NextResponse.json(movimiento, { status: 201 })
+    const body = await request.json()
+    const parsed = crearManualSchema.safeParse(body)
+    if (!parsed.success) return invalidDataResponse(parsed.error.flatten())
+
+    if (parsed.data.aplicarImpuestoDebcred && !cuenta.tieneImpuestoDebcred) {
+      return NextResponse.json(
+        { error: "La cuenta no tiene configurado el impuesto débito/crédito." },
+        { status: 400 }
+      )
+    }
+    if (parsed.data.aplicarIibbSircreb && !cuenta.tieneIibbSircrebTucuman) {
+      return NextResponse.json(
+        { error: "La cuenta no tiene configurado IIBB SIRCREB Tucumán." },
+        { status: 400 }
+      )
+    }
+
+    const creado = await prisma.$transaction(async (tx) => {
+      return registrarMovimientoManualConImpuestos(
+        tx,
+        {
+          cuentaId,
+          fecha: new Date(parsed.data.fecha),
+          tipo: parsed.data.tipo,
+          categoria: parsed.data.categoria,
+          monto: parsed.data.monto,
+          descripcion: parsed.data.descripcion,
+          esManual: true,
+          comprobanteS3Key: parsed.data.comprobanteS3Key ?? null,
+          cuentaDestinoId: parsed.data.cuentaDestinoId ?? null,
+          operadorCreacionId: operadorId,
+        },
+        {
+          debcred: parsed.data.aplicarImpuestoDebcred
+            ? { aplica: true, alicuota: cuenta.alicuotaImpuesto }
+            : undefined,
+          iibbSircreb: parsed.data.aplicarIibbSircreb
+            ? { aplica: true, alicuota: cuenta.alicuotaIibbSircrebTucuman }
+            : undefined,
+        }
+      )
+    })
+
+    return NextResponse.json(creado, { status: 201 })
   } catch (error) {
+    if (error instanceof Error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return serverErrorResponse("POST /api/cuentas/[id]/movimientos", error)
   }
 }

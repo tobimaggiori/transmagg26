@@ -18,6 +18,7 @@ interface Movimiento {
   debe: number
   haber: number
   saldo: number
+  pdfEndpoint: string | null
 }
 
 /**
@@ -33,6 +34,26 @@ interface Movimiento {
 function capitalize(s: string): string {
   if (!s) return s
   return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+/**
+ * conceptoFactura: number -> string
+ *
+ * Dado el código ARCA de tipo de comprobante, devuelve la etiqueta de concepto
+ * corta y legible que se muestra en la CC ("Factura A", "Factura B",
+ * "Factura MiPyme").
+ *
+ * Ejemplos:
+ * conceptoFactura(1)   === "Factura A"
+ * conceptoFactura(6)   === "Factura B"
+ * conceptoFactura(201) === "Factura MiPyme"
+ * conceptoFactura(999) === "Factura"
+ */
+function conceptoFactura(tipoCbte: number): string {
+  if (tipoCbte === 1) return "Factura A"
+  if (tipoCbte === 6) return "Factura B"
+  if (tipoCbte === 201) return "Factura MiPyme"
+  return "Factura"
 }
 
 /**
@@ -68,19 +89,20 @@ export async function GET(
 
     const { searchParams } = new URL(request.url)
     const hoy = new Date()
-    const noventa = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
 
     const desdeParam = searchParams.get("desde")
     const hastaParam = searchParams.get("hasta")
 
-    const desdeDate = desdeParam ? new Date(desdeParam) : noventa
+    const desdeDate = desdeParam ? new Date(desdeParam) : null
     const hastaDate = hastaParam ? new Date(hastaParam + "T23:59:59") : hoy
 
-    const [facturas, pagos, notasCreditoDebito] = await Promise.all([
+    const rangoFecha = { ...(desdeDate ? { gte: desdeDate } : {}), lte: hastaDate }
+
+    const [facturas, pagos, notasCreditoDebito, recibos] = await Promise.all([
       prisma.facturaEmitida.findMany({
         where: {
           empresaId: params.id,
-          emitidaEn: { gte: desdeDate, lte: hastaDate },
+          emitidaEn: rangoFecha,
         },
         select: {
           id: true,
@@ -93,7 +115,7 @@ export async function GET(
       prisma.pagoDeEmpresa.findMany({
         where: {
           empresaId: params.id,
-          fechaPago: { gte: desdeDate, lte: hastaDate },
+          fechaPago: rangoFecha,
         },
         select: {
           id: true,
@@ -101,12 +123,13 @@ export async function GET(
           monto: true,
           tipoPago: true,
           referencia: true,
+          comprobanteS3Key: true,
         },
       }),
       prisma.notaCreditoDebito.findMany({
         where: {
           factura: { empresaId: params.id },
-          creadoEn: { gte: desdeDate, lte: hastaDate },
+          creadoEn: rangoFecha,
         },
         select: {
           id: true,
@@ -118,7 +141,24 @@ export async function GET(
           nroComprobanteExterno: true,
         },
       }),
+      prisma.reciboCobranza.findMany({
+        where: { empresaId: params.id },
+        select: { id: true, nro: true, ptoVenta: true },
+      }),
     ])
+
+    // Mapa para resolver reciboId a partir de la referencia del pago
+    // (formato: "Recibo NNNN-NNNNNNNN" o "Saldo a cuenta — Recibo NNNN-NNNNNNNN").
+    const reciboPorNro = new Map<string, string>()
+    for (const r of recibos) {
+      reciboPorNro.set(`${r.ptoVenta}-${r.nro}`, r.id)
+    }
+    const resolverReciboId = (referencia: string | null): string | null => {
+      if (!referencia) return null
+      const m = referencia.match(/Recibo (\d+)-(\d+)/)
+      if (!m) return null
+      return reciboPorNro.get(`${parseInt(m[1])}-${parseInt(m[2])}`) ?? null
+    }
 
     const movimientos: (Omit<Movimiento, "saldo"> & { fechaRaw: Date })[] = []
 
@@ -126,14 +166,21 @@ export async function GET(
       movimientos.push({
         fechaRaw: f.emitidaEn,
         fecha: f.emitidaEn.toISOString(),
-        concepto: "Factura",
+        concepto: conceptoFactura(f.tipoCbte),
         comprobante: `${f.tipoCbte} ${f.nroComprobante ?? "s/n"}`,
         debe: f.total,
         haber: 0,
+        pdfEndpoint: `/api/facturas/${f.id}/pdf`,
       })
     }
 
     for (const p of pagos) {
+      const reciboId = resolverReciboId(p.referencia)
+      const pdfEndpoint = reciboId
+        ? `/api/recibos-cobranza/${reciboId}/pdf`
+        : p.comprobanteS3Key
+          ? `/api/storage/signed-url?key=${encodeURIComponent(p.comprobanteS3Key)}`
+          : null
       movimientos.push({
         fechaRaw: p.fechaPago,
         fecha: p.fechaPago.toISOString(),
@@ -141,6 +188,7 @@ export async function GET(
         comprobante: p.referencia ?? "",
         debe: 0,
         haber: p.monto,
+        pdfEndpoint,
       })
     }
 
@@ -158,6 +206,7 @@ export async function GET(
           comprobante: cbteNro,
           debe: 0,
           haber: nc.montoTotal,
+          pdfEndpoint: `/api/notas-credito-debito/${nc.id}/pdf`,
         })
       } else if (nc.tipo === "ND_EMITIDA") {
         movimientos.push({
@@ -167,6 +216,7 @@ export async function GET(
           comprobante: cbteNro,
           debe: nc.montoTotal,
           haber: 0,
+          pdfEndpoint: `/api/notas-credito-debito/${nc.id}/pdf`,
         })
       }
       // NC_RECIBIDA / ND_RECIBIDA linked to empresa facturas: skip
@@ -186,6 +236,7 @@ export async function GET(
         debe: m.debe,
         haber: m.haber,
         saldo,
+        pdfEndpoint: m.pdfEndpoint,
       }
     })
 
@@ -199,6 +250,8 @@ export async function GET(
       totalDebe,
       totalHaber,
       saldoFinal,
+      desde: desdeDate ? desdeDate.toISOString() : null,
+      hasta: hastaDate.toISOString(),
     })
   } catch (error) {
     console.error("[GET /api/empresas/[id]/cuenta-corriente]", error)

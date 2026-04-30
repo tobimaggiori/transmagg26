@@ -2,6 +2,10 @@
  * API Routes para gestión de usuarios.
  * GET  /api/usuarios - Lista usuarios (ADMIN_TRANSMAGG)
  * POST /api/usuarios - Crea usuario (ADMIN_TRANSMAGG)
+ *
+ * Un Usuario es exclusivamente una cuenta de login. Los choferes viven
+ * en la tabla Empleado; si un chofer necesita login, se crea un Usuario
+ * rol=CHOFER y se vincula con Empleado.usuarioId.
  */
 
 import { NextRequest, NextResponse } from "next/server"
@@ -17,27 +21,10 @@ const crearUsuarioSchema = z.object({
   email: z.string().email(),
   telefono: z.string().optional(),
   rol: z.enum(["ADMIN_TRANSMAGG", "OPERADOR_TRANSMAGG", "FLETERO", "CHOFER", "ADMIN_EMPRESA", "OPERADOR_EMPRESA"]),
-  empresaId: z.string().uuid().optional(), // Para ADMIN_EMPRESA / OPERADOR_EMPRESA
-  fleteroId: z.string().uuid().optional(), // Para CHOFER
-  camionId: z.string().uuid().optional(),  // Para CHOFER: camión inicial asignado
+  empresaId: z.string().uuid().optional(), // ADMIN_EMPRESA / OPERADOR_EMPRESA
+  empleadoId: z.string().uuid().optional(), // CHOFER — vincula Empleado.usuarioId
 })
 
-/**
- * GET: () -> Promise<NextResponse>
- *
- * Devuelve todos los usuarios ordenados por activo desc, apellido asc,
- * incluyendo empresas asociadas. Solo accesible por ADMIN_TRANSMAGG.
- * Existe para el panel de administración donde se gestionan todos los
- * usuarios del sistema independientemente de su rol.
- *
- * Ejemplos:
- * GET /api/usuarios (sesión ADMIN_TRANSMAGG)
- * // => 200 [{ id, nombre, apellido, email, rol, activo, empresaUsuarios }]
- * GET /api/usuarios (sesión OPERADOR_TRANSMAGG)
- * // => 403 { error: "Acceso denegado" }
- * GET /api/usuarios (sin sesión)
- * // => 401 { error: "No autorizado" }
- */
 export async function GET() {
   const session = await auth()
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
@@ -61,6 +48,7 @@ export async function GET() {
             nivelAcceso: true,
           },
         },
+        empleado: { select: { id: true, fleteroId: true } },
       },
     })
 
@@ -74,26 +62,6 @@ export async function GET() {
   }
 }
 
-/**
- * POST: NextRequest -> Promise<NextResponse>
- *
- * Dado el body { nombre, apellido, email, rol, telefono?, empresaId?, fleteroId?, camionId? },
- * crea un usuario y opcionalmente lo asocia a una empresa o fletero en una transacción.
- * Para rol CHOFER: requiere fleteroId y camionId; crea el CamionChofer inicial.
- * Para roles ADMIN_EMPRESA/OPERADOR_EMPRESA: requiere empresaId.
- * Existe para que el administrador pueda dar de alta usuarios de todos los roles,
- * creando automáticamente las relaciones necesarias según el rol.
- *
- * Ejemplos:
- * POST /api/usuarios { nombre: "Laura", apellido: "Gómez", email: "laura@x.com", rol: "OPERADOR_TRANSMAGG" }
- * // => 201 { id, nombre: "Laura", apellido: "Gómez", rol: "OPERADOR_TRANSMAGG" }
- * POST /api/usuarios { ...datos, rol: "CHOFER", fleteroId: "f1", camionId: "c1" }
- * // => 201 { id, nombre, rol: "CHOFER", fleteroId: "f1" }
- * POST /api/usuarios { ...datos, email: "existente@x.com" } (email duplicado)
- * // => 409 { error: "El email ya está registrado" }
- * POST /api/usuarios { nombre: "A", apellido: "B", email: "x", rol: "INVALIDO" }
- * // => 400 { error: "Datos inválidos", detalles: {...} }
- */
 export async function POST(request: NextRequest) {
   const session = await auth()
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
@@ -106,36 +74,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos", detalles: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { nombre, apellido, email, telefono, rol, empresaId, fleteroId, camionId } = parsed.data
+    const { nombre, apellido, email, telefono, rol, empresaId, empleadoId } = parsed.data
 
-    // Validaciones específicas por rol
     if (rol === "CHOFER") {
-      if (!fleteroId) return NextResponse.json({ error: "Se requiere fleteroId para crear un chofer" }, { status: 400 })
-      if (camionId) {
-        const camion = await prisma.camion.findUnique({ where: { id: camionId } })
-        if (!camion) return NextResponse.json({ error: "Camión no encontrado" }, { status: 404 })
-        if (camion.fleteroId !== fleteroId) return NextResponse.json({ error: "El camión no pertenece al fletero indicado" }, { status: 400 })
-      }
+      if (!empleadoId) return NextResponse.json({ error: "Elegí un empleado para vincular el login" }, { status: 400 })
+      const empleado = await prisma.empleado.findUnique({ where: { id: empleadoId } })
+      if (!empleado) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 })
+      if (empleado.cargo !== "CHOFER") return NextResponse.json({ error: "El empleado no tiene cargo CHOFER" }, { status: 400 })
+      if (empleado.usuarioId) return NextResponse.json({ error: "El empleado ya tiene un usuario vinculado" }, { status: 409 })
     }
 
     const emailExiste = await prisma.usuario.findUnique({ where: { email } })
     if (emailExiste) return NextResponse.json({ error: "El email ya está registrado" }, { status: 409 })
 
-    const ahora = new Date()
-
     const usuario = await prisma.$transaction(async (tx) => {
       const usr = await tx.usuario.create({
-        data: {
-          nombre,
-          apellido,
-          email,
-          telefono,
-          rol,
-          ...(rol === "CHOFER" && fleteroId ? { fleteroId } : {}),
-        },
+        data: { nombre, apellido, email, telefono, rol },
       })
 
-      // Si es rol de empresa, crear la relación empresa-usuario
       if ((rol === "ADMIN_EMPRESA" || rol === "OPERADOR_EMPRESA") && empresaId) {
         await tx.empresaUsuario.create({
           data: {
@@ -146,14 +102,19 @@ export async function POST(request: NextRequest) {
         })
       }
 
-      // Si es CHOFER, cerrar asignación previa del camión y crear la nueva
-      if (rol === "CHOFER" && camionId) {
-        await tx.camionChofer.updateMany({
-          where: { camionId, hasta: null },
-          data: { hasta: ahora },
-        })
-        await tx.camionChofer.create({
-          data: { camionId, choferId: usr.id, desde: ahora },
+      if (rol === "CHOFER" && empleadoId) {
+        await tx.empleado.update({ where: { id: empleadoId }, data: { usuarioId: usr.id } })
+      }
+
+      // OPERADOR_TRANSMAGG: arranca con todas las secciones habilitadas (blacklist).
+      if (rol === "OPERADOR_TRANSMAGG") {
+        const { SECCIONES } = await import("@/lib/secciones")
+        await tx.permisoUsuario.createMany({
+          data: Object.values(SECCIONES).map((seccion) => ({
+            usuarioId: usr.id,
+            seccion,
+            habilitado: true,
+          })),
         })
       }
 

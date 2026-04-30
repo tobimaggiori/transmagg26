@@ -7,7 +7,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { CuentasCorrientesClient } from "./cuentas-corrientes-client"
 import { sumarImportes, restarImportes, maxMonetario, importesIguales } from "@/lib/money"
 import type { Rol } from "@/types"
@@ -32,7 +32,7 @@ export default async function CuentasCorrientesPage() {
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
-  if (!puedeAcceder(rol, "cuentas_corrientes")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "cuentas_corrientes"))) redirect("/dashboard")
 
   const [empresas, fleteros] = await Promise.all([
     prisma.empresa.findMany({

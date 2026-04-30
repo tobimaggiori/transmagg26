@@ -254,9 +254,15 @@ describe("Rutas canónicas de facturas", () => {
     )
     expect(content).toContain("fechaEmision")
     expect(content).toContain("setFechaEmision")
-    // Verificar que se envía en el body del POST
-    expect(content).toContain("fechaEmision,")
-    // Verificar que hay un input de tipo date
+    // Verificar que se envía en el body del POST (ahora con valor explícito: fechaEmision: fechaEfectiva)
+    expect(content).toMatch(/fechaEmision\s*[,:]/)
+  })
+
+  it("preview de factura tiene input date + label 'Fecha de emisión'", () => {
+    const content = fs.readFileSync(
+      path.join(basePath, "empresas/facturar/_components/modal-preview-factura.tsx"),
+      "utf-8"
+    )
     expect(content).toContain('type="date"')
     expect(content).toContain("Fecha de emisión")
   })

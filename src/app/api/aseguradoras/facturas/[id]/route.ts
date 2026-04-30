@@ -31,7 +31,9 @@ export async function GET(
           },
           orderBy: { nroCuota: "asc" },
         },
-        asientoIva: true,
+        asientosIva: true,
+        items: { orderBy: { orden: "asc" } },
+        percepciones: true,
       },
     })
 

@@ -1,6 +1,9 @@
 /**
- * PATCH /api/cuentas/[id]/movimientos/[movId] — Actualiza campos editables de un movimiento.
- * DELETE /api/cuentas/[id]/movimientos/[movId] — Elimina un movimiento (solo ADMIN_TRANSMAGG).
+ * PATCH  /api/cuentas/[id]/movimientos/[movId] — Edita descripción/comprobante de un
+ *         movimiento MANUAL (esManual=true). Los no-manuales se editan desde la entidad
+ *         origen (cheque, pago, etc.).
+ * DELETE /api/cuentas/[id]/movimientos/[movId] — Elimina un movimiento manual.
+ *         Pasa por revertirMovimiento, que valida que el día no esté sellado ni el mes cerrado.
  * Solo accesible para ADMIN_TRANSMAGG y OPERADOR_TRANSMAGG.
  */
 
@@ -13,24 +16,17 @@ import {
   requireFinancialAccess,
   serverErrorResponse,
 } from "@/lib/financial-api"
-import type { Rol } from "@/types"
+import { revertirMovimiento, esCategoriaImpuestoAutogenerado } from "@/lib/movimiento-cuenta"
+import { validarDiaModificable } from "@/lib/conciliacion"
 
-const patchMovimientoSchema = z.object({
+const patchManualSchema = z.object({
   descripcion: z.string().min(1).optional(),
-  referencia: z.string().nullable().optional(),
   comprobanteS3Key: z.string().nullable().optional(),
 })
 
 /**
- * PATCH: NextRequest, { params: { id, movId } } -> Promise<NextResponse>
- *
- * Dado el id de la cuenta y el id del movimiento, actualiza descripcion/referencia/comprobanteS3Key.
- * Solo opera sobre movimientos que pertenezcan a la cuenta indicada en la URL.
- *
- * Ejemplos:
- * PATCH({ descripcion: "Nuevo texto" }) => 200 { id, descripcion, ... }
- * PATCH({ comprobanteS3Key: null }) => 200 { id, comprobanteS3Key: null, ... }
- * PATCH({}) => 200 (sin cambios)
+ * PATCH: edita solo campos descriptivos de un movimiento manual. Bloquea la
+ * edición si el día está sellado o el mes cerrado.
  */
 export async function PATCH(
   request: NextRequest,
@@ -42,41 +38,59 @@ export async function PATCH(
   try {
     const { id: cuentaId, movId } = await params
 
-    const movimiento = await prisma.movimientoSinFactura.findUnique({
+    const mov = await prisma.movimientoCuenta.findUnique({
       where: { id: movId },
-      select: { id: true, cuentaId: true },
+      select: {
+        id: true,
+        cuentaId: true,
+        esManual: true,
+        fecha: true,
+        cuenta: { select: { activa: true } },
+      },
     })
-    if (!movimiento || movimiento.cuentaId !== cuentaId) return notFoundResponse("Movimiento")
+    if (!mov || mov.cuentaId !== cuentaId) return notFoundResponse("Movimiento")
+    if (!mov.cuenta.activa) {
+      return NextResponse.json(
+        { error: "La cuenta está cerrada. No se puede editar el movimiento." },
+        { status: 400 }
+      )
+    }
+    if (!mov.esManual) {
+      return NextResponse.json(
+        { error: "Este movimiento proviene de una entidad (cheque, pago, etc.). Editalo desde su origen." },
+        { status: 400 }
+      )
+    }
 
     const body = await request.json()
-    const parsed = patchMovimientoSchema.safeParse(body)
+    const parsed = patchManualSchema.safeParse(body)
     if (!parsed.success) return invalidDataResponse(parsed.error.flatten())
 
-    const updated = await prisma.movimientoSinFactura.update({
-      where: { id: movId },
-      data: {
-        ...(parsed.data.descripcion !== undefined ? { descripcion: parsed.data.descripcion } : {}),
-        ...(parsed.data.referencia !== undefined ? { referencia: parsed.data.referencia } : {}),
-        ...(parsed.data.comprobanteS3Key !== undefined ? { comprobanteS3Key: parsed.data.comprobanteS3Key } : {}),
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      await validarDiaModificable(tx, cuentaId, mov.fecha)
+      return tx.movimientoCuenta.update({
+        where: { id: movId },
+        data: {
+          ...(parsed.data.descripcion !== undefined ? { descripcion: parsed.data.descripcion } : {}),
+          ...(parsed.data.comprobanteS3Key !== undefined
+            ? { comprobanteS3Key: parsed.data.comprobanteS3Key }
+            : {}),
+        },
+      })
     })
 
     return NextResponse.json(updated)
   } catch (error) {
+    if (error instanceof Error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return serverErrorResponse("PATCH /api/cuentas/[id]/movimientos/[movId]", error)
   }
 }
 
 /**
- * DELETE: NextRequest, { params: { id, movId } } -> Promise<NextResponse>
- *
- * Dado el id de la cuenta y el id del movimiento, elimina el movimiento físicamente.
- * Solo permitido para ADMIN_TRANSMAGG.
- *
- * Ejemplos:
- * DELETE (admin) => 200 { message: "Movimiento eliminado" }
- * DELETE (operador) => 403
- * DELETE (movimiento de otra cuenta) => 404
+ * DELETE: elimina un movimiento manual. Si es espejo de transferencia entre
+ * cuentas propias, también elimina el espejo (vía revertirMovimiento).
  */
 export async function DELETE(
   _request: NextRequest,
@@ -85,24 +99,48 @@ export async function DELETE(
   const access = await requireFinancialAccess()
   if (!access.ok) return access.response
 
-  const rol = access.session.user.rol as Rol
-  if (rol !== "ADMIN_TRANSMAGG") {
-    return NextResponse.json({ error: "Solo ADMIN_TRANSMAGG puede eliminar movimientos" }, { status: 403 })
-  }
-
   try {
     const { id: cuentaId, movId } = await params
 
-    const movimiento = await prisma.movimientoSinFactura.findUnique({
+    const mov = await prisma.movimientoCuenta.findUnique({
       where: { id: movId },
-      select: { id: true, cuentaId: true },
+      select: {
+        id: true,
+        cuentaId: true,
+        esManual: true,
+        categoria: true,
+        cuenta: { select: { activa: true } },
+      },
     })
-    if (!movimiento || movimiento.cuentaId !== cuentaId) return notFoundResponse("Movimiento")
+    if (!mov || mov.cuentaId !== cuentaId) return notFoundResponse("Movimiento")
+    if (!mov.cuenta.activa) {
+      return NextResponse.json(
+        { error: "La cuenta está cerrada. No se puede borrar el movimiento." },
+        { status: 400 }
+      )
+    }
+    if (esCategoriaImpuestoAutogenerado(mov.categoria)) {
+      return NextResponse.json(
+        { error: "Este movimiento es un impuesto auto-generado. Borrá el movimiento padre y se eliminará en cascada." },
+        { status: 400 }
+      )
+    }
+    if (!mov.esManual) {
+      return NextResponse.json(
+        { error: "Solo se pueden borrar movimientos manuales desde acá. Los de entidad se revierten desde la entidad origen." },
+        { status: 400 }
+      )
+    }
 
-    await prisma.movimientoSinFactura.delete({ where: { id: movId } })
+    await prisma.$transaction(async (tx) => {
+      await revertirMovimiento(tx, movId)
+    })
 
     return NextResponse.json({ message: "Movimiento eliminado" })
   } catch (error) {
+    if (error instanceof Error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return serverErrorResponse("DELETE /api/cuentas/[id]/movimientos/[movId]", error)
   }
 }

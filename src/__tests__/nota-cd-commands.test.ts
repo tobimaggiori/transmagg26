@@ -7,6 +7,7 @@
 
 const mockTx = {
   facturaEmitida: { findUnique: jest.fn(), update: jest.fn() },
+  facturaProveedor: { findUnique: jest.fn() },
   liquidacion: { findUnique: jest.fn(), update: jest.fn() },
   chequeRecibido: { findUnique: jest.fn(), update: jest.fn() },
   notaCreditoDebito: { create: jest.fn(), findFirst: jest.fn() },
@@ -808,5 +809,196 @@ describe("ANULACION_TOTAL — error interno si relación viajes no cargada", () 
     // No falla, simplemente no libera ningún viaje
     expect(r.ok).toBe(true)
     expect(mockTx.viaje.update).not.toHaveBeenCalled()
+  })
+})
+
+// ─── NC/ND RECIBIDA / PROVEEDOR ─────────────────────────────────────────────
+
+const FACTURA_PROVEEDOR_MOCK_A = {
+  id: "fp-1",
+  tipoCbte: "1", // Fact A → NC/ND A (3/2)
+  total: 1210,
+  proveedor: { razonSocial: "Repuestos SRL" },
+}
+
+const FACTURA_PROVEEDOR_MOCK_B = {
+  id: "fp-2",
+  tipoCbte: "6", // Fact B → NC/ND B (8/7)
+  total: 5000,
+  proveedor: { razonSocial: "Papelería X" },
+}
+
+describe("NC_RECIBIDA / PROVEEDOR", () => {
+  it("crea una NC recibida asociada a la factura proveedor con tipoCbte clase A", async () => {
+    mockPrisma.facturaProveedor.findUnique.mockResolvedValue(FACTURA_PROVEEDOR_MOCK_A)
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_RECIBIDA",
+      subtipo: "PROVEEDOR",
+      facturaProveedorId: "fp-1",
+      nroComprobanteExterno: "0001-00000123",
+      fechaComprobanteExterno: "2026-04-15",
+      montoNeto: 1000,
+      ivaPct: 21,
+      descripcion: "Devolución parcial",
+    }, "op1")
+
+    expect(r.ok).toBe(true)
+    expect(mockTx.notaCreditoDebito.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tipo: "NC_RECIBIDA",
+          subtipo: "PROVEEDOR",
+          facturaProveedorId: "fp-1",
+          tipoCbte: 3, // NC clase A
+          emisorExterno: "Repuestos SRL",
+          nroComprobanteExterno: "0001-00000123",
+          estado: "REGISTRADA",
+        }),
+      })
+    )
+    // Asiento IVA COMPRA negativo (reduce crédito)
+    expect(mockTx.asientoIva.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tipo: "COMPRA",
+          tipoReferencia: "NC_RECIBIDA",
+          baseImponible: -1000,
+          montoIva: -210,
+          facturaProvId: "fp-1",
+        }),
+      })
+    )
+  })
+
+  it("crea una ND recibida clase B sobre una factura B con asiento COMPRA positivo", async () => {
+    mockPrisma.facturaProveedor.findUnique.mockResolvedValue(FACTURA_PROVEEDOR_MOCK_B)
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "ND_RECIBIDA",
+      subtipo: "PROVEEDOR",
+      facturaProveedorId: "fp-2",
+      nroComprobanteExterno: "0001-00000999",
+      fechaComprobanteExterno: "2026-04-20",
+      montoNeto: 500,
+      ivaPct: 21,
+      descripcion: "Costo adicional",
+    }, "op1")
+
+    expect(r.ok).toBe(true)
+    expect(mockTx.notaCreditoDebito.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tipo: "ND_RECIBIDA",
+          tipoCbte: 7, // ND clase B
+        }),
+      })
+    )
+    expect(mockTx.asientoIva.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tipo: "COMPRA",
+          tipoReferencia: "ND_RECIBIDA",
+          baseImponible: 500,
+          montoIva: 105,
+        }),
+      })
+    )
+  })
+
+  it("persiste las percepciones cuando se ingresan", async () => {
+    mockPrisma.facturaProveedor.findUnique.mockResolvedValue(FACTURA_PROVEEDOR_MOCK_A)
+
+    await ejecutarCrearNotaCD({
+      tipo: "NC_RECIBIDA",
+      subtipo: "PROVEEDOR",
+      facturaProveedorId: "fp-1",
+      nroComprobanteExterno: "0001-0001",
+      fechaComprobanteExterno: "2026-04-15",
+      montoNeto: 1000,
+      ivaPct: 21,
+      descripcion: "Con percepciones",
+      percepcionIIBB: 30,
+      percepcionIVA: 50,
+      percepcionGanancias: 20,
+    }, "op1")
+
+    expect(mockTx.notaCreditoDebito.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          percepcionIIBB: 30,
+          percepcionIVA: 50,
+          percepcionGanancias: 20,
+        }),
+      })
+    )
+  })
+
+  it("rechaza si falta facturaProveedorId", async () => {
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_RECIBIDA",
+      subtipo: "PROVEEDOR",
+      nroComprobanteExterno: "0001-0001",
+      fechaComprobanteExterno: "2026-04-15",
+      montoNeto: 1000,
+      ivaPct: 21,
+      descripcion: "Sin factura",
+    }, "op1")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.status).toBe(400)
+      expect(r.error).toMatch(/facturaProveedorId/)
+    }
+  })
+
+  it("rechaza si falta nroComprobanteExterno", async () => {
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_RECIBIDA",
+      subtipo: "PROVEEDOR",
+      facturaProveedorId: "fp-1",
+      fechaComprobanteExterno: "2026-04-15",
+      montoNeto: 1000,
+      ivaPct: 21,
+      descripcion: "Sin nro",
+    }, "op1")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.error).toMatch(/nroComprobanteExterno/)
+    }
+  })
+
+  it("rechaza si la factura proveedor no existe", async () => {
+    mockPrisma.facturaProveedor.findUnique.mockResolvedValue(null)
+
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_RECIBIDA",
+      subtipo: "PROVEEDOR",
+      facturaProveedorId: "inexistente",
+      nroComprobanteExterno: "0001-0001",
+      fechaComprobanteExterno: "2026-04-15",
+      montoNeto: 1000,
+      ivaPct: 21,
+      descripcion: "Factura inexistente",
+    }, "op1")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.status).toBe(404)
+    }
+  })
+
+  it("rechaza subtipos de NC_RECIBIDA no reconocidos", async () => {
+    const r = await ejecutarCrearNotaCD({
+      tipo: "NC_RECIBIDA",
+      subtipo: "DESCONOCIDO",
+      facturaProveedorId: "fp-1",
+      montoNeto: 1000,
+      ivaPct: 21,
+      descripcion: "x",
+    }, "op1")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.status).toBe(400)
   })
 })

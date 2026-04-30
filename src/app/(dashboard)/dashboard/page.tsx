@@ -54,19 +54,19 @@ export default async function DashboardPage() {
     })
 
     // Chofer de fletero → redirigir a viajes como antes
-    if (!usuario?.empleado || usuario.fleteroId) {
+    if (!usuario?.empleado || usuario.empleado.fleteroId) {
       redirect("/viajes")
     }
 
     const empleado = usuario.empleado
-    const usuarioId = usuario.id
+    const empleadoId = empleado.id
     const now = new Date()
 
     // Camión actualmente asignado al chofer (propio de Transmagg)
     const camionRaw = await prisma.camion.findFirst({
       where: {
         esPropio: true,
-        choferHistorial: { some: { choferId: usuarioId, hasta: null } },
+        choferHistorial: { some: { choferId: empleadoId, hasta: null } },
       },
       include: {
         polizas: { orderBy: { vigenciaHasta: "desc" }, take: 1 },
@@ -75,7 +75,7 @@ export default async function DashboardPage() {
 
     // Tarjeta asignada al chofer
     const tarjetaRaw = await prisma.tarjeta.findFirst({
-      where: { choferId: usuarioId, activa: true },
+      where: { choferId: empleadoId, activa: true },
       include: {
         gastos: { orderBy: { fecha: "desc" }, take: 20 },
       },
@@ -83,7 +83,7 @@ export default async function DashboardPage() {
 
     // Últimos 20 viajes como chofer — sin tarifas
     const viajesRaw = await prisma.viaje.findMany({
-      where: { choferId: usuarioId },
+      where: { choferId: empleadoId },
       orderBy: { fechaViaje: "desc" },
       take: 20,
       select: {
@@ -105,7 +105,6 @@ export default async function DashboardPage() {
           id: camionRaw.id,
           patenteChasis: camionRaw.patenteChasis,
           patenteAcoplado: camionRaw.patenteAcoplado,
-          tipoCamion: camionRaw.tipoCamion,
           polizaActual: (() => {
             const p = camionRaw.polizas[0] ?? null
             if (!p) return null

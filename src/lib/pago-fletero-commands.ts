@@ -12,6 +12,7 @@ import { calcularSaldoCCFletero } from "@/lib/cuenta-corriente"
 import { generarPDFOrdenPago } from "@/lib/pdf-orden-pago"
 import { subirPDF, storageConfigurado } from "@/lib/storage"
 import { sumarImportes, restarImportes, maxMonetario, importesIguales } from "@/lib/money"
+import { registrarMovimiento } from "@/lib/movimiento-cuenta"
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -175,17 +176,15 @@ export async function ejecutarRegistrarPagoFletero(
             ? `${String(liquidacion.ptoVenta).padStart(4, "0")}-${String(liquidacion.nroComprobante).padStart(8, "0")}`
             : "s/n"
         const descripcionMov = `Pago Liquidacion ${nroLiq} — ${liquidacion.fletero.razonSocial}`
-        await tx.movimientoSinFactura.create({
-          data: {
-            cuentaId: pago.cuentaBancariaId,
-            tipo: "EGRESO",
-            categoria: "TRANSFERENCIA_ENVIADA",
-            monto: pago.monto,
-            fecha: fechaPago,
-            descripcion: descripcionMov,
-            referencia: pago.referencia,
-            operadorId,
-          },
+        await registrarMovimiento(tx, {
+          cuentaId: pago.cuentaBancariaId,
+          tipo: "EGRESO",
+          categoria: "TRANSFERENCIA_ENVIADA",
+          monto: pago.monto,
+          fecha: fechaPago,
+          descripcion: descripcionMov,
+          pagoAFleteroId: nuevoPago.id,
+          operadorCreacionId: operadorId,
         })
       } else if (pago.tipoPago === "CHEQUE_PROPIO") {
         const ch = pago.chequePropio

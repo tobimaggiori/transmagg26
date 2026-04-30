@@ -41,7 +41,7 @@ export async function GET(
       id: true,
       fechaViaje: true,
       remito: true,
-      nroCartaPorte: true,
+      nroCtg: true,
       kilos: true,
       mercaderia: true,
       procedencia: true,
@@ -55,7 +55,7 @@ export async function GET(
       camionId: true,
       choferId: true,
       esCamionPropio: true,
-      tieneCpe: true,
+      tieneCtg: true,
     },
     orderBy: { creadoEn: "asc" },
   })

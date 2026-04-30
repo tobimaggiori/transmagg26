@@ -21,7 +21,7 @@ Viaje {
   comisionPct
   estadoLiquidacion       // flag: PENDIENTE_LIQUIDAR | LIQUIDADO
   estadoFactura           // flag: PENDIENTE_FACTURAR | FACTURADO
-  tieneCpe, nroCartaPorte, cartaPorteS3Key
+  tieneCtg, nroCtg, ctgS3Key, cdp
   historialCambios
 }
 ```
@@ -45,17 +45,17 @@ cual generaba bugs. Ver `sistemaviejo/viajes.md` para el contexto histórico.
 
 ## Estado de cada circuito
 
-`estadoLiquidacion` y `estadoFactura` son flags booleanos disfrazados:
+`estadoLiquidacion` y `estadoFactura` son flags binarios sobre el viaje base:
 
 | Flag | Valores |
 |---|---|
 | `estadoLiquidacion` | `PENDIENTE_LIQUIDAR`, `LIQUIDADO` |
 | `estadoFactura` | `PENDIENTE_FACTURAR`, `FACTURADO` |
 
-> ⚠️ La documentación legacy y los archivos de negocio originales describen
-> estados derivados más finos (`LIQUIDADO_VIGENTE`, `LIQUIDADO_AJUSTADO_PARCIAL`,
-> etc.). En la implementación actual son flags simples.
-> Ver [INCONSISTENCIAS-DETECTADAS.md](../INCONSISTENCIAS-DETECTADAS.md).
+Indican solo si el viaje está tomado por algún comprobante vigente. El neto
+económico (parcialidades por NC, IVA, saldo) se reconstruye desde los
+comprobantes asociados (LP/factura + NC/ND), no desde estos flags. Una NC
+parcial sin liberación de viaje no cambia el estado del viaje.
 
 ## Vínculos
 
@@ -70,18 +70,24 @@ Cada vínculo guarda **snapshot** de los importes al momento de la asociación,
 no la referencia viva. Esto preserva la historia económica aunque cambie la
 tarifa del viaje original.
 
-## Carta de porte
+## CTG y CDP
 
-Campos `tieneCpe`, `nroCartaPorte`, `cartaPorteS3Key`. El PDF se sube a R2
-con prefijo `cartas-de-porte`. Para viajes que la requieren, es información
-fiscalmente relevante.
+Documentación fiscal del viaje:
+
+- **CTG** (Código de Trazabilidad de Granos): obligatorio cuando aplica.
+  Campos `tieneCtg`, `nroCtg`, `ctgS3Key`. PDF en R2 con prefijo `ctg/`.
+- **CDP** (Carta de Porte): número opcional asociado al CTG, sin PDF.
+  Campo `cdp`.
+
+Un viaje lleva **remito XOR CTG** (mutuamente excluyente). El CDP, cuando
+existe, va siempre acompañando al CTG.
 
 ## Cupo
 
 Un viaje puede pertenecer a un **cupo** (acuerdo comercial con la empresa).
 Viajes hermanos del mismo cupo comparten un set de campos lockeados
 (mercadería, ruta, tarifa, fletero/camión/chofer) y solo varían en kilos,
-remito, CDP y fecha. Detalle completo del flujo (lookup, validaciones,
+remito, CTG y fecha. Detalle completo del flujo (lookup, validaciones,
 edición en bloque, agrupamiento en PDFs) en [cupo.md](./cupo.md).
 
 ## Camión propio

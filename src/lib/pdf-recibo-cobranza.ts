@@ -286,7 +286,7 @@ function buildPDF(
       fechaPago: Date | null
     }[]
   },
-  cuentaMap: Record<string, { nombre: string; bancoOEntidad: string }>
+  cuentaMap: Record<string, { nombre: string; banco: { nombre: string } | null }>
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
@@ -444,7 +444,7 @@ function buildPDF(
       let detalle = ""
       if (m.tipo === "TRANSFERENCIA") {
         const cuenta = m.cuentaId ? cuentaMap[m.cuentaId] : null
-        const cuentaStr = cuenta ? `${cuenta.nombre} (${cuenta.bancoOEntidad})` : ""
+        const cuentaStr = cuenta ? `${cuenta.nombre}${cuenta.banco ? ` (${cuenta.banco.nombre})` : ""}` : ""
         const fechaStr = m.fechaTransferencia ? fmtFecha(m.fechaTransferencia) : ""
         const refStr = m.referencia ? `Ref: ${m.referencia}` : ""
         detalle = [cuentaStr, fechaStr, refStr].filter(Boolean).join(" - ")
@@ -617,7 +617,7 @@ export async function generarPDFReciboCobranza(reciboId: string): Promise<Buffer
     cuentaIds.length > 0
       ? await prisma.cuenta.findMany({
           where: { id: { in: cuentaIds } },
-          select: { id: true, nombre: true, bancoOEntidad: true },
+          select: { id: true, nombre: true, banco: { select: { nombre: true } } },
         })
       : []
   const cuentaMap = Object.fromEntries(cuentas.map((c) => [c.id, c]))

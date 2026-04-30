@@ -20,7 +20,7 @@ import type { ViajeDetalleAPI } from "../_components/modal-detalle-viaje"
 type Fletero = { id: string; razonSocial: string; cuit: string; comisionDefault: number }
 type Empresa = { id: string; razonSocial: string; cuit: string }
 type Camion = { id: string; patenteChasis: string; fleteroId: string | null; esPropio?: boolean }
-type Chofer = { id: string; nombre: string; apellido: string; email: string }
+type Chofer = { id: string; nombre: string; apellido: string; email: string | null }
 
 const PER_PAGE = 30
 
@@ -67,7 +67,8 @@ export function ConsultarViajesClient({
 }: { rol: string; fleteros: Fletero[]; empresas: Empresa[]; camiones: Camion[]; choferes: Chofer[] }) {
   const [filtroFleteroId, setFiltroFleteroId] = useState("")
   const [filtroEmpresaId, setFiltroEmpresaId] = useState("")
-  const [filtroRemito, setFiltroRemito] = useState("")
+  const [filtroDocTipo, setFiltroDocTipo] = useState<"REMITO" | "CUPO" | "CPE" | "CTG">("REMITO")
+  const [filtroDocValor, setFiltroDocValor] = useState("")
   const [filtroDesde, setFiltroDesde] = useState("")
   const [filtroHasta, setFiltroHasta] = useState("")
   const [filtroFacturado, setFiltroFacturado] = useState<"" | "FACTURADO" | "PENDIENTE_FACTURAR">("")
@@ -109,7 +110,13 @@ export function ConsultarViajesClient({
       if (filtroFacturado) params.set("estadoFactura", filtroFacturado)
       if (filtroDesde) params.set("desde", filtroDesde)
       if (filtroHasta) params.set("hasta", filtroHasta)
-      if (filtroRemito) params.set("remito", filtroRemito)
+      if (filtroDocValor.trim()) {
+        const key = filtroDocTipo === "REMITO" ? "remito"
+          : filtroDocTipo === "CUPO" ? "cupo"
+          : filtroDocTipo === "CPE" ? "cpe"
+          : "nroCtg"
+        params.set(key, filtroDocValor.trim())
+      }
       if (filtroNroLP) params.set("nroLP", filtroNroLP)
       if (filtroNroFactura) params.set("nroFactura", filtroNroFactura)
       const res = await fetch(`/api/viajes?${params.toString()}`)
@@ -118,7 +125,7 @@ export function ConsultarViajesClient({
       setViajes(data as ViajeAPI[]); setPagina(1)
     } catch (e) { setErrorCarga(e instanceof Error ? e.message : "Error desconocido") }
     finally { setCargandoViajes(false) }
-  }, [hayFiltroEntidad, filtroFleteroId, filtroEmpresaId, filtroLiquidado, filtroFacturado, filtroDesde, filtroHasta, filtroRemito, filtroNroLP, filtroNroFactura])
+  }, [hayFiltroEntidad, filtroFleteroId, filtroEmpresaId, filtroLiquidado, filtroFacturado, filtroDesde, filtroHasta, filtroDocTipo, filtroDocValor, filtroNroLP, filtroNroFactura])
 
   useEffect(() => { void cargar() }, [cargar])
 
@@ -165,8 +172,18 @@ export function ConsultarViajesClient({
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Consultar Viajes</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold tracking-tight">Consultar Viajes</h1>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Desde</label>
+            <input type="date" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)}
+              className="h-9 rounded-md border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide ml-2">Hasta</label>
+            <input type="date" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)}
+              className="h-9 rounded-md border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+        </div>
         {hayFiltroEntidad && <span className="text-sm text-gray-500">{viajes.length} viaje(s)</span>}
       </div>
 
@@ -182,19 +199,18 @@ export function ConsultarViajesClient({
             <div className="mt-1"><SearchCombobox items={empresaItems} value={filtroEmpresaId} onChange={setFiltroEmpresaId} placeholder="Buscar empresa..." /></div>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Nro Remito</label>
-            <input type="text" value={filtroRemito} onChange={(e) => setFiltroRemito(e.target.value)} placeholder="Nro remito"
-              className="mt-1 w-full h-9 rounded-md border bg-background px-3 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Fecha Desde</label>
-            <input type="date" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)}
-              className="mt-1 w-full h-9 rounded-md border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Fecha Hasta</label>
-            <input type="date" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)}
-              className="mt-1 w-full h-9 rounded-md border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Documento</label>
+            <div className="mt-1 flex gap-2">
+              <select value={filtroDocTipo} onChange={(e) => setFiltroDocTipo(e.target.value as typeof filtroDocTipo)}
+                className="h-9 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="REMITO">Remito</option>
+                <option value="CUPO">Cupo</option>
+                <option value="CPE">CPE</option>
+                <option value="CTG">CTG</option>
+              </select>
+              <input type="text" value={filtroDocValor} onChange={(e) => setFiltroDocValor(e.target.value)} placeholder={`Nro ${filtroDocTipo.toLowerCase()}`}
+                className="flex-1 min-w-0 h-9 rounded-md border bg-background px-3 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
           </div>
           <div>
             <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Facturado</label>
@@ -240,7 +256,7 @@ export function ConsultarViajesClient({
             <thead className="bg-gray-50 border-b">
               <tr>
                 <th className={thCls}>Fecha</th>
-                <th className={thCls}>Remito</th>
+                <th className={thCls}>Documento</th>
                 {showFleteroCol && <th className={thCls}>Fletero</th>}
                 {showEmpresaCol && <th className={thCls}>Empresa</th>}
                 <th className={thCls}>Mercadería</th>
@@ -259,7 +275,27 @@ export function ConsultarViajesClient({
               ) : viajesPagina.map((v) => (
                 <tr key={v.id} className={`border-b last:border-0 hover:bg-gray-100 transition-colors ${viajeDetalle?.id === v.id ? "bg-blue-50" : ""}`}>
                   <td className="px-4 py-2 whitespace-nowrap">{formatearFecha(new Date(v.fechaViaje))}</td>
-                  <td className="px-4 py-2 whitespace-nowrap">{v.remito || "—"}</td>
+                  <td className="px-4 py-2 whitespace-nowrap">
+                    {(() => {
+                      const principal = v.remito
+                        ? { tipo: "Remito", nro: v.remito }
+                        : v.nroCtg
+                          ? { tipo: "CTG", nro: v.nroCtg }
+                          : null
+                      const extras: string[] = []
+                      if (v.cupo) extras.push(`Cupo: ${v.cupo}`)
+                      if (v.cpe) extras.push(`CPE: ${v.cpe}`)
+                      if (!principal && extras.length === 0) return "—"
+                      return (
+                        <div>
+                          {principal ? (
+                            <p className="text-sm"><span className="text-gray-500">{principal.tipo}</span> {principal.nro}</p>
+                          ) : null}
+                          {extras.length > 0 && <p className="text-xs text-gray-500">{extras.join(" · ")}</p>}
+                        </div>
+                      )
+                    })()}
+                  </td>
                   {showFleteroCol && <td className="px-4 py-2 whitespace-nowrap">{v.fletero ? (<div><p className="text-xs text-gray-500">{fleteros.find((f) => f.id === v.fleteroId)?.cuit ?? ""}</p><p className="text-sm">{v.fletero.razonSocial}</p></div>) : <span className="text-gray-400 italic text-xs">Propio</span>}</td>}
                   {showEmpresaCol && <td className="px-4 py-2 whitespace-nowrap">{v.empresa ? (<div><p className="text-xs text-gray-500">{empresas.find((e) => e.id === v.empresaId)?.cuit ?? ""}</p><p className="text-sm">{v.empresa.razonSocial}</p></div>) : "—"}</td>}
                   <td className="px-4 py-2 whitespace-nowrap text-sm max-w-[120px] truncate">{v.mercaderia || "—"}</td>

@@ -24,6 +24,7 @@ import { formatearCuit } from "@/lib/utils"
 import { CondicionIva } from "@/types"
 import { Plus, Pencil, Trash2, Search, ChevronDown, ChevronRight, PowerOff, Power } from "lucide-react"
 import { ContactosEmailSubseccion, type ContactoEmailItem } from "./contactos-email-subseccion"
+import { BotonBuscarPadron } from "./buscar-padron-button"
 
 export interface EmpresaAbm {
   id: string
@@ -67,6 +68,8 @@ function EmpresaFormModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const isEdit = !!empresa
+  const [padronOk, setPadronOk] = useState(isEdit)
+  const bloqueado = !isEdit && !padronOk
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
@@ -97,32 +100,45 @@ function EmpresaFormModal({
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div className="space-y-1">
-        <Label htmlFor="razonSocial">Razón social *</Label>
-        <Input id="razonSocial" name="razonSocial" value={form.razonSocial} onChange={handleChange} required disabled={loading} />
+        <Label htmlFor="cuit">CUIT (sin guiones) *</Label>
+        <Input id="cuit" name="cuit" value={form.cuit} onChange={handleChange} required disabled={loading || isEdit} maxLength={11} pattern="\d{11}" placeholder="30123456789" />
+        {!isEdit && (
+          <BotonBuscarPadron
+            cuit={form.cuit}
+            disabled={loading}
+            onResultado={({ razonSocial, direccion, condicionIva }) => {
+              setForm((prev) => ({
+                ...prev,
+                razonSocial: razonSocial || prev.razonSocial,
+                direccion: direccion || prev.direccion,
+                condicionIva: condicionIva || prev.condicionIva,
+              }))
+              setPadronOk(true)
+            }}
+          />
+        )}
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label htmlFor="cuit">CUIT (sin guiones) *</Label>
-          <Input id="cuit" name="cuit" value={form.cuit} onChange={handleChange} required disabled={loading || isEdit} maxLength={11} pattern="\d{11}" placeholder="30123456789" />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="condicionIva">Condición IVA *</Label>
-          <Select id="condicionIva" name="condicionIva" value={form.condicionIva} onChange={handleChange} disabled={loading}>
-            {Object.entries(CondicionIva).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </Select>
-        </div>
+      <div className="space-y-1">
+        <Label htmlFor="razonSocial">Razón social *</Label>
+        <Input id="razonSocial" name="razonSocial" value={form.razonSocial} onChange={handleChange} required disabled={loading || bloqueado} />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="condicionIva">Condición IVA *</Label>
+        <Select id="condicionIva" name="condicionIva" value={form.condicionIva} onChange={handleChange} disabled={loading || bloqueado}>
+          {Object.entries(CondicionIva).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </Select>
       </div>
       <div className="space-y-1">
         <Label htmlFor="direccion">Dirección</Label>
-        <Input id="direccion" name="direccion" value={form.direccion} onChange={handleChange} disabled={loading} />
+        <Input id="direccion" name="direccion" value={form.direccion} onChange={handleChange} disabled={loading || bloqueado} />
       </div>
-      <label htmlFor="padronFce" className="flex items-center gap-2 cursor-pointer">
+      <label htmlFor="padronFce" className={`flex items-center gap-2 ${bloqueado ? "opacity-50" : "cursor-pointer"}`}>
         <input
           type="checkbox"
           id="padronFce"
           checked={form.padronFce}
           onChange={(e) => setForm((prev) => ({ ...prev, padronFce: e.target.checked }))}
-          disabled={loading}
+          disabled={loading || bloqueado}
           className="h-4 w-4 rounded border-input accent-primary"
         />
         <span className="text-sm">Padrón FCE</span>
@@ -131,7 +147,7 @@ function EmpresaFormModal({
       <FormError message={error} />
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onSuccess} disabled={loading}>Cancelar</Button>
-        <Button type="submit" disabled={loading}>{loading ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear empresa"}</Button>
+        <Button type="submit" disabled={loading || bloqueado}>{loading ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear empresa"}</Button>
       </div>
     </form>
   )

@@ -7,6 +7,7 @@
  */
 
 import { prisma } from "@/lib/prisma"
+import { registrarMovimiento } from "@/lib/movimiento-cuenta"
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -107,39 +108,22 @@ export async function ejecutarRegistrarPagoImpuesto(
     const desc = `Pago ${tipoDisplay(tipoImpuesto, descripcion)} — período ${periodo}`
 
     if (medioPago === "CUENTA_BANCARIA" && cuentaId) {
-      await tx.movimientoSinFactura.create({
-        data: {
-          cuentaId,
-          tipo:        "EGRESO",
-          categoria:   "PAGO_SERVICIO",
-          monto,
-          fecha:       new Date(fechaPago),
-          descripcion: desc,
-          operadorId,
-        },
+      await registrarMovimiento(tx, {
+        cuentaId,
+        tipo: "EGRESO",
+        categoria: "PAGO_IMPUESTO",
+        monto,
+        fecha: new Date(fechaPago),
+        descripcion: desc,
+        pagoImpuestoId: nuevoPago.id,
+        operadorCreacionId: operadorId,
       })
     }
 
     if (medioPago === "TARJETA" && tarjetaId) {
-      const tarjeta = await tx.tarjeta.findUnique({
-        where: { id: tarjetaId },
-        select: { cuentaId: true },
-      })
-
-      if (tarjeta?.cuentaId) {
-        await tx.movimientoSinFactura.create({
-          data: {
-            cuentaId:    tarjeta.cuentaId,
-            tarjetaId,
-            tipo:        "EGRESO",
-            categoria:   "PAGO_TARJETA",
-            monto,
-            fecha:       new Date(fechaPago),
-            descripcion: desc,
-            operadorId,
-          },
-        })
-      }
+      // El pago con tarjeta no impacta cuenta hasta que se paga el resumen
+      // de tarjeta. No se registra MovimientoCuenta acá; la conciliación
+      // de tarjeta vive en su propio flujo.
     }
 
     return nuevoPago

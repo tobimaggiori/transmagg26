@@ -99,8 +99,21 @@ function EmpleadoFormModal({ empleado, onSuccess }: { empleado?: EmpleadoAbm; on
         <div><Label>Apellido</Label><Input value={form.apellido} onChange={(e) => setForm(f => ({ ...f, apellido: e.target.value }))} required /></div>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <div><Label>CUIT</Label><Input value={form.cuit} onChange={(e) => setForm(f => ({ ...f, cuit: e.target.value }))} placeholder="11 dígitos sin guiones" /></div>
-        <div><Label>Cargo</Label><Input value={form.cargo} onChange={(e) => setForm(f => ({ ...f, cargo: e.target.value }))} /></div>
+        <div><Label>CUIT / CUIL</Label><Input value={form.cuit} onChange={(e) => setForm(f => ({ ...f, cuit: e.target.value.replace(/\D/g, "") }))} placeholder="11 dígitos sin guiones" maxLength={11} required /></div>
+        <div>
+          <Label>Cargo</Label>
+          <select
+            value={form.cargo}
+            onChange={(e) => setForm(f => ({ ...f, cargo: e.target.value }))}
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            <option value="">—</option>
+            <option value="CHOFER">Chofer</option>
+            <option value="ADMINISTRATIVO">Administrativo</option>
+            <option value="MECANICO">Mecánico</option>
+            <option value="OTRO">Otro</option>
+          </select>
+        </div>
       </div>
       <div><Label>Fecha de ingreso</Label><Input type="date" value={form.fechaIngreso} onChange={(e) => setForm(f => ({ ...f, fechaIngreso: e.target.value }))} required /></div>
       {isEdit && (

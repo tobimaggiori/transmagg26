@@ -30,7 +30,7 @@ type LiqItem = {
 type CuentaBancaria = {
   id: string
   nombre: string
-  bancoOEntidad: string
+  banco: { id: string; nombre: string } | null
 }
 
 type ChequeEnCartera = {
@@ -111,7 +111,6 @@ type PagoItemChequePropio = {
   mailBeneficiario: string
   fechaEmision: string
   fechaPago: string
-  clausula: string
   descripcion1: string
   descripcion2: string
   comprobanteS3Key?: string
@@ -152,7 +151,7 @@ function defaultDraft(tipo: PagoItem["tipoPago"]): PagoItem {
   if (tipo === "TRANSFERENCIA") return { tipoPago: "TRANSFERENCIA", monto: "", cuentaBancariaId: "", referencia: "" }
   if (tipo === "CHEQUE_PROPIO") return {
     tipoPago: "CHEQUE_PROPIO", monto: "", cuentaId: "", nroCheque: "",
-    mailBeneficiario: "", fechaEmision: today, fechaPago: "", clausula: "NO_A_LA_ORDEN",
+    mailBeneficiario: "", fechaEmision: today, fechaPago: "",
     descripcion1: "", descripcion2: "",
   }
   if (tipo === "CHEQUE_TERCERO") return { tipoPago: "CHEQUE_TERCERO", monto: "", chequeRecibidoId: "" }
@@ -366,7 +365,7 @@ export function RegistrarPagoFleteroModal({
                 mailBeneficiario: p.mailBeneficiario || null,
                 fechaEmision: p.fechaEmision,
                 fechaPago: p.fechaPago,
-                clausula: p.clausula || "NO_A_LA_ORDEN",
+                clausula: "NO_A_LA_ORDEN",
                 descripcion1: p.descripcion1 || null,
                 descripcion2: p.descripcion2 || null,
               },
@@ -917,18 +916,20 @@ function DraftForm({
           </option>
         </Select>
 
-        <div className="flex items-center gap-1">
-          <Label className="text-xs shrink-0">Monto</Label>
-          <Input
-            type="number"
-            min="0"
-            step="0.01"
-            value={draft.monto}
-            onChange={(e) => onUpdate({ monto: e.target.value } as Partial<PagoItem>)}
-            placeholder="0,00"
-            className="w-32 h-8 text-xs"
-          />
-        </div>
+        {draft.tipoPago !== "CHEQUE_TERCERO" && (
+          <div className="flex items-center gap-1">
+            <Label className="text-xs shrink-0">Monto</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={draft.monto}
+              onChange={(e) => onUpdate({ monto: e.target.value } as Partial<PagoItem>)}
+              placeholder="0,00"
+              className="w-32 h-8 text-xs"
+            />
+          </div>
+        )}
       </div>
 
       {/* Campos específicos por tipo */}
@@ -943,7 +944,7 @@ function DraftForm({
             >
               <option value="">Seleccionar...</option>
               {cuentasBancarias.map((c) => (
-                <option key={c.id} value={c.id}>{c.nombre} — {c.bancoOEntidad}</option>
+                <option key={c.id} value={c.id}>{c.nombre}{c.banco ? ` — ${c.banco.nombre}` : ""}</option>
               ))}
             </Select>
           </div>
@@ -998,7 +999,7 @@ function DraftForm({
             <span className="text-xs font-medium">CUIT</span>
             <span className="text-xs font-mono">{cuit}</span>
           </div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <div>
               <Label className="text-xs">Fecha emisión</Label>
               <Input
@@ -1007,17 +1008,6 @@ function DraftForm({
                 onChange={(e) => onUpdate({ fechaEmision: e.target.value } as Partial<PagoItem>)}
                 className="h-8 text-xs mt-0.5"
               />
-            </div>
-            <div>
-              <Label className="text-xs">Cláusula</Label>
-              <Select
-                value={draft.clausula}
-                onChange={(e) => onUpdate({ clausula: e.target.value } as Partial<PagoItem>)}
-                className="h-8 text-xs mt-0.5"
-              >
-                <option value="NO_A_LA_ORDEN">No a la orden</option>
-                <option value="AL_DIA">Al día</option>
-              </Select>
             </div>
             <div>
               <Label className="text-xs">Mail beneficiario (opcional)</Label>

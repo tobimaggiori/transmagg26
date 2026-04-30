@@ -29,7 +29,12 @@ const medioPagoSchema = z.object({
 
 const facturaAplicadaSchema = z.object({
   facturaId: z.string().uuid(),
-  montoAplicado: z.number().positive("El monto aplicado debe ser mayor a 0"),
+  montoAplicado: z.number().min(0, "El monto aplicado no puede ser negativo"),
+})
+
+const notaAplicadaSchema = z.object({
+  notaId: z.string().uuid(),
+  monto: z.number().positive("El monto de la nota debe ser mayor a 0"),
 })
 
 const faltanteSchema = z.object({
@@ -42,7 +47,8 @@ const faltanteSchema = z.object({
 const crearReciboSchema = z.object({
   empresaId: z.string().uuid(),
   facturasAplicadas: z.array(facturaAplicadaSchema).min(1, "Debe incluir al menos una factura"),
-  mediosPago: z.array(medioPagoSchema).min(1, "Debe incluir al menos un medio de pago"),
+  notasAplicadas: z.array(notaAplicadaSchema).default([]),
+  mediosPago: z.array(medioPagoSchema).default([]),
   retencionGanancias: z.number().min(0).default(0),
   retencionIIBB: z.number().min(0).default(0),
   retencionSUSS: z.number().min(0).default(0),

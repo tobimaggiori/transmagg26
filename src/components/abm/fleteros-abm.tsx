@@ -25,19 +25,19 @@ import { formatearCuit } from "@/lib/utils"
 import { CondicionIva } from "@/types"
 import { Plus, Pencil, Trash2, Search, ChevronDown, ChevronRight, Truck, User, UserX, PowerOff, Power } from "lucide-react"
 import { ContactosEmailSubseccion, type ContactoEmailItem } from "./contactos-email-subseccion"
+import { BotonBuscarPadron } from "./buscar-padron-button"
 
 export interface ChoferFlota {
   id: string
   nombre: string
   apellido: string
-  email: string
+  email: string | null
 }
 
 export interface CamionAbm {
   id: string
   patenteChasis: string
   patenteAcoplado: string | null
-  tipoCamion: string
   choferHistorial: Array<{ chofer: ChoferFlota }>
 }
 
@@ -49,7 +49,7 @@ export interface FleteroAbm {
   comisionDefault: number
   activo: boolean
   puedeEliminar: boolean
-  usuario: { nombre: string; apellido: string; email: string }
+  usuario: { nombre: string; apellido: string; email: string | null } | null
   camiones: CamionAbm[]
   choferes: ChoferFlota[]
   contactosEmail: ContactoEmailItem[]
@@ -76,7 +76,7 @@ export function calcularFiltroFletero(fletero: FleteroAbm, busqueda: string): bo
   return (
     fletero.razonSocial.toLowerCase().includes(q) ||
     fletero.cuit.includes(q) ||
-    fletero.usuario.email.toLowerCase().includes(q)
+    (fletero.usuario?.email ?? "").toLowerCase().includes(q)
   )
 }
 
@@ -86,15 +86,14 @@ function FleteroFormModal({ fletero, onSuccess }: { fletero?: Pick<FleteroAbm, "
     razonSocial: fletero?.razonSocial ?? "",
     condicionIva: fletero?.condicionIva ?? "RESPONSABLE_INSCRIPTO",
     comisionDefault: String(fletero?.comisionDefault ?? "10"),
-    nombre: "",
-    apellido: "",
-    email: "",
-    telefono: "",
     cuit: fletero?.cuit ?? "",
+    direccion: "",
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const isEdit = !!fletero
+  const [padronOk, setPadronOk] = useState(isEdit)
+  const bloqueado = !isEdit && !padronOk
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
@@ -127,48 +126,51 @@ function FleteroFormModal({ fletero, onSuccess }: { fletero?: Pick<FleteroAbm, "
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
+      {!isEdit && (
+        <div className="space-y-1">
+          <Label htmlFor="cuit">CUIT (11 dígitos, sin guiones) *</Label>
+          <Input id="cuit" name="cuit" value={form.cuit} onChange={handleChange} required disabled={loading} maxLength={11} pattern="\d{11}" placeholder="20123456789" />
+          <BotonBuscarPadron
+            cuit={form.cuit}
+            disabled={loading}
+            onResultado={({ razonSocial, direccion, condicionIva }) => {
+              setForm((prev) => ({
+                ...prev,
+                razonSocial: razonSocial || prev.razonSocial,
+                direccion: direccion || prev.direccion,
+                condicionIva: condicionIva || prev.condicionIva,
+              }))
+              setPadronOk(true)
+            }}
+          />
+        </div>
+      )}
       <div className="space-y-1">
         <Label htmlFor="razonSocial">Razón social *</Label>
-        <Input id="razonSocial" name="razonSocial" value={form.razonSocial} onChange={handleChange} required disabled={loading} />
+        <Input id="razonSocial" name="razonSocial" value={form.razonSocial} onChange={handleChange} required disabled={loading || bloqueado} />
       </div>
       {!isEdit && (
-        <>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label htmlFor="nombre">Nombre *</Label>
-              <Input id="nombre" name="nombre" value={form.nombre} onChange={handleChange} required disabled={loading} />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="apellido">Apellido *</Label>
-              <Input id="apellido" name="apellido" value={form.apellido} onChange={handleChange} required disabled={loading} />
-            </div>
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="email">Email *</Label>
-            <Input id="email" name="email" type="email" value={form.email} onChange={handleChange} required disabled={loading} />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="cuit">CUIT (11 dígitos, sin guiones) *</Label>
-            <Input id="cuit" name="cuit" value={form.cuit} onChange={handleChange} required disabled={loading} maxLength={11} pattern="\d{11}" placeholder="20123456789" />
-          </div>
-        </>
+        <div className="space-y-1">
+          <Label htmlFor="direccion">Dirección</Label>
+          <Input id="direccion" name="direccion" value={form.direccion} onChange={handleChange} disabled={loading || bloqueado} />
+        </div>
       )}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label htmlFor="condicionIva">Condición IVA *</Label>
-          <Select id="condicionIva" name="condicionIva" value={form.condicionIva} onChange={handleChange} disabled={loading}>
+          <Select id="condicionIva" name="condicionIva" value={form.condicionIva} onChange={handleChange} disabled={loading || bloqueado}>
             {Object.entries(CondicionIva).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </Select>
         </div>
         <div className="space-y-1">
-          <Label htmlFor="comisionDefault">Comisión por defecto (%) *</Label>
-          <Input id="comisionDefault" name="comisionDefault" type="number" min="0" max="100" step="0.1" value={form.comisionDefault} onChange={handleChange} required disabled={loading} />
+          <Label htmlFor="comisionDefault">Comisión (%) *</Label>
+          <Input id="comisionDefault" name="comisionDefault" type="number" min="0" max="100" step="0.1" value={form.comisionDefault} onChange={handleChange} required disabled={loading || bloqueado} />
         </div>
       </div>
       <FormError message={error} />
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onSuccess} disabled={loading}>Cancelar</Button>
-        <Button type="submit" disabled={loading}>{loading ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear fletero"}</Button>
+        <Button type="submit" disabled={loading || bloqueado}>{loading ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear fletero"}</Button>
       </div>
     </form>
   )
@@ -179,7 +181,6 @@ function CamionFormModal({ fleteroId, camion, onSuccess }: { fleteroId: string; 
   const [form, setForm] = useState({
     patenteChasis: camion?.patenteChasis ?? "",
     patenteAcoplado: camion?.patenteAcoplado ?? "",
-    tipoCamion: camion?.tipoCamion ?? "",
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -196,8 +197,8 @@ function CamionFormModal({ fleteroId, camion, onSuccess }: { fleteroId: string; 
     try {
       const url = isEdit ? `/api/camiones/${camion.id}` : "/api/camiones"
       const body = isEdit
-        ? { patenteAcoplado: form.patenteAcoplado || undefined, tipoCamion: form.tipoCamion }
-        : { fleteroId, patenteChasis: form.patenteChasis, patenteAcoplado: form.patenteAcoplado || undefined, tipoCamion: form.tipoCamion }
+        ? { patenteAcoplado: form.patenteAcoplado || undefined }
+        : { fleteroId, patenteChasis: form.patenteChasis, patenteAcoplado: form.patenteAcoplado || undefined }
       const res = await fetch(url, {
         method: isEdit ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -226,10 +227,6 @@ function CamionFormModal({ fleteroId, camion, onSuccess }: { fleteroId: string; 
         <Label htmlFor="patenteAcoplado">Patente acoplado</Label>
         <Input id="patenteAcoplado" name="patenteAcoplado" value={form.patenteAcoplado} onChange={handleChange} disabled={loading} maxLength={8} placeholder="XYZ789" />
       </div>
-      <div className="space-y-1">
-        <Label htmlFor="tipoCamion">Tipo de camión *</Label>
-        <Input id="tipoCamion" name="tipoCamion" value={form.tipoCamion} onChange={(e) => setForm(p => ({ ...p, tipoCamion: e.target.value }))} required disabled={loading} placeholder="Semi, Camión 3/4, etc." />
-      </div>
       <FormError message={error} />
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onSuccess} disabled={loading}>Cancelar</Button>
@@ -241,7 +238,7 @@ function CamionFormModal({ fleteroId, camion, onSuccess }: { fleteroId: string; 
 
 function NuevoChoferModal({ fleteroId, camiones, onSuccess }: { fleteroId: string; camiones: CamionAbm[]; onSuccess: () => void }) {
   const router = useRouter()
-  const [form, setForm] = useState({ nombre: "", apellido: "", email: "", telefono: "", camionId: "" })
+  const [form, setForm] = useState({ nombre: "", apellido: "", cuil: "", camionId: "" })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -254,21 +251,33 @@ function NuevoChoferModal({ fleteroId, camiones, onSuccess }: { fleteroId: strin
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch("/api/usuarios", {
+      // 1) Crear Empleado con cargo CHOFER vinculado al fletero.
+      const resEmp = await fetch("/api/empleados", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nombre: form.nombre,
           apellido: form.apellido,
-          email: form.email,
-          telefono: form.telefono || undefined,
-          rol: "CHOFER",
+          cuit: form.cuil.replace(/\D/g, ""),
+          cargo: "CHOFER",
           fleteroId,
-          camionId: form.camionId,
+          fechaIngreso: new Date().toISOString(),
         }),
       })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error ?? "Error al guardar"); return }
+      const emp = await resEmp.json()
+      if (!resEmp.ok) { setError(emp.error ?? "Error al guardar"); return }
+
+      // 2) Asignar camión al empleado recién creado.
+      const resAsig = await fetch(`/api/camiones/${form.camionId}/asignar-chofer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ choferId: emp.id }),
+      })
+      if (!resAsig.ok) {
+        const errAsig = await resAsig.json()
+        setError(errAsig.error ?? "Error al asignar el camión"); return
+      }
+
       router.refresh()
       onSuccess()
     } catch {
@@ -291,26 +300,22 @@ function NuevoChoferModal({ fleteroId, camiones, onSuccess }: { fleteroId: strin
         </div>
       </div>
       <div className="space-y-1">
-        <Label htmlFor="email">Email *</Label>
-        <Input id="email" name="email" type="email" value={form.email} onChange={handleChange} required disabled={loading} />
-      </div>
-      <div className="space-y-1">
-        <Label htmlFor="telefono">Teléfono</Label>
-        <Input id="telefono" name="telefono" value={form.telefono} onChange={handleChange} disabled={loading} />
+        <Label htmlFor="cuil">CUIL *</Label>
+        <Input id="cuil" name="cuil" value={form.cuil} onChange={handleChange} required disabled={loading} placeholder="20-12345678-3" />
       </div>
       <div className="space-y-1">
         <Label htmlFor="camionId">Camión asignado *</Label>
         <Select id="camionId" name="camionId" value={form.camionId} onChange={handleChange} required disabled={loading}>
           <option value="">Seleccionar camión...</option>
           {camiones.map((c) => (
-            <option key={c.id} value={c.id}>{c.patenteChasis} — {c.tipoCamion}</option>
+            <option key={c.id} value={c.id}>{c.patenteChasis}</option>
           ))}
         </Select>
       </div>
       <FormError message={error} />
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onSuccess} disabled={loading}>Cancelar</Button>
-        <Button type="submit" disabled={loading || !form.camionId}>{loading ? "Guardando..." : "Crear chofer"}</Button>
+        <Button type="submit" disabled={loading || !form.camionId || !form.cuil.trim()}>{loading ? "Guardando..." : "Crear chofer"}</Button>
       </div>
     </form>
   )
@@ -424,7 +429,6 @@ function FlotaSubseccion({ fletero }: { fletero: FleteroAbm }) {
                 <div key={c.id} className="flex items-center justify-between px-3 py-2">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium">{c.patenteChasis}{c.patenteAcoplado ? ` / ${c.patenteAcoplado}` : ""}</p>
-                    <p className="text-xs text-muted-foreground">{c.tipoCamion}</p>
                     {choferActual ? (
                       <p className="text-xs text-green-700 flex items-center gap-1 mt-0.5">
                         <User className="h-3 w-3" /> {choferActual.apellido}, {choferActual.nombre}
@@ -662,7 +666,7 @@ export function FleterosAbm({ fleteros }: FleterosAbmProps) {
                       )}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      CUIT: {formatearCuit(flet.cuit)} &middot; {flet.usuario.nombre} {flet.usuario.apellido} &middot; {flet.comisionDefault}% comisión
+                      CUIT: {formatearCuit(flet.cuit)}{flet.usuario ? ` · ${flet.usuario.nombre} ${flet.usuario.apellido}` : ""} &middot; {flet.comisionDefault}% comisión
                       &middot; {flet.camiones.length} camión{flet.camiones.length !== 1 ? "es" : ""}
                       {flet.choferes.length > 0 && ` · ${flet.choferes.length} chofer${flet.choferes.length !== 1 ? "es" : ""}`}
                     </p>
@@ -700,7 +704,6 @@ export function FleterosAbm({ fleteros }: FleterosAbmProps) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Nuevo fletero</DialogTitle>
-            <DialogDescription>Registrá un nuevo fletero con su usuario de acceso.</DialogDescription>
           </DialogHeader>
           <FleteroFormModal onSuccess={() => setDialogCrear(false)} />
         </DialogContent>

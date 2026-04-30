@@ -6,7 +6,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { puedeAcceder, esRolInterno } from "@/lib/permissions"
+import { tienePermiso, esRolInterno } from "@/lib/permissions"
 import { resolverFleteroIdPorEmail } from "@/lib/session-utils"
 import type { Rol } from "@/types"
 import { LiquidarClient } from "./liquidar-client"
@@ -16,7 +16,7 @@ export default async function FleterosLiquidarPage() {
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
-  if (!puedeAcceder(rol, "liquidaciones")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "liquidaciones"))) redirect("/dashboard")
 
   const esInterno = esRolInterno(rol)
 
@@ -36,8 +36,8 @@ export default async function FleterosLiquidarPage() {
       select: { id: true, patenteChasis: true, fleteroId: true, esPropio: true },
       orderBy: { patenteChasis: "asc" },
     }),
-    prisma.usuario.findMany({
-      where: { rol: "CHOFER", activo: true },
+    prisma.empleado.findMany({
+      where: { cargo: "CHOFER", activo: true },
       select: { id: true, nombre: true, apellido: true, fleteroId: true },
       orderBy: { apellido: "asc" },
     }),

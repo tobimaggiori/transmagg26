@@ -8,6 +8,7 @@
 
 import { prisma } from "@/lib/prisma"
 import { aplicarPorcentaje, restarImportes } from "@/lib/money"
+import { registrarMovimiento } from "@/lib/movimiento-cuenta"
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -75,30 +76,26 @@ export async function ejecutarDescontarChequeBanco(
       },
     })
 
-    const movIngreso = await tx.movimientoSinFactura.create({
-      data: {
-        cuentaId: data.cuentaId,
-        tipo: "INGRESO",
-        categoria: "DESCUENTO_CHEQUE_BANCO",
-        monto: neto,
-        fecha,
-        descripcion: `Descuento cheque ${cheque.nroCheque}${cheque.empresa ? ` — ${cheque.empresa.razonSocial}` : ""} (tasa ${data.tasaDescuento}%)`,
-        referencia: cheque.nroCheque,
-        operadorId,
-      },
+    const movIngreso = await registrarMovimiento(tx, {
+      cuentaId: data.cuentaId,
+      tipo: "INGRESO",
+      categoria: "DESCUENTO_CHEQUE_BANCO",
+      monto: neto,
+      fecha,
+      descripcion: `Descuento cheque ${cheque.nroCheque}${cheque.empresa ? ` — ${cheque.empresa.razonSocial}` : ""} (tasa ${data.tasaDescuento}%)`,
+      chequeRecibidoId: data.chequeId,
+      operadorCreacionId: operadorId,
     })
 
-    const movEgreso = await tx.movimientoSinFactura.create({
-      data: {
-        cuentaId: data.cuentaId,
-        tipo: "EGRESO",
-        categoria: "OTRO",
-        monto: comision,
-        fecha,
-        descripcion: `Comisión descuento cheque ${cheque.nroCheque}${cheque.empresa ? ` — ${cheque.empresa.razonSocial}` : ""}`,
-        referencia: cheque.nroCheque,
-        operadorId,
-      },
+    const movEgreso = await registrarMovimiento(tx, {
+      cuentaId: data.cuentaId,
+      tipo: "EGRESO",
+      categoria: "OTRO",
+      monto: comision,
+      fecha,
+      descripcion: `Comisión descuento cheque ${cheque.nroCheque}${cheque.empresa ? ` — ${cheque.empresa.razonSocial}` : ""}`,
+      chequeRecibidoId: data.chequeId,
+      operadorCreacionId: operadorId,
     })
 
     return { cheque: chequeActualizado, movIngreso, movEgreso, neto, comision }

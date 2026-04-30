@@ -5,7 +5,7 @@
 
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { ChiquerasClient } from "./chequeras-client"
 import type { Rol } from "@/types"
 
@@ -23,7 +23,7 @@ export default async function ChiquerasPage({
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_TRANSMAGG") as Rol
-  if (!puedeAcceder(rol, "cuentas")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "contabilidad.reportes"))) redirect("/dashboard")
 
   return <ChiquerasClient tabInicial={searchParams.tab} />
 }

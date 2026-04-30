@@ -14,6 +14,7 @@ import {
   serverErrorResponse,
 } from "@/lib/financial-api"
 import { resolverOperadorId } from "@/lib/session-utils"
+import { registrarMovimiento } from "@/lib/movimiento-cuenta"
 
 const schema = z.object({
   cuentaId: z.string().uuid("Cuenta bancaria inválida"),
@@ -21,18 +22,6 @@ const schema = z.object({
   fecha: z.string().min(1, "La fecha es obligatoria"),
 })
 
-/**
- * POST: NextRequest { params: { id: string (FCI id) } } -> Promise<NextResponse>
- *
- * Dado [el id del FCI, la cuenta bancaria destino, el monto y la fecha],
- * valida que haya saldo suficiente, crea un INGRESO en la cuenta banco,
- * un MovimientoFci RESCATE y actualiza saldoActual del FCI.
- *
- * Ejemplos:
- * POST(req, { params: { id: "fciId" } }) === { movimientoFci, movimientoBanco }
- * POST(req, { params: { id: "fciId" } }) === { error: "Saldo insuficiente en el FCI" }
- * POST(req, { params: { id: "noexiste" } }) === { error: "FCI no encontrado" }
- */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -56,30 +45,26 @@ export async function POST(
     const { cuentaId, monto, fecha } = parsed.data
 
     const [fci, cuentaBanco] = await Promise.all([
-      prisma.fci.findUnique({ where: { id } }),
+      prisma.fci.findUnique({ where: { id }, include: { cuenta: true } }),
       prisma.cuenta.findUnique({ where: { id: cuentaId } }),
     ])
 
     if (!fci) return notFoundResponse("FCI")
-    if (!cuentaBanco) return notFoundResponse("Cuenta bancaria")
-    if (cuentaBanco.tipo !== "BANCO") return badRequestResponse("La cuenta debe ser de tipo BANCO")
-    if (monto > fci.saldoActual) return badRequestResponse("Saldo insuficiente en el FCI")
+    if (!cuentaBanco) return notFoundResponse("Cuenta")
+    if (!cuentaBanco.activa) return badRequestResponse("La cuenta está inactiva")
+
+    // FCI de banco/billetera: la cuenta destino debe ser la propia del FCI.
+    // FCI de broker: el operador puede rescatar hacia cualquier cuenta activa.
+    if (fci.cuenta.tipo !== "BROKER" && cuentaId !== fci.cuentaId) {
+      return badRequestResponse("Para FCIs bancarios el rescate debe ir a la cuenta asociada al FCI")
+    }
+
+    if (monto > Number(fci.saldoActual)) return badRequestResponse("Saldo insuficiente en el FCI")
 
     const fechaDate = new Date(fecha)
 
-    const [movimientoBanco, movimientoFci] = await prisma.$transaction([
-      prisma.movimientoSinFactura.create({
-        data: {
-          cuentaId,
-          tipo: "INGRESO",
-          categoria: "RESCATE_DE_BROKER",
-          monto,
-          fecha: fechaDate,
-          descripcion: `Rescate FCI ${fci.nombre}`,
-          operadorId,
-        },
-      }),
-      prisma.movimientoFci.create({
+    const resultado = await prisma.$transaction(async (tx) => {
+      const movimientoFci = await tx.movimientoFci.create({
         data: {
           fciId: id,
           cuentaOrigenDestinoId: cuentaId,
@@ -89,18 +74,32 @@ export async function POST(
           descripcion: `Rescate a ${cuentaBanco.nombre}`,
           operadorId,
         },
-      }),
-      prisma.fci.update({
+      })
+      await tx.fci.update({
         where: { id },
         data: {
           saldoActual: { decrement: monto },
           saldoActualizadoEn: fechaDate,
         },
-      }),
-    ])
+      })
+      const movimientoBanco = await registrarMovimiento(tx, {
+        cuentaId,
+        tipo: "INGRESO",
+        categoria: "RESCATE_FCI",
+        monto,
+        fecha: fechaDate,
+        descripcion: `Rescate FCI ${fci.nombre}`,
+        movimientoFciId: movimientoFci.id,
+        operadorCreacionId: operadorId,
+      })
+      return { movimientoFci, movimientoBanco }
+    })
 
-    return NextResponse.json({ movimientoFci, movimientoBanco }, { status: 201 })
+    return NextResponse.json(resultado, { status: 201 })
   } catch (error) {
+    if (error instanceof Error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return serverErrorResponse("POST /api/fci/[id]/rescatar", error)
   }
 }

@@ -246,27 +246,27 @@ No permitir que la UI o API presenten como “pendiente” algo que todavía man
 
 ---
 
-## 3. Estados funcionales mínimos por circuito
+## 3. Estados de viaje por circuito
 
 ## 3.1 Empresa
 
-Estados mínimos sugeridos:
+Flag `Viaje.estadoFactura`:
 
-* `PENDIENTE_FACTURACION`
-* `FACTURADO_VIGENTE`
-* `FACTURADO_AJUSTADO_PARCIAL`
+* `PENDIENTE_FACTURAR`: el viaje no está tomado por una factura vigente
+* `FACTURADO`: el viaje está tomado por al menos una factura vigente
 
 ## 3.2 Fletero
 
-Estados mínimos sugeridos:
+Flag `Viaje.estadoLiquidacion`:
 
-* `PENDIENTE_LIQUIDACION`
-* `LIQUIDADO_VIGENTE`
-* `LIQUIDADO_AJUSTADO_PARCIAL`
+* `PENDIENTE_LIQUIDAR`: el viaje no está tomado por una liquidación vigente
+* `LIQUIDADO`: el viaje está tomado por al menos una liquidación vigente
 
 Regla:
 
-Estos estados son funcionales y deben reflejar la situación económica vigente por viaje dentro de cada circuito.
+Los flags indican únicamente si el viaje está tomado por algún comprobante.
+El neto económico vigente (parcialidades por NC, IVA, saldo) se reconstruye
+desde los comprobantes, no desde estos flags.
 
 ---
 
@@ -280,7 +280,7 @@ Dado un viaje pendiente de facturación,
 cuando se emite una factura,
 entonces:
 
-* el viaje queda `FACTURADO_VIGENTE`
+* el viaje queda `FACTURADO`
 * existe comprobante histórico
 * existe impacto en cuenta corriente empresa
 
@@ -298,7 +298,7 @@ entonces:
 
 * la factura sigue histórica
 * el saldo pendiente queda en cero
-* el viaje sigue `FACTURADO_VIGENTE`
+* el viaje sigue `FACTURADO`
 
 ### T-E4 Factura + recibo parcial
 
@@ -307,27 +307,28 @@ cuando se registra recibo parcial,
 entonces:
 
 * el comprobante sigue abierto parcialmente
-* el viaje sigue `FACTURADO_VIGENTE`
+* el viaje sigue `FACTURADO`
 
-### T-E5 Factura + NC total
+### T-E5 Factura + NC con liberación de viaje
 
 Dada una factura emitida,
-cuando se emite NC total sobre el viaje,
+cuando se emite NC que libera el viaje (`viajesALiberar`),
 entonces:
 
 * la factura sigue histórica
 * la NC queda asociada
-* el viaje pasa a `PENDIENTE_FACTURACION`
-* el viaje queda refacturable completo
+* el viaje pasa a `PENDIENTE_FACTURAR`
+* el viaje queda refacturable
 
-### T-E6 Factura + NC parcial
+### T-E6 Factura + NC parcial sin liberación de viaje
 
 Dada una factura emitida,
-cuando se emite NC parcial,
+cuando se emite NC parcial que no libera el viaje,
 entonces:
 
-* el viaje pasa a `FACTURADO_AJUSTADO_PARCIAL`
-* no queda liberado para refacturación total automática
+* el viaje sigue en `FACTURADO`
+* el saldo de cuenta corriente y el IVA ventas se ajustan
+* no se habilita refacturación
 
 ### T-E7 Factura + ND
 
@@ -340,15 +341,15 @@ entonces:
 * aumenta el cargo vigente
 * el viaje sigue facturado
 
-### T-E8 Factura + recibo total + NC total
+### T-E8 Factura + recibo total + NC con liberación de viaje
 
 Dada una factura totalmente cobrada,
-cuando se emite NC total,
+cuando se emite NC que libera el viaje,
 entonces:
 
 * el recibo sigue histórico
 * la NC genera crédito o saldo a favor
-* el viaje queda `PENDIENTE_FACTURACION`
+* el viaje queda `PENDIENTE_FACTURAR`
 
 ### T-E9 Factura + recibo total + ND
 
@@ -359,14 +360,14 @@ entonces:
 * el recibo sigue histórico
 * la ND genera nueva deuda abierta
 
-### T-E10 NC total parcializada por viaje dentro de factura multi-viaje
+### T-E10 NC libera solo parte de los viajes en factura multi-viaje
 
 Dada una factura con varios viajes,
-cuando solo uno queda totalmente revertido,
+cuando la NC libera solo uno (lista `viajesALiberar`),
 entonces:
 
-* ese viaje pasa a `PENDIENTE_FACTURACION`
-* los demás mantienen su estado correspondiente
+* ese viaje pasa a `PENDIENTE_FACTURAR`
+* los demás siguen en `FACTURADO`
 
 ### T-E11 Bloqueo de sobrecrédito
 
@@ -386,7 +387,7 @@ Dado un viaje pendiente de liquidación,
 cuando se emite LP,
 entonces:
 
-* el viaje queda `LIQUIDADO_VIGENTE`
+* el viaje queda `LIQUIDADO`
 * existe impacto en cuenta corriente fletero
 
 ### T-F2 LP con múltiples viajes
@@ -403,7 +404,7 @@ entonces:
 
 * el LP sigue histórico
 * el saldo pendiente queda en cero
-* el viaje sigue `LIQUIDADO_VIGENTE`
+* el viaje sigue `LIQUIDADO`
 
 ### T-F4 LP + OP parcial
 
@@ -412,27 +413,28 @@ cuando se registra OP parcial,
 entonces:
 
 * el comprobante sigue parcialmente abierto
-* el viaje sigue `LIQUIDADO_VIGENTE`
+* el viaje sigue `LIQUIDADO`
 
-### T-F5 LP + NC total
+### T-F5 LP + NC con liberación de viaje
 
 Dado un LP emitido,
-cuando se emite NC total sobre el viaje,
+cuando se emite NC que libera el viaje (`viajesALiberar`),
 entonces:
 
 * el LP sigue histórico
 * la NC queda asociada
-* el viaje pasa a `PENDIENTE_LIQUIDACION`
-* el viaje queda reliquidable completo
+* el viaje pasa a `PENDIENTE_LIQUIDAR`
+* el viaje queda reliquidable
 
-### T-F6 LP + NC parcial
+### T-F6 LP + NC parcial sin liberación de viaje
 
 Dado un LP emitido,
-cuando se emite NC parcial,
+cuando se emite NC parcial que no libera el viaje,
 entonces:
 
-* el viaje pasa a `LIQUIDADO_AJUSTADO_PARCIAL`
-* no queda liberado para reliquidación total automática
+* el viaje sigue en `LIQUIDADO`
+* el saldo de cuenta corriente fletero y el IVA Compras se ajustan
+* no se habilita reliquidación
 
 ### T-F7 LP + ND
 
@@ -443,15 +445,15 @@ entonces:
 * aumenta el reconocimiento vigente a favor del fletero
 * el viaje sigue liquidado
 
-### T-F8 LP + OP total + NC total
+### T-F8 LP + OP total + NC con liberación de viaje
 
 Dado un LP totalmente pagado,
-cuando se emite NC total,
+cuando se emite NC que libera el viaje,
 entonces:
 
 * la OP sigue histórica
 * la corrección no borra el pago
-* el viaje queda `PENDIENTE_LIQUIDACION`
+* el viaje queda `PENDIENTE_LIQUIDAR`
 
 ### T-F9 LP + OP total + ND
 
@@ -462,14 +464,14 @@ entonces:
 * la OP sigue histórica
 * la ND genera nueva diferencia pendiente
 
-### T-F10 NC total parcializada por viaje dentro de LP multi-viaje
+### T-F10 NC libera solo parte de los viajes en LP multi-viaje
 
 Dado un LP con varios viajes,
-cuando solo uno queda totalmente revertido,
+cuando la NC libera solo uno (lista `viajesALiberar`),
 entonces:
 
-* ese viaje pasa a `PENDIENTE_LIQUIDACION`
-* los demás mantienen su estado correspondiente
+* ese viaje pasa a `PENDIENTE_LIQUIDAR`
+* los demás siguen en `LIQUIDADO`
 
 ### T-F11 Bloqueo de sobrecrédito
 

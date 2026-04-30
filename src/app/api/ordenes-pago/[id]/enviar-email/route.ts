@@ -38,7 +38,7 @@ export async function POST(
   const parsed = bodySchema.safeParse(bodyRaw)
   const emailDestino = parsed.success && parsed.data.emailDestino
     ? parsed.data.emailDestino
-    : op.fletero.usuario.email ?? null
+    : op.fletero.usuario?.email ?? null
 
   if (!emailDestino) {
     return NextResponse.json(

@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { esAdmin } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { UsuariosAbm } from "@/components/abm/usuarios-abm"
 import type { Rol } from "@/types"
 
@@ -10,17 +10,17 @@ export default async function UsuariosPage() {
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_TRANSMAGG") as Rol
-  if (!esAdmin(rol)) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "abm.usuarios"))) redirect("/dashboard")
 
   const [usuarios, empresas, fleteros] = await Promise.all([
     prisma.usuario.findMany({
       orderBy: [{ activo: "desc" }, { apellido: "asc" }],
       select: {
         id: true, nombre: true, apellido: true, email: true, telefono: true, rol: true, activo: true,
-        fleteroId: true,
         smtpHost: true, smtpPuerto: true, smtpUsuario: true, smtpPassword: true, smtpSsl: true, smtpActivo: true,
         empresaUsuarios: { select: { empresaId: true, empresa: { select: { razonSocial: true } }, nivelAcceso: true } },
         fletero: { select: { id: true } },
+        empleado: { select: { id: true, fleteroId: true } },
       },
     }),
     prisma.empresa.findMany({
@@ -46,6 +46,7 @@ export default async function UsuariosPage() {
           ...u,
           smtpTienePassword: !!u.smtpPassword,
           smtpPassword: undefined,
+          fleteroId: u.empleado?.fleteroId ?? null,
           fleteroPropio: u.fletero ?? null,
         }))}
         empresas={empresas}

@@ -22,7 +22,7 @@ import type { Rol } from "@/types"
  *
  * Ejemplos:
  * GET /api/fleteros/f1/flota (sesión ADMIN_TRANSMAGG)
- * // => 200 { camiones: [{ id, patenteChasis, tipoCamion, choferActual: { id, nombre, apellido } | null }], choferesSinCamion: [...] }
+ * // => 200 { camiones: [{ id, patenteChasis, choferActual: { id, nombre, apellido } | null }], choferesSinCamion: [...] }
  * GET /api/fleteros/f1/flota (sesión FLETERO propio)
  * // => 200 { camiones: [...], choferesSinCamion: [...] }
  * GET /api/fleteros/f1/flota (sesión FLETERO ajeno)
@@ -59,21 +59,28 @@ export async function GET(
         id: true,
         patenteChasis: true,
         patenteAcoplado: true,
-        tipoCamion: true,
         choferHistorial: {
           where: { hasta: null },
           select: {
-            chofer: { select: { id: true, nombre: true, apellido: true, email: true } },
+            chofer: {
+              select: {
+                id: true, nombre: true, apellido: true,
+                usuario: { select: { email: true } },
+              },
+            },
           },
           take: 1,
         },
       },
     })
 
-    // Todos los choferes del fletero
-    const todosChoferes = await prisma.usuario.findMany({
-      where: { fleteroId: params.id, rol: "CHOFER", activo: true },
-      select: { id: true, nombre: true, apellido: true, email: true },
+    // Todos los choferes del fletero (Empleado con cargo CHOFER)
+    const todosChoferes = await prisma.empleado.findMany({
+      where: { fleteroId: params.id, cargo: "CHOFER", activo: true },
+      select: {
+        id: true, nombre: true, apellido: true,
+        usuario: { select: { email: true } },
+      },
       orderBy: [{ apellido: "asc" }, { nombre: "asc" }],
     })
 
@@ -82,15 +89,23 @@ export async function GET(
       camiones.flatMap((c) => c.choferHistorial.map((h) => h.chofer.id))
     )
 
-    const choferesSinCamion = todosChoferes.filter((c) => !choferesConCamion.has(c.id))
+    const choferesSinCamion = todosChoferes
+      .filter((c) => !choferesConCamion.has(c.id))
+      .map((c) => ({ id: c.id, nombre: c.nombre, apellido: c.apellido, email: c.usuario?.email ?? null }))
 
     const resultado = {
       camiones: camiones.map((c) => ({
         id: c.id,
         patenteChasis: c.patenteChasis,
         patenteAcoplado: c.patenteAcoplado,
-        tipoCamion: c.tipoCamion,
-        choferActual: c.choferHistorial[0]?.chofer ?? null,
+        choferActual: c.choferHistorial[0]
+          ? {
+              id: c.choferHistorial[0].chofer.id,
+              nombre: c.choferHistorial[0].chofer.nombre,
+              apellido: c.choferHistorial[0].chofer.apellido,
+              email: c.choferHistorial[0].chofer.usuario?.email ?? null,
+            }
+          : null,
       })),
       choferesSinCamion,
     }

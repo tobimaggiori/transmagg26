@@ -10,7 +10,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { puedeAcceder } from "@/lib/permissions"
+import { tienePermiso } from "@/lib/permissions"
 import { formatearFecha } from "@/lib/utils"
 import { sumarImportes, restarImportes, multiplicarImporte, aplicarPorcentaje, formatearMoneda } from "@/lib/money"
 import { calcularTotalViaje } from "@/lib/viajes"
@@ -202,7 +202,7 @@ export default async function ContabilidadIibbPage({
   if (!session?.user) redirect("/login")
 
   const rol = (session.user.rol ?? "OPERADOR_EMPRESA") as Rol
-  if (!puedeAcceder(rol, "iibb")) redirect("/dashboard")
+  if (!(await tienePermiso(session.user.id, rol, "iibb"))) redirect("/dashboard")
 
   const hoy = new Date()
   const anioActual = hoy.getFullYear()

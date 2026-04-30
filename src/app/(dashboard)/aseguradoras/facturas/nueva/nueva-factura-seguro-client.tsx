@@ -2,7 +2,8 @@
 
 /**
  * Propósito: Formulario multi-paso para ingresar una nueva factura de seguro.
- * Paso 1: Datos de factura. Paso 2: Pólizas. Paso 3: Forma de pago.
+ * Paso 1: Datos + items de detalle (concepto / IVA / percepción / impuesto).
+ * Paso 2: Pólizas. Paso 3: Forma de pago.
  */
 
 import { useState } from "react"
@@ -11,7 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SearchCombobox } from "@/components/ui/search-combobox"
-import { parsearImporte, calcularIva, sumarImportes, dividirImporte, formatearMoneda } from "@/lib/money"
+import { parsearImporte, sumarImportes, dividirImporte, formatearMoneda } from "@/lib/money"
 import { Plus, Trash2 } from "lucide-react"
 import { hoyLocalYmd } from "@/lib/date-local"
 
@@ -32,7 +33,6 @@ interface Camion {
   id: string
   patenteChasis: string
   patenteAcoplado?: string | null
-  tipoCamion: string
 }
 
 interface Cuenta {
@@ -66,40 +66,43 @@ const TIPO_BIEN_OPTIONS = [
   { value: "CARGA_GENERAL", label: "Carga General" },
 ]
 
-interface PercepcionForm {
+type TipoItem = "CONCEPTO" | "IVA" | "PERCEPCION" | "IMPUESTO"
+type SubtipoPercepcion = "PERCEPCION_IVA" | "PERCEPCION_IIBB" | "PERCEPCION_GANANCIAS" | "PERCEPCION_SUSS" | "OTRO"
+
+interface ItemForm {
   id: string
-  tipo: string
+  tipo: TipoItem
+  subtipo: SubtipoPercepcion
   descripcion: string
+  alicuota: string
   monto: string
 }
 
-const PERCEPCION_OPTIONS = [
-  { group: "PERCEPCIONES", value: "PERCEPCION_IVA", label: "Percepcion IVA" },
-  { group: "PERCEPCIONES", value: "PERCEPCION_IIBB", label: "Percepcion IIBB" },
-  { group: "PERCEPCIONES", value: "PERCEPCION_GANANCIAS", label: "Percepcion Ganancias" },
-  { group: "PERCEPCIONES", value: "PERCEPCION_SUSS", label: "Percepcion SUSS" },
-  { group: "IMPUESTOS", value: "ICL", label: "ICL (Combustibles)" },
-  { group: "IMPUESTOS", value: "CO2", label: "CO2" },
-  { group: "IMPUESTOS", value: "IMPUESTO_INTERNO", label: "Impuesto Interno" },
-  { group: "IMPUESTOS", value: "OTRO", label: "Otro" },
-] as const
+const SUBTIPO_PERCEPCION_OPTIONS: { value: SubtipoPercepcion; label: string }[] = [
+  { value: "PERCEPCION_IVA", label: "IVA" },
+  { value: "PERCEPCION_IIBB", label: "IIBB" },
+  { value: "PERCEPCION_GANANCIAS", label: "Ganancias" },
+  { value: "PERCEPCION_SUSS", label: "SUSS" },
+  { value: "OTRO", label: "Otra" },
+]
 
-function categoriaPercepcion(tipo: string): string {
-  const impuestos = new Set(["ICL", "CO2", "IMPUESTO_INTERNO", "OTRO"])
-  return impuestos.has(tipo) ? "IMPUESTO_INTERNO" : "PERCEPCION"
-}
+const TIPO_ITEM_OPTIONS: { value: TipoItem; label: string; ayuda: string }[] = [
+  { value: "CONCEPTO", label: "Concepto", ayuda: "Prima, recargo financiero, cuota social ART, etc." },
+  { value: "IVA", label: "IVA", ayuda: "Por alícuota (21, 10.5, 3, etc.)" },
+  { value: "PERCEPCION", label: "Percepción", ayuda: "Impacta en el libro de percepciones" },
+  { value: "IMPUESTO", label: "Impuesto", ayuda: "Sellado, impuestos no perceptibles" },
+]
 
-function nuevaPercepcion(): PercepcionForm {
+function nuevoItem(tipo: TipoItem = "CONCEPTO"): ItemForm {
   return {
     id: Math.random().toString(36).slice(2),
-    tipo: "PERCEPCION_IVA",
+    tipo,
+    subtipo: "PERCEPCION_IVA",
     descripcion: "",
+    alicuota: "",
     monto: "",
   }
 }
-
-const SELECT_CLS =
-  "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
 
 export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Props) {
   const router = useRouter()
@@ -117,22 +120,29 @@ export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Pro
   const [fecha, setFecha] = useState(today)
   const [periodoDesde, setPeriodoDesde] = useState("")
   const [periodoHasta, setPeriodoHasta] = useState("")
-  const [neto, setNeto] = useState("")
-  const netoNum = parsearImporte(neto)
-  const ivaCalc = netoNum > 0 ? calcularIva(netoNum, 21) : 0
+  const [items, setItems] = useState<ItemForm[]>([
+    { ...nuevoItem("CONCEPTO"), descripcion: "Prima" },
+    { ...nuevoItem("IVA"), descripcion: "IVA 21%", alicuota: "21" },
+  ])
 
-  // Percepciones e impuestos adicionales
-  const [percepcionesExtra, setPercepcionesExtra] = useState<PercepcionForm[]>([])
-  const totalPercepcionesExtra = sumarImportes(percepcionesExtra.map(p => parsearImporte(p.monto)))
-  const totalCalc = netoNum > 0 ? sumarImportes([netoNum, ivaCalc, totalPercepcionesExtra]) : 0
+  function montoPorTipo(tipo: TipoItem): number {
+    return sumarImportes(items.filter((i) => i.tipo === tipo).map((i) => parsearImporte(i.monto)))
+  }
+  const subNeto = montoPorTipo("CONCEPTO")
+  const subIva = montoPorTipo("IVA")
+  const subPercepciones = montoPorTipo("PERCEPCION")
+  const subImpuestos = montoPorTipo("IMPUESTO")
+  const totalCalc = sumarImportes([subNeto, subIva, subPercepciones, subImpuestos])
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const agregarPercepcionSeguro = () => setPercepcionesExtra((prev) => [...prev, nuevaPercepcion()])
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const eliminarPercepcionSeguro = (id: string) => setPercepcionesExtra((prev) => prev.filter((p) => p.id !== id))
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const actualizarPercepcionSeguro = (id: string, campo: keyof PercepcionForm, valor: string) =>
-    setPercepcionesExtra((prev) => prev.map((p) => (p.id === id ? { ...p, [campo]: valor } : p)))
+  function addItem(tipo: TipoItem = "CONCEPTO") {
+    setItems((prev) => [...prev, nuevoItem(tipo)])
+  }
+  function removeItem(id: string) {
+    setItems((prev) => prev.filter((i) => i.id !== id))
+  }
+  function updateItem(id: string, field: keyof ItemForm, value: string) {
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, [field]: value } : i)))
+  }
 
   // Step 2 state
   const [polizas, setPolizas] = useState<PolizaForm[]>([
@@ -186,7 +196,14 @@ export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Pro
     if (!nroComprobante) { setError("Ingresá el número de comprobante"); return false }
     if (!fecha) { setError("Ingresá la fecha"); return false }
     if (!periodoDesde || !periodoHasta) { setError("Ingresá el período de cobertura"); return false }
-    if (!neto || parsearImporte(neto) <= 0) { setError("Ingresá el monto neto"); return false }
+    if (items.length === 0) { setError("Agregá al menos un item"); return false }
+    for (const it of items) {
+      if (!it.descripcion.trim()) { setError("Cada item requiere descripción"); return false }
+      if (parsearImporte(it.monto) <= 0) { setError(`Monto inválido en "${it.descripcion || it.tipo}"`); return false }
+      if (it.tipo === "IVA" && parsearImporte(it.alicuota) <= 0) {
+        setError(`El item IVA "${it.descripcion}" requiere alícuota`); return false
+      }
+    }
     return true
   }
 
@@ -211,17 +228,15 @@ export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Pro
       fecha,
       periodoDesde,
       periodoHasta,
-      neto: parsearImporte(neto),
-      iva: ivaCalc,
-      total: totalCalc,
-      percepciones: percepcionesExtra
-        .filter((p) => parsearImporte(p.monto) > 0)
-        .map((p) => ({
-          tipo: p.tipo,
-          categoria: categoriaPercepcion(p.tipo),
-          descripcion: p.tipo === "OTRO" ? p.descripcion || null : null,
-          monto: parsearImporte(p.monto),
-        })),
+      items: items.map((it) => ({
+        tipo: it.tipo,
+        subtipo: it.tipo === "PERCEPCION" ? it.subtipo : null,
+        descripcion: it.descripcion.trim(),
+        alicuota: it.tipo === "IVA" || (it.tipo === "PERCEPCION" && it.alicuota)
+          ? parsearImporte(it.alicuota)
+          : null,
+        monto: parsearImporte(it.monto),
+      })),
       formaPago,
       medioPagoContado: formaPago === "CONTADO" ? medioPagoContado : undefined,
       cuentaId: formaPago === "CONTADO" && cuentaId ? cuentaId : undefined,
@@ -277,8 +292,10 @@ export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Pro
               setFecha(today)
               setPeriodoDesde("")
               setPeriodoHasta("")
-              setNeto("")
-              setPercepcionesExtra([])
+              setItems([
+                { ...nuevoItem("CONCEPTO"), descripcion: "Prima" },
+                { ...nuevoItem("IVA"), descripcion: "IVA 21%", alicuota: "21" },
+              ])
               setPolizas([{ tipoBien: "CAMION", nroPoliza: "", vigenciaDesde: "", vigenciaHasta: "" }])
               setFormaPago("CONTADO")
               setMedioPagoContado("TRANSFERENCIA")
@@ -378,90 +395,116 @@ export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Pro
             </div>
           </div>
 
-          <div>
-            <Label>Neto ($)</Label>
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
-              value={neto}
-              onChange={(e) => setNeto(e.target.value)}
-              placeholder="0.00"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>IVA 21% (calculado)</Label>
-              <Input value={neto ? formatearMoneda(ivaCalc) : ""} readOnly className="bg-muted" />
-            </div>
-            <div>
-              <Label>Total (calculado)</Label>
-              <Input value={neto ? formatearMoneda(totalCalc) : ""} readOnly className="bg-muted" />
-            </div>
-          </div>
-
-          {/* Percepciones e Impuestos adicionales */}
-          <div className="space-y-3">
+          {/* Items de la factura */}
+          <div className="space-y-3 pt-2">
             <div className="flex items-center justify-between">
-              <Label className="text-sm font-semibold">Percepciones e Impuestos adicionales</Label>
-              <Button type="button" variant="outline" size="sm" onClick={agregarPercepcionSeguro}>
-                <Plus className="h-4 w-4 mr-1" /> Agregar percepcion/impuesto
-              </Button>
-            </div>
-            {percepcionesExtra.length === 0 && (
-              <p className="text-sm text-muted-foreground">
-                Sin percepciones ni impuestos adicionales.
-              </p>
-            )}
-            {percepcionesExtra.map((p) => (
-              <div key={p.id} className="grid grid-cols-[1.5fr_1fr_0.8fr_auto] gap-2 items-center">
-                <select
-                  value={p.tipo}
-                  onChange={(e) => actualizarPercepcionSeguro(p.id, "tipo", e.target.value)}
-                  className={SELECT_CLS}
-                >
-                  <optgroup label="Percepciones">
-                    {PERCEPCION_OPTIONS.filter((o) => o.group === "PERCEPCIONES").map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Impuestos">
-                    {PERCEPCION_OPTIONS.filter((o) => o.group === "IMPUESTOS").map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </optgroup>
-                </select>
-                {p.tipo === "OTRO" ? (
-                  <Input
-                    value={p.descripcion}
-                    onChange={(e) => actualizarPercepcionSeguro(p.id, "descripcion", e.target.value)}
-                    placeholder="Descripcion..."
-                  />
-                ) : (
-                  <span className="text-sm text-muted-foreground">&mdash;</span>
-                )}
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={p.monto}
-                  onChange={(e) => actualizarPercepcionSeguro(p.id, "monto", e.target.value)}
-                  placeholder="0.00"
-                />
-                <button
-                  type="button"
-                  onClick={() => eliminarPercepcionSeguro(p.id)}
-                  className="text-muted-foreground hover:text-destructive"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+              <Label className="text-sm font-semibold">Items de la factura</Label>
+              <div className="flex gap-2">
+                {TIPO_ITEM_OPTIONS.map((opt) => (
+                  <Button
+                    key={opt.value}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addItem(opt.value)}
+                    title={opt.ayuda}
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> {opt.label}
+                  </Button>
+                ))}
               </div>
-            ))}
-            {totalPercepcionesExtra > 0 && (
-              <div className="flex justify-end gap-4 text-sm font-medium border-t pt-2">
-                <span>Total percepciones/impuestos</span>
-                <span>{formatearMoneda(totalPercepcionesExtra)}</span>
+            </div>
+            {items.length === 0 && (
+              <p className="text-sm text-muted-foreground">Agregá items para detallar la factura.</p>
+            )}
+            <div className="space-y-2">
+              {items.map((it) => {
+                const muestraAlicuota = it.tipo === "IVA" || it.tipo === "PERCEPCION"
+                const muestraSubtipo = it.tipo === "PERCEPCION"
+                return (
+                  <div
+                    key={it.id}
+                    className="grid grid-cols-[110px_120px_1fr_80px_120px_auto] gap-2 items-center"
+                  >
+                    <select
+                      value={it.tipo}
+                      onChange={(e) => updateItem(it.id, "tipo", e.target.value)}
+                      className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+                    >
+                      {TIPO_ITEM_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                    {muestraSubtipo ? (
+                      <select
+                        value={it.subtipo}
+                        onChange={(e) => updateItem(it.id, "subtipo", e.target.value)}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+                        title="Tipo de percepción para el libro"
+                      >
+                        {SUBTIPO_PERCEPCION_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-xs text-muted-foreground text-center">—</span>
+                    )}
+                    <Input
+                      value={it.descripcion}
+                      onChange={(e) => updateItem(it.id, "descripcion", e.target.value)}
+                      placeholder={
+                        it.tipo === "CONCEPTO" ? "Ej: Prima, Recargo financiero" :
+                        it.tipo === "IVA" ? "Ej: IVA 21%, IVA s/recargo" :
+                        it.tipo === "PERCEPCION" ? "Ej: TSEH La Plata, Bs As" :
+                        "Ej: Sellado provincial"
+                      }
+                      className="h-9"
+                    />
+                    {muestraAlicuota ? (
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={it.alicuota}
+                        onChange={(e) => updateItem(it.id, "alicuota", e.target.value)}
+                        placeholder={it.tipo === "IVA" ? "%" : "% (opc)"}
+                        className="h-9"
+                      />
+                    ) : (
+                      <span className="text-xs text-muted-foreground text-center">—</span>
+                    )}
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={it.monto}
+                      onChange={(e) => updateItem(it.id, "monto", e.target.value)}
+                      placeholder="Monto $"
+                      className="h-9"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeItem(it.id)}
+                      className="text-muted-foreground hover:text-destructive"
+                      aria-label="Eliminar item"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Totales */}
+            {items.length > 0 && (
+              <div className="border-t pt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                <div className="flex justify-between"><span>Conceptos</span><span>{formatearMoneda(subNeto)}</span></div>
+                <div className="flex justify-between"><span>IVA</span><span>{formatearMoneda(subIva)}</span></div>
+                <div className="flex justify-between"><span>Percepciones</span><span>{formatearMoneda(subPercepciones)}</span></div>
+                <div className="flex justify-between"><span>Otros impuestos</span><span>{formatearMoneda(subImpuestos)}</span></div>
+                <div className="flex justify-between font-semibold col-span-2 border-t pt-1">
+                  <span>Total</span><span>{formatearMoneda(totalCalc)}</span>
+                </div>
               </div>
             )}
           </div>
@@ -515,7 +558,7 @@ export function NuevaFacturaSeguroClient({ proveedores, camiones, cuentas }: Pro
                     <option value="">Seleccionar camión</option>
                     {camiones.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.patenteChasis}{c.patenteAcoplado ? ` / ${c.patenteAcoplado}` : ""} — {c.tipoCamion}
+                        {c.patenteChasis}{c.patenteAcoplado ? ` / ${c.patenteAcoplado}` : ""}
                       </option>
                     ))}
                   </select>

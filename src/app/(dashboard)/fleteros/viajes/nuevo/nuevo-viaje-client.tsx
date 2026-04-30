@@ -10,7 +10,6 @@ import { calcularToneladas, calcularTotalViaje } from "@/lib/viajes"
 import { SearchCombobox } from "@/components/ui/search-combobox"
 import { PROVINCIAS_ARGENTINA } from "@/lib/provincias"
 import { UploadPDF } from "@/components/upload-pdf"
-import { hoyLocalYmd } from "@/lib/date-local"
 
 type Fletero = { id: string; razonSocial: string; cuit: string; comisionDefault: number }
 type Empresa = { id: string; razonSocial: string; cuit: string }
@@ -34,16 +33,20 @@ function capitalizarPrimera(texto: string): string {
 
 // ─── Sección visual reutilizable ─────────────────────────────────────────────
 
-function FormSection({ icon: Icon, title, children }: {
+function FormSection({ icon: Icon, title, headerRight, children }: {
   icon: React.ComponentType<{ className?: string }>
   title: string
+  headerRight?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm">
-      <div className="flex items-center gap-2.5 px-5 py-3 border-b border-border">
-        <Icon className="h-[18px] w-[18px] text-primary" />
-        <h3 className="text-[18px] font-semibold text-foreground">{title}</h3>
+      <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border">
+        <div className="flex items-center gap-2.5">
+          <Icon className="h-[18px] w-[18px] text-primary" />
+          <h3 className="text-[18px] font-semibold text-foreground">{title}</h3>
+        </div>
+        {headerRight}
       </div>
       <div className="px-5 py-4">
         {children}
@@ -92,7 +95,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const [camionId, setCamionId] = useState("")
   const [choferId, setChoferId] = useState("")
   const [empresaId, setEmpresaId] = useState("")
-  const [fechaViaje, setFechaViaje] = useState(hoyLocalYmd())
+  const [fechaViaje, setFechaViaje] = useState("")
   const [remito, setRemito] = useState("")
   const [remitoS3Key, setRemitoS3Key] = useState("")
   const [cupo, setCupo] = useState("")
@@ -103,20 +106,24 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const [provinciaDestino, setProvinciaDestino] = useState("")
   const [kilos, setKilos] = useState("")
   const [tarifaInput, setTarifaBase] = useState("")
-  const [nroCartaPorte, setNroCartaPorte] = useState("")
-  const [cartaPorteS3Key, setCartaPorteS3Key] = useState("")
+  const [nroCtg, setNroCtg] = useState("")
+  const [ctgS3Key, setCtgS3Key] = useState("")
+  const [cpe, setCpe] = useState("")
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [intentoEnviar, setIntentoEnviar] = useState(false)
   const [viajeCreado, setViajeCreado] = useState(false)
 
-  // Inferir cupo y carta de porte por valor del campo
+  // El viaje lleva remito O CTG, nunca ambos.
+  const [docTipo, setDocTipo] = useState<"" | "REMITO" | "CTG">("")
+  const tieneRemitoFlag = docTipo === "REMITO"
+  const tieneCtgFlag = docTipo === "CTG"
   const tieneCupo = cupo.trim().length > 0
-  const tieneCpe = nroCartaPorte.trim().length > 0
+  const tieneCtg = tieneCtgFlag
 
   // Lookup de cupo: si la empresa + cupo matchean un viaje pendiente, los
   // campos lockeados se autocompletan y se deshabilitan. Solo `kilos`,
-  // `remito`/`nroCartaPorte` y `fechaViaje` siguen editables.
+  // `remito`/`nroCtg` y `fechaViaje` siguen editables.
   const [cupoLocked, setCupoLocked] = useState(false)
 
   useEffect(() => {
@@ -132,7 +139,7 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
         if (!res.ok || cancelado) return
         const data = await res.json() as
           | { existe: false }
-          | { existe: true; fuente: { mercaderia: string | null; procedencia: string | null; provinciaOrigen: string | null; destino: string | null; provinciaDestino: string | null; tarifa: number; comisionPct: number | null; fleteroId: string | null; camionId: string; choferId: string; esCamionPropio: boolean; tieneCpe: boolean } }
+          | { existe: true; fuente: { mercaderia: string | null; procedencia: string | null; provinciaOrigen: string | null; destino: string | null; provinciaDestino: string | null; tarifa: number; comisionPct: number | null; fleteroId: string | null; camionId: string; choferId: string; esCamionPropio: boolean; tieneCtg: boolean } }
         if (!data.existe) {
           setCupoLocked(false)
           return
@@ -180,15 +187,15 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const toneladas = kilosNum > 0 ? calcularToneladas(kilosNum) : null
   const totalCalc = kilosNum > 0 && tarifaNum > 0 ? calcularTotalViaje(kilosNum, tarifaNum) : null
 
-  // Al menos remito (con PDF) o CDP (con PDF)
-  const tieneRemito = remito.trim() !== "" && remitoS3Key !== ""
-  const tieneCDP = nroCartaPorte.trim() !== "" && cartaPorteS3Key !== ""
-  const tieneRemitoSinPDF = remito.trim() !== "" && remitoS3Key === ""
-  const tieneCDPSinPDF = nroCartaPorte.trim() !== "" && cartaPorteS3Key === ""
+  // Cada flag requiere número + PDF para ser considerado "cargado"
+  const tieneRemito = tieneRemitoFlag && remito.trim() !== "" && remitoS3Key !== ""
+  const tieneCTG = tieneCtgFlag && nroCtg.trim() !== "" && ctgS3Key !== ""
+  const tieneRemitoSinPDF = tieneRemitoFlag && remito.trim() !== "" && remitoS3Key === ""
+  const tieneCTGSinPDF = tieneCtgFlag && nroCtg.trim() !== "" && ctgS3Key === ""
 
   const puedeGuardar =
     (esCamionPropio || fleteroId) && camionId && choferId && empresaId && fechaViaje &&
-    (tieneRemito || tieneCDP) && !tieneRemitoSinPDF && !tieneCDPSinPDF &&
+    (tieneRemito || tieneCTG) && !tieneRemitoSinPDF && !tieneCTGSinPDF &&
     provinciaOrigen && provinciaDestino && tarifaNum > 0 && kilosNum > 0 &&
     mercaderia.trim() !== ""
 
@@ -198,13 +205,14 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
     camionId: !camionId ? "Campo requerido" : null,
     choferId: !choferId ? "Campo requerido" : null,
     fechaViaje: !fechaViaje ? "Campo requerido" : null,
-    remito: !tieneRemito && !tieneCDP ? "Debe cargar al menos Remito o CDP" : tieneRemitoSinPDF ? "Falta PDF del remito" : null,
+    documentacion: !tieneRemitoFlag && !tieneCtgFlag ? "Seleccioná remito o CTG" : null,
+    remito: tieneRemitoFlag && remito.trim() === "" ? "Campo requerido" : tieneRemitoSinPDF ? "Debe cargar PDF de remito" : null,
+    ctg: tieneCtgFlag && nroCtg.trim() === "" ? "Campo requerido" : tieneCTGSinPDF ? "Debe cargar PDF de CTG" : null,
     mercaderia: !mercaderia.trim() ? "Campo requerido" : null,
     kilos: kilosNum <= 0 ? "Campo requerido" : null,
     provinciaOrigen: !provinciaOrigen ? "Campo requerido" : null,
     provinciaDestino: !provinciaDestino ? "Campo requerido" : null,
     tarifa: tarifaNum <= 0 ? "Campo requerido" : null,
-    cartaPorteS3Key: tieneCpe && !cartaPorteS3Key ? "Debés subir el PDF de la carta de porte" : null,
   } : {} as Record<string, string | null>
 
   async function handleSubmit(e: React.FormEvent) {
@@ -234,9 +242,10 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
           provinciaDestino,
           kilos: kilosNum > 0 ? kilosNum : undefined,
           tarifa: tarifaNum,
-          tieneCpe,
-          nroCartaPorte: tieneCpe ? nroCartaPorte.trim() : null,
-          cartaPorteS3Key: tieneCpe ? cartaPorteS3Key : null,
+          tieneCtg,
+          nroCtg: tieneCtg ? nroCtg.trim() : null,
+          ctgS3Key: tieneCtg ? ctgS3Key : null,
+          cpe: tieneCtg && cpe.trim() ? cpe.trim() : null,
         }),
       })
       const json = await res.json()
@@ -263,8 +272,6 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
   const labelCls = "text-[15px] font-medium text-foreground block mb-1"
   const inputCls = "w-full h-10 rounded-lg border border-input bg-background px-3 text-base focus:border-ring focus:ring-2 focus:ring-ring/20 transition-colors outline-none"
 
-  const hoy = hoyLocalYmd()
-
   if (viajeCreado) {
     return (
       <div className="space-y-4">
@@ -282,8 +289,9 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
               setCamionId("")
               setChoferId("")
               setEmpresaId("")
-              setFechaViaje(hoy)
+              setFechaViaje("")
               setRemito("")
+              setRemitoS3Key("")
               setCupo("")
               setMercaderia("")
               setProcedencia("")
@@ -293,8 +301,10 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
               setKilos("")
               setTarifaBase("")
               setComisionPct("")
-              setNroCartaPorte("")
-              setCartaPorteS3Key("")
+              setNroCtg("")
+              setCtgS3Key("")
+              setCpe("")
+              setDocTipo("")
               setError(null)
               setIntentoEnviar(false)
             }}
@@ -487,41 +497,60 @@ export function NuevoViajeClient({ fleteros, empresas, camiones, choferes }: Nue
         </div>
 
         {/* ════════ Fila 2: Documentación ════════ */}
-        <FormSection icon={FileText} title="Documentación">
-          <p className="text-xs text-muted-foreground mb-3">Debe cargar al menos Remito o Carta de Porte (con su PDF).</p>
+        <FormSection
+          icon={FileText}
+          title="Documentación"
+          headerRight={
+            <SegmentedToggle
+              options={[
+                { value: "REMITO", label: "Remito" },
+                { value: "CTG", label: "CPE" },
+              ]}
+              value={docTipo}
+              onChange={(v) => {
+                setDocTipo(v as "REMITO" | "CTG")
+                if (v === "REMITO") { setNroCtg(""); setCtgS3Key(""); setCpe("") }
+                else { setRemito(""); setRemitoS3Key("") }
+              }}
+            />
+          }
+        >
+          {fieldErrors.documentacion && (
+            <FormError message={fieldErrors.documentacion} className="text-xs mb-3" />
+          )}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4">
-            {/* Remito */}
-            <div>
-              <label className={labelCls}>Remito</label>
-              <div className="flex items-start gap-2">
-                <div className="flex-1">
-                  <input type="text" value={remito} onChange={(e) => setRemito(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} placeholder="Nro. remito" />
+            {tieneRemitoFlag && (
+              <div>
+                <label className={labelCls}>Remito</label>
+                <input type="text" value={remito} onChange={(e) => setRemito(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} placeholder="Nro. remito" />
+                <div className="mt-1.5">
+                  <UploadPDF prefijo="remitos" onUpload={(key) => setRemitoS3Key(key)} label="Subir" s3Key={remitoS3Key || undefined} autoUpload />
                 </div>
-                <div className="shrink-0 pt-0.5">
-                  <UploadPDF prefijo="remitos" onUpload={(key) => setRemitoS3Key(key)} label="Subir" s3Key={remitoS3Key || undefined} />
-                </div>
+                <FormError message={fieldErrors.remito} className="text-xs mt-1" />
               </div>
-              <FormError message={fieldErrors.remito} className="text-xs mt-1" />
-            </div>
+            )}
 
-            {/* Cupo */}
             <div>
               <label className={labelCls}>Cupo <span className="text-muted-foreground font-normal">(opcional)</span></label>
               <input type="text" value={cupo} onChange={(e) => setCupo(e.target.value.toUpperCase())} style={{ textTransform: "uppercase" }} className={inputCls} placeholder="Nro. de cupo" />
             </div>
 
-            {/* Carta de Porte */}
-            <div>
-              <label className={labelCls}>Carta de Porte</label>
-              <div className="flex items-start gap-2">
-                <div className="flex-1">
-                  <input type="text" value={nroCartaPorte} onChange={(e) => setNroCartaPorte(e.target.value)} className={inputCls} placeholder="Nro. carta de porte" />
+            {tieneCtgFlag && (
+              <>
+                <div>
+                  <label className={labelCls}>CTG</label>
+                  <input type="text" value={nroCtg} onChange={(e) => setNroCtg(e.target.value)} className={inputCls} placeholder="Nro. CTG" />
+                  <div className="mt-1.5">
+                    <UploadPDF prefijo="ctg" onUpload={(key) => setCtgS3Key(key)} label="Subir" s3Key={ctgS3Key || undefined} autoUpload />
+                  </div>
+                  <FormError message={fieldErrors.ctg} className="text-xs mt-1" />
                 </div>
-                <div className="shrink-0 pt-0.5">
-                  <UploadPDF prefijo="cartas-de-porte" onUpload={(key) => setCartaPorteS3Key(key)} label="Subir" s3Key={cartaPorteS3Key || undefined} />
+                <div>
+                  <label className={labelCls}>CPE <span className="text-muted-foreground font-normal">(opcional)</span></label>
+                  <input type="text" value={cpe} onChange={(e) => setCpe(e.target.value)} className={inputCls} placeholder="Nro. CPE" />
                 </div>
-              </div>
-            </div>
+              </>
+            )}
           </div>
         </FormSection>
 

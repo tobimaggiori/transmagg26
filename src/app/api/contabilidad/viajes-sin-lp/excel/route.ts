@@ -32,16 +32,11 @@ function parsePeriodo(params: URLSearchParams): { desde: Date; hasta: Date } {
   return { desde, hasta }
 }
 
-function labelTipoCbte(tipoCbte: number): string {
-  const map: Record<number, string> = {
-    1: "Factura A",
-    6: "Factura B",
-    201: "Factura A MiPyme",
-
-
-
-  }
-  return map[tipoCbte] ?? `Tipo ${tipoCbte}`
+function fmtComprobante(ptoVenta: number | null | undefined, nro: string | null | undefined): string {
+  if (!nro) return "—"
+  const pv = String(ptoVenta ?? 1).padStart(4, "0")
+  const n = String(nro).padStart(8, "0")
+  return `${pv}-${n}`
 }
 
 export async function GET(request: NextRequest): Promise<Response> {
@@ -67,12 +62,12 @@ export async function GET(request: NextRequest): Promise<Response> {
       },
       include: {
         viaje: { include: { empresa: { select: { razonSocial: true } } } },
-        factura: { select: { nroComprobante: true, tipoCbte: true } },
+        factura: { select: { ptoVenta: true, nroComprobante: true } },
       },
       orderBy: [{ provinciaOrigen: "asc" }, { fechaViaje: "asc" }],
     })
 
-    type Row = { fecha: Date; empresa: string; remito: string; nroComp: string; tipoComprobante: string; subtotal: number }
+    type Row = { fecha: Date; empresa: string; comprobante: string; subtotal: number }
     const provinciasMap = new Map<string, Row[]>()
 
     for (const r of registros) {
@@ -81,56 +76,52 @@ export async function GET(request: NextRequest): Promise<Response> {
       provinciasMap.get(provincia)!.push({
         fecha: r.fechaViaje,
         empresa: r.viaje.empresa.razonSocial,
-        remito: r.remito ?? "—",
-        nroComp: r.factura.nroComprobante ?? "—",
-        tipoComprobante: labelTipoCbte(r.factura.tipoCbte),
+        comprobante: fmtComprobante(r.factura.ptoVenta, r.factura.nroComprobante),
         subtotal: r.subtotal,
       })
     }
 
     const wb = new ExcelJS.Workbook()
     wb.creator = "Transmagg"
-    const ws = wb.addWorksheet("Viajes sin LP")
+    const ws = wb.addWorksheet("Viajes propios")
     ws.columns = [
       { width: 13 }, // Fecha
-      { width: 35 }, // Empresa
-      { width: 14 }, // Remito
-      { width: 14 }, // Nro Comp
-      { width: 20 }, // Tipo
-      { width: 18 }, // S.Total
+      { width: 40 }, // Empresa
+      { width: 18 }, // Comprobante
+      { width: 18 }, // Subtotal
     ]
 
     let totalGeneral = 0
 
     for (const [provincia, rows] of Array.from(provinciasMap.entries()).sort(([a], [b]) => a.localeCompare(b))) {
-      const provRow = ws.addRow([`PROVINCIA: ${provincia}`, "", "", "", "", ""])
+      const provRow = ws.addRow([`PROVINCIA: ${provincia}`, "", "", ""])
       provRow.font = { bold: true }
       provRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD1D5DB" } }
 
-      const hRow = ws.addRow(["Fecha", "Empresa", "Remito", "Nro Comp.", "Tipo", "S.Total"])
+      const hRow = ws.addRow(["Fecha", "Empresa", "Comprobante", "Subtotal"])
       hRow.font = { bold: true, italic: true }
       hRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F4F6" } }
 
       let subtotalProv = 0
       for (const r of rows) {
-        const row = ws.addRow([r.fecha, r.empresa, r.remito, r.nroComp, r.tipoComprobante, r.subtotal])
+        const row = ws.addRow([r.fecha, r.empresa, r.comprobante, r.subtotal])
         row.getCell(1).numFmt = "dd/mm/yyyy"
-        row.getCell(6).numFmt = "#,##0.00"
+        row.getCell(4).numFmt = "#,##0.00"
         subtotalProv += r.subtotal
       }
 
-      const subRow = ws.addRow(["", "", "", "", "Total de la Provincia", subtotalProv])
+      const subRow = ws.addRow(["", "", "Total de la Provincia", subtotalProv])
       subRow.font = { bold: true }
       subRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } }
-      subRow.getCell(6).numFmt = "#,##0.00"
+      subRow.getCell(4).numFmt = "#,##0.00"
       ws.addRow([])
       totalGeneral += subtotalProv
     }
 
-    const totalRow = ws.addRow(["", "", "", "", "TOTAL GENERAL", totalGeneral])
+    const totalRow = ws.addRow(["", "", "TOTAL GENERAL", totalGeneral])
     totalRow.font = { bold: true, size: 11 }
     totalRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD1D5DB" } }
-    totalRow.getCell(6).numFmt = "#,##0.00"
+    totalRow.getCell(4).numFmt = "#,##0.00"
 
     const buf = await wb.xlsx.writeBuffer()
     const ab = new ArrayBuffer(buf.byteLength)
@@ -140,7 +131,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       status: 200,
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="viajes-sin-lp-${periodoLabel}.xlsx"`,
+        "Content-Disposition": `attachment; filename="viajes-propios-${periodoLabel}.xlsx"`,
       },
     })
   } catch (error) {

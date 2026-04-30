@@ -75,8 +75,11 @@ emitidas SOBRE esa LP, no las aplicadas A esa LP.
 
 ✅ **SÍ** usar `liquidacion.ncDescuentos` (la link table).
 
-Para **empresas**: usar `factura.notasCreditoDebito.montoDescontado` (en este
-caso sí coincide porque las NC se aplican enteras al cobrar la factura).
+Para **empresas**: leer `factura.notasCreditoDebito.montoDescontado`. Cada
+recibo de cobranza registra qué NC/ND aplicó (y por cuánto) en el link table
+`notas_aplicadas_en_recibo`, e incrementa `montoDescontado` de la nota. La
+aplicación es **explícita**: el operador elige en el recibo qué notas
+descontar; no se aplican automáticamente al cobrar.
 
 ## Link tables relacionadas
 
@@ -85,6 +88,7 @@ caso sí coincide porque las NC se aplican enteras al cobrar la factura).
 | `nc_descuentos` | `{ ncId, liquidacionId, montoDescontado, fecha }` — NC aplicada a LP |
 | `gasto_descuentos` | `{ gastoId, liquidacionId, montoDescontado, fecha }` — gasto descontado en LP |
 | `adelanto_descuentos` | `{ adelantoId, liquidacionId, montoDescontado, fecha }` — adelanto descontado en LP |
+| `notas_aplicadas_en_recibo` | `{ notaId, reciboId, monto, fecha }` — NC/ND aplicada en recibo de cobranza a empresa |
 
 Las tres son alimentadas por `ejecutarCrearOrdenPago` cuando se crea una OP
 con aplicaciones. Ver [ordenes-pago.md](./ordenes-pago.md).

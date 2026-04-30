@@ -45,14 +45,14 @@ export default async function DashboardLayout({
   const nombre = session.user.name ?? undefined
   const email = session.user.email ?? undefined
 
-  // Para CHOFER: detectar si es empleado de Transmagg (tiene Empleado asociado y no tiene fleteroId)
+  // Para CHOFER: detectar si es empleado de Transmagg (Empleado sin fleteroId)
   let esChoferTransmagg = false
   if (rol === "CHOFER") {
     const usuario = await prisma.usuario.findFirst({
       where: { email: session.user.email ?? "" },
-      select: { fleteroId: true, empleado: { select: { id: true } } },
+      select: { empleado: { select: { fleteroId: true } } },
     })
-    esChoferTransmagg = !!usuario?.empleado && !usuario.fleteroId
+    esChoferTransmagg = !!usuario?.empleado && !usuario.empleado.fleteroId
   }
 
   // Indicador ARCA: solo para ADMIN_TRANSMAGG
