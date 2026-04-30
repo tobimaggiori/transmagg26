@@ -303,11 +303,9 @@ export default async function ContabilidadIibbPage({
         <div className="flex gap-2">
           <a
             href={`/api/contabilidad/iibb/pdf${exportQuery}`}
-            target="_blank"
-            rel="noopener noreferrer"
             className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-2 hover:bg-primary/90"
           >
-            Descargar PDF
+            Ver PDF
           </a>
           <a
             href={`/api/contabilidad/iibb/excel${exportQuery}`}
@@ -595,11 +593,9 @@ export default async function ContabilidadIibbPage({
         <div className="flex gap-2 border-t pt-4">
           <a
             href={`/api/contabilidad/iibb/pdf${exportQuery}`}
-            target="_blank"
-            rel="noopener noreferrer"
             className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-2 hover:bg-primary/90"
           >
-            Exportar PDF
+            Ver PDF
           </a>
           <a
             href={`/api/contabilidad/iibb/excel${exportQuery}`}

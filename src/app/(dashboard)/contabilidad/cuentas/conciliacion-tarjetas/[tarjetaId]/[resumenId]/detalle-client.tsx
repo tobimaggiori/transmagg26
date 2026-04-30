@@ -178,7 +178,7 @@ export function ConciliacionTarjetaDetalle({ tarjetaId, resumenId }: Props) {
     if (!data?.resumen.s3Key) return
     const res = await fetch(`/api/storage/signed-url?key=${encodeURIComponent(data.resumen.s3Key)}`)
     const body = await res.json()
-    if (body.url) window.open(body.url, "_blank", "noopener,noreferrer")
+    if (body.url) window.location.href = body.url as string
   }
 
   if (loading && !data) return <p className="text-muted-foreground">Cargando…</p>

@@ -184,8 +184,8 @@ export function PortalIvaShell({ mesAnioInicial }: Props) {
     const res = await fetch(`/api/contabilidad/iva/exportaciones/${id}/descargar`)
     const json = await res.json()
     if (!res.ok) { alert(json.error ?? "Error al descargar"); return }
-    window.open(json.url as string, "_blank", "noopener,noreferrer")
     await cargar(mesAnio)
+    window.location.href = json.url as string
   }
 
   async function anularAjuste(id: string) {

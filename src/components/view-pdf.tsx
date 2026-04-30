@@ -53,7 +53,7 @@ export function ViewPDF({
       const res = await fetch(`/api/storage/signed-url?key=${encodeURIComponent(s3Key!)}`)
       const data = await res.json()
       if (res.ok && data.url) {
-        window.open(data.url as string, "_blank", "noopener,noreferrer")
+        window.location.href = data.url as string
       } else {
         setError(data.error ?? "No se pudo obtener la URL del archivo")
       }

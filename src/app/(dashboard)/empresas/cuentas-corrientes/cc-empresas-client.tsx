@@ -73,8 +73,8 @@ export function CCEmpresasClient({ empresas }: CCEmpresasClientProps) {
       }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
-      window.open(url, "_blank", "noopener,noreferrer")
-      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      // No revocamos la URL: el navegador navega a ella inmediatamente.
+      window.location.href = url
     } catch {
       setError("Error de red al generar el PDF")
     } finally {
@@ -92,7 +92,7 @@ export function CCEmpresasClient({ empresas }: CCEmpresasClientProps) {
         setError(body.error ?? "No se pudo obtener el PDF")
         return
       }
-      window.open(body.url as string, "_blank", "noopener,noreferrer")
+      window.location.href = body.url as string
     } catch {
       setError("Error de red al obtener el PDF")
     } finally {

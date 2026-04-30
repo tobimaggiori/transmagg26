@@ -713,7 +713,7 @@ function PanelCamion({
                           onClick={async () => {
                             const res = await fetch(`/api/storage/signed-url?key=${encodeURIComponent(inf.comprobantePdfS3Key!)}`)
                             const data = await res.json()
-                            if (res.ok && data.url) window.open(data.url, "_blank", "noopener,noreferrer")
+                            if (res.ok && data.url) window.location.href = data.url as string
                           }}
                           className="text-primary underline"
                         >

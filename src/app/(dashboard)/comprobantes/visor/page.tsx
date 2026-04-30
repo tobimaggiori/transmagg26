@@ -100,13 +100,10 @@ function VisorContent() {
           {pdfSignedUrl && (
             <>
               <button
-                onClick={() => {
-                  const w = window.open(pdfSignedUrl, "_blank")
-                  if (w) setTimeout(() => w.print(), 1000)
-                }}
+                onClick={() => { window.location.href = pdfSignedUrl }}
                 className="h-8 px-3 rounded-md border text-sm font-medium hover:bg-accent"
               >
-                Imprimir
+                Ver PDF
               </button>
               <button
                 onClick={() => setEmailModalOpen(!emailModalOpen)}

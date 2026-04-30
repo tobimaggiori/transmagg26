@@ -209,16 +209,10 @@ export function ModalDetalleLiquidacion({
             </p>
             <div className="flex gap-2">
               <button
-                onClick={() => window.open(`/api/ordenes-pago/${ordenPago.id}/pdf`, "_blank")}
+                onClick={() => { window.location.href = `/api/ordenes-pago/${ordenPago.id}/pdf` }}
                 className="h-8 px-3 rounded-md border text-xs font-medium hover:bg-accent"
               >
                 Ver PDF
-              </button>
-              <button
-                onClick={() => window.open(`/api/ordenes-pago/${ordenPago.id}/pdf?print=true`, "_blank")}
-                className="h-8 px-3 rounded-md border text-xs font-medium hover:bg-accent"
-              >
-                Imprimir
               </button>
               <button
                 onClick={() => setModalEmail({ opId: ordenPago.id, opNro: `${ordenPago.nro}-${ordenPago.anio}` })}

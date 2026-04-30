@@ -111,7 +111,7 @@ export function ConsultarPolizasClient({ polizas: initialPolizas }: ConsultarPol
     const res = await fetch(`/api/polizas/${id}/pdf`)
     if (res.ok) {
       const { url } = await res.json()
-      window.open(url, "_blank")
+      window.location.href = url as string
     }
   }
 

@@ -423,7 +423,7 @@ export function NuevoReciboClient({ empresas, cuentas }: NuevoReciboClientProps)
       const res = await fetch(`/api/recibos-cobranza/${reciboCreado.id}/pdf`)
       if (!res.ok) throw new Error("Error obteniendo PDF")
       const { url } = await res.json()
-      window.open(url, "_blank")
+      window.location.href = url as string
     } catch { alert("No se pudo obtener el PDF") }
     finally { setLoadingPDF(false) }
   }

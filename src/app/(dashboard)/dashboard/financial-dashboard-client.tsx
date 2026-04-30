@@ -215,7 +215,7 @@ async function abrirPDFFactura(id: string) {
     const res = await fetch(`/api/facturas/${id}/pdf`)
     if (!res.ok) return
     const data = await res.json().catch(() => ({}))
-    if (data.url) window.open(data.url as string, "_blank", "noopener,noreferrer")
+    if (data.url) window.location.href = data.url as string
   } catch { /* ignore */ }
 }
 
@@ -224,7 +224,7 @@ async function abrirPDFNotaCD(id: string) {
     const res = await fetch(`/api/notas-credito-debito/${id}/pdf`)
     if (!res.ok) return
     const data = await res.json().catch(() => ({}))
-    if (data.url) window.open(data.url as string, "_blank", "noopener,noreferrer")
+    if (data.url) window.location.href = data.url as string
   } catch { /* ignore */ }
 }
 
@@ -327,7 +327,7 @@ async function abrirPDFLiquidacion(id: string) {
     const res = await fetch(`/api/liquidaciones/${id}/pdf`)
     if (!res.ok) return
     const data = await res.json().catch(() => ({}))
-    if (data.url) window.open(data.url as string, "_blank", "noopener,noreferrer")
+    if (data.url) window.location.href = data.url as string
   } catch { /* ignore */ }
 }
 

@@ -173,8 +173,6 @@ function ModalConfirmacionOP({
         <div className="flex flex-wrap gap-2">
           <a
             href={`/api/ordenes-pago/${opId}/pdf`}
-            target="_blank"
-            rel="noopener noreferrer"
             className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 inline-flex items-center gap-1.5"
           >
             Ver PDF

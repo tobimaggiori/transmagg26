@@ -129,11 +129,9 @@ export default async function IvaPage({
         </div>
         <a
           href={pdfUrl}
-          target="_blank"
-          rel="noopener noreferrer"
           className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-2 hover:bg-primary/90"
         >
-          Descargar PDF
+          Ver PDF
         </a>
       </div>
 

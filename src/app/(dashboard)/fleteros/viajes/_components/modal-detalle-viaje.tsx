@@ -243,7 +243,7 @@ async function abrirPDFUrl(endpoint: string) {
   try {
     const res = await fetch(endpoint)
     const data = await res.json()
-    if (data.url) window.open(data.url, "_blank")
+    if (data.url) window.location.href = data.url as string
   } catch { /* ignore */ }
 }
 
@@ -803,7 +803,7 @@ export function ModalDetalleViaje({
                                 <p className="font-mono font-semibold">#{pago.ordenPago!.nro}-{pago.ordenPago!.anio}</p>
                                 <p className={labelSmCls}>{formatearFecha(new Date(pago.ordenPago!.fecha))}</p>
                               </div>
-                              <button type="button" onClick={() => window.open(`/api/ordenes-pago/${pago.ordenPago!.id}/pdf`, "_blank")} className={pdfBtnCls}>VER ORDEN</button>
+                              <button type="button" onClick={() => { window.location.href = `/api/ordenes-pago/${pago.ordenPago!.id}/pdf` }} className={pdfBtnCls}>VER ORDEN</button>
                             </div>
                           )) : <p className="text-sm text-muted-foreground italic">Aún no pagado</p>}
                         </div>
