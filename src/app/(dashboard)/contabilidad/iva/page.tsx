@@ -10,7 +10,6 @@ import { prisma } from "@/lib/prisma"
 import { tienePermiso } from "@/lib/permissions"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
 import { sumarImportes, restarImportes } from "@/lib/money"
-import { etiquetaComprobanteArca } from "@/lib/iva-portal/codigos-arca"
 import {
   datosAsientoVenta as datosVenta,
   datosAsientoCompra as datosCompra,
@@ -151,27 +150,11 @@ export default async function ContabilidadIvaPage({
   const totalIvaCompras = sumarImportes(compras.map(a => a.montoIva))
   const posicionIva = restarImportes(totalIvaVentas, totalIvaCompras)
 
-  function etiquetaTipoCbteCompra(a: Asiento): string {
-    if (a.facturaProveedor) return `Factura ${a.facturaProveedor.tipoCbte}`
-    if (a.tipoReferencia === "FACTURA_SEGURO" && a.facturaSeguro) return `Factura Seguro ${a.facturaSeguro.tipoComprobante}`
-    if ((a.tipoReferencia === "NC_RECIBIDA" || a.tipoReferencia === "ND_RECIBIDA") && a.notaCreditoDebito?.tipoCbte != null) {
-      return etiquetaComprobanteArca(a.notaCreditoDebito.tipoCbte)
-    }
-    if (a.tipoReferencia === "NC_RECIBIDA") return "Nota de Crédito recibida"
-    if (a.tipoReferencia === "ND_RECIBIDA") return "Nota de Débito recibida"
-    return "—"
-  }
-
-  function etiquetaTipoCbteVenta(a: Asiento): string {
-    if (a.tipoReferencia === "LIQUIDACION") return "Cta. Vta. y Líq. Producto"
-    if (a.facturaEmitida) return etiquetaComprobanteArca(a.facturaEmitida.tipoCbte)
-    if ((a.tipoReferencia === "NC_EMITIDA" || a.tipoReferencia === "ND_EMITIDA") && a.notaCreditoDebito?.tipoCbte != null) {
-      return etiquetaComprobanteArca(a.notaCreditoDebito.tipoCbte)
-    }
-    if (a.tipoReferencia === "NC_EMITIDA") return "Nota de Crédito emitida"
-    if (a.tipoReferencia === "ND_EMITIDA") return "Nota de Débito emitida"
-    return "—"
-  }
+  // Para agrupar por tipo de comprobante en las pestañas "por alícuota",
+  // reutilizamos el mismo helper que la tabla detallada — así la etiqueta
+  // siempre coincide con lo que se ve en IVA Ventas / IVA Compras.
+  const etiquetaTipoCbteCompra = (a: Asiento) => datosCompra(a).tipoCbte
+  const etiquetaTipoCbteVenta = (a: Asiento) => datosVenta(a).tipoCbte
 
   // Grouping for compras-alicuota: tipoCbte → alicuota
   const comprasAlicuotaMap = new Map<string, Map<number, { neto: number; iva: number; count: number }>>()
