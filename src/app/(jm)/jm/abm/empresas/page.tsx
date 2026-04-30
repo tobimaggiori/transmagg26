@@ -23,8 +23,11 @@ export default async function EmpresasAbmJmPage() {
   }))
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold tracking-tight">ABM Empresas</h1>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">Empresas</h2>
+        <p className="text-muted-foreground">Gestión de empresas del sistema.</p>
+      </div>
       <EmpresasAbmJm empresas={empresasAbm} />
     </div>
   )

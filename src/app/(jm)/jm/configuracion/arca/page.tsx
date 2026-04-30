@@ -36,15 +36,9 @@ export default async function ConfiguracionArcaJmPage() {
   }
 
   return (
-    <div className="space-y-4 max-w-3xl">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Configuración ARCA</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Datos del emisor (Javier Maggiori) para emisión de facturas. La
-          carga del certificado, password y verificación contra WSAA está
-          pendiente — por ahora el sistema permite emitir facturas con
-          numeración interna sin autorización ARCA.
-        </p>
+        <h2 className="text-2xl font-bold tracking-tight">ARCA</h2>
       </div>
       <ConfiguracionArcaFormJm inicial={inicial} />
     </div>

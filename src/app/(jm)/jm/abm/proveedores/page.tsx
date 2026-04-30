@@ -22,8 +22,11 @@ export default async function ProveedoresAbmJmPage() {
   }))
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold tracking-tight">ABM Proveedores</h1>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">Proveedores</h2>
+        <p className="text-muted-foreground">Gestión de proveedores del sistema.</p>
+      </div>
       <ProveedoresAbmJm proveedores={proveedoresAbm} />
     </div>
   )

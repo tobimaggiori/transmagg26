@@ -32,8 +32,11 @@ export default async function FciAbmJmPage() {
   ])
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold tracking-tight">ABM FCI</h1>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">FCI</h2>
+        <p className="text-muted-foreground">Gestión de Fondos Comunes de Inversión.</p>
+      </div>
       <FciAbmJm
         fcis={fcis.map((f) => ({
           id: f.id,

@@ -18,10 +18,9 @@ export default async function ConfiguracionEnvioJmPage() {
   if (!config) config = await prismaJm.configuracionEnvio.create({ data: { id: "singleton" } })
 
   return (
-    <div className="max-w-2xl space-y-4">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Configuración de Envío</h1>
-        <p className="text-sm text-muted-foreground mt-1">Configurar email reply-to para los envíos del sistema.</p>
+        <h2 className="text-2xl font-bold tracking-tight">Envío de mails</h2>
       </div>
       <ConfiguracionEnvioFormJm replyToInicial={config.replyTo} />
     </div>

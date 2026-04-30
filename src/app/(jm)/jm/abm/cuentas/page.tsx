@@ -46,8 +46,13 @@ export default async function CuentasAbmJmPage() {
   const brokersAbm: BrokerJmAbm[] = brokers.map((b) => ({ id: b.id, nombre: b.nombre, cuit: b.cuit }))
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold tracking-tight">Cuentas, Bancos, Billeteras y Brokers</h1>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">Cuentas</h2>
+        <p className="text-muted-foreground">
+          Gestión de bancos, billeteras virtuales, brokers y sus cuentas operativas.
+        </p>
+      </div>
       <CuentasAbmJm cuentas={cuentas} bancos={bancosAbm} billeteras={billeterasAbm} brokers={brokersAbm} />
     </div>
   )

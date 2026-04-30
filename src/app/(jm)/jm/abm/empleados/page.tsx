@@ -23,8 +23,11 @@ export default async function EmpleadosAbmJmPage() {
   }))
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold tracking-tight">ABM Empleados</h1>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">Empleados</h2>
+        <p className="text-muted-foreground">Gestión de empleados del sistema.</p>
+      </div>
       <EmpleadosAbmJm empleados={empleadosAbm} />
     </div>
   )

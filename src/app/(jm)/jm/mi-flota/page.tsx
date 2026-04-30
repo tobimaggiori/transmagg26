@@ -24,8 +24,11 @@ export default async function MiFlotaJmPage() {
   }))
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold tracking-tight">Mi Flota</h1>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">Mi Flota</h2>
+        <p className="text-muted-foreground">Camiones propios y choferes asignados.</p>
+      </div>
       <CamionesAbmJm camiones={camionesAbm} />
     </div>
   )
