@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma"
 import { tienePermiso } from "@/lib/permissions"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
 import { sumarImportes, restarImportes } from "@/lib/money"
+import { etiquetaComprobanteArca } from "@/lib/iva-portal/codigos-arca"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FiltroPeriodo } from "@/components/contabilidad/filtro-periodo"
 import { PortalIvaShell } from "./_components/portal-iva-shell"
@@ -77,6 +78,7 @@ export default async function ContabilidadIvaPage({
         select: {
           nroComprobante: true,
           tipoCbte: true,
+          ptoVenta: true,
           emitidaEn: true,
           empresa: { select: { razonSocial: true, cuit: true } },
         },
@@ -97,6 +99,32 @@ export default async function ContabilidadIvaPage({
           fletero: { select: { razonSocial: true, cuit: true } },
         },
       },
+      notaCreditoDebito: {
+        select: {
+          tipo: true,
+          tipoCbte: true,
+          ptoVenta: true,
+          nroComprobante: true,
+          nroComprobanteExterno: true,
+          fechaComprobanteExterno: true,
+          emisorExterno: true,
+          creadoEn: true,
+          factura: {
+            select: { empresa: { select: { razonSocial: true, cuit: true } } },
+          },
+          facturaProveedor: {
+            select: { proveedor: { select: { razonSocial: true, cuit: true } } },
+          },
+        },
+      },
+      facturaSeguro: {
+        select: {
+          nroComprobante: true,
+          tipoComprobante: true,
+          fecha: true,
+          aseguradora: { select: { razonSocial: true, cuit: true } },
+        },
+      },
     },
     orderBy: [{ periodo: "asc" }],
     take: 2000,
@@ -105,18 +133,108 @@ export default async function ContabilidadIvaPage({
   const ventas = asientos.filter((a) => a.tipo === "VENTA")
   const compras = asientos.filter((a) => a.tipo === "COMPRA")
 
+  type Asiento = (typeof asientos)[number]
+
+  function formatNumeroFiscal(pto: number | null | undefined, nro: number | string | null | undefined): string {
+    const ptoStr = pto != null ? String(pto).padStart(4, "0") : "----"
+    const nroStr = nro != null && nro !== "" ? String(nro).padStart(8, "0") : "s/n"
+    return `${ptoStr}-${nroStr}`
+  }
+
+  function datosAsientoVenta(a: Asiento): { fecha: Date | null; empresa: string; cbte: string; cuit: string | null } {
+    if (a.tipoReferencia === "LIQUIDACION" && a.liquidacion) {
+      return {
+        fecha: a.liquidacion.grabadaEn,
+        empresa: a.liquidacion.fletero.razonSocial,
+        cbte: `Cta. Vta. y Líq. Producto ${formatNumeroFiscal(a.liquidacion.ptoVenta, a.liquidacion.nroComprobante)}`,
+        cuit: a.liquidacion.fletero.cuit,
+      }
+    }
+    if (a.tipoReferencia === "FACTURA_EMITIDA" && a.facturaEmitida) {
+      return {
+        fecha: a.facturaEmitida.emitidaEn,
+        empresa: a.facturaEmitida.empresa.razonSocial,
+        cbte: `${etiquetaComprobanteArca(a.facturaEmitida.tipoCbte)} ${a.facturaEmitida.nroComprobante ?? "s/n"}`,
+        cuit: a.facturaEmitida.empresa.cuit,
+      }
+    }
+    if ((a.tipoReferencia === "NC_EMITIDA" || a.tipoReferencia === "ND_EMITIDA") && a.notaCreditoDebito) {
+      const n = a.notaCreditoDebito
+      const empresa = n.factura?.empresa.razonSocial ?? n.emisorExterno ?? "—"
+      const cuit = n.factura?.empresa.cuit ?? null
+      const tipoLabel = n.tipoCbte != null
+        ? etiquetaComprobanteArca(n.tipoCbte)
+        : (a.tipoReferencia === "NC_EMITIDA" ? "Nota de Crédito" : "Nota de Débito")
+      const numero = n.nroComprobante != null ? formatNumeroFiscal(n.ptoVenta, n.nroComprobante) : "s/n"
+      return { fecha: n.creadoEn, empresa, cbte: `${tipoLabel} ${numero}`, cuit }
+    }
+    return { fecha: null, empresa: "—", cbte: "—", cuit: null }
+  }
+
+  function datosAsientoCompra(a: Asiento): { fecha: Date | null; empresa: string; cbte: string; cuit: string | null } {
+    if (a.facturaProveedor) {
+      return {
+        fecha: a.facturaProveedor.fechaCbte,
+        empresa: a.facturaProveedor.proveedor.razonSocial,
+        cbte: `Factura ${a.facturaProveedor.tipoCbte} ${a.facturaProveedor.nroComprobante}`,
+        cuit: a.facturaProveedor.proveedor.cuit,
+      }
+    }
+    if (a.tipoReferencia === "FACTURA_SEGURO" && a.facturaSeguro) {
+      return {
+        fecha: a.facturaSeguro.fecha,
+        empresa: a.facturaSeguro.aseguradora.razonSocial,
+        cbte: `Factura ${a.facturaSeguro.tipoComprobante} ${a.facturaSeguro.nroComprobante}`,
+        cuit: a.facturaSeguro.aseguradora.cuit,
+      }
+    }
+    if ((a.tipoReferencia === "NC_RECIBIDA" || a.tipoReferencia === "ND_RECIBIDA") && a.notaCreditoDebito) {
+      const n = a.notaCreditoDebito
+      const empresa = n.facturaProveedor?.proveedor.razonSocial ?? n.emisorExterno ?? "—"
+      const cuit = n.facturaProveedor?.proveedor.cuit ?? null
+      const tipoLabel = n.tipoCbte != null
+        ? etiquetaComprobanteArca(n.tipoCbte)
+        : (a.tipoReferencia === "NC_RECIBIDA" ? "Nota de Crédito" : "Nota de Débito")
+      const numero = n.nroComprobanteExterno
+        ?? (n.nroComprobante != null ? formatNumeroFiscal(n.ptoVenta, n.nroComprobante) : "s/n")
+      const fecha = n.fechaComprobanteExterno ?? n.creadoEn
+      return { fecha, empresa, cbte: `${tipoLabel} ${numero}`, cuit }
+    }
+    return { fecha: null, empresa: "—", cbte: "—", cuit: null }
+  }
+
   const totalNetoVentas = sumarImportes(ventas.map(a => a.baseImponible))
   const totalIvaVentas = sumarImportes(ventas.map(a => a.montoIva))
   const totalNetoCompras = sumarImportes(compras.map(a => a.baseImponible))
   const totalIvaCompras = sumarImportes(compras.map(a => a.montoIva))
   const posicionIva = restarImportes(totalIvaVentas, totalIvaCompras)
 
+  function etiquetaTipoCbteCompra(a: Asiento): string {
+    if (a.facturaProveedor) return `Factura ${a.facturaProveedor.tipoCbte}`
+    if (a.tipoReferencia === "FACTURA_SEGURO" && a.facturaSeguro) return `Factura Seguro ${a.facturaSeguro.tipoComprobante}`
+    if ((a.tipoReferencia === "NC_RECIBIDA" || a.tipoReferencia === "ND_RECIBIDA") && a.notaCreditoDebito?.tipoCbte != null) {
+      return etiquetaComprobanteArca(a.notaCreditoDebito.tipoCbte)
+    }
+    if (a.tipoReferencia === "NC_RECIBIDA") return "Nota de Crédito recibida"
+    if (a.tipoReferencia === "ND_RECIBIDA") return "Nota de Débito recibida"
+    return "—"
+  }
+
+  function etiquetaTipoCbteVenta(a: Asiento): string {
+    if (a.tipoReferencia === "LIQUIDACION") return "Cta. Vta. y Líq. Producto"
+    if (a.facturaEmitida) return etiquetaComprobanteArca(a.facturaEmitida.tipoCbte)
+    if ((a.tipoReferencia === "NC_EMITIDA" || a.tipoReferencia === "ND_EMITIDA") && a.notaCreditoDebito?.tipoCbte != null) {
+      return etiquetaComprobanteArca(a.notaCreditoDebito.tipoCbte)
+    }
+    if (a.tipoReferencia === "NC_EMITIDA") return "Nota de Crédito emitida"
+    if (a.tipoReferencia === "ND_EMITIDA") return "Nota de Débito emitida"
+    return "—"
+  }
+
   // Grouping for compras-alicuota: tipoCbte → alicuota
   const comprasAlicuotaMap = new Map<string, Map<number, { neto: number; iva: number; count: number }>>()
   for (const a of compras) {
-    const tipoCbte = a.tipoReferencia === "LIQUIDACION"
-      ? "Cta Vta Liq Prod"
-      : (a.facturaProveedor?.tipoCbte ?? "—")
+    const tipoCbte = etiquetaTipoCbteCompra(a)
     if (!comprasAlicuotaMap.has(tipoCbte)) comprasAlicuotaMap.set(tipoCbte, new Map())
     const byAlicuota = comprasAlicuotaMap.get(tipoCbte)!
     const prev = byAlicuota.get(a.alicuota) ?? { neto: 0, iva: 0, count: 0 }
@@ -127,7 +245,7 @@ export default async function ContabilidadIvaPage({
   // Grouping for ventas-alicuota: tipoCbte → alicuota
   const ventasAlicuotaMap = new Map<string, Map<number, { neto: number; iva: number; count: number }>>()
   for (const a of ventas) {
-    const tipoCbte = a.tipoReferencia === "LIQUIDACION" ? "Cta Vta Liq Prod" : (a.facturaEmitida?.tipoCbte != null ? String(a.facturaEmitida.tipoCbte) : "—")
+    const tipoCbte = etiquetaTipoCbteVenta(a)
     if (!ventasAlicuotaMap.has(tipoCbte)) ventasAlicuotaMap.set(tipoCbte, new Map())
     const byAlicuota = ventasAlicuotaMap.get(tipoCbte)!
     const prev = byAlicuota.get(a.alicuota) ?? { neto: 0, iva: 0, count: 0 }
@@ -273,41 +391,29 @@ export default async function ContabilidadIvaPage({
                   <tr className="border-b bg-muted/50">
                     <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Fecha</th>
                     <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Empresa</th>
+                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">CUIT</th>
                     <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Comprobante</th>
                     <th className="px-3 py-3 text-right font-medium text-xs text-muted-foreground">Neto Gravado</th>
                     <th className="px-3 py-3 text-right font-medium text-xs text-muted-foreground">IVA</th>
-                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">CUIT</th>
                   </tr>
                 </thead>
                 <tbody>
                   {ventas.map((a) => {
-                    const esLP = a.tipoReferencia === "LIQUIDACION"
-                    const fecha = esLP ? a.liquidacion?.grabadaEn : a.facturaEmitida?.emitidaEn
-                    const empresa = esLP
-                      ? (a.liquidacion?.fletero.razonSocial ?? "—")
-                      : (a.facturaEmitida?.empresa.razonSocial ?? "—")
-                    const cbte = esLP
-                      ? (a.liquidacion?.ptoVenta != null && a.liquidacion?.nroComprobante != null
-                          ? `LP ${String(a.liquidacion.ptoVenta).padStart(4, "0")}-${String(a.liquidacion.nroComprobante).padStart(8, "0")}`
-                          : "LP s/n")
-                      : (a.facturaEmitida
-                          ? `${a.facturaEmitida.tipoCbte} ${a.facturaEmitida.nroComprobante ?? "s/n"}`
-                          : "—")
-                    const cuit = esLP ? a.liquidacion?.fletero.cuit : a.facturaEmitida?.empresa.cuit
+                    const d = datosAsientoVenta(a)
                     return (
                       <tr key={a.id} className="border-b hover:bg-muted/30">
                         <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
-                          {fecha ? formatearFecha(fecha) : a.periodo}
+                          {d.fecha ? formatearFecha(d.fecha) : a.periodo}
                         </td>
-                        <td className="px-3 py-2 font-medium">{empresa}</td>
-                        <td className="px-3 py-2 font-mono text-xs">{cbte}</td>
+                        <td className="px-3 py-2 font-medium">{d.empresa}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                          {d.cuit ? formatearCuit(d.cuit) : "—"}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs">{d.cbte}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{formatearMoneda(a.baseImponible)}</td>
                         <td className="px-3 py-2 text-right tabular-nums">
                           {formatearMoneda(a.montoIva)}
                           <span className="text-xs text-muted-foreground ml-1">({a.alicuota}%)</span>
-                        </td>
-                        <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
-                          {cuit ? formatearCuit(cuit) : "—"}
                         </td>
                       </tr>
                     )
@@ -315,12 +421,11 @@ export default async function ContabilidadIvaPage({
                 </tbody>
                 <tfoot>
                   <tr className="bg-muted font-semibold border-t-2">
-                    <td colSpan={3} className="px-3 py-3 text-right text-xs text-muted-foreground uppercase tracking-wide">
+                    <td colSpan={4} className="px-3 py-3 text-right text-xs text-muted-foreground uppercase tracking-wide">
                       Totales del período
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums">{formatearMoneda(totalNetoVentas)}</td>
                     <td className="px-3 py-3 text-right tabular-nums">{formatearMoneda(totalIvaVentas)}</td>
-                    <td />
                   </tr>
                 </tfoot>
               </table>
@@ -342,35 +447,30 @@ export default async function ContabilidadIvaPage({
                 <thead>
                   <tr className="border-b bg-muted/50">
                     <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Fecha</th>
-                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Proveedor / Fletero</th>
+                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Proveedor</th>
+                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">CUIT</th>
                     <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Comprobante</th>
                     <th className="px-3 py-3 text-right font-medium text-xs text-muted-foreground">Neto Gravado</th>
                     <th className="px-3 py-3 text-right font-medium text-xs text-muted-foreground">IVA</th>
-                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">CUIT</th>
                   </tr>
                 </thead>
                 <tbody>
                   {compras.map((a) => {
-                    const fecha = a.facturaProveedor?.fechaCbte
-                    const proveedor = a.facturaProveedor?.proveedor.razonSocial ?? "—"
-                    const cbte = a.facturaProveedor
-                      ? `${a.facturaProveedor.tipoCbte} ${a.facturaProveedor.nroComprobante}`
-                      : "—"
-                    const cuit = a.facturaProveedor?.proveedor.cuit
+                    const d = datosAsientoCompra(a)
                     return (
                       <tr key={a.id} className="border-b hover:bg-muted/30">
                         <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
-                          {fecha ? formatearFecha(fecha) : a.periodo}
+                          {d.fecha ? formatearFecha(d.fecha) : a.periodo}
                         </td>
-                        <td className="px-3 py-2 font-medium">{proveedor}</td>
-                        <td className="px-3 py-2 font-mono text-xs">{cbte}</td>
+                        <td className="px-3 py-2 font-medium">{d.empresa}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                          {d.cuit ? formatearCuit(d.cuit) : "—"}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs">{d.cbte}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{formatearMoneda(a.baseImponible)}</td>
                         <td className="px-3 py-2 text-right tabular-nums">
                           {formatearMoneda(a.montoIva)}
                           <span className="text-xs text-muted-foreground ml-1">({a.alicuota}%)</span>
-                        </td>
-                        <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
-                          {cuit ? formatearCuit(cuit) : "—"}
                         </td>
                       </tr>
                     )
@@ -378,12 +478,11 @@ export default async function ContabilidadIvaPage({
                 </tbody>
                 <tfoot>
                   <tr className="bg-muted font-semibold border-t-2">
-                    <td colSpan={3} className="px-3 py-3 text-right text-xs text-muted-foreground uppercase tracking-wide">
+                    <td colSpan={4} className="px-3 py-3 text-right text-xs text-muted-foreground uppercase tracking-wide">
                       Totales del período
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums">{formatearMoneda(totalNetoCompras)}</td>
                     <td className="px-3 py-3 text-right tabular-nums">{formatearMoneda(totalIvaCompras)}</td>
-                    <td />
                   </tr>
                 </tfoot>
               </table>
