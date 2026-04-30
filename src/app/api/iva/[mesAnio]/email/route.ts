@@ -10,7 +10,7 @@ import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { esRolInterno } from "@/lib/permissions"
-import { generarPDFLibroIva } from "@/lib/pdf-libro-iva"
+import { generarPDFLibroIva, type AsientoPdf } from "@/lib/pdf-libro-iva"
 import { enviarEmail } from "@/lib/email"
 import type { Rol } from "@/types"
 
@@ -67,32 +67,34 @@ export async function POST(
       include: {
         facturaEmitida: {
           select: {
-            nroComprobante: true,
-            tipoCbte: true,
-            emitidaEn: true,
+            nroComprobante: true, tipoCbte: true, ptoVenta: true, emitidaEn: true,
             empresa: { select: { razonSocial: true, cuit: true } },
           },
         },
         facturaProveedor: {
           select: {
-            nroComprobante: true,
-            tipoCbte: true,
-            fechaCbte: true,
+            nroComprobante: true, ptoVenta: true, tipoCbte: true, fechaCbte: true,
             proveedor: { select: { razonSocial: true, cuit: true } },
           },
         },
         liquidacion: {
           select: {
-            nroComprobante: true,
-            ptoVenta: true,
-            grabadaEn: true,
+            nroComprobante: true, ptoVenta: true, grabadaEn: true,
             fletero: { select: { razonSocial: true, cuit: true } },
+          },
+        },
+        notaCreditoDebito: {
+          select: {
+            tipo: true, tipoCbte: true, ptoVenta: true, nroComprobante: true,
+            nroComprobanteExterno: true, fechaComprobanteExterno: true, emisorExterno: true, creadoEn: true,
+            factura: { select: { empresa: { select: { razonSocial: true, cuit: true } } } },
+            facturaProveedor: { select: { proveedor: { select: { razonSocial: true, cuit: true } } } },
+            liquidacion: { select: { fletero: { select: { razonSocial: true, cuit: true } } } },
           },
         },
         facturaSeguro: {
           select: {
-            nroComprobante: true,
-            fecha: true,
+            nroComprobante: true, tipoComprobante: true, fecha: true,
             aseguradora: { select: { razonSocial: true, cuit: true } },
           },
         },
@@ -100,7 +102,13 @@ export async function POST(
       orderBy: [{ tipo: "asc" }, { id: "asc" }],
     })
 
-    const pdfBuffer = await generarPDFLibroIva(asientos, mesAnio)
+    const asientosPdf: AsientoPdf[] = asientos.map((a) => ({
+      ...a,
+      baseImponible: Number(a.baseImponible),
+      montoIva: Number(a.montoIva),
+    }))
+
+    const pdfBuffer = await generarPDFLibroIva(asientosPdf, mesAnio)
     const periodo = nombreMes(mesAnio)
 
     const resultado = await enviarEmail({

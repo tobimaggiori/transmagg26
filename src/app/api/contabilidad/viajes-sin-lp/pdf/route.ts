@@ -63,7 +63,7 @@ export async function GET(request: NextRequest): Promise<Response | NextResponse
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="viajes-propios-${periodoSlug(searchParams)}.pdf"`,
+        "Content-Disposition": `inline; filename="viajes-propios-${periodoSlug(searchParams)}.pdf"`,
       },
     })
   } catch (error) {

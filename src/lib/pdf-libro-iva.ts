@@ -1,54 +1,59 @@
 /**
- * Proposito: Generacion del PDF del Libro de IVA mensual con pdfkit.
- * Incluye secciones IVA Ventas, IVA Compras y posicion neta.
+ * Propósito: Generación de PDFs del Libro IVA con pdfkit.
+ *
+ * Exporta cinco funciones puras input → Buffer:
+ *
+ *  - generarPDFLibroIva(asientos, mesAnio)
+ *      Master: ambas secciones (Ventas + Compras) + posición neta. Se
+ *      usa desde /api/iva/generar y /api/iva/[mesAnio]/email.
+ *
+ *  - generarPDFIvaVentas(asientos, periodoLabel)
+ *  - generarPDFIvaCompras(asientos, periodoLabel)
+ *      Una sección tabular (la que ve el operador en pantalla).
+ *
+ *  - generarPDFVentasPorAlicuota(asientos, periodoLabel)
+ *  - generarPDFComprasPorAlicuota(asientos, periodoLabel)
+ *      Agrupado por tipo de comprobante con subtotales por alícuota.
+ *
+ * Toda la lógica de "qué empresa / cuit / tipo / número mostrar" está
+ * delegada en `src/lib/iva-portal/display-asientos.ts`. Pantalla y PDF
+ * coinciden por construcción.
  */
 
-import { sumarImportes, restarImportes, absMonetario } from "@/lib/money"
 import PDFDocument from "pdfkit"
+import { sumarImportes, restarImportes, absMonetario } from "@/lib/money"
+import {
+  type AsientoDisplayInput,
+  datosAsientoVenta,
+  datosAsientoCompra,
+} from "@/lib/iva-portal/display-asientos"
 
-type AsientoConRelaciones = {
+// ─── Asiento input shape ─────────────────────────────────────────────────────
+
+/**
+ * AsientoPdf: AsientoDisplayInput + campos del asiento (tipo, base, alícuota, IVA).
+ */
+export type AsientoPdf = AsientoDisplayInput & {
   id: string
   tipo: string
-  tipoReferencia: string
   baseImponible: number
   alicuota: number
   montoIva: number
-  periodo: string
-  facturaEmitida?: {
-    nroComprobante: string | null
-    tipoCbte: number | null
-    emitidaEn: Date | null
-    empresa: { razonSocial: string; cuit: string }
-  } | null
-  facturaProveedor?: {
-    nroComprobante: string
-    tipoCbte: string
-    fechaCbte: Date
-    proveedor: { razonSocial: string; cuit: string }
-  } | null
-  liquidacion?: {
-    nroComprobante: number | null
-    ptoVenta: number | null
-    grabadaEn: Date | null
-    fletero: { razonSocial: string; cuit: string }
-  } | null
-  facturaSeguro?: {
-    nroComprobante: string | null
-    fecha: Date | null
-    aseguradora: { razonSocial: string; cuit: string }
-  } | null
 }
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function fmt(n: number): string {
   return "$ " + n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 function fmtFecha(d: Date | string | null | undefined): string {
-  if (!d) return "\u2014"
+  if (!d) return "—"
   return new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(d))
 }
 
-function fmtCuit(cuit: string): string {
+function fmtCuit(cuit: string | null | undefined): string {
+  if (!cuit) return "—"
   const c = cuit.replace(/\D/g, "")
   if (c.length !== 11) return cuit
   return `${c.slice(0, 2)}-${c.slice(2, 10)}-${c.slice(10)}`
@@ -63,242 +68,376 @@ function nombreMes(mesAnio: string): string {
   return `${meses[parseInt(mes, 10) - 1] ?? mes} ${anio}`
 }
 
-/* -- Helpers para extraer datos de fila ------------------------------------ */
+// ─── Layout shared ───────────────────────────────────────────────────────────
 
-function datosVenta(a: AsientoConRelaciones) {
-  const esLP = a.tipoReferencia === "LIQUIDACION"
-  const fecha = esLP ? a.liquidacion?.grabadaEn : a.facturaEmitida?.emitidaEn
-  const contraparte = esLP
-    ? (a.liquidacion?.fletero.razonSocial ?? "\u2014")
-    : (a.facturaEmitida?.empresa.razonSocial ?? "\u2014")
-  const cbte = esLP
-    ? (a.liquidacion?.ptoVenta != null && a.liquidacion?.nroComprobante != null
-        ? `LP ${String(a.liquidacion.ptoVenta).padStart(4, "0")}-${String(a.liquidacion.nroComprobante).padStart(8, "0")}`
-        : "LP s/n")
-    : (a.facturaEmitida
-        ? `${a.facturaEmitida.tipoCbte ?? ""} ${a.facturaEmitida.nroComprobante ?? "s/n"}`
-        : "\u2014")
-  const cuit = esLP ? a.liquidacion?.fletero.cuit : a.facturaEmitida?.empresa.cuit
-  const tipo = esLP ? "Liq. Productor" : "Factura"
-  return { fecha, tipo, cbte, contraparte, cuit }
-}
+const PAGE_MARGIN = 36
+const PAGE_WIDTH = 595 // A4 portrait width in points
+const CONTENT_WIDTH = PAGE_WIDTH - PAGE_MARGIN * 2 // 523
 
-function datosCompra(a: AsientoConRelaciones) {
-  const esSeguro = a.tipoReferencia.startsWith("FACTURA_SEGURO")
-  const fecha = esSeguro ? a.facturaSeguro?.fecha : a.facturaProveedor?.fechaCbte
-  const proveedor = esSeguro
-    ? (a.facturaSeguro?.aseguradora?.razonSocial ?? "\u2014")
-    : (a.facturaProveedor?.proveedor.razonSocial ?? "\u2014")
-  const cbte = esSeguro
-    ? (a.facturaSeguro?.nroComprobante ?? "\u2014")
-    : (a.facturaProveedor ? `${a.facturaProveedor.tipoCbte} ${a.facturaProveedor.nroComprobante}` : "\u2014")
-  const cuit = esSeguro
-    ? a.facturaSeguro?.aseguradora?.cuit
-    : a.facturaProveedor?.proveedor.cuit
-  const tipo = a.tipoReferencia === "PERCEPCION_IVA"
-    ? "Percepcion IVA"
-    : a.tipoReferencia === "PERCEPCION_IIBB"
-      ? "Percepcion IIBB"
-      : esSeguro ? "Seguro" : "Factura"
-  return { fecha, tipo, cbte, proveedor, cuit }
-}
-
-/* -- Blue separator helper ------------------------------------------------- */
-
-function blueLine(doc: PDFKit.PDFDocument) {
-  doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor("#1e40af").lineWidth(1.5).stroke()
+function header(doc: PDFKit.PDFDocument, titulo: string, subtitulo: string) {
+  doc.font("Helvetica-Bold").fontSize(13).fillColor("#000")
+    .text("Libro de IVA Trans-Magg S.R.L.", PAGE_MARGIN, PAGE_MARGIN)
+  doc.font("Helvetica").fontSize(9).fillColor("#666")
+    .text("CUIT 30-70938168-3", { continued: false })
+  doc.moveDown(0.4)
+  doc.font("Helvetica-Bold").fontSize(11).fillColor("#000").text(titulo)
+  doc.font("Helvetica").fontSize(8).fillColor("#666").text(subtitulo)
   doc.moveDown(0.3)
+  doc.moveTo(PAGE_MARGIN, doc.y).lineTo(PAGE_WIDTH - PAGE_MARGIN, doc.y)
+    .strokeColor("#1e40af").lineWidth(1).stroke()
+  doc.moveDown(0.4)
+  doc.fillColor("#000")
 }
 
-/* -- Table drawing helpers ------------------------------------------------- */
+function footer(doc: PDFKit.PDFDocument) {
+  doc.moveDown(1)
+  doc.font("Helvetica").fontSize(7).fillColor("#999")
+    .text(`Generado el ${fmtFecha(new Date())} · Trans-Magg S.R.L.`, PAGE_MARGIN, doc.y, {
+      align: "center", width: CONTENT_WIDTH,
+    })
+  doc.fillColor("#000")
+}
 
-// Column positions for 8-column IVA table (landscape would be nice, but we keep A4 portrait)
-// Fecha | Tipo | Comprobante | Empresa/Prov | Base Imp. | Alic. | IVA | CUIT
-const COL_X = [40, 95, 155, 245, 345, 405, 445, 495]
-const COL_W = [55, 60, 90, 100, 60, 40, 50, 60]
+function checkPageBreak(doc: PDFKit.PDFDocument, threshold = 770) {
+  if (doc.y > threshold) doc.addPage()
+}
 
-function drawTableHeader(doc: PDFKit.PDFDocument, headers: string[]) {
-  if (doc.y > 750) doc.addPage()
+// ─── Tabla detalle (ventas o compras) ────────────────────────────────────────
+// Columnas: Fecha · Empresa · CUIT · Tipo cbte. · Número · Neto · IVA
+// Mismas que se ven en pantalla.
+
+const COL_DETALLE_X = [PAGE_MARGIN,  88, 230, 308, 396, 460, 510]
+const COL_DETALLE_W = [   52,       138,  78,  88,  62,  50,  49]
+const COL_DETALLE_HEAD = ["Fecha", "Empresa", "CUIT", "Tipo cbte.", "Número", "Neto Grav.", "IVA"]
+const COL_DETALLE_RIGHT_FROM = 5 // índices >= 5 alineados a la derecha
+
+function drawDetalleHeader(doc: PDFKit.PDFDocument) {
+  checkPageBreak(doc)
   const y = doc.y
-  doc.rect(40, y, 515, 16).fill("#f0f0f0")
+  doc.rect(PAGE_MARGIN, y, CONTENT_WIDTH, 14).fill("#e5e7eb")
   doc.fillColor("#000").font("Helvetica-Bold").fontSize(7)
-  for (let i = 0; i < headers.length; i++) {
-    const align = i >= 4 ? "right" : "left"
-    const x = COL_X[i]
-    const w = COL_W[i]
-    if (align === "right") {
-      doc.text(headers[i], x, y + 4, { width: w, align: "right" })
-    } else {
-      doc.text(headers[i], x, y + 4, { width: w })
-    }
+  for (let i = 0; i < COL_DETALLE_HEAD.length; i++) {
+    const align = i >= COL_DETALLE_RIGHT_FROM ? "right" : "left"
+    doc.text(COL_DETALLE_HEAD[i], COL_DETALLE_X[i], y + 4, {
+      width: COL_DETALLE_W[i], align, lineBreak: false,
+    })
   }
+  doc.font("Helvetica").fontSize(7)
+  doc.y = y + 16
+}
+
+function drawDetalleRow(doc: PDFKit.PDFDocument, cells: string[]) {
+  checkPageBreak(doc)
+  const y = doc.y
+  doc.font("Helvetica").fontSize(7).fillColor("#000")
+  for (let i = 0; i < cells.length; i++) {
+    const align = i >= COL_DETALLE_RIGHT_FROM ? "right" : "left"
+    doc.text(cells[i], COL_DETALLE_X[i], y + 2, {
+      width: COL_DETALLE_W[i], align, lineBreak: false, ellipsis: true,
+    })
+  }
+  doc.y = y + 12
+}
+
+function drawDetalleTotalsRow(doc: PDFKit.PDFDocument, totalNeto: number, totalIva: number) {
+  checkPageBreak(doc)
+  const y = doc.y
+  doc.rect(PAGE_MARGIN, y, CONTENT_WIDTH, 14).fill("#f3f4f6")
+  doc.fillColor("#000").font("Helvetica-Bold").fontSize(7)
+  doc.text("TOTALES DEL PERÍODO", COL_DETALLE_X[0], y + 4, {
+    width: COL_DETALLE_X[5] - COL_DETALLE_X[0] - 6, align: "right", lineBreak: false,
+  })
+  doc.text(fmt(totalNeto), COL_DETALLE_X[5], y + 4, {
+    width: COL_DETALLE_W[5], align: "right", lineBreak: false,
+  })
+  doc.text(fmt(totalIva), COL_DETALLE_X[6], y + 4, {
+    width: COL_DETALLE_W[6], align: "right", lineBreak: false,
+  })
   doc.font("Helvetica").fontSize(7)
   doc.y = y + 18
 }
 
-function drawRow(doc: PDFKit.PDFDocument, cells: string[], bold = false) {
-  if (doc.y > 750) doc.addPage()
-  const y = doc.y
-  doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(7).fillColor("#000")
-  for (let i = 0; i < cells.length; i++) {
-    const align = i >= 4 ? "right" : "left"
-    const x = COL_X[i]
-    const w = COL_W[i]
-    doc.text(cells[i], x, y + 2, { width: w, align, lineBreak: false })
+function renderDetalle(
+  doc: PDFKit.PDFDocument,
+  asientos: AsientoPdf[],
+  modo: "VENTAS" | "COMPRAS",
+) {
+  if (asientos.length === 0) {
+    doc.font("Helvetica").fontSize(8).fillColor("#888")
+      .text(`Sin asientos de IVA ${modo === "VENTAS" ? "Ventas" : "Compras"} en el período.`, PAGE_MARGIN, doc.y)
+    doc.fillColor("#000").moveDown(0.5)
+    return
   }
-  doc.y = y + 13
+
+  drawDetalleHeader(doc)
+  let totalNeto = 0
+  let totalIva = 0
+  for (const a of asientos) {
+    const d = modo === "VENTAS" ? datosAsientoVenta(a) : datosAsientoCompra(a)
+    drawDetalleRow(doc, [
+      fmtFecha(d.fecha),
+      d.empresa,
+      fmtCuit(d.cuit),
+      d.tipoCbte,
+      d.nroCbte,
+      fmt(a.baseImponible),
+      `${fmt(a.montoIva)} (${a.alicuota}%)`,
+    ])
+    totalNeto = sumarImportes([totalNeto, a.baseImponible])
+    totalIva = sumarImportes([totalIva, a.montoIva])
+  }
+  drawDetalleTotalsRow(doc, totalNeto, totalIva)
 }
 
-function drawTotalsRow(doc: PDFKit.PDFDocument, label: string, totalBase: string, totalIva: string) {
-  if (doc.y > 750) doc.addPage()
+// ─── Tabla por alícuota ──────────────────────────────────────────────────────
+// Agrupada por tipo de comprobante. Cada grupo muestra:
+//   Alícuota | Cant. asientos | Neto | IVA  + subtotal del grupo
+// Al final, total general.
+
+function agruparPorTipoYAlicuota(
+  asientos: AsientoPdf[],
+  modo: "VENTAS" | "COMPRAS",
+): Array<{ tipo: string; filas: Array<{ alicuota: number; count: number; neto: number; iva: number }>; subtotalNeto: number; subtotalIva: number }> {
+  const map = new Map<string, Map<number, { count: number; neto: number; iva: number }>>()
+  for (const a of asientos) {
+    const tipo = (modo === "VENTAS" ? datosAsientoVenta(a) : datosAsientoCompra(a)).tipoCbte
+    if (!map.has(tipo)) map.set(tipo, new Map())
+    const inner = map.get(tipo)!
+    const prev = inner.get(a.alicuota) ?? { count: 0, neto: 0, iva: 0 }
+    inner.set(a.alicuota, {
+      count: prev.count + 1,
+      neto: sumarImportes([prev.neto, a.baseImponible]),
+      iva: sumarImportes([prev.iva, a.montoIva]),
+    })
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([tipo, inner]) => {
+      const filas = Array.from(inner.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([alicuota, v]) => ({ alicuota, ...v }))
+      const subtotalNeto = sumarImportes(filas.map(f => f.neto))
+      const subtotalIva = sumarImportes(filas.map(f => f.iva))
+      return { tipo, filas, subtotalNeto, subtotalIva }
+    })
+}
+
+const COL_ALIC_X = [PAGE_MARGIN, 130, 230, 380]
+const COL_ALIC_W = [   86,        96,  146, 113]
+const COL_ALIC_HEAD = ["Alícuota", "Cant. asientos", "Neto Gravado", "IVA"]
+
+function drawAlicHeader(doc: PDFKit.PDFDocument) {
+  checkPageBreak(doc)
   const y = doc.y
-  doc.rect(40, y, 515, 16).fill("#f0f0f0")
+  doc.rect(PAGE_MARGIN, y, CONTENT_WIDTH, 14).fill("#f3f4f6")
   doc.fillColor("#000").font("Helvetica-Bold").fontSize(7)
-  doc.text(label, COL_X[0], y + 4, { width: COL_X[4] - COL_X[0], align: "right" })
-  doc.text(totalBase, COL_X[4], y + 4, { width: COL_W[4], align: "right" })
-  doc.text(totalIva, COL_X[6], y + 4, { width: COL_W[6], align: "right" })
-  doc.font("Helvetica")
-  doc.y = y + 18
+  for (let i = 0; i < COL_ALIC_HEAD.length; i++) {
+    const align = i >= 1 ? "right" : "left"
+    doc.text(COL_ALIC_HEAD[i], COL_ALIC_X[i], y + 4, {
+      width: COL_ALIC_W[i], align, lineBreak: false,
+    })
+  }
+  doc.font("Helvetica").fontSize(7)
+  doc.y = y + 16
 }
 
-/* -- Main export ----------------------------------------------------------- */
+function drawAlicRow(doc: PDFKit.PDFDocument, alicuota: number, count: number, neto: number, iva: number) {
+  checkPageBreak(doc)
+  const y = doc.y
+  doc.font("Helvetica").fontSize(7).fillColor("#000")
+  doc.text(`${alicuota}%`, COL_ALIC_X[0], y + 2, { width: COL_ALIC_W[0], lineBreak: false })
+  doc.text(String(count), COL_ALIC_X[1], y + 2, { width: COL_ALIC_W[1], align: "right", lineBreak: false })
+  doc.text(fmt(neto), COL_ALIC_X[2], y + 2, { width: COL_ALIC_W[2], align: "right", lineBreak: false })
+  doc.text(fmt(iva), COL_ALIC_X[3], y + 2, { width: COL_ALIC_W[3], align: "right", lineBreak: false })
+  doc.y = y + 12
+}
 
-/**
- * generarPDFLibroIva: (asientos, mesAnio) -> Promise<Buffer>
- *
- * Dado los asientos IVA del periodo y el string YYYY-MM, genera el PDF del libro
- * usando pdfkit y devuelve el buffer.
- *
- * Ejemplos:
- * generarPDFLibroIva(asientos, "2026-03") => Buffer (PDF A4)
- */
-export async function generarPDFLibroIva(
-  asientos: AsientoConRelaciones[],
-  mesAnio: string
-): Promise<Buffer> {
-  const ventas = asientos.filter((a) => a.tipo === "VENTA")
-  const compras = asientos.filter((a) => a.tipo === "COMPRA")
-  const totalBaseVentas = sumarImportes(ventas.map(a => a.baseImponible))
-  const totalIvaVentas = sumarImportes(ventas.map(a => a.montoIva))
-  const totalBaseCompras = sumarImportes(compras.map(a => a.baseImponible))
-  const totalIvaCompras = sumarImportes(compras.map(a => a.montoIva))
-  const posicion = restarImportes(totalIvaVentas, totalIvaCompras)
+function drawAlicSubtotal(doc: PDFKit.PDFDocument, tipo: string, neto: number, iva: number) {
+  checkPageBreak(doc)
+  const y = doc.y
+  doc.rect(PAGE_MARGIN, y, CONTENT_WIDTH, 13).fill("#e5e7eb")
+  doc.fillColor("#000").font("Helvetica-Bold").fontSize(7)
+  doc.text(`Subtotal ${tipo}`, COL_ALIC_X[0], y + 3, {
+    width: COL_ALIC_X[2] - COL_ALIC_X[0] - 6, align: "right", lineBreak: false,
+  })
+  doc.text(fmt(neto), COL_ALIC_X[2], y + 3, { width: COL_ALIC_W[2], align: "right", lineBreak: false })
+  doc.text(fmt(iva), COL_ALIC_X[3], y + 3, { width: COL_ALIC_W[3], align: "right", lineBreak: false })
+  doc.font("Helvetica").fontSize(7)
+  doc.y = y + 16
+}
 
+function renderAlicuotaSection(
+  doc: PDFKit.PDFDocument,
+  asientos: AsientoPdf[],
+  modo: "VENTAS" | "COMPRAS",
+) {
+  if (asientos.length === 0) {
+    doc.font("Helvetica").fontSize(8).fillColor("#888")
+      .text(`Sin asientos de IVA ${modo === "VENTAS" ? "Ventas" : "Compras"} en el período.`, PAGE_MARGIN, doc.y)
+    doc.fillColor("#000").moveDown(0.5)
+    return
+  }
+  const grupos = agruparPorTipoYAlicuota(asientos, modo)
+  let totalNeto = 0
+  let totalIva = 0
+  for (const g of grupos) {
+    checkPageBreak(doc, 740)
+    doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#000")
+      .text(`Tipo comprobante: ${g.tipo}`, PAGE_MARGIN, doc.y)
+    doc.moveDown(0.2)
+    drawAlicHeader(doc)
+    for (const fila of g.filas) {
+      drawAlicRow(doc, fila.alicuota, fila.count, fila.neto, fila.iva)
+    }
+    drawAlicSubtotal(doc, g.tipo, g.subtotalNeto, g.subtotalIva)
+    doc.moveDown(0.4)
+    totalNeto = sumarImportes([totalNeto, g.subtotalNeto])
+    totalIva = sumarImportes([totalIva, g.subtotalIva])
+  }
+  // Total general
+  checkPageBreak(doc, 750)
+  const y = doc.y
+  doc.rect(PAGE_MARGIN, y, CONTENT_WIDTH, 16).fill("#1e40af")
+  doc.fillColor("#fff").font("Helvetica-Bold").fontSize(8.5)
+  doc.text(`TOTAL GENERAL ${modo}`, COL_ALIC_X[0] + 6, y + 5, {
+    width: COL_ALIC_X[2] - COL_ALIC_X[0] - 12, lineBreak: false,
+  })
+  doc.text(fmt(totalNeto), COL_ALIC_X[2], y + 5, { width: COL_ALIC_W[2], align: "right", lineBreak: false })
+  doc.text(fmt(totalIva), COL_ALIC_X[3], y + 5, { width: COL_ALIC_W[3], align: "right", lineBreak: false })
+  doc.fillColor("#000").font("Helvetica").fontSize(7)
+  doc.y = y + 20
+}
+
+// ─── Builder común ───────────────────────────────────────────────────────────
+
+function buildPdf(callback: (doc: PDFKit.PDFDocument) => void): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 40, size: "A4" })
+    const doc = new PDFDocument({ margin: PAGE_MARGIN, size: "A4" })
     const chunks: Buffer[] = []
     doc.on("data", (chunk: Buffer) => chunks.push(chunk))
     doc.on("end", () => resolve(Buffer.concat(chunks)))
     doc.on("error", reject)
+    callback(doc)
+    doc.end()
+  })
+}
 
-    /* -- Cabecera -- */
-    doc.font("Helvetica-Bold").fontSize(14).text("TRANS-MAGG S.R.L.", 40, 40)
-    doc.font("Helvetica").fontSize(9).fillColor("#555").text("C.U.I.T. 30-70938168-3")
-    doc.fillColor("#000").font("Helvetica-Bold").fontSize(12)
-    doc.text(`Libro de IVA \u2014 ${nombreMes(mesAnio)}`, 40, doc.y + 4)
-    doc.moveDown(0.5)
+// ─── Exports ─────────────────────────────────────────────────────────────────
 
-    // Separator
-    blueLine(doc)
+/**
+ * generarPDFLibroIva: AsientoPdf[] string -> Promise<Buffer>
+ *
+ * PDF master con Ventas + Compras detallado y Posición Neta. Se usa para el
+ * archivo mensual que se sube a R2 y se manda por email.
+ *
+ * Ejemplos:
+ * generarPDFLibroIva(asientos, "2026-04") => Buffer con %PDF magic
+ */
+export async function generarPDFLibroIva(
+  asientos: AsientoPdf[],
+  mesAnio: string,
+): Promise<Buffer> {
+  const ventas = asientos.filter(a => a.tipo === "VENTA")
+  const compras = asientos.filter(a => a.tipo === "COMPRA")
+  const totalIvaV = sumarImportes(ventas.map(a => a.montoIva))
+  const totalIvaC = sumarImportes(compras.map(a => a.montoIva))
+  const posicion = restarImportes(totalIvaV, totalIvaC)
+
+  return buildPdf((doc) => {
+    header(doc, `Libro IVA — ${nombreMes(mesAnio)}`, `${asientos.length} asiento(s)`)
+
+    doc.font("Helvetica-Bold").fontSize(10).text(`IVA Ventas (${ventas.length})`, PAGE_MARGIN, doc.y)
     doc.moveDown(0.3)
+    renderDetalle(doc, ventas, "VENTAS")
+    doc.moveDown(0.6)
 
-    /* -- SECCION: IVA VENTAS -- */
-    doc.font("Helvetica-Bold").fontSize(10).fillColor("#000")
-    doc.text(`IVA Ventas (${ventas.length} asiento${ventas.length !== 1 ? "s" : ""})`, 40, doc.y)
-    doc.moveDown(0.4)
-
-    if (ventas.length === 0) {
-      doc.font("Helvetica").fontSize(8).fillColor("#888")
-      doc.text("Sin asientos de IVA Ventas en el periodo.", 40, doc.y)
-      doc.fillColor("#000").moveDown(0.5)
-    } else {
-      const headers = ["Fecha", "Tipo", "Comprobante", "Empresa / Fletero", "Base Imp.", "Alic.", "IVA", "CUIT"]
-      drawTableHeader(doc, headers)
-
-      for (const a of ventas) {
-        const d = datosVenta(a)
-        drawRow(doc, [
-          fmtFecha(d.fecha),
-          d.tipo,
-          d.cbte,
-          d.contraparte,
-          fmt(a.baseImponible),
-          `${a.alicuota}%`,
-          fmt(a.montoIva),
-          d.cuit ? fmtCuit(d.cuit) : "\u2014",
-        ])
-      }
-
-      drawTotalsRow(doc, "TOTAL IVA VENTAS", fmt(totalBaseVentas), fmt(totalIvaVentas))
-    }
-
+    doc.font("Helvetica-Bold").fontSize(10).text(`IVA Compras (${compras.length})`, PAGE_MARGIN, doc.y)
+    doc.moveDown(0.3)
+    renderDetalle(doc, compras, "COMPRAS")
     doc.moveDown(0.8)
 
-    /* -- SECCION: IVA COMPRAS -- */
-    doc.font("Helvetica-Bold").fontSize(10).fillColor("#000")
-    doc.text(`IVA Compras (${compras.length} asiento${compras.length !== 1 ? "s" : ""})`, 40, doc.y)
-    doc.moveDown(0.4)
-
-    if (compras.length === 0) {
-      doc.font("Helvetica").fontSize(8).fillColor("#888")
-      doc.text("Sin asientos de IVA Compras en el periodo.", 40, doc.y)
-      doc.fillColor("#000").moveDown(0.5)
-    } else {
-      const headers = ["Fecha", "Tipo", "Comprobante", "Proveedor", "Base Imp.", "Alic.", "IVA", "CUIT"]
-      drawTableHeader(doc, headers)
-
-      for (const a of compras) {
-        const d = datosCompra(a)
-        drawRow(doc, [
-          fmtFecha(d.fecha),
-          d.tipo,
-          d.cbte,
-          d.proveedor,
-          fmt(a.baseImponible),
-          `${a.alicuota}%`,
-          fmt(a.montoIva),
-          d.cuit ? fmtCuit(d.cuit) : "\u2014",
-        ])
-      }
-
-      drawTotalsRow(doc, "TOTAL IVA COMPRAS", fmt(totalBaseCompras), fmt(totalIvaCompras))
-    }
-
-    doc.moveDown(1)
-
-    /* -- POSICION NETA -- */
-    if (doc.y > 700) doc.addPage()
-    const boxY = doc.y
-    doc.rect(40, boxY, 515, 50).lineWidth(2).strokeColor("#000").stroke()
-
-    doc.font("Helvetica").fontSize(8).fillColor("#555")
-    doc.text("IVA VENTAS", 55, boxY + 8)
-    doc.font("Helvetica-Bold").fontSize(11).fillColor("#000")
-    doc.text(fmt(totalIvaVentas), 55, boxY + 20)
-
-    doc.font("Helvetica").fontSize(8).fillColor("#555")
-    doc.text("IVA COMPRAS", 220, boxY + 8)
-    doc.font("Helvetica-Bold").fontSize(11).fillColor("#000")
-    doc.text(fmt(totalIvaCompras), 220, boxY + 20)
-
-    doc.font("Helvetica").fontSize(8).fillColor("#555")
-    doc.text("POSICION NETA DE IVA", 385, boxY + 8)
+    // Posición neta
+    checkPageBreak(doc, 700)
+    const y = doc.y
+    doc.rect(PAGE_MARGIN, y, CONTENT_WIDTH, 50).lineWidth(1.5).strokeColor("#000").stroke()
+    doc.font("Helvetica").fontSize(8).fillColor("#666")
+    doc.text("IVA VENTAS", PAGE_MARGIN + 10, y + 8)
+    doc.font("Helvetica-Bold").fontSize(11).fillColor("#000").text(fmt(totalIvaV), PAGE_MARGIN + 10, y + 22)
+    doc.font("Helvetica").fontSize(8).fillColor("#666")
+    doc.text("IVA COMPRAS", PAGE_MARGIN + 180, y + 8)
+    doc.font("Helvetica-Bold").fontSize(11).fillColor("#000").text(fmt(totalIvaC), PAGE_MARGIN + 180, y + 22)
+    doc.font("Helvetica").fontSize(8).fillColor("#666")
+    doc.text("POSICIÓN NETA", PAGE_MARGIN + 360, y + 8)
     const posColor = posicion >= 0 ? "#dc2626" : "#16a34a"
     const posLabel = posicion >= 0 ? "A PAGAR" : "A FAVOR"
     doc.font("Helvetica-Bold").fontSize(11).fillColor(posColor)
-    doc.text(`${fmt(absMonetario(posicion))} ${posLabel}`, 385, boxY + 20)
-
-    doc.y = boxY + 56
+    doc.text(`${fmt(absMonetario(posicion))} ${posLabel}`, PAGE_MARGIN + 360, y + 22)
+    doc.y = y + 56
     doc.fillColor("#000")
 
-    /* -- Footer -- */
-    doc.moveDown(1.5)
-    doc.font("Helvetica").fontSize(8).fillColor("#888")
-    doc.text(
-      `Trans-Magg S.R.L. \u2014 Libro IVA ${nombreMes(mesAnio)} \u2014 Generado el ${fmtFecha(new Date())}`,
-      40, doc.y, { align: "center", width: 515 }
-    )
+    footer(doc)
+  })
+}
 
-    doc.end()
+/**
+ * generarPDFIvaVentas: AsientoPdf[] string -> Promise<Buffer>
+ *
+ * PDF tabular de IVA Ventas (la pestaña "IVA Ventas" de la pantalla).
+ * Mismas columnas que la UI: Fecha · Empresa · CUIT · Tipo cbte. · Número · Neto · IVA.
+ */
+export async function generarPDFIvaVentas(
+  asientos: AsientoPdf[],
+  periodoLabel: string,
+): Promise<Buffer> {
+  const ventas = asientos.filter(a => a.tipo === "VENTA")
+  return buildPdf((doc) => {
+    header(doc, "IVA Ventas", `Período: ${periodoLabel} · ${ventas.length} asiento(s)`)
+    renderDetalle(doc, ventas, "VENTAS")
+    footer(doc)
+  })
+}
+
+/**
+ * generarPDFIvaCompras: AsientoPdf[] string -> Promise<Buffer>
+ */
+export async function generarPDFIvaCompras(
+  asientos: AsientoPdf[],
+  periodoLabel: string,
+): Promise<Buffer> {
+  const compras = asientos.filter(a => a.tipo === "COMPRA")
+  return buildPdf((doc) => {
+    header(doc, "IVA Compras", `Período: ${periodoLabel} · ${compras.length} asiento(s)`)
+    renderDetalle(doc, compras, "COMPRAS")
+    footer(doc)
+  })
+}
+
+/**
+ * generarPDFVentasPorAlicuota: AsientoPdf[] string -> Promise<Buffer>
+ */
+export async function generarPDFVentasPorAlicuota(
+  asientos: AsientoPdf[],
+  periodoLabel: string,
+): Promise<Buffer> {
+  const ventas = asientos.filter(a => a.tipo === "VENTA")
+  return buildPdf((doc) => {
+    header(doc, "Ventas por Alícuota", `Período: ${periodoLabel} · ${ventas.length} asiento(s)`)
+    renderAlicuotaSection(doc, ventas, "VENTAS")
+    footer(doc)
+  })
+}
+
+/**
+ * generarPDFComprasPorAlicuota: AsientoPdf[] string -> Promise<Buffer>
+ */
+export async function generarPDFComprasPorAlicuota(
+  asientos: AsientoPdf[],
+  periodoLabel: string,
+): Promise<Buffer> {
+  const compras = asientos.filter(a => a.tipo === "COMPRA")
+  return buildPdf((doc) => {
+    header(doc, "Compras por Alícuota", `Período: ${periodoLabel} · ${compras.length} asiento(s)`)
+    renderAlicuotaSection(doc, compras, "COMPRAS")
+    footer(doc)
   })
 }

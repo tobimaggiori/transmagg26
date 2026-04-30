@@ -23,6 +23,16 @@ viven en [`docs/`](./docs/).
 7. **Toda fusión de PDFs** pasa por `src/lib/pdf-merge.ts`. NUNCA importar
    `pdf-lib` directo.
 8. **Generación de PDFs** usa `pdfkit`. NUNCA HTML-to-PDF, NUNCA puppeteer.
+   - **API**: rutas `*/pdf/route.ts` devuelven `Content-Type: application/pdf`
+     con `Content-Disposition: inline; filename="..."`. NUNCA devolver HTML
+     con `<script>window.print()</script>`. NUNCA `attachment` (forzaría
+     descarga; queremos visualización).
+   - **UI**: los links que abren PDFs (generados o de R2 vía URL firmada)
+     navegan en la **misma ventana** del operador (`<a href={url}>` sin
+     `target`, o `window.location.href = url`). NUNCA `target="_blank"` ni
+     `window.open(url, "_blank")`. El visor PDF nativo del navegador le
+     da al operador opciones de guardar/imprimir/cerrar; no abrimos
+     páginas intermedias ni HTML wrappers.
 9. **Visibilidad de tarifas** (regla de seguridad crítica):
    - `tarifa` (fletero) NUNCA visible para roles empresa o chofer.
    - `tarifaEmpresa` NUNCA visible para roles fletero o chofer.
