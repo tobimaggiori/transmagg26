@@ -22,6 +22,18 @@ import { Select } from "@/components/ui/select"
 import { FormError } from "@/components/ui/form-error"
 import { formatearFecha, formatearMoneda } from "@/lib/utils"
 
+const NOMBRES_MES = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+]
+
+function formatMesAnio(mesAnio: string): string {
+  const [anio, mes] = mesAnio.split("-")
+  const idx = parseInt(mes ?? "", 10) - 1
+  if (idx >= 0 && idx < 12) return `${NOMBRES_MES[idx]} ${anio}`
+  return mesAnio
+}
+
 type EstadoPeriodo =
   | "ABIERTO"
   | "EN_REVISION_CONTADOR"
@@ -98,10 +110,10 @@ const COLOR_ESTADO: Record<EstadoPeriodo, string> = {
 }
 
 export function PortalIvaShell({ mesAnioInicial }: Props) {
-  const [mesAnio, setMesAnio] = useState(mesAnioInicial)
+  const mesAnio = mesAnioInicial
   const [data, setData] = useState<DatosPeriodo | null>(null)
   const [tab, setTab] = useState<TabKey>("resumen")
-  const [cargando, setCargando] = useState(false)
+  const [, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [accionEnCurso, setAccionEnCurso] = useState(false)
   const [formAjusteAbierto, setFormAjusteAbierto] = useState(false)
@@ -194,28 +206,12 @@ export function PortalIvaShell({ mesAnioInicial }: Props) {
 
   return (
     <div className="space-y-4 mt-6 border-t pt-6">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex items-end gap-2">
-          <div>
-            <Label className="text-xs">Período (YYYY-MM)</Label>
-            <Input
-              value={mesAnio}
-              onChange={(e) => setMesAnio(e.target.value)}
-              className="w-32"
-              pattern="\d{4}-\d{2}"
-            />
-          </div>
-          <Button variant="outline" onClick={() => cargar(mesAnio)} disabled={cargando}>
-            Recargar
-          </Button>
-        </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <h3 className="text-base font-semibold">Portal IVA — {formatMesAnio(mesAnio)}</h3>
         {data && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Estado:</span>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${COLOR_ESTADO[data.periodo.estado]}`}>
-              {data.periodo.estado.replace(/_/g, " ")}
-            </span>
-          </div>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${COLOR_ESTADO[data.periodo.estado]}`}>
+            {data.periodo.estado.replace(/_/g, " ")}
+          </span>
         )}
       </div>
 

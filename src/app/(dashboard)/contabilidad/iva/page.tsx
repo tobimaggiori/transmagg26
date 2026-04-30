@@ -141,12 +141,15 @@ export default async function ContabilidadIvaPage({
     return `${ptoStr}-${nroStr}`
   }
 
-  function datosAsientoVenta(a: Asiento): { fecha: Date | null; empresa: string; cbte: string; cuit: string | null } {
+  type DatosAsiento = { fecha: Date | null; empresa: string; tipoCbte: string; nroCbte: string; cuit: string | null }
+
+  function datosAsientoVenta(a: Asiento): DatosAsiento {
     if (a.tipoReferencia === "LIQUIDACION" && a.liquidacion) {
       return {
         fecha: a.liquidacion.grabadaEn,
         empresa: a.liquidacion.fletero.razonSocial,
-        cbte: `Cta. Vta. y Líq. Producto ${formatNumeroFiscal(a.liquidacion.ptoVenta, a.liquidacion.nroComprobante)}`,
+        tipoCbte: "Cta. Vta. y Líq. Producto",
+        nroCbte: formatNumeroFiscal(a.liquidacion.ptoVenta, a.liquidacion.nroComprobante),
         cuit: a.liquidacion.fletero.cuit,
       }
     }
@@ -154,7 +157,8 @@ export default async function ContabilidadIvaPage({
       return {
         fecha: a.facturaEmitida.emitidaEn,
         empresa: a.facturaEmitida.empresa.razonSocial,
-        cbte: `${etiquetaComprobanteArca(a.facturaEmitida.tipoCbte)} ${a.facturaEmitida.nroComprobante ?? "s/n"}`,
+        tipoCbte: etiquetaComprobanteArca(a.facturaEmitida.tipoCbte),
+        nroCbte: a.facturaEmitida.nroComprobante ?? "s/n",
         cuit: a.facturaEmitida.empresa.cuit,
       }
     }
@@ -166,17 +170,18 @@ export default async function ContabilidadIvaPage({
         ? etiquetaComprobanteArca(n.tipoCbte)
         : (a.tipoReferencia === "NC_EMITIDA" ? "Nota de Crédito" : "Nota de Débito")
       const numero = n.nroComprobante != null ? formatNumeroFiscal(n.ptoVenta, n.nroComprobante) : "s/n"
-      return { fecha: n.creadoEn, empresa, cbte: `${tipoLabel} ${numero}`, cuit }
+      return { fecha: n.creadoEn, empresa, tipoCbte: tipoLabel, nroCbte: numero, cuit }
     }
-    return { fecha: null, empresa: "—", cbte: "—", cuit: null }
+    return { fecha: null, empresa: "—", tipoCbte: "—", nroCbte: "—", cuit: null }
   }
 
-  function datosAsientoCompra(a: Asiento): { fecha: Date | null; empresa: string; cbte: string; cuit: string | null } {
+  function datosAsientoCompra(a: Asiento): DatosAsiento {
     if (a.facturaProveedor) {
       return {
         fecha: a.facturaProveedor.fechaCbte,
         empresa: a.facturaProveedor.proveedor.razonSocial,
-        cbte: `Factura ${a.facturaProveedor.tipoCbte} ${a.facturaProveedor.nroComprobante}`,
+        tipoCbte: `Factura ${a.facturaProveedor.tipoCbte}`,
+        nroCbte: a.facturaProveedor.nroComprobante,
         cuit: a.facturaProveedor.proveedor.cuit,
       }
     }
@@ -184,7 +189,8 @@ export default async function ContabilidadIvaPage({
       return {
         fecha: a.facturaSeguro.fecha,
         empresa: a.facturaSeguro.aseguradora.razonSocial,
-        cbte: `Factura ${a.facturaSeguro.tipoComprobante} ${a.facturaSeguro.nroComprobante}`,
+        tipoCbte: `Factura ${a.facturaSeguro.tipoComprobante}`,
+        nroCbte: a.facturaSeguro.nroComprobante,
         cuit: a.facturaSeguro.aseguradora.cuit,
       }
     }
@@ -198,9 +204,9 @@ export default async function ContabilidadIvaPage({
       const numero = n.nroComprobanteExterno
         ?? (n.nroComprobante != null ? formatNumeroFiscal(n.ptoVenta, n.nroComprobante) : "s/n")
       const fecha = n.fechaComprobanteExterno ?? n.creadoEn
-      return { fecha, empresa, cbte: `${tipoLabel} ${numero}`, cuit }
+      return { fecha, empresa, tipoCbte: tipoLabel, nroCbte: numero, cuit }
     }
-    return { fecha: null, empresa: "—", cbte: "—", cuit: null }
+    return { fecha: null, empresa: "—", tipoCbte: "—", nroCbte: "—", cuit: null }
   }
 
   const totalNetoVentas = sumarImportes(ventas.map(a => a.baseImponible))
@@ -389,7 +395,8 @@ export default async function ContabilidadIvaPage({
                     <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Fecha</th>
                     <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Empresa</th>
                     <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">CUIT</th>
-                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Comprobante</th>
+                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Tipo cbte.</th>
+                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Número</th>
                     <th className="px-3 py-3 text-right font-medium text-xs text-muted-foreground">Neto Gravado</th>
                     <th className="px-3 py-3 text-right font-medium text-xs text-muted-foreground">IVA</th>
                   </tr>
@@ -406,7 +413,8 @@ export default async function ContabilidadIvaPage({
                         <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
                           {d.cuit ? formatearCuit(d.cuit) : "—"}
                         </td>
-                        <td className="px-3 py-2 font-mono text-xs">{d.cbte}</td>
+                        <td className="px-3 py-2 text-xs">{d.tipoCbte}</td>
+                        <td className="px-3 py-2 font-mono text-xs">{d.nroCbte}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{formatearMoneda(a.baseImponible)}</td>
                         <td className="px-3 py-2 text-right tabular-nums">
                           {formatearMoneda(a.montoIva)}
@@ -418,7 +426,7 @@ export default async function ContabilidadIvaPage({
                 </tbody>
                 <tfoot>
                   <tr className="bg-muted font-semibold border-t-2">
-                    <td colSpan={4} className="px-3 py-3 text-right text-xs text-muted-foreground uppercase tracking-wide">
+                    <td colSpan={5} className="px-3 py-3 text-right text-xs text-muted-foreground uppercase tracking-wide">
                       Totales del período
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums">{formatearMoneda(totalNetoVentas)}</td>
@@ -446,7 +454,8 @@ export default async function ContabilidadIvaPage({
                     <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Fecha</th>
                     <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Proveedor</th>
                     <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">CUIT</th>
-                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Comprobante</th>
+                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Tipo cbte.</th>
+                    <th className="px-3 py-3 text-left font-medium text-xs text-muted-foreground">Número</th>
                     <th className="px-3 py-3 text-right font-medium text-xs text-muted-foreground">Neto Gravado</th>
                     <th className="px-3 py-3 text-right font-medium text-xs text-muted-foreground">IVA</th>
                   </tr>
@@ -463,7 +472,8 @@ export default async function ContabilidadIvaPage({
                         <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
                           {d.cuit ? formatearCuit(d.cuit) : "—"}
                         </td>
-                        <td className="px-3 py-2 font-mono text-xs">{d.cbte}</td>
+                        <td className="px-3 py-2 text-xs">{d.tipoCbte}</td>
+                        <td className="px-3 py-2 font-mono text-xs">{d.nroCbte}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{formatearMoneda(a.baseImponible)}</td>
                         <td className="px-3 py-2 text-right tabular-nums">
                           {formatearMoneda(a.montoIva)}
@@ -475,7 +485,7 @@ export default async function ContabilidadIvaPage({
                 </tbody>
                 <tfoot>
                   <tr className="bg-muted font-semibold border-t-2">
-                    <td colSpan={4} className="px-3 py-3 text-right text-xs text-muted-foreground uppercase tracking-wide">
+                    <td colSpan={5} className="px-3 py-3 text-right text-xs text-muted-foreground uppercase tracking-wide">
                       Totales del período
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums">{formatearMoneda(totalNetoCompras)}</td>
