@@ -35,15 +35,9 @@ function findPdfRoutes(dir: string, acc: string[] = []): string[] {
 
 const PDF_ROUTES = findPdfRoutes(API_ROOT)
 
-// Violaciones conocidas que se migran en una tanda futura. Cada entrada lleva
-// el path absoluto de la ruta + ticket interno. NO agregar nada acá sin abrir
-// el ticket primero — la regla es no migrar (ver CLAUDE.md regla 8).
-const VIOLACIONES_CONOCIDAS = new Set<string>([
-  // Tanda 2: convertir a pdfkit con helpers nuevos
-  path.join(API_ROOT, "contabilidad", "gastos", "pdf", "route.ts"),
-  path.join(API_ROOT, "contabilidad", "iibb", "pdf", "route.ts"),
-  path.join(API_ROOT, "contabilidad", "lp-vs-facturas", "pdf", "route.ts"),
-])
+// Violaciones conocidas. Lista vacía a propósito: si necesitás agregar una,
+// abrí ticket primero — la regla es no migrar (ver CLAUDE.md regla 8).
+const VIOLACIONES_CONOCIDAS = new Set<string>([])
 
 function esRutaR2Redirect(content: string): boolean {
   return /obtenerUrlFirmada|getSignedUrl/.test(content)
