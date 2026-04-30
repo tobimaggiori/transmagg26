@@ -11,6 +11,10 @@ import { tienePermiso } from "@/lib/permissions"
 import { formatearMoneda, formatearFecha, formatearCuit } from "@/lib/utils"
 import { sumarImportes, restarImportes } from "@/lib/money"
 import { etiquetaComprobanteArca } from "@/lib/iva-portal/codigos-arca"
+import {
+  datosAsientoVenta as datosVenta,
+  datosAsientoCompra as datosCompra,
+} from "@/lib/iva-portal/display-asientos"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FiltroPeriodo } from "@/components/contabilidad/filtro-periodo"
 import { PortalIvaShell } from "./_components/portal-iva-shell"
@@ -116,6 +120,9 @@ export default async function ContabilidadIvaPage({
           facturaProveedor: {
             select: { proveedor: { select: { razonSocial: true, cuit: true } } },
           },
+          liquidacion: {
+            select: { fletero: { select: { razonSocial: true, cuit: true } } },
+          },
         },
       },
       facturaSeguro: {
@@ -135,94 +142,8 @@ export default async function ContabilidadIvaPage({
   const compras = asientos.filter((a) => a.tipo === "COMPRA")
 
   type Asiento = (typeof asientos)[number]
-
-  function formatNumeroFiscal(pto: number | null | undefined, nro: number | string | null | undefined): string {
-    const ptoStr = pto != null ? String(pto).padStart(4, "0") : "----"
-    const nroStr = nro != null && nro !== "" ? String(nro).padStart(8, "0") : "s/n"
-    return `${ptoStr}-${nroStr}`
-  }
-
-  type DatosAsiento = { fecha: Date | null; empresa: string; tipoCbte: string; nroCbte: string; cuit: string | null }
-
-  function datosAsientoVenta(a: Asiento): DatosAsiento {
-    if (a.tipoReferencia === "LIQUIDACION" && a.liquidacion) {
-      return {
-        fecha: a.liquidacion.grabadaEn,
-        empresa: a.liquidacion.fletero.razonSocial,
-        tipoCbte: "Cta. Vta. y Líq. Producto",
-        nroCbte: formatNumeroFiscal(a.liquidacion.ptoVenta, a.liquidacion.nroComprobante),
-        cuit: a.liquidacion.fletero.cuit,
-      }
-    }
-    if (a.tipoReferencia === "FACTURA_EMITIDA" && a.facturaEmitida) {
-      const nroRaw = a.facturaEmitida.nroComprobante
-      const nroCbte = nroRaw
-        ? (nroRaw.includes("-") ? nroRaw : formatNumeroFiscal(a.facturaEmitida.ptoVenta, nroRaw))
-        : "s/n"
-      return {
-        fecha: a.facturaEmitida.emitidaEn,
-        empresa: a.facturaEmitida.empresa.razonSocial,
-        tipoCbte: etiquetaComprobanteArca(a.facturaEmitida.tipoCbte),
-        nroCbte,
-        cuit: a.facturaEmitida.empresa.cuit,
-      }
-    }
-    if ((a.tipoReferencia === "NC_EMITIDA" || a.tipoReferencia === "ND_EMITIDA") && a.notaCreditoDebito) {
-      const n = a.notaCreditoDebito
-      const empresa = n.factura?.empresa.razonSocial ?? n.emisorExterno ?? "—"
-      const cuit = n.factura?.empresa.cuit ?? null
-      const tipoLabel = n.tipoCbte != null
-        ? etiquetaComprobanteArca(n.tipoCbte)
-        : (a.tipoReferencia === "NC_EMITIDA" ? "Nota de Crédito" : "Nota de Débito")
-      const numero = n.nroComprobante != null ? formatNumeroFiscal(n.ptoVenta, n.nroComprobante) : "s/n"
-      return { fecha: n.creadoEn, empresa, tipoCbte: tipoLabel, nroCbte: numero, cuit }
-    }
-    return { fecha: null, empresa: "—", tipoCbte: "—", nroCbte: "—", cuit: null }
-  }
-
-  function datosAsientoCompra(a: Asiento): DatosAsiento {
-    if (a.facturaProveedor) {
-      const fp = a.facturaProveedor
-      const nroRaw = fp.nroComprobante
-      const ptoNum = fp.ptoVenta ? parseInt(fp.ptoVenta, 10) : null
-      const nroCbte = nroRaw.includes("-")
-        ? nroRaw
-        : formatNumeroFiscal(ptoNum, nroRaw)
-      return {
-        fecha: fp.fechaCbte,
-        empresa: fp.proveedor.razonSocial,
-        tipoCbte: `Factura ${fp.tipoCbte}`,
-        nroCbte,
-        cuit: fp.proveedor.cuit,
-      }
-    }
-    if (a.tipoReferencia === "FACTURA_SEGURO" && a.facturaSeguro) {
-      const fs = a.facturaSeguro
-      const nroCbte = fs.nroComprobante.includes("-")
-        ? fs.nroComprobante
-        : formatNumeroFiscal(null, fs.nroComprobante)
-      return {
-        fecha: fs.fecha,
-        empresa: fs.aseguradora.razonSocial,
-        tipoCbte: `Factura ${fs.tipoComprobante}`,
-        nroCbte,
-        cuit: fs.aseguradora.cuit,
-      }
-    }
-    if ((a.tipoReferencia === "NC_RECIBIDA" || a.tipoReferencia === "ND_RECIBIDA") && a.notaCreditoDebito) {
-      const n = a.notaCreditoDebito
-      const empresa = n.facturaProveedor?.proveedor.razonSocial ?? n.emisorExterno ?? "—"
-      const cuit = n.facturaProveedor?.proveedor.cuit ?? null
-      const tipoLabel = n.tipoCbte != null
-        ? etiquetaComprobanteArca(n.tipoCbte)
-        : (a.tipoReferencia === "NC_RECIBIDA" ? "Nota de Crédito" : "Nota de Débito")
-      const numero = n.nroComprobanteExterno
-        ?? (n.nroComprobante != null ? formatNumeroFiscal(n.ptoVenta, n.nroComprobante) : "s/n")
-      const fecha = n.fechaComprobanteExterno ?? n.creadoEn
-      return { fecha, empresa, tipoCbte: tipoLabel, nroCbte: numero, cuit }
-    }
-    return { fecha: null, empresa: "—", tipoCbte: "—", nroCbte: "—", cuit: null }
-  }
+  const datosAsientoVenta = (a: Asiento) => datosVenta(a)
+  const datosAsientoCompra = (a: Asiento) => datosCompra(a)
 
   const totalNetoVentas = sumarImportes(ventas.map(a => a.baseImponible))
   const totalIvaVentas = sumarImportes(ventas.map(a => a.montoIva))

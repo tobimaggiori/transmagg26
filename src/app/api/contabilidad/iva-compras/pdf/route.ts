@@ -2,12 +2,16 @@
  * API Route: GET /api/contabilidad/iva-compras/pdf?desde=YYYY-MM-DD&hasta=YYYY-MM-DD
  * Genera el Libro IVA Compras del período en formato HTML imprimible.
  * Solo accesible para ADMIN_TRANSMAGG y OPERADOR_TRANSMAGG.
+ *
+ * Usa los mismos helpers (datosAsientoCompra) que la pantalla del Libro IVA
+ * para que el PDF muestre exactamente lo mismo que ve el operador.
  */
 
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
 import { sumarImportes } from "@/lib/money"
+import { datosAsientoCompra } from "@/lib/iva-portal/display-asientos"
 
 function fmt(n: number) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(n)
@@ -35,16 +39,6 @@ function periodoWhere(params: URLSearchParams): Record<string, unknown> {
   return {}
 }
 
-/**
- * GET: NextRequest -> Promise<NextResponse>
- *
- * Dado los query params de período, devuelve HTML imprimible del Libro IVA Compras.
- * Existe para exportar el libro requerido para la declaración impositiva de IVA Compras.
- *
- * Ejemplos:
- * GET /api/contabilidad/iva-compras/pdf?mes=3&anio=2026 → HTML del Libro IVA Compras Marzo 2026
- * GET /api/contabilidad/iva-compras/pdf (sesión FLETERO) → 403
- */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const acceso = await requireFinancialAccess()
   if (!acceso.ok) return acceso.response
@@ -55,19 +49,53 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const compras = await prisma.asientoIva.findMany({
       where: { tipo: "COMPRA", ...periodoWhere(searchParams) },
       include: {
+        facturaEmitida: {
+          select: {
+            nroComprobante: true,
+            tipoCbte: true,
+            ptoVenta: true,
+            emitidaEn: true,
+            empresa: { select: { razonSocial: true, cuit: true } },
+          },
+        },
         facturaProveedor: {
           select: {
             nroComprobante: true,
+            ptoVenta: true,
             tipoCbte: true,
             fechaCbte: true,
             proveedor: { select: { razonSocial: true, cuit: true } },
           },
         },
+        liquidacion: {
+          select: {
+            nroComprobante: true,
+            ptoVenta: true,
+            grabadaEn: true,
+            fletero: { select: { razonSocial: true, cuit: true } },
+          },
+        },
+        notaCreditoDebito: {
+          select: {
+            tipo: true,
+            tipoCbte: true,
+            ptoVenta: true,
+            nroComprobante: true,
+            nroComprobanteExterno: true,
+            fechaComprobanteExterno: true,
+            emisorExterno: true,
+            creadoEn: true,
+            factura: { select: { empresa: { select: { razonSocial: true, cuit: true } } } },
+            facturaProveedor: { select: { proveedor: { select: { razonSocial: true, cuit: true } } } },
+            liquidacion: { select: { fletero: { select: { razonSocial: true, cuit: true } } } },
+          },
+        },
         facturaSeguro: {
           select: {
-            id: true,
             nroComprobante: true,
-            aseguradora: { select: { razonSocial: true } },
+            tipoComprobante: true,
+            fecha: true,
+            aseguradora: { select: { razonSocial: true, cuit: true } },
           },
         },
       },
@@ -90,19 +118,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     const filas = compras
       .map((a) => {
-        const fp = a.facturaProveedor
-        const fs = a.facturaSeguro
-        const fecha = fp?.fechaCbte ? fmtFecha(fp.fechaCbte) : a.periodo
-        const proveedor = fp?.proveedor.razonSocial ?? fs?.aseguradora.razonSocial ?? "—"
-        const cbte = fp ? `${fp.tipoCbte} ${fp.nroComprobante}` : fs ? `Seguro ${fs.nroComprobante}` : "—"
-        const cuit = fp?.proveedor.cuit ? fmtCuit(fp.proveedor.cuit) : "—"
+        const d = datosAsientoCompra(a)
+        const fechaStr = d.fecha ? fmtFecha(d.fecha) : a.periodo
+        const cuitStr = d.cuit ? fmtCuit(d.cuit) : "—"
         return `<tr>
-          <td>${fecha}</td>
-          <td>${proveedor}</td>
-          <td class="mono">${cbte}</td>
+          <td>${fechaStr}</td>
+          <td>${d.empresa}</td>
+          <td class="mono">${cuitStr}</td>
+          <td>${d.tipoCbte}</td>
+          <td class="mono">${d.nroCbte}</td>
           <td class="right">${fmt(a.baseImponible)}</td>
           <td class="right">${fmt(a.montoIva)} <small>(${a.alicuota}%)</small></td>
-          <td class="mono">${cuit}</td>
         </tr>`
       })
       .join("")
@@ -129,28 +155,28 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   </style>
 </head>
 <body>
-  <h1>Transmagg — LIBRO IVA COMPRAS</h1>
+  <h1>Libro de IVA Trans-Magg S.R.L. — COMPRAS</h1>
   <p class="sub">Período: ${periodoLabel} · ${compras.length} asiento(s) · Generado: ${fmtFecha(new Date())}</p>
   ${
     compras.length === 0
       ? "<p>Sin asientos de IVA Compras para el período seleccionado.</p>"
       : `<table>
     <thead><tr>
-      <th>Fecha</th><th>Proveedor / Fletero</th><th>Comprobante</th>
-      <th class="right">Neto Gravado</th><th class="right">IVA</th><th>CUIT</th>
+      <th>Fecha</th><th>Proveedor</th><th>CUIT</th>
+      <th>Tipo cbte.</th><th>Número</th>
+      <th class="right">Neto Gravado</th><th class="right">IVA</th>
     </tr></thead>
     <tbody>${filas}</tbody>
     <tfoot>
       <tr class="total-row">
-        <td colspan="3" class="right">TOTALES DEL PERÍODO</td>
+        <td colspan="5" class="right">TOTALES DEL PERÍODO</td>
         <td class="right">${fmt(totalNeto)}</td>
         <td class="right">${fmt(totalIva)}</td>
-        <td></td>
       </tr>
     </tfoot>
   </table>`
   }
-  <p class="footer">Transmagg — Sistema de gestión de transporte</p>
+  <p class="footer">Trans-Magg S.R.L. — Sistema de gestión</p>
   <script>window.onload = function() { window.print() }</script>
 </body>
 </html>`

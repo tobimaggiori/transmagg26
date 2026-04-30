@@ -2,12 +2,16 @@
  * API Route: GET /api/contabilidad/iva-ventas/pdf?desde=YYYY-MM-DD&hasta=YYYY-MM-DD
  * Genera el Libro IVA Ventas del período en formato HTML imprimible.
  * Solo accesible para ADMIN_TRANSMAGG y OPERADOR_TRANSMAGG.
+ *
+ * Usa los mismos helpers (datosAsientoVenta) que la pantalla del Libro IVA
+ * para que el PDF muestre exactamente lo mismo que ve el operador.
  */
 
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireFinancialAccess, serverErrorResponse } from "@/lib/financial-api"
 import { sumarImportes } from "@/lib/money"
+import { datosAsientoVenta } from "@/lib/iva-portal/display-asientos"
 
 function fmt(n: number) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(n)
@@ -35,16 +39,6 @@ function periodoWhere(params: URLSearchParams): Record<string, unknown> {
   return {}
 }
 
-/**
- * GET: NextRequest -> Promise<NextResponse>
- *
- * Dado los query params de período, devuelve HTML imprimible del Libro IVA Ventas.
- * Existe para exportar el libro requerido para la declaración impositiva de IVA Ventas.
- *
- * Ejemplos:
- * GET /api/contabilidad/iva-ventas/pdf?mes=3&anio=2026 → HTML del Libro IVA Ventas Marzo 2026
- * GET /api/contabilidad/iva-ventas/pdf (sesión FLETERO) → 403
- */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const acceso = await requireFinancialAccess()
   if (!acceso.ok) return acceso.response
@@ -59,8 +53,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           select: {
             nroComprobante: true,
             tipoCbte: true,
+            ptoVenta: true,
             emitidaEn: true,
             empresa: { select: { razonSocial: true, cuit: true } },
+          },
+        },
+        facturaProveedor: {
+          select: {
+            nroComprobante: true,
+            ptoVenta: true,
+            tipoCbte: true,
+            fechaCbte: true,
+            proveedor: { select: { razonSocial: true, cuit: true } },
           },
         },
         liquidacion: {
@@ -69,6 +73,29 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             ptoVenta: true,
             grabadaEn: true,
             fletero: { select: { razonSocial: true, cuit: true } },
+          },
+        },
+        notaCreditoDebito: {
+          select: {
+            tipo: true,
+            tipoCbte: true,
+            ptoVenta: true,
+            nroComprobante: true,
+            nroComprobanteExterno: true,
+            fechaComprobanteExterno: true,
+            emisorExterno: true,
+            creadoEn: true,
+            factura: { select: { empresa: { select: { razonSocial: true, cuit: true } } } },
+            facturaProveedor: { select: { proveedor: { select: { razonSocial: true, cuit: true } } } },
+            liquidacion: { select: { fletero: { select: { razonSocial: true, cuit: true } } } },
+          },
+        },
+        facturaSeguro: {
+          select: {
+            nroComprobante: true,
+            tipoComprobante: true,
+            fecha: true,
+            aseguradora: { select: { razonSocial: true, cuit: true } },
           },
         },
       },
@@ -91,28 +118,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     const filas = ventas
       .map((a) => {
-        const esLP = a.tipoReferencia === "LIQUIDACION"
-        const fe = a.facturaEmitida
-        const liq = a.liquidacion
-        const fecha = esLP
-          ? (liq?.grabadaEn ? fmtFecha(liq.grabadaEn) : a.periodo)
-          : (fe?.emitidaEn ? fmtFecha(fe.emitidaEn) : a.periodo)
-        const empresa = esLP ? (liq?.fletero.razonSocial ?? "—") : (fe?.empresa.razonSocial ?? "—")
-        const cbte = esLP
-          ? (liq?.ptoVenta != null && liq?.nroComprobante != null
-              ? `LP ${String(liq.ptoVenta).padStart(4, "0")}-${String(liq.nroComprobante).padStart(8, "0")}`
-              : "LP s/n")
-          : (fe ? `${fe.tipoCbte} ${fe.nroComprobante ?? "s/n"}` : "—")
-        const cuit = esLP
-          ? (liq?.fletero.cuit ? fmtCuit(liq.fletero.cuit) : "—")
-          : (fe?.empresa.cuit ? fmtCuit(fe.empresa.cuit) : "—")
+        const d = datosAsientoVenta(a)
+        const fechaStr = d.fecha ? fmtFecha(d.fecha) : a.periodo
+        const cuitStr = d.cuit ? fmtCuit(d.cuit) : "—"
         return `<tr>
-          <td>${fecha}</td>
-          <td>${empresa}</td>
-          <td class="mono">${cbte}</td>
+          <td>${fechaStr}</td>
+          <td>${d.empresa}</td>
+          <td class="mono">${cuitStr}</td>
+          <td>${d.tipoCbte}</td>
+          <td class="mono">${d.nroCbte}</td>
           <td class="right">${fmt(a.baseImponible)}</td>
           <td class="right">${fmt(a.montoIva)} <small>(${a.alicuota}%)</small></td>
-          <td class="mono">${cuit}</td>
         </tr>`
       })
       .join("")
@@ -139,28 +155,28 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   </style>
 </head>
 <body>
-  <h1>Transmagg — LIBRO IVA VENTAS</h1>
+  <h1>Libro de IVA Trans-Magg S.R.L. — VENTAS</h1>
   <p class="sub">Período: ${periodoLabel} · ${ventas.length} asiento(s) · Generado: ${fmtFecha(new Date())}</p>
   ${
     ventas.length === 0
       ? "<p>Sin asientos de IVA Ventas para el período seleccionado.</p>"
       : `<table>
     <thead><tr>
-      <th>Fecha</th><th>Empresa</th><th>Comprobante</th>
-      <th class="right">Neto Gravado</th><th class="right">IVA</th><th>CUIT</th>
+      <th>Fecha</th><th>Empresa</th><th>CUIT</th>
+      <th>Tipo cbte.</th><th>Número</th>
+      <th class="right">Neto Gravado</th><th class="right">IVA</th>
     </tr></thead>
     <tbody>${filas}</tbody>
     <tfoot>
       <tr class="total-row">
-        <td colspan="3" class="right">TOTALES DEL PERÍODO</td>
+        <td colspan="5" class="right">TOTALES DEL PERÍODO</td>
         <td class="right">${fmt(totalNeto)}</td>
         <td class="right">${fmt(totalIva)}</td>
-        <td></td>
       </tr>
     </tfoot>
   </table>`
   }
-  <p class="footer">Transmagg — Sistema de gestión de transporte</p>
+  <p class="footer">Trans-Magg S.R.L. — Sistema de gestión</p>
   <script>window.onload = function() { window.print() }</script>
 </body>
 </html>`
